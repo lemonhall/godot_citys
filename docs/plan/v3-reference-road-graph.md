@@ -35,16 +35,19 @@
 - `city_game/world/generation/CityWorldGenerator.gd`
 - `city_game/world/model/CityRoadGraph.gd`
 - `city_game/world/rendering/CityRoadLayoutBuilder.gd`
+- `city_game/world/rendering/CityChunkProfileBuilder.gd`
 - `tests/world/test_city_reference_road_graph.gd`
 - `tests/world/test_city_road_network_continuity.gd`
+- `tests/world/test_city_shared_graph_road_takeover.gd`
+- `tests/world/test_city_building_collision.gd`
 
 ## Steps
 
 1. 写失败测试（红）
-2. 运行到红：`test_city_reference_road_graph.gd`
-3. 实现连续道路图生成器（绿）
-4. 运行到绿：`test_city_reference_road_graph.gd` + `test_city_road_network_continuity.gd`
-5. 必要重构：收敛共享 segment / intersection / query 接口
+2. 运行到红：`test_city_reference_road_graph.gd`、`test_city_shared_graph_road_takeover.gd`
+3. 实现连续道路图生成器与 chunk 侧共享骨架接管（绿）
+4. 运行到绿：`test_city_reference_road_graph.gd` + `test_city_road_network_continuity.gd` + `test_city_shared_graph_road_takeover.gd` + `test_city_building_collision.gd`
+5. 必要重构：收敛共享 segment / intersection / query 接口，并让建筑采样适配新的共享路网密度
 6. E2E：跑 `test_city_large_world_e2e.gd` 与 `test_city_travel_streaming_flow.gd`
 
 ## Risks

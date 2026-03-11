@@ -39,11 +39,13 @@ func build_route_between_positions(start_position: Vector3, goal_position: Vecto
 	var goal_chunk_key: Vector2i = CityChunkKey.world_to_chunk_key(_config, goal_position)
 	var chunk_route: Array[Vector2i] = build_chunk_route(start_chunk_key, goal_chunk_key)
 	var route: Array[Dictionary] = []
+	var travel_height := maxf(start_position.y, goal_position.y)
 
 	for index in range(1, chunk_route.size()):
 		var chunk_key: Vector2i = chunk_route[index]
 		var nav_chunk: Dictionary = CityChunkNavBuilder.build_chunk_nav(_config, chunk_key)
 		var target_position: Vector3 = nav_chunk["center"]
+		target_position.y = travel_height
 		if index == chunk_route.size() - 1:
 			target_position = goal_position
 		route.append({

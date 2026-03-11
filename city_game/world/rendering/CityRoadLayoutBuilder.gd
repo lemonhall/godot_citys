@@ -19,6 +19,8 @@ static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 	var expanded_rect := rect.grow(QUERY_MARGIN_M)
 
 	var segments: Array[Dictionary] = []
+	var shared_graph_segment_count := 0
+	var local_fallback_segment_count := 0
 	var road_graph = chunk_data.get("road_graph")
 	if road_graph != null and road_graph.has_method("get_edges_intersecting_rect"):
 		for edge in road_graph.get_edges_intersecting_rect(expanded_rect):
@@ -34,8 +36,7 @@ static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 			if not _polyline_intersects_chunk(segment.get("points", []), half_size):
 				continue
 			segments.append(segment)
-
-	segments.append_array(_build_local_cell_roads(expanded_rect.grow(LOCAL_CELL_MARGIN_M), chunk_center, half_size, world_seed))
+			shared_graph_segment_count += 1
 
 	var connectors := {
 		"north": [],
@@ -85,6 +86,8 @@ static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 		"road_template_counts": template_counts,
 		"bridge_min_clearance_m": 0.0 if min_bridge_clearance == INF else min_bridge_clearance,
 		"bridge_deck_thickness_m": max_bridge_deck_thickness,
+		"shared_graph_segment_count": shared_graph_segment_count,
+		"local_fallback_segment_count": local_fallback_segment_count,
 		"signature": _build_signature(connectors, curved_segment_count, segments.size(), non_axis_road_segment_count, bridge_count, template_counts),
 	}
 
@@ -135,7 +138,7 @@ static func _build_local_cell_roads(expanded_rect: Rect2, chunk_center: Vector3,
 					segments.append(service_segment)
 	return segments
 
-static func _make_segment_from_world_polyline(road_class: String, points_2d: Array, chunk_center: Vector3, world_seed: int, seed: int) -> Dictionary:
+static func _make_segment_from_world_polyline(road_class: String, points_2d: Array, chunk_center: Vector3, world_seed: int, segment_seed: int) -> Dictionary:
 	if points_2d.size() < 2:
 		return {}
 	var template_id := CityRoadTemplateCatalog.get_template_id_for_class(road_class)
@@ -145,12 +148,12 @@ static func _make_segment_from_world_polyline(road_class: String, points_2d: Arr
 		return {}
 	var max_grade := float(template.get("max_grade", 0.08))
 	local_points = _smooth_ground_profile(local_points, max_grade)
-	var bridge := template_id == "expressway_elevated" or _should_raise_bridge(road_class, points_2d, seed)
+	var bridge := template_id == "expressway_elevated" or _should_raise_bridge(road_class, points_2d, segment_seed)
 	var bridge_clearance := 0.0
 	var bridge_range := Vector2.ZERO
 	var deck_thickness := float(template.get("deck_thickness_m", 0.4))
 	if bridge:
-		bridge_clearance = _resolve_bridge_clearance(template_id, seed)
+		bridge_clearance = _resolve_bridge_clearance(template_id, segment_seed)
 		var bridge_profile := _build_bridge_profile(
 			local_points,
 			points_2d,
@@ -215,13 +218,13 @@ static func _cell_boundary_ratio(world_seed: int, cell_key: Vector2i, side: Stri
 		boundary_key.x += 1
 	elif side == "south":
 		boundary_key.y += 1
-	var seed := _cell_seed(world_seed, seed_scope, boundary_key)
-	return 0.5 + sin(float(seed % 8192) * 0.009) * 0.23
+	var boundary_seed := _cell_seed(world_seed, seed_scope, boundary_key)
+	return 0.5 + sin(float(boundary_seed % 8192) * 0.009) * 0.23
 
-static func _build_local_axis_points(start_portal: Vector2, end_portal: Vector2, hub: Vector2, seed: int) -> Array[Vector2]:
+static func _build_local_axis_points(start_portal: Vector2, end_portal: Vector2, hub: Vector2, axis_seed: int) -> Array[Vector2]:
 	var direction := (end_portal - start_portal).normalized()
 	var normal := Vector2(-direction.y, direction.x)
-	var lateral_sway := sin(float(seed % 4096) * 0.012) * 46.0
+	var lateral_sway := sin(float(axis_seed % 4096) * 0.012) * 46.0
 	var anchor := start_portal.lerp(end_portal, 0.5).lerp(hub, 0.56) + normal * lateral_sway
 	return [
 		start_portal,
@@ -257,25 +260,25 @@ static func _should_add_service_link(cell_key: Vector2i, world_seed: int) -> boo
 	return posmod(_cell_seed(world_seed, "local_service_enable", cell_key), 3) == 0
 
 static func _cell_seed(world_seed: int, scope: String, cell_key: Vector2i) -> int:
-	var seed := int((world_seed * 33 + cell_key.x * 92837111 + cell_key.y * 689287499) & 0x7fffffff)
+	var hash_seed := int((world_seed * 33 + cell_key.x * 92837111 + cell_key.y * 689287499) & 0x7fffffff)
 	for byte_value in scope.to_utf8_buffer():
-		seed = int((seed * 31 + int(byte_value) + 19) & 0x7fffffff)
-	return seed
+		hash_seed = int((hash_seed * 31 + int(byte_value) + 19) & 0x7fffffff)
+	return hash_seed
 
-static func _should_raise_bridge(road_class: String, points_2d: Array, seed: int) -> bool:
+static func _should_raise_bridge(road_class: String, points_2d: Array, bridge_seed: int) -> bool:
 	if road_class != "arterial" and road_class != "secondary":
 		return false
 	if points_2d.size() < 2:
 		return false
 	var midpoint := _polyline_midpoint_2d(points_2d)
 	var center_bias := absf(midpoint.x) <= 2600.0 and absf(midpoint.y) <= 2600.0
-	var marker := posmod(int(round(midpoint.x / 320.0)) * 13 + int(round(midpoint.y / 320.0)) * 17 + seed, 17)
+	var marker := posmod(int(round(midpoint.x / 320.0)) * 13 + int(round(midpoint.y / 320.0)) * 17 + bridge_seed, 17)
 	return center_bias and marker <= 3
 
-static func _resolve_bridge_clearance(template_id: String, seed: int) -> float:
+static func _resolve_bridge_clearance(template_id: String, clearance_seed: int) -> float:
 	if template_id == "expressway_elevated":
-		return 6.5 + float(posmod(seed, 4))
-	return 5.0 + float(posmod(seed, 3))
+		return 6.5 + float(posmod(clearance_seed, 4))
+	return 5.0 + float(posmod(clearance_seed, 3))
 
 static func _polyline_midpoint_2d(points: Array) -> Vector2:
 	if points.is_empty():

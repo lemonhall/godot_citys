@@ -66,7 +66,6 @@ func _build_road_graph(config, district_graph):
 					"seed": config.derive_seed("road_h", Vector2i(x, y)),
 					"width_m": _resolve_width_for_class(horizontal_class),
 					"points": _build_edge_points(
-						config,
 						road_graph.get_node_by_id(source_id).get("center", Vector2.ZERO),
 						road_graph.get_node_by_id(to_id_h).get("center", Vector2.ZERO),
 						true,
@@ -88,7 +87,6 @@ func _build_road_graph(config, district_graph):
 					"seed": config.derive_seed("road_v", Vector2i(x, y)),
 					"width_m": _resolve_width_for_class(vertical_class),
 					"points": _build_edge_points(
-						config,
 						road_graph.get_node_by_id(source_id).get("center", Vector2.ZERO),
 						road_graph.get_node_by_id(to_id_v).get("center", Vector2.ZERO),
 						false,
@@ -128,13 +126,15 @@ func _build_road_anchor(config, center: Vector2, district_key: Vector2i) -> Vect
 	return center + Vector2(x_wave + x_wave_secondary, y_wave + y_wave_secondary)
 
 func _resolve_road_class(district_grid: Vector2i, edge_key: Vector2i, horizontal: bool) -> String:
+	var middle_row := int(floor(float(district_grid.y) * 0.5))
+	var middle_column := int(floor(float(district_grid.x) * 0.5))
 	if horizontal:
-		if edge_key.y == district_grid.y / 2 or edge_key.y % 9 == 0:
+		if edge_key.y == middle_row or edge_key.y % 9 == 0:
 			return "expressway_elevated"
 		if edge_key.y % 4 == 0:
 			return "arterial"
 	else:
-		if edge_key.x == district_grid.x / 2 or edge_key.x % 9 == 0:
+		if edge_key.x == middle_column or edge_key.x % 9 == 0:
 			return "expressway_elevated"
 		if edge_key.x % 4 == 0:
 			return "arterial"
@@ -150,11 +150,11 @@ func _resolve_width_for_class(road_class: String) -> float:
 			return 11.0
 	return 11.0
 
-func _build_edge_points(config, from_center: Vector2, to_center: Vector2, horizontal: bool, seed: int, road_class: String) -> Array[Vector2]:
+func _build_edge_points(from_center: Vector2, to_center: Vector2, horizontal: bool, edge_seed: int, road_class: String) -> Array[Vector2]:
 	var direction := (to_center - from_center).normalized()
 	var normal := Vector2(-direction.y, direction.x)
 	var curve_scale := 56.0 if road_class == "arterial" else 28.0
-	var seed_factor := float(seed % 1024) / 1024.0
+	var seed_factor := float(edge_seed % 1024) / 1024.0
 	var curve_bias := sin(seed_factor * TAU + from_center.x / 8100.0 + to_center.y / 6700.0)
 	if not horizontal:
 		curve_bias = cos(seed_factor * TAU + from_center.y / 7900.0 + to_center.x / 6900.0)
@@ -242,7 +242,7 @@ func _boundary_offset_ratio(config, district_key: Vector2i, side: String) -> flo
 	var horizontal_seed: int = int(config.derive_seed("district_boundary_h", Vector2i(district_key.x, boundary_y)))
 	return 0.5 + cos(float(horizontal_seed % 8192) * 0.015) * 0.22
 
-func _build_boundary_to_hub_points(portal: Vector2, hub: Vector2, side: String, seed: int) -> Array[Vector2]:
+func _build_boundary_to_hub_points(portal: Vector2, hub: Vector2, side: String, edge_seed: int) -> Array[Vector2]:
 	var inward := Vector2.ZERO
 	var lateral := Vector2.ZERO
 	match side:
@@ -258,8 +258,8 @@ func _build_boundary_to_hub_points(portal: Vector2, hub: Vector2, side: String, 
 		"south":
 			inward = Vector2.UP
 			lateral = Vector2.RIGHT
-	var shoulder := 132.0 + float(seed % 60)
-	var lateral_bias := sin(float(seed % 4096) * 0.011) * 96.0
+	var shoulder := 132.0 + float(edge_seed % 60)
+	var lateral_bias := sin(float(edge_seed % 4096) * 0.011) * 96.0
 	var start_control := portal + inward * shoulder + lateral * lateral_bias * 0.28
 	var end_control := portal.lerp(hub, 0.62) + lateral * lateral_bias
 	return [

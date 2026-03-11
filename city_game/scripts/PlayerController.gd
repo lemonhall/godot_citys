@@ -18,12 +18,20 @@ var _pitch := deg_to_rad(-18.0)
 var _control_enabled := true
 var _speed_profile := "player"
 var _stabilization_suspend_frames := 0
+var _collision_resume_process_frames := 0
 
 func _ready() -> void:
 	camera_rig.rotation.x = _pitch
 	floor_snap_length = _current_floor_snap_length()
 	if DisplayServer.get_name() != "headless":
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+func _process(_delta: float) -> void:
+	if _collision_resume_process_frames <= 0:
+		return
+	_collision_resume_process_frames -= 1
+	if _collision_resume_process_frames == 0:
+		_set_primary_collision_enabled(true)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if DisplayServer.get_name() == "headless":
@@ -185,6 +193,7 @@ func _estimate_standing_height() -> float:
 	return 1.0
 
 func teleport_to_world_position(world_position: Vector3) -> void:
+	_suspend_primary_collision_for_frames(2)
 	global_position = world_position
 	velocity = Vector3.ZERO
 
@@ -192,6 +201,7 @@ func advance_toward_world_position(target_position: Vector3, step_distance: floa
 	var planar_delta := Vector3(target_position.x - global_position.x, 0.0, target_position.z - global_position.z)
 	var planar_distance := planar_delta.length()
 	if planar_distance <= step_distance:
+		_suspend_primary_collision_for_frames(2)
 		global_position = Vector3(target_position.x, target_position.y, target_position.z)
 		velocity = Vector3.ZERO
 		return true
@@ -201,3 +211,16 @@ func advance_toward_world_position(target_position: Vector3, step_distance: floa
 	global_position.y = target_position.y
 	velocity = Vector3.ZERO
 	return false
+
+func _suspend_primary_collision_for_frames(frame_count: int) -> void:
+	var collision_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if collision_shape == null:
+		return
+	_set_primary_collision_enabled(false)
+	_collision_resume_process_frames = maxi(_collision_resume_process_frames, frame_count)
+
+func _set_primary_collision_enabled(enabled: bool) -> void:
+	var collision_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if collision_shape == null:
+		return
+	collision_shape.disabled = not enabled

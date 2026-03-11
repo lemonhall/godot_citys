@@ -106,9 +106,9 @@ func _add_block(grid_x: int, grid_z: int, center: Vector3) -> void:
 		accent
 	)
 
-func _add_static_box(name: String, size: Vector3, center: Vector3, color: Color) -> void:
+func _add_static_box(node_name: String, size: Vector3, center: Vector3, color: Color) -> void:
 	var body := StaticBody3D.new()
-	body.name = name
+	body.name = node_name
 	body.position = center
 
 	var collision := CollisionShape3D.new()
@@ -124,9 +124,9 @@ func _add_static_box(name: String, size: Vector3, center: Vector3, color: Color)
 
 	add_child(body)
 
-func _add_decal_box(name: String, size: Vector3, center: Vector3, color: Color) -> void:
+func _add_decal_box(node_name: String, size: Vector3, center: Vector3, color: Color) -> void:
 	var mesh_instance := MeshInstance3D.new()
-	mesh_instance.name = name
+	mesh_instance.name = node_name
 	mesh_instance.position = center
 	mesh_instance.mesh = _make_box_mesh(size)
 	mesh_instance.material_override = _make_material(color)
@@ -142,4 +142,3 @@ func _make_material(color: Color) -> StandardMaterial3D:
 	material.albedo_color = color
 	material.roughness = 1.0
 	return material
-

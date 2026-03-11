@@ -138,11 +138,11 @@ func _apply_local_constraints(candidate: Dictionary, accepted: Array[Dictionary]
 		_growth_stats["split_event_count"] = int(_growth_stats.get("split_event_count", 0)) + 1
 		return clipped
 	if has_snap:
-		var snapped := candidate.duplicate(true)
-		snapped["end"] = snap_target
-		snapped["severed"] = true
+		var snapped_candidate := candidate.duplicate(true)
+		snapped_candidate["end"] = snap_target
+		snapped_candidate["severed"] = true
 		_growth_stats["snap_event_count"] = int(_growth_stats.get("snap_event_count", 0)) + 1
-		return snapped
+		return snapped_candidate
 	return candidate
 
 func _spawn_children(segment: Dictionary) -> Array[Dictionary]:

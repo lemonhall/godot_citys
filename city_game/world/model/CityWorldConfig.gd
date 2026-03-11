@@ -8,8 +8,8 @@ var world_depth_m := 70000
 var chunk_size_m := 256
 var district_size_m := 1000
 
-func _init(seed: int = DEFAULT_BASE_SEED) -> void:
-	base_seed = seed
+func _init(initial_seed: int = DEFAULT_BASE_SEED) -> void:
+	base_seed = initial_seed
 
 func get_world_bounds() -> Rect2:
 	return Rect2(

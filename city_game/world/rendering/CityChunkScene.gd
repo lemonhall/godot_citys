@@ -217,9 +217,9 @@ func _build_building(building: Dictionary) -> Node3D:
 			_add_local_box(building_root, "SawToothB", Vector3(size.x * 0.18, size.y * 0.2, 0.0), Vector3(size.x * 0.24, maxf(size.y * 0.14, 1.6), size.z * 0.88), accent)
 	return building_root
 
-func _build_static_box(name: String, center: Vector3, size: Vector3, color: Color, yaw_rad: float = 0.0, collision_size: Vector3 = Vector3.ZERO) -> StaticBody3D:
+func _build_static_box(node_name: String, center: Vector3, size: Vector3, color: Color, yaw_rad: float = 0.0, collision_size: Vector3 = Vector3.ZERO) -> StaticBody3D:
 	var body := StaticBody3D.new()
-	body.name = name
+	body.name = node_name
 	body.position = center
 	body.rotation.y = yaw_rad
 
@@ -242,9 +242,9 @@ func _build_static_box(name: String, center: Vector3, size: Vector3, color: Colo
 	body.add_child(mesh_instance)
 	return body
 
-func _add_local_box(parent: Node3D, name: String, local_center: Vector3, size: Vector3, color: Color) -> void:
+func _add_local_box(parent: Node3D, node_name: String, local_center: Vector3, size: Vector3, color: Color) -> void:
 	var mesh_instance := MeshInstance3D.new()
-	mesh_instance.name = name
+	mesh_instance.name = node_name
 	mesh_instance.position = local_center
 	var mesh := BoxMesh.new()
 	mesh.size = size

@@ -212,9 +212,14 @@ func _queue_retire(chunk_id: String) -> void:
 	_pending_retire_ids.append(chunk_id)
 
 func _process_streaming_queues() -> void:
-	_process_prepare_budget()
-	_process_mount_budget()
+	if _should_use_warm_start_pipeline():
+		_process_prepare_budget()
+		_process_mount_budget()
+		_process_retire_budget()
+		return
 	_process_retire_budget()
+	_process_mount_budget()
+	_process_prepare_budget()
 
 func _process_streaming_queues_once_per_frame() -> void:
 	var process_frame := Engine.get_process_frames()
@@ -344,3 +349,6 @@ func _average_usec(total_usec: int, sample_count: int) -> int:
 	if sample_count <= 0:
 		return 0
 	return int(round(float(total_usec) / float(sample_count)))
+
+func _should_use_warm_start_pipeline() -> bool:
+	return _chunk_scenes.is_empty() and _prepared_payloads.is_empty()

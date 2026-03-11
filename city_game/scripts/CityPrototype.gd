@@ -11,8 +11,7 @@ const CityMinimapProjector := preload("res://city_game/world/map/CityMinimapProj
 
 const CONTROL_MODE_PLAYER := "player"
 const CONTROL_MODE_INSPECTION := "inspection"
-const MINIMAP_POSITION_REFRESH_M := 18.0
-const MINIMAP_HEADING_REFRESH_STEP_RAD := deg_to_rad(8.0)
+const MINIMAP_POSITION_REFRESH_M := 64.0
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -27,7 +26,7 @@ var _chunk_streamer
 var _navigation_runtime
 var _control_mode := CONTROL_MODE_PLAYER
 var _minimap_projector
-var _minimap_route_overlay: Dictionary = {}
+var _minimap_route_world_positions: Array[Vector3] = []
 var _minimap_snapshot_cache: Dictionary = {}
 var _minimap_cache_key := ""
 var _minimap_cache_hits := 0
@@ -217,39 +216,39 @@ func build_minimap_snapshot() -> Dictionary:
 	if _minimap_projector == null:
 		return {}
 	_minimap_request_count += 1
-	var center_world_position := _get_active_anchor_position()
+	var center_world_position := _get_minimap_center_world_position(_get_active_anchor_position())
 	var player_world_position := player.global_position if player != null else Vector3.ZERO
 	var player_heading := player.rotation.y if player != null else 0.0
-	var cache_key := _build_minimap_cache_key(center_world_position, player_world_position, player_heading, 1600.0)
+	var cache_key := _build_minimap_cache_key(center_world_position, 1600.0)
 	if cache_key == _minimap_cache_key and not _minimap_snapshot_cache.is_empty():
 		_minimap_cache_hits += 1
-		return _minimap_snapshot_cache.duplicate(true)
+		var cached_snapshot := _minimap_snapshot_cache.duplicate(false)
+		cached_snapshot["player_marker"] = _minimap_projector.build_player_marker(center_world_position, player_world_position, player_heading, 1600.0)
+		cached_snapshot["route_overlay"] = _build_current_minimap_route_overlay(center_world_position, 1600.0)
+		return cached_snapshot
 
 	_minimap_cache_misses += 1
 	_minimap_rebuild_count += 1
 	var minimap_started_usec := Time.get_ticks_usec()
-	var snapshot: Dictionary = _minimap_projector.build_snapshot(
-		center_world_position,
-		player_world_position,
-		player_heading,
-		[],
-		1600.0
-	)
-	snapshot["route_overlay"] = _minimap_route_overlay.duplicate(true)
+	var snapshot: Dictionary = _minimap_projector.build_road_snapshot(center_world_position, 1600.0)
 	_minimap_cache_key = cache_key
 	_minimap_snapshot_cache = snapshot.duplicate(true)
 	_record_minimap_build_sample(Time.get_ticks_usec() - minimap_started_usec)
+	snapshot["player_marker"] = _minimap_projector.build_player_marker(center_world_position, player_world_position, player_heading, 1600.0)
+	snapshot["route_overlay"] = _build_current_minimap_route_overlay(center_world_position, 1600.0)
 	return snapshot
 
 func build_minimap_route_overlay(start_position: Vector3, goal_position: Vector3) -> Dictionary:
 	if _minimap_projector == null:
 		return {}
 	var route: Array = plan_macro_route(start_position, goal_position)
-	_minimap_route_overlay = _minimap_projector.build_route_overlay(_get_active_anchor_position(), start_position, goal_position, route, 1600.0)
-	_invalidate_minimap_cache()
+	_minimap_route_world_positions = [start_position]
+	for step in route:
+		_minimap_route_world_positions.append((step as Dictionary).get("target_position", goal_position))
+	var overlay := _build_current_minimap_route_overlay(_get_minimap_center_world_position(_get_active_anchor_position()), 1600.0)
 	if hud != null and hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
-	return _minimap_route_overlay.duplicate(true)
+	return overlay.duplicate(true)
 
 func get_minimap_cache_stats() -> Dictionary:
 	return {
@@ -445,24 +444,25 @@ func _vector3_to_dict(value: Vector3) -> Dictionary:
 		"z": snappedf(value.z, 0.01),
 	}
 
-func _build_minimap_cache_key(center_world_position: Vector3, player_world_position: Vector3, player_heading_rad: float, world_radius_m: float) -> String:
+func _build_minimap_cache_key(center_world_position: Vector3, world_radius_m: float) -> String:
 	var center_step := maxf(MINIMAP_POSITION_REFRESH_M, 1.0)
-	var heading_step := maxf(MINIMAP_HEADING_REFRESH_STEP_RAD, 0.001)
-	var route_signature := "route:none"
-	if not _minimap_route_overlay.is_empty():
-		var route_polyline: PackedVector2Array = _minimap_route_overlay.get("polyline", PackedVector2Array())
-		route_signature = "route:%d:%0.1f:%0.1f" % [
-			route_polyline.size(),
-			route_polyline[0].x if route_polyline.size() > 0 else 0.0,
-			route_polyline[route_polyline.size() - 1].y if route_polyline.size() > 0 else 0.0,
-		]
 	return "|".join([
 		"center:%d:%d" % [int(round(center_world_position.x / center_step)), int(round(center_world_position.z / center_step))],
-		"player:%d:%d" % [int(round(player_world_position.x / center_step)), int(round(player_world_position.z / center_step))],
-		"heading:%d" % int(round(player_heading_rad / heading_step)),
 		"radius:%d" % int(round(world_radius_m)),
-		route_signature,
 	])
+
+func _get_minimap_center_world_position(anchor_world_position: Vector3) -> Vector3:
+	var center_step := maxf(MINIMAP_POSITION_REFRESH_M, 1.0)
+	return Vector3(
+		float(int(round(anchor_world_position.x / center_step))) * center_step,
+		anchor_world_position.y,
+		float(int(round(anchor_world_position.z / center_step))) * center_step
+	)
+
+func _build_current_minimap_route_overlay(center_world_position: Vector3, world_radius_m: float) -> Dictionary:
+	if _minimap_projector == null or _minimap_route_world_positions.is_empty():
+		return {}
+	return _minimap_projector.build_route_overlay_from_world_positions(center_world_position, _minimap_route_world_positions, world_radius_m)
 
 func _invalidate_minimap_cache() -> void:
 	_minimap_cache_key = ""

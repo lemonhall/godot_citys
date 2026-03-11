@@ -15,6 +15,12 @@ func setup(config, world_data: Dictionary = {}) -> void:
 	_world_data = world_data.duplicate(true)
 
 func build_snapshot(center_world_position: Vector3, player_world_position: Vector3, player_heading_rad: float, route_world_positions: Array = [], world_radius_m: float = DEFAULT_WORLD_RADIUS_M) -> Dictionary:
+	var snapshot := build_road_snapshot(center_world_position, world_radius_m)
+	snapshot["player_marker"] = build_player_marker(center_world_position, player_world_position, player_heading_rad, world_radius_m)
+	snapshot["route_overlay"] = build_route_overlay_from_world_positions(center_world_position, route_world_positions, world_radius_m)
+	return snapshot
+
+func build_road_snapshot(center_world_position: Vector3, world_radius_m: float = DEFAULT_WORLD_RADIUS_M) -> Dictionary:
 	var road_graph = _world_data.get("road_graph")
 	var rect := Rect2(
 		Vector2(center_world_position.x - world_radius_m, center_world_position.z - world_radius_m),
@@ -29,8 +35,6 @@ func build_snapshot(center_world_position: Vector3, player_world_position: Vecto
 				polyline.append(_project_point(world_point, center_world_position, world_radius_m))
 			if polyline.size() >= 2:
 				road_polylines.append(polyline)
-
-	var route_overlay := _project_route(route_world_positions, center_world_position, world_radius_m)
 	return {
 		"map_size_px": MAP_SIZE_PX,
 		"world_radius_m": world_radius_m,
@@ -39,17 +43,21 @@ func build_snapshot(center_world_position: Vector3, player_world_position: Vecto
 			"z": center_world_position.z,
 		},
 		"road_polylines": road_polylines,
-		"player_marker": {
-			"position": _project_point(Vector2(player_world_position.x, player_world_position.z), center_world_position, world_radius_m),
-			"heading_rad": player_heading_rad,
-		},
-		"route_overlay": route_overlay,
+	}
+
+func build_player_marker(center_world_position: Vector3, player_world_position: Vector3, player_heading_rad: float, world_radius_m: float = DEFAULT_WORLD_RADIUS_M) -> Dictionary:
+	return {
+		"position": _project_point(Vector2(player_world_position.x, player_world_position.z), center_world_position, world_radius_m),
+		"heading_rad": player_heading_rad,
 	}
 
 func build_route_overlay(center_world_position: Vector3, start_world_position: Vector3, goal_world_position: Vector3, route: Array, world_radius_m: float = DEFAULT_WORLD_RADIUS_M) -> Dictionary:
 	var route_world_positions: Array[Vector3] = [start_world_position]
 	for step in route:
 		route_world_positions.append((step as Dictionary).get("target_position", goal_world_position))
+	return build_route_overlay_from_world_positions(center_world_position, route_world_positions, world_radius_m)
+
+func build_route_overlay_from_world_positions(center_world_position: Vector3, route_world_positions: Array, world_radius_m: float = DEFAULT_WORLD_RADIUS_M) -> Dictionary:
 	return _project_route(route_world_positions, center_world_position, world_radius_m)
 
 func _project_route(route_world_positions: Array, center_world_position: Vector3, world_radius_m: float) -> Dictionary:

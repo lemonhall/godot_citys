@@ -4,7 +4,7 @@ const CityChunkMultimeshBuilder := preload("res://city_game/world/rendering/City
 const CityChunkHlodBuilder := preload("res://city_game/world/rendering/CityChunkHlodBuilder.gd")
 const CityChunkOccluderBuilder := preload("res://city_game/world/rendering/CityChunkOccluderBuilder.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
-const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
+const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTerrainMeshBuilder.gd")
 const CityRoadMeshBuilder := preload("res://city_game/world/rendering/CityRoadMeshBuilder.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
 const CityGroundRoadOverlayShader := preload("res://city_game/world/rendering/CityGroundRoadOverlay.gdshader")
@@ -213,6 +213,9 @@ func _rebuild() -> void:
 	setup_profile["ground_mask_cache_load_usec"] = int(ground_result.get("mask_cache_load_usec", 0))
 	setup_profile["ground_mask_cache_write_usec"] = int(ground_result.get("mask_cache_write_usec", 0))
 	setup_profile["ground_shader_material_usec"] = int(ground_result.get("shader_material_usec", 0))
+	setup_profile["ground_vertex_sample_count"] = int(ground_result.get("vertex_sample_count", 0))
+	setup_profile["ground_unique_vertex_count"] = int(ground_result.get("unique_vertex_count", 0))
+	setup_profile["ground_duplication_ratio"] = float(ground_result.get("duplication_ratio", 0.0))
 
 	var near_group := Node3D.new()
 	near_group.name = "NearGroup"
@@ -332,7 +335,8 @@ func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 	ground_body.name = "GroundBody"
 
 	var mesh_started_usec := Time.get_ticks_usec()
-	var terrain_mesh := _build_terrain_mesh(chunk_size_m)
+	var terrain_build_result := _build_terrain_mesh(chunk_size_m)
+	var terrain_mesh := terrain_build_result.get("mesh") as ArrayMesh
 	var mesh_usec := Time.get_ticks_usec() - mesh_started_usec
 	var collision_shape := CollisionShape3D.new()
 	collision_shape.name = "CollisionShape3D"
@@ -361,6 +365,9 @@ func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 		"mask_cache_load_usec": int(material_result.get("mask_cache_load_usec", 0)),
 		"mask_cache_write_usec": int(material_result.get("mask_cache_write_usec", 0)),
 		"shader_material_usec": int(material_result.get("shader_material_usec", 0)),
+		"vertex_sample_count": int(terrain_build_result.get("vertex_sample_count", 0)),
+		"unique_vertex_count": int(terrain_build_result.get("unique_vertex_count", 0)),
+		"duplication_ratio": float(terrain_build_result.get("duplication_ratio", 0.0)),
 	}
 
 func _build_ground_material(chunk_size_m: float, profile: Dictionary, detail_mode: String = SURFACE_DETAIL_FULL) -> Dictionary:
@@ -448,39 +455,21 @@ func _normalize_lod_mode(mode: String) -> String:
 		return mode
 	return LOD_NEAR
 
-func _build_terrain_mesh(chunk_size_m: float) -> ArrayMesh:
-	var half_size := chunk_size_m * 0.5
-	var surface_tool := SurfaceTool.new()
-	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-
-	for x_index in range(TERRAIN_GRID_STEPS):
-		for z_index in range(TERRAIN_GRID_STEPS):
-			var x0 := lerpf(-half_size, half_size, float(x_index) / float(TERRAIN_GRID_STEPS))
-			var x1 := lerpf(-half_size, half_size, float(x_index + 1) / float(TERRAIN_GRID_STEPS))
-			var z0 := lerpf(-half_size, half_size, float(z_index) / float(TERRAIN_GRID_STEPS))
-			var z1 := lerpf(-half_size, half_size, float(z_index + 1) / float(TERRAIN_GRID_STEPS))
-
-			var v00 := _sample_ground_vertex(x0, z0)
-			var v10 := _sample_ground_vertex(x1, z0)
-			var v01 := _sample_ground_vertex(x0, z1)
-			var v11 := _sample_ground_vertex(x1, z1)
-
-			_add_triangle(surface_tool, v00, v10, v11, Vector2.ZERO, Vector2.RIGHT, Vector2.ONE)
-			_add_triangle(surface_tool, v00, v11, v01, Vector2.ZERO, Vector2.ONE, Vector2.UP)
-	surface_tool.generate_normals()
-	return surface_tool.commit()
-
-func _sample_ground_vertex(local_x: float, local_z: float) -> Vector3:
-	var shaped_height := CityChunkGroundSampler.sample_height(Vector2(local_x, local_z), _chunk_data, _profile)
-	return Vector3(local_x, shaped_height, local_z)
-
-func _add_triangle(surface_tool: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, uv_a: Vector2, uv_b: Vector2, uv_c: Vector2) -> void:
-	surface_tool.set_uv(uv_a)
-	surface_tool.add_vertex(a)
-	surface_tool.set_uv(uv_b)
-	surface_tool.add_vertex(b)
-	surface_tool.set_uv(uv_c)
-	surface_tool.add_vertex(c)
+func _build_terrain_mesh(chunk_size_m: float) -> Dictionary:
+	var terrain_mesh_builder = CityTerrainMeshBuilder.new()
+	var terrain_build_result: Dictionary = terrain_mesh_builder.build_profiled_terrain_mesh(
+		chunk_size_m,
+		_chunk_data,
+		_profile,
+		TERRAIN_GRID_STEPS
+	)
+	var sample_stats: Dictionary = terrain_build_result.get("sample_stats", {})
+	return {
+		"mesh": terrain_build_result.get("mesh"),
+		"vertex_sample_count": int(sample_stats.get("current_vertex_sample_count", 0)),
+		"unique_vertex_count": int(sample_stats.get("unique_vertex_sample_count", 0)),
+		"duplication_ratio": float(sample_stats.get("duplication_ratio", 0.0)),
+	}
 
 func _set_building_collisions_enabled(enabled: bool) -> void:
 	_building_collisions_enabled = enabled

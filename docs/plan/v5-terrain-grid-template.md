@@ -63,3 +63,13 @@
 
 - 如果 template 分辨率与现有道路/建筑基座采样没有对齐，可能先引入局部高度错位。
 - 如果只替换 mesh builder 而不稳定 profile 字段，后续 M2/M3 很难判断收益是否来自真实优化。
+
+## Evidence
+
+- `tests/world/test_city_terrain_grid_template.gd`：PASS
+- `tests/world/test_city_ground_mesh_profile_breakdown.gd`：`duplication_ratio = 1.0`、`current_vertex_sample_count = 169`
+- `tests/world/test_city_chunk_setup_profile_breakdown.gd`：`ground_mesh_usec = 3742`
+- `tests/world/test_city_surface_page_mask_alignment.gd`：PASS
+- `tests/world/test_city_surface_page_tile_seam_continuity.gd`：PASS
+- `tests/world/test_city_ground_road_overlay_material.gd`：PASS
+- `tests/e2e/test_city_runtime_performance_profile.gd`：PASS，当前 `wall_frame_avg_usec = 25991`，说明 M1 已显著降热，但红线仍待后续里程碑收口

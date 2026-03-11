@@ -47,6 +47,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(setup_profile.get("ground_mesh_usec", 0)) > 0, "Chunk setup profile must expose terrain mesh build cost"):
 		return
+	if not T.require_true(self, int(setup_profile.get("ground_mesh_usec", 0)) <= 9000, "Chunk setup profile must keep terrain mesh build cost at or below 9000 usec after v5 M1"):
+		return
 	if not T.require_true(self, int(setup_profile.get("ground_collision_usec", 0)) > 0, "Chunk setup profile must expose ground collision build cost"):
 		return
 	if not T.require_true(self, int(setup_profile.get("ground_material_usec", 0)) > 0, "Chunk setup profile must expose ground material build cost"):

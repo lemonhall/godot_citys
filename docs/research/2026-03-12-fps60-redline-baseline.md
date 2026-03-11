@@ -163,6 +163,36 @@
 3. CPU 侧异步准备 byte mask，主线程只做资源提交
 4. 为更长期的 surface page / RVT-lite 做结构预留
 
+## V4 Progress Snapshot
+
+### M1 + M2 冷缓存首轮
+
+在引入道路表面缓存与 `coarse/full` 细节分层后，第一轮冷缓存 runtime profile 仍会因为首次生成和写盘而偏高。最新一轮冷缓存样本为：
+
+- `wall_frame_avg_usec = 35384`
+- `update_streaming_avg_usec = 32689`
+- `streaming_mount_setup_avg_usec = 27687`
+
+这说明：
+
+- 冷启动巡检仍有尖峰；
+- 但 `mount setup` 已经明显低于此前的 `32057 ~ 39721` 区间上沿。
+
+### M1 + M2 warm steady-state
+
+同一套缓存完成预热后，再次运行 `test_city_runtime_performance_profile.gd`，最新一轮得到：
+
+- `wall_frame_avg_usec = 15785`
+- `update_streaming_avg_usec = 14506`
+- `streaming_mount_setup_avg_usec = 12249`
+- `streaming_prepare_profile_avg_usec = 4571`
+
+这意味着：
+
+- warm steady-state 已经压到 `15.79ms/frame`
+- 已经低于 `16.67ms/frame` 红线
+- 当前 remaining gap 主要在冷缓存首轮和更稳定的异步准备路径，而不是 steady-state 本身
+
 ## Evidence
 
 关键输出摘要：
@@ -171,4 +201,5 @@
 CITY_PROFILE_REPORT {"frame_step_avg_usec":34757,"frame_step_max_usec":106406,"frame_step_sample_count":48,"hud_refresh_avg_usec":2077,"hud_refresh_max_usec":10630,"hud_refresh_sample_count":49,"minimap_build_avg_usec":5361,"minimap_build_max_usec":9876,"minimap_cache_hits":35,"minimap_cache_misses":14,"minimap_rebuild_count":14,"minimap_request_count":49,"streaming_mount_setup_avg_usec":37789,"streaming_mount_setup_max_usec":79725,"streaming_mount_setup_sample_count":32,"streaming_prepare_profile_avg_usec":7802,"streaming_prepare_profile_max_usec":15278,"streaming_prepare_profile_sample_count":33,"update_streaming_avg_usec":34748,"update_streaming_last_usec":1832,"update_streaming_max_usec":106393,"update_streaming_sample_count":48,"wall_frame_avg_usec":36832,"wall_frame_max_usec":109647,"wall_frame_sample_count":48,"world_generation_profile":{"road_graph_cache_hit":true,"road_graph_cache_load_usec":906000,"total_usec":965971},"world_generation_usec":966016}
 CITY_CHUNK_SETUP_PROFILE {"buildings_usec":1837,"ground_collision_usec":464,"ground_mask_textures_usec":16081,"ground_material_usec":16778,"ground_mesh_usec":9525,"ground_shader_material_usec":659,"ground_usec":27059,"occluder_usec":69,"props_usec":796,"proxies_usec":157,"road_overlay_usec":1852,"set_lod_usec":20,"total_usec":31820}
 CITY_ROAD_MASK_PROFILE {"image_usec":5,"intersection_cluster_count":2,"paint_usec":17018,"surface_segment_count":5,"texture_usec":21,"total_usec":17194}
+CITY_PROFILE_REPORT {"frame_step_avg_usec":14513,"frame_step_max_usec":35276,"frame_step_sample_count":48,"hud_refresh_avg_usec":1439,"hud_refresh_max_usec":6995,"hud_refresh_sample_count":49,"minimap_build_avg_usec":3700,"minimap_build_max_usec":6435,"minimap_cache_hits":35,"minimap_cache_misses":14,"minimap_rebuild_count":14,"minimap_request_count":49,"streaming_mount_setup_avg_usec":12249,"streaming_mount_setup_max_usec":23863,"streaming_mount_setup_sample_count":32,"streaming_prepare_profile_avg_usec":4571,"streaming_prepare_profile_max_usec":9958,"streaming_prepare_profile_sample_count":33,"update_streaming_avg_usec":14506,"update_streaming_last_usec":1947,"update_streaming_max_usec":35270,"update_streaming_sample_count":48,"wall_frame_avg_usec":15785,"wall_frame_max_usec":36621,"wall_frame_sample_count":48,"world_generation_profile":{"road_graph_cache_hit":true,"road_graph_cache_load_usec":698058,"total_usec":744643},"world_generation_usec":744689}
 ```

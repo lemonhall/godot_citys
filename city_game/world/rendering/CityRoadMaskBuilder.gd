@@ -1,36 +1,58 @@
 extends RefCounted
 
 const MASK_RESOLUTION := 256
+const CityRoadSurfaceCache := preload("res://city_game/world/rendering/CityRoadSurfaceCache.gd")
+const DETAIL_MODE_FULL := "full"
+const DETAIL_MODE_COARSE := "coarse"
 
-static func build_surface_textures(profile: Dictionary, chunk_size_m: float) -> Dictionary:
+static func build_surface_textures(profile: Dictionary, chunk_size_m: float, detail_mode: String = DETAIL_MODE_FULL) -> Dictionary:
 	var total_started_usec := Time.get_ticks_usec()
+	var cache := CityRoadSurfaceCache.new()
+	var cache_started_usec := Time.get_ticks_usec()
+	var cache_result := cache.load_surface_masks(profile, chunk_size_m, detail_mode, MASK_RESOLUTION)
+	var cache_load_usec := Time.get_ticks_usec() - cache_started_usec
 	var road_bytes := PackedByteArray()
-	road_bytes.resize(MASK_RESOLUTION * MASK_RESOLUTION)
-	road_bytes.fill(0)
 	var stripe_bytes := PackedByteArray()
-	stripe_bytes.resize(MASK_RESOLUTION * MASK_RESOLUTION)
-	stripe_bytes.fill(0)
-
 	var surface_segments: Array = []
-	var paint_started_usec := Time.get_ticks_usec()
 	for road_segment in profile.get("road_segments", []):
 		var segment_dict: Dictionary = road_segment
 		if bool(segment_dict.get("bridge", false)):
 			continue
 		surface_segments.append(segment_dict)
-		_paint_segment_mask(road_bytes, segment_dict, chunk_size_m, false)
-		_paint_segment_mask(stripe_bytes, segment_dict, chunk_size_m, true)
-
 	var clusters := _build_intersection_clusters(surface_segments)
-	for cluster in clusters:
-		var cluster_dict: Dictionary = cluster
-		_paint_disc(
-			road_bytes,
-			_local_point_to_pixel(cluster_dict.get("center", Vector3.ZERO), chunk_size_m),
-			_world_radius_to_pixels(float(cluster_dict.get("radius", 0.0)), chunk_size_m),
-			1.4
-		)
-	var paint_usec := Time.get_ticks_usec() - paint_started_usec
+	var paint_usec := 0
+	var cache_write_usec := 0
+	if bool(cache_result.get("hit", false)):
+		road_bytes = cache_result.get("road_bytes", PackedByteArray())
+		stripe_bytes = cache_result.get("stripe_bytes", PackedByteArray())
+	else:
+		road_bytes.resize(MASK_RESOLUTION * MASK_RESOLUTION)
+		road_bytes.fill(0)
+		stripe_bytes.resize(MASK_RESOLUTION * MASK_RESOLUTION)
+		stripe_bytes.fill(0)
+		var paint_started_usec := Time.get_ticks_usec()
+		for road_segment in surface_segments:
+			var segment_dict: Dictionary = road_segment
+			_paint_segment_mask(road_bytes, segment_dict, chunk_size_m, false)
+			if detail_mode == DETAIL_MODE_FULL:
+				_paint_segment_mask(stripe_bytes, segment_dict, chunk_size_m, true)
+
+		for cluster in clusters:
+			var cluster_dict: Dictionary = cluster
+			_paint_disc(
+				road_bytes,
+				_local_point_to_pixel(cluster_dict.get("center", Vector3.ZERO), chunk_size_m),
+				_world_radius_to_pixels(float(cluster_dict.get("radius", 0.0)), chunk_size_m),
+				1.4
+			)
+		paint_usec = Time.get_ticks_usec() - paint_started_usec
+		var save_started_usec := Time.get_ticks_usec()
+		var save_result := cache.save_surface_masks(profile, chunk_size_m, road_bytes, stripe_bytes, detail_mode, MASK_RESOLUTION)
+		cache_write_usec = Time.get_ticks_usec() - save_started_usec
+		if not bool(save_result.get("success", false)) and str(cache_result.get("error", "")) == "":
+			cache_result["error"] = str(save_result.get("error", "save_failed"))
+		cache_result["path"] = str(save_result.get("path", cache_result.get("path", "")))
+		cache_result["signature"] = str(save_result.get("signature", cache_result.get("signature", "")))
 
 	var image_started_usec := Time.get_ticks_usec()
 	var road_image := Image.create_from_data(MASK_RESOLUTION, MASK_RESOLUTION, false, Image.FORMAT_L8, road_bytes)
@@ -47,6 +69,14 @@ static func build_surface_textures(profile: Dictionary, chunk_size_m: float) -> 
 		"mask_profile_stats": {
 			"surface_segment_count": surface_segments.size(),
 			"intersection_cluster_count": clusters.size(),
+			"cache_hit": bool(cache_result.get("hit", false)),
+			"cache_load_usec": cache_load_usec,
+			"cache_write_usec": cache_write_usec,
+			"cache_path": str(cache_result.get("path", "")),
+			"cache_signature": str(cache_result.get("signature", "")),
+			"cache_error": str(cache_result.get("error", "")),
+			"detail_mode": detail_mode,
+			"stripe_paint_enabled": detail_mode == DETAIL_MODE_FULL,
 			"paint_usec": paint_usec,
 			"image_usec": image_usec,
 			"texture_usec": texture_usec,

@@ -12,6 +12,8 @@ const CityGroundRoadOverlayShader := preload("res://city_game/world/rendering/Ci
 const LOD_NEAR := "near"
 const LOD_MID := "mid"
 const LOD_FAR := "far"
+const SURFACE_DETAIL_FULL := "full"
+const SURFACE_DETAIL_COARSE := "coarse"
 
 const NEAR_THRESHOLD_M := 880.0
 const MID_THRESHOLD_M := 1600.0
@@ -21,6 +23,7 @@ var _chunk_data: Dictionary = {}
 var _profile: Dictionary = {}
 var _setup_profile: Dictionary = {}
 var _current_lod_mode := LOD_NEAR
+var _current_surface_detail_mode := SURFACE_DETAIL_FULL
 var _building_collision_shapes: Array[CollisionShape3D] = []
 var _building_collisions_enabled := true
 
@@ -29,22 +32,28 @@ func setup(chunk_data: Dictionary) -> void:
 	_profile = (chunk_data.get("prepared_profile", {}) as Dictionary).duplicate(true)
 	if _profile.is_empty():
 		_profile = CityChunkProfileBuilder.build_profile(_chunk_data)
+	_current_lod_mode = _normalize_lod_mode(str(_chunk_data.get("initial_lod_mode", LOD_NEAR)))
+	_current_surface_detail_mode = _resolve_surface_detail_mode_for_lod(_current_lod_mode)
 	name = str(_chunk_data.get("chunk_id", "ChunkScene"))
 	position = _chunk_data.get("chunk_center", Vector3.ZERO)
 	_rebuild()
 
 func set_lod_mode(mode: String) -> void:
-	_current_lod_mode = mode
+	var normalized_mode := _normalize_lod_mode(mode)
+	var target_surface_detail_mode := _resolve_surface_detail_mode_for_lod(normalized_mode)
+	if target_surface_detail_mode != _current_surface_detail_mode:
+		_apply_ground_surface_detail_mode(target_surface_detail_mode)
+	_current_lod_mode = normalized_mode
 	var near_group := get_node_or_null("NearGroup") as Node3D
 	var mid_proxy := get_node_or_null("MidProxy") as Node3D
 	var far_proxy := get_node_or_null("FarProxy") as Node3D
 	if near_group != null:
-		near_group.visible = mode == LOD_NEAR
+		near_group.visible = normalized_mode == LOD_NEAR
 	if mid_proxy != null:
-		mid_proxy.visible = mode == LOD_MID
+		mid_proxy.visible = normalized_mode == LOD_MID
 	if far_proxy != null:
-		far_proxy.visible = mode == LOD_FAR
-	_set_building_collisions_enabled(mode == LOD_NEAR)
+		far_proxy.visible = normalized_mode == LOD_FAR
+	_set_building_collisions_enabled(normalized_mode == LOD_NEAR)
 
 func update_lod_for_distance(distance_m: float) -> void:
 	if distance_m < NEAR_THRESHOLD_M:
@@ -169,6 +178,9 @@ func _rebuild() -> void:
 		"ground_collision_usec": 0,
 		"ground_material_usec": 0,
 		"ground_mask_textures_usec": 0,
+		"ground_mask_cache_hit": false,
+		"ground_mask_cache_load_usec": 0,
+		"ground_mask_cache_write_usec": 0,
 		"ground_shader_material_usec": 0,
 		"road_overlay_usec": 0,
 		"buildings_usec": 0,
@@ -186,6 +198,9 @@ func _rebuild() -> void:
 	setup_profile["ground_collision_usec"] = int(ground_result.get("collision_usec", 0))
 	setup_profile["ground_material_usec"] = int(ground_result.get("material_usec", 0))
 	setup_profile["ground_mask_textures_usec"] = int(ground_result.get("mask_textures_usec", 0))
+	setup_profile["ground_mask_cache_hit"] = bool(ground_result.get("mask_cache_hit", false))
+	setup_profile["ground_mask_cache_load_usec"] = int(ground_result.get("mask_cache_load_usec", 0))
+	setup_profile["ground_mask_cache_write_usec"] = int(ground_result.get("mask_cache_write_usec", 0))
 	setup_profile["ground_shader_material_usec"] = int(ground_result.get("shader_material_usec", 0))
 
 	var near_group := Node3D.new()
@@ -219,7 +234,7 @@ func _rebuild() -> void:
 	setup_profile["occluder_usec"] = Time.get_ticks_usec() - phase_started_usec
 
 	phase_started_usec = Time.get_ticks_usec()
-	set_lod_mode(LOD_NEAR)
+	set_lod_mode(_current_lod_mode)
 	setup_profile["set_lod_usec"] = Time.get_ticks_usec() - phase_started_usec
 	setup_profile["total_usec"] = Time.get_ticks_usec() - rebuild_started_usec
 	_setup_profile = setup_profile
@@ -321,7 +336,7 @@ func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 	mesh_instance.name = "MeshInstance3D"
 	mesh_instance.mesh = terrain_mesh
 	var material_started_usec := Time.get_ticks_usec()
-	var material_result := _build_ground_material(chunk_size_m, profile)
+	var material_result := _build_ground_material(chunk_size_m, profile, _current_surface_detail_mode)
 	mesh_instance.material_override = material_result.get("material")
 	var material_usec := Time.get_ticks_usec() - material_started_usec
 	ground_body.add_child(mesh_instance)
@@ -331,13 +346,16 @@ func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 		"collision_usec": collision_usec,
 		"material_usec": material_usec,
 		"mask_textures_usec": int(material_result.get("mask_textures_usec", 0)),
+		"mask_cache_hit": bool(material_result.get("mask_cache_hit", false)),
+		"mask_cache_load_usec": int(material_result.get("mask_cache_load_usec", 0)),
+		"mask_cache_write_usec": int(material_result.get("mask_cache_write_usec", 0)),
 		"shader_material_usec": int(material_result.get("shader_material_usec", 0)),
 	}
 
-func _build_ground_material(chunk_size_m: float, profile: Dictionary) -> Dictionary:
+func _build_ground_material(chunk_size_m: float, profile: Dictionary, detail_mode: String = SURFACE_DETAIL_FULL) -> Dictionary:
 	var palette: Dictionary = profile.get("palette", {})
 	var mask_started_usec := Time.get_ticks_usec()
-	var overlay_textures: Dictionary = CityRoadMaskBuilder.build_surface_textures(profile, chunk_size_m)
+	var overlay_textures: Dictionary = CityRoadMaskBuilder.build_surface_textures(profile, chunk_size_m, detail_mode)
 	var mask_textures_usec := Time.get_ticks_usec() - mask_started_usec
 	var material_started_usec := Time.get_ticks_usec()
 	var material := ShaderMaterial.new()
@@ -346,13 +364,34 @@ func _build_ground_material(chunk_size_m: float, profile: Dictionary) -> Diction
 	material.set_shader_parameter("ground_color", palette.get("ground", Color(0.12549, 0.333333, 0.168627, 1.0)))
 	material.set_shader_parameter("road_color", palette.get("road", Color(0.16, 0.17, 0.19, 1.0)))
 	material.set_shader_parameter("stripe_color", palette.get("stripe", Color(0.9, 0.8, 0.5, 1.0)))
+	material.set_shader_parameter("stripe_enabled", detail_mode == SURFACE_DETAIL_FULL)
 	material.set_shader_parameter("road_mask_texture", overlay_textures.get("road_mask_texture"))
 	material.set_shader_parameter("stripe_mask_texture", overlay_textures.get("stripe_mask_texture"))
 	return {
 		"material": material,
 		"mask_textures_usec": mask_textures_usec,
+		"mask_cache_hit": bool((overlay_textures.get("mask_profile_stats", {}) as Dictionary).get("cache_hit", false)),
+		"mask_cache_load_usec": int((overlay_textures.get("mask_profile_stats", {}) as Dictionary).get("cache_load_usec", 0)),
+		"mask_cache_write_usec": int((overlay_textures.get("mask_profile_stats", {}) as Dictionary).get("cache_write_usec", 0)),
 		"shader_material_usec": Time.get_ticks_usec() - material_started_usec,
 	}
+
+func _apply_ground_surface_detail_mode(detail_mode: String) -> void:
+	var mesh_instance := get_node_or_null("GroundBody/MeshInstance3D") as MeshInstance3D
+	if mesh_instance == null:
+		return
+	var chunk_size_m := float(_chunk_data.get("chunk_size_m", 256.0))
+	var material_result := _build_ground_material(chunk_size_m, _profile, detail_mode)
+	mesh_instance.material_override = material_result.get("material")
+	_current_surface_detail_mode = detail_mode
+
+func _resolve_surface_detail_mode_for_lod(mode: String) -> String:
+	return SURFACE_DETAIL_FULL if mode == LOD_NEAR else SURFACE_DETAIL_COARSE
+
+func _normalize_lod_mode(mode: String) -> String:
+	if mode == LOD_MID or mode == LOD_FAR:
+		return mode
+	return LOD_NEAR
 
 func _build_terrain_mesh(chunk_size_m: float) -> ArrayMesh:
 	var half_size := chunk_size_m * 0.5

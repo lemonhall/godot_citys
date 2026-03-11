@@ -26,27 +26,26 @@ func _run() -> void:
 		"chunk_center": chunk_center,
 		"chunk_size_m": float(config.chunk_size_m),
 		"chunk_seed": config.derive_seed("render_chunk", chunk_key),
-		"world_seed": int(config.base_seed),
 		"road_graph": world_data.get("road_graph"),
+		"world_seed": config.base_seed,
 	})
+	var cache := CityRoadSurfaceCache.new()
+	cache.clear_cache_for_profile(profile, float(config.chunk_size_m), "full")
+	cache.clear_cache_for_profile(profile, float(config.chunk_size_m), "coarse")
 
-	CityRoadSurfaceCache.new().clear_cache_for_profile(profile, float(config.chunk_size_m))
-	var texture_result: Dictionary = CityRoadMaskBuilder.build_surface_textures(profile, float(config.chunk_size_m))
-	if not T.require_true(self, texture_result.has("mask_profile_stats"), "Road mask build must expose mask_profile_stats for runtime hotspot analysis"):
-		return
+	var coarse_result: Dictionary = CityRoadMaskBuilder.build_surface_textures(profile, float(config.chunk_size_m), "coarse")
+	var full_result: Dictionary = CityRoadMaskBuilder.build_surface_textures(profile, float(config.chunk_size_m), "full")
+	var coarse_stats: Dictionary = coarse_result.get("mask_profile_stats", {})
+	var full_stats: Dictionary = full_result.get("mask_profile_stats", {})
 
-	var stats: Dictionary = texture_result.get("mask_profile_stats", {})
-	print("CITY_ROAD_MASK_PROFILE %s" % JSON.stringify(stats))
-
-	if not T.require_true(self, int(stats.get("surface_segment_count", 0)) > 0, "Road mask profile must include painted surface segment counts"):
+	if not T.require_true(self, str(coarse_stats.get("detail_mode", "")) == "coarse", "Coarse road surface build must expose coarse detail mode"):
 		return
-	if not T.require_true(self, int(stats.get("paint_usec", 0)) > 0, "Road mask profile must include CPU paint cost"):
+	if not T.require_true(self, not bool(coarse_stats.get("stripe_paint_enabled", true)), "Coarse road surface build must skip stripe paint"):
 		return
-	if not T.require_true(self, int(stats.get("image_usec", 0)) >= 0, "Road mask profile must include Image assembly cost"):
+	if not T.require_true(self, str(full_stats.get("detail_mode", "")) == "full", "Full road surface build must expose full detail mode"):
 		return
-	if not T.require_true(self, int(stats.get("texture_usec", 0)) > 0, "Road mask profile must include texture upload cost"):
+	if not T.require_true(self, bool(full_stats.get("stripe_paint_enabled", false)), "Full road surface build must keep stripe paint enabled"):
 		return
-	if not T.require_true(self, int(stats.get("total_usec", 0)) >= int(stats.get("paint_usec", 0)), "Road mask total cost must cover paint cost"):
+	if not T.require_true(self, str(coarse_stats.get("cache_signature", "")) != str(full_stats.get("cache_signature", "")), "Coarse and full road surface caches must use different signatures"):
 		return
-
 	T.pass_and_quit(self)

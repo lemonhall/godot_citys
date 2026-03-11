@@ -264,6 +264,7 @@ func _process_mount_budget() -> void:
 		if not _prepared_payloads.has(chunk_id):
 			continue
 		var payload: Dictionary = _prepared_payloads[chunk_id]
+		payload["initial_lod_mode"] = _resolve_initial_lod_mode(payload)
 		var chunk_scene := _take_pooled_scene()
 		var setup_started_usec := Time.get_ticks_usec()
 		chunk_scene.setup(payload)
@@ -309,6 +310,15 @@ func _distance_to_entry(player_position: Vector3, entry: Dictionary) -> float:
 	var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)
 	var chunk_center := _chunk_center_from_key(chunk_key)
 	return player_position.distance_to(chunk_center)
+
+func _resolve_initial_lod_mode(payload: Dictionary) -> String:
+	var chunk_center: Vector3 = payload.get("chunk_center", Vector3.ZERO)
+	var distance_m := _last_player_position.distance_to(chunk_center)
+	if distance_m < float(CityChunkScene.NEAR_THRESHOLD_M):
+		return CityChunkScene.LOD_NEAR
+	if distance_m < float(CityChunkScene.MID_THRESHOLD_M):
+		return CityChunkScene.LOD_MID
+	return CityChunkScene.LOD_FAR
 
 func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 	var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)

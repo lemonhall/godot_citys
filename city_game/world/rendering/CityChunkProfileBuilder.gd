@@ -95,6 +95,7 @@ const BUILDING_ARCHETYPES := [
 ]
 
 static func build_profile(chunk_data: Dictionary) -> Dictionary:
+	var build_started_usec := Time.get_ticks_usec()
 	var chunk_key: Vector2i = chunk_data.get("chunk_key", Vector2i.ZERO)
 	var chunk_center: Vector3 = chunk_data.get("chunk_center", Vector3.ZERO)
 	var chunk_size_m := float(chunk_data.get("chunk_size_m", 256.0))
@@ -105,11 +106,17 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 
 	var palette_index := int(posmod(chunk_seed, PALETTES.size()))
 	var palette: Dictionary = PALETTES[palette_index]
+	var road_layout_started_usec := Time.get_ticks_usec()
 	var road_layout: Dictionary = CityRoadLayoutBuilder.build_chunk_roads(chunk_data)
+	var road_layout_usec := Time.get_ticks_usec() - road_layout_started_usec
 	var road_segments: Array = road_layout.get("segments", [])
+	var buildings_started_usec := Time.get_ticks_usec()
 	var buildings: Array = _build_buildings(chunk_center, chunk_size_m, chunk_seed, world_seed, road_segments)
+	var buildings_usec := Time.get_ticks_usec() - buildings_started_usec
 	var building_archetype_ids := _collect_building_archetypes(buildings)
+	var terrain_relief_started_usec := Time.get_ticks_usec()
 	var terrain_relief := _measure_terrain_relief(chunk_center, chunk_size_m, world_seed)
+	var terrain_relief_usec := Time.get_ticks_usec() - terrain_relief_started_usec
 	var min_clearance := _measure_min_building_clearance(buildings)
 	var profile := {
 		"variant_id": "p%d-r%d-b%d-a%d" % [palette_index, road_segments.size(), buildings.size(), building_archetype_ids.size()],
@@ -133,9 +140,19 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 		"bridge_min_clearance_m": float(road_layout.get("bridge_min_clearance_m", 0.0)),
 		"bridge_deck_thickness_m": float(road_layout.get("bridge_deck_thickness_m", 0.0)),
 		"terrain_relief_m": terrain_relief,
+		"build_profile_stats": {},
 		"signature": "",
 	}
+	var signature_started_usec := Time.get_ticks_usec()
 	profile["signature"] = _build_signature(profile, str(road_layout.get("signature", "")))
+	var signature_usec := Time.get_ticks_usec() - signature_started_usec
+	profile["build_profile_stats"] = {
+		"road_layout_usec": road_layout_usec,
+		"buildings_usec": buildings_usec,
+		"terrain_relief_usec": terrain_relief_usec,
+		"signature_usec": signature_usec,
+		"total_usec": Time.get_ticks_usec() - build_started_usec,
+	}
 	return profile
 
 static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, world_seed: int, road_segments: Array) -> Array:

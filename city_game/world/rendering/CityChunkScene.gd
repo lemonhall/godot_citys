@@ -19,6 +19,7 @@ const TERRAIN_GRID_STEPS := 12
 
 var _chunk_data: Dictionary = {}
 var _profile: Dictionary = {}
+var _setup_profile: Dictionary = {}
 var _current_lod_mode := LOD_NEAR
 var _building_collision_shapes: Array[CollisionShape3D] = []
 var _building_collisions_enabled := true
@@ -58,6 +59,9 @@ func get_current_lod_mode() -> String:
 
 func get_profile_signature() -> String:
 	return str(_profile.get("signature", ""))
+
+func get_setup_profile() -> Dictionary:
+	return _setup_profile.duplicate(true)
 
 func get_visual_variant_id() -> String:
 	return str(_profile.get("variant_id", ""))
@@ -133,6 +137,7 @@ func get_renderer_stats() -> Dictionary:
 		"lod_mode": _current_lod_mode,
 		"visual_variant_id": get_visual_variant_id(),
 		"profile_signature": get_profile_signature(),
+		"setup_profile": get_setup_profile(),
 		"multimesh_instance_count": prop_multimesh.multimesh.instance_count if prop_multimesh != null else 0,
 		"near_child_count": get_node("NearGroup").get_child_count(),
 		"road_segment_count": (_profile.get("road_segments", []) as Array).size(),
@@ -151,34 +156,73 @@ func get_renderer_stats() -> Dictionary:
 	}
 
 func _rebuild() -> void:
+	var rebuild_started_usec := Time.get_ticks_usec()
 	for child in get_children():
 		remove_child(child)
 		child.free()
 	_building_collision_shapes.clear()
 
 	var chunk_size_m := float(_chunk_data.get("chunk_size_m", 256.0))
+	var setup_profile := {
+		"ground_usec": 0,
+		"ground_mesh_usec": 0,
+		"ground_collision_usec": 0,
+		"ground_material_usec": 0,
+		"ground_mask_textures_usec": 0,
+		"ground_shader_material_usec": 0,
+		"road_overlay_usec": 0,
+		"buildings_usec": 0,
+		"props_usec": 0,
+		"proxies_usec": 0,
+		"occluder_usec": 0,
+		"set_lod_usec": 0,
+	}
 
-	add_child(_build_ground_body(chunk_size_m, _profile))
+	var phase_started_usec := Time.get_ticks_usec()
+	var ground_result := _build_ground_body(chunk_size_m, _profile)
+	add_child(ground_result.get("body"))
+	setup_profile["ground_usec"] = Time.get_ticks_usec() - phase_started_usec
+	setup_profile["ground_mesh_usec"] = int(ground_result.get("mesh_usec", 0))
+	setup_profile["ground_collision_usec"] = int(ground_result.get("collision_usec", 0))
+	setup_profile["ground_material_usec"] = int(ground_result.get("material_usec", 0))
+	setup_profile["ground_mask_textures_usec"] = int(ground_result.get("mask_textures_usec", 0))
+	setup_profile["ground_shader_material_usec"] = int(ground_result.get("shader_material_usec", 0))
 
 	var near_group := Node3D.new()
 	near_group.name = "NearGroup"
 	add_child(near_group)
 
+	phase_started_usec = Time.get_ticks_usec()
 	var road_overlay := CityRoadMeshBuilder.build_road_overlay(_profile, _chunk_data)
 	near_group.add_child(road_overlay)
+	setup_profile["road_overlay_usec"] = Time.get_ticks_usec() - phase_started_usec
 	var props := Node3D.new()
 	props.name = "Props"
 	near_group.add_child(props)
 
+	phase_started_usec = Time.get_ticks_usec()
 	for building in _profile.get("buildings", []):
 		near_group.add_child(_build_building(building))
-	props.add_child(CityChunkMultimeshBuilder.build_street_lamps(_profile))
+	setup_profile["buildings_usec"] = Time.get_ticks_usec() - phase_started_usec
 
+	phase_started_usec = Time.get_ticks_usec()
+	props.add_child(CityChunkMultimeshBuilder.build_street_lamps(_profile))
+	setup_profile["props_usec"] = Time.get_ticks_usec() - phase_started_usec
+
+	phase_started_usec = Time.get_ticks_usec()
 	add_child(CityChunkHlodBuilder.build_mid_proxy(_profile))
 	add_child(CityChunkHlodBuilder.build_far_proxy(_profile))
-	add_child(CityChunkOccluderBuilder.build_chunk_occluder(chunk_size_m))
+	setup_profile["proxies_usec"] = Time.get_ticks_usec() - phase_started_usec
 
+	phase_started_usec = Time.get_ticks_usec()
+	add_child(CityChunkOccluderBuilder.build_chunk_occluder(chunk_size_m))
+	setup_profile["occluder_usec"] = Time.get_ticks_usec() - phase_started_usec
+
+	phase_started_usec = Time.get_ticks_usec()
 	set_lod_mode(LOD_NEAR)
+	setup_profile["set_lod_usec"] = Time.get_ticks_usec() - phase_started_usec
+	setup_profile["total_usec"] = Time.get_ticks_usec() - rebuild_started_usec
+	_setup_profile = setup_profile
 
 func _build_building(building: Dictionary) -> Node3D:
 	var collision_size: Vector3 = building.get("collision_size", building.get("size", Vector3(18.0, 24.0, 18.0)))
@@ -257,28 +301,45 @@ func _add_local_box(parent: Node3D, node_name: String, local_center: Vector3, si
 	mesh_instance.material_override = material
 	parent.add_child(mesh_instance)
 
-func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> StaticBody3D:
+func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 	var ground_body := StaticBody3D.new()
 	ground_body.name = "GroundBody"
 
+	var mesh_started_usec := Time.get_ticks_usec()
 	var terrain_mesh := _build_terrain_mesh(chunk_size_m)
+	var mesh_usec := Time.get_ticks_usec() - mesh_started_usec
 	var collision_shape := CollisionShape3D.new()
 	collision_shape.name = "CollisionShape3D"
+	var collision_started_usec := Time.get_ticks_usec()
 	var shape := ConcavePolygonShape3D.new()
 	shape.set_faces(terrain_mesh.get_faces())
+	var collision_usec := Time.get_ticks_usec() - collision_started_usec
 	collision_shape.shape = shape
 	ground_body.add_child(collision_shape)
 
 	var mesh_instance := MeshInstance3D.new()
 	mesh_instance.name = "MeshInstance3D"
 	mesh_instance.mesh = terrain_mesh
-	mesh_instance.material_override = _build_ground_material(chunk_size_m, profile)
+	var material_started_usec := Time.get_ticks_usec()
+	var material_result := _build_ground_material(chunk_size_m, profile)
+	mesh_instance.material_override = material_result.get("material")
+	var material_usec := Time.get_ticks_usec() - material_started_usec
 	ground_body.add_child(mesh_instance)
-	return ground_body
+	return {
+		"body": ground_body,
+		"mesh_usec": mesh_usec,
+		"collision_usec": collision_usec,
+		"material_usec": material_usec,
+		"mask_textures_usec": int(material_result.get("mask_textures_usec", 0)),
+		"shader_material_usec": int(material_result.get("shader_material_usec", 0)),
+	}
 
-func _build_ground_material(chunk_size_m: float, profile: Dictionary) -> ShaderMaterial:
+func _build_ground_material(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 	var palette: Dictionary = profile.get("palette", {})
+	var mask_started_usec := Time.get_ticks_usec()
 	var overlay_textures: Dictionary = CityRoadMaskBuilder.build_surface_textures(profile, chunk_size_m)
+	var mask_textures_usec := Time.get_ticks_usec() - mask_started_usec
+	var material_started_usec := Time.get_ticks_usec()
 	var material := ShaderMaterial.new()
 	material.shader = CityGroundRoadOverlayShader
 	material.set_shader_parameter("chunk_size_m", chunk_size_m)
@@ -287,7 +348,11 @@ func _build_ground_material(chunk_size_m: float, profile: Dictionary) -> ShaderM
 	material.set_shader_parameter("stripe_color", palette.get("stripe", Color(0.9, 0.8, 0.5, 1.0)))
 	material.set_shader_parameter("road_mask_texture", overlay_textures.get("road_mask_texture"))
 	material.set_shader_parameter("stripe_mask_texture", overlay_textures.get("stripe_mask_texture"))
-	return material
+	return {
+		"material": material,
+		"mask_textures_usec": mask_textures_usec,
+		"shader_material_usec": Time.get_ticks_usec() - material_started_usec,
+	}
 
 func _build_terrain_mesh(chunk_size_m: float) -> ArrayMesh:
 	var half_size := chunk_size_m * 0.5

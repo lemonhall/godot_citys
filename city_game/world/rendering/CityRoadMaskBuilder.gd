@@ -3,6 +3,7 @@ extends RefCounted
 const MASK_RESOLUTION := 256
 
 static func build_surface_textures(profile: Dictionary, chunk_size_m: float) -> Dictionary:
+	var total_started_usec := Time.get_ticks_usec()
 	var road_bytes := PackedByteArray()
 	road_bytes.resize(MASK_RESOLUTION * MASK_RESOLUTION)
 	road_bytes.fill(0)
@@ -11,6 +12,7 @@ static func build_surface_textures(profile: Dictionary, chunk_size_m: float) -> 
 	stripe_bytes.fill(0)
 
 	var surface_segments: Array = []
+	var paint_started_usec := Time.get_ticks_usec()
 	for road_segment in profile.get("road_segments", []):
 		var segment_dict: Dictionary = road_segment
 		if bool(segment_dict.get("bridge", false)):
@@ -19,7 +21,8 @@ static func build_surface_textures(profile: Dictionary, chunk_size_m: float) -> 
 		_paint_segment_mask(road_bytes, segment_dict, chunk_size_m, false)
 		_paint_segment_mask(stripe_bytes, segment_dict, chunk_size_m, true)
 
-	for cluster in _build_intersection_clusters(surface_segments):
+	var clusters := _build_intersection_clusters(surface_segments)
+	for cluster in clusters:
 		var cluster_dict: Dictionary = cluster
 		_paint_disc(
 			road_bytes,
@@ -27,13 +30,28 @@ static func build_surface_textures(profile: Dictionary, chunk_size_m: float) -> 
 			_world_radius_to_pixels(float(cluster_dict.get("radius", 0.0)), chunk_size_m),
 			1.4
 		)
+	var paint_usec := Time.get_ticks_usec() - paint_started_usec
 
+	var image_started_usec := Time.get_ticks_usec()
 	var road_image := Image.create_from_data(MASK_RESOLUTION, MASK_RESOLUTION, false, Image.FORMAT_L8, road_bytes)
 	var stripe_image := Image.create_from_data(MASK_RESOLUTION, MASK_RESOLUTION, false, Image.FORMAT_L8, stripe_bytes)
+	var image_usec := Time.get_ticks_usec() - image_started_usec
+	var texture_started_usec := Time.get_ticks_usec()
+	var road_texture := ImageTexture.create_from_image(road_image)
+	var stripe_texture := ImageTexture.create_from_image(stripe_image)
+	var texture_usec := Time.get_ticks_usec() - texture_started_usec
 	return {
-		"road_mask_texture": ImageTexture.create_from_image(road_image),
-		"stripe_mask_texture": ImageTexture.create_from_image(stripe_image),
+		"road_mask_texture": road_texture,
+		"stripe_mask_texture": stripe_texture,
 		"surface_segment_count": surface_segments.size(),
+		"mask_profile_stats": {
+			"surface_segment_count": surface_segments.size(),
+			"intersection_cluster_count": clusters.size(),
+			"paint_usec": paint_usec,
+			"image_usec": image_usec,
+			"texture_usec": texture_usec,
+			"total_usec": Time.get_ticks_usec() - total_started_usec,
+		},
 	}
 
 static func _paint_segment_mask(mask_bytes: PackedByteArray, segment_dict: Dictionary, chunk_size_m: float, stripe_only: bool) -> void:
@@ -50,18 +68,13 @@ static func _paint_segment_mask(mask_bytes: PackedByteArray, segment_dict: Dicti
 	for point_index in range(points.size() - 1):
 		var start_point: Vector3 = points[point_index]
 		var end_point: Vector3 = points[point_index + 1]
-		var length_m := Vector2(start_point.x, start_point.z).distance_to(Vector2(end_point.x, end_point.z))
-		var spacing_m := clampf(width_m * (0.08 if stripe_only else 0.16), 0.7, 2.0)
-		var sample_count := maxi(1, int(ceil(length_m / spacing_m)))
-		for sample_index in range(sample_count + 1):
-			var ratio := float(sample_index) / float(sample_count)
-			var sample_point := start_point.lerp(end_point, ratio)
-			_paint_disc(
-				mask_bytes,
-				_local_point_to_pixel(sample_point, chunk_size_m),
-				radius_px,
-				feather_px
-			)
+		_paint_capsule_segment(
+			mask_bytes,
+			_local_point_to_pixel(start_point, chunk_size_m),
+			_local_point_to_pixel(end_point, chunk_size_m),
+			radius_px,
+			feather_px
+		)
 
 static func _resolve_mask_radius_m(segment_dict: Dictionary, stripe_only: bool) -> float:
 	if stripe_only:
@@ -93,6 +106,34 @@ static func _paint_disc(mask_bytes: PackedByteArray, center_px: Vector2, radius_
 			var next_value := maxi(current_value, int(round(strength * 255.0)))
 			mask_bytes[byte_index] = next_value
 
+static func _paint_capsule_segment(mask_bytes: PackedByteArray, start_px: Vector2, end_px: Vector2, radius_px: float, feather_px: float) -> void:
+	if radius_px <= 0.0:
+		return
+	if start_px.distance_squared_to(end_px) <= 0.0001:
+		_paint_disc(mask_bytes, start_px, radius_px, feather_px)
+		return
+	var extent_px := radius_px + feather_px
+	var min_x := maxi(0, int(floor(minf(start_px.x, end_px.x) - extent_px)))
+	var max_x := mini(MASK_RESOLUTION - 1, int(ceil(maxf(start_px.x, end_px.x) + extent_px)))
+	var min_y := maxi(0, int(floor(minf(start_px.y, end_px.y) - extent_px)))
+	var max_y := mini(MASK_RESOLUTION - 1, int(ceil(maxf(start_px.y, end_px.y) + extent_px)))
+	var segment := end_px - start_px
+	var segment_length_squared := maxf(segment.length_squared(), 0.0001)
+	var falloff := maxf(feather_px, 0.001)
+	for pixel_y in range(min_y, max_y + 1):
+		for pixel_x in range(min_x, max_x + 1):
+			var pixel_center := Vector2(float(pixel_x) + 0.5, float(pixel_y) + 0.5)
+			var projection := clampf((pixel_center - start_px).dot(segment) / segment_length_squared, 0.0, 1.0)
+			var closest_point := start_px + segment * projection
+			var distance_to_segment := pixel_center.distance_to(closest_point)
+			var strength := clampf((radius_px + falloff - distance_to_segment) / falloff, 0.0, 1.0)
+			if strength <= 0.0:
+				continue
+			var byte_index := pixel_y * MASK_RESOLUTION + pixel_x
+			var current_value := int(mask_bytes[byte_index])
+			var next_value := maxi(current_value, int(round(strength * 255.0)))
+			mask_bytes[byte_index] = next_value
+
 static func _local_point_to_pixel(point: Vector3, chunk_size_m: float) -> Vector2:
 	var normalized_x := clampf(point.x / maxf(chunk_size_m, 1.0) + 0.5, 0.0, 1.0)
 	var normalized_z := clampf(point.z / maxf(chunk_size_m, 1.0) + 0.5, 0.0, 1.0)
@@ -103,6 +144,12 @@ static func _local_point_to_pixel(point: Vector3, chunk_size_m: float) -> Vector
 
 static func _world_radius_to_pixels(radius_m: float, chunk_size_m: float) -> float:
 	return maxf(radius_m / maxf(chunk_size_m, 1.0) * float(MASK_RESOLUTION), 0.0)
+
+static func resolve_sample_spacing_m(width_m: float, chunk_size_m: float, stripe_only: bool) -> float:
+	var pixel_size_m := chunk_size_m / float(MASK_RESOLUTION)
+	if stripe_only:
+		return clampf(maxf(width_m * 0.25, pixel_size_m * 2.0), 2.0, 5.0)
+	return clampf(maxf(width_m * 0.5, pixel_size_m * 4.0), 4.0, 10.0)
 
 static func _build_intersection_clusters(road_segments: Array) -> Array:
 	var clusters: Dictionary = {}

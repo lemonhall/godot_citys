@@ -26,6 +26,7 @@
 - world-space 连续道路骨架、轻量地形高差与近景建筑碰撞（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - 更自然的本地道路场、道路缓冲区避让、多 archetype 占位建筑、折叠巡检 UI 与少量桥梁占位（[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
 - 参考式连续道路图、共享 2D 城市投影、小地图与导航路径可视化（[已由 ECN-0006 变更](../ecn/ECN-0006-reference-roadgraph-and-minimap.md)）
+- 面向 `60 FPS = 16.67ms/frame` 红线的道路表面性能专项：缓存、分层、异步准备与 surface page 架构预留（[已由 ECN-0007 变更](../ecn/ECN-0007-performance-redline-and-road-surface-pipeline.md)）
 - chunk-local 导航与跨 chunk 自动化 travel 流程验证
 - 性能与 streaming debug 观测面板
 - 开发态高速巡检模式与稳定运行时报告（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
@@ -100,6 +101,7 @@
 - 基于玩家或开发态高速巡检模式下的玩家位置决定进入/退出的 chunk（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
 - 高成本活跃窗口固定为玩家周围 `5x5` chunk
 - chunk 准备流程支持后台数据准备与主线程挂载
+- 静态道路表面数据必须支持可缓存或可复用的准备路径，避免已访问 chunk 在主线程重复全量生成（[已由 ECN-0007 变更](../ecn/ECN-0007-performance-redline-and-road-surface-pipeline.md)）
 - 提供 warm / cold 元数据层，避免所有内容都被卸空
 
 **非目标**：
@@ -125,6 +127,7 @@
 - 邻近 chunk 必须基于 chunk seed 生成确定性视觉变体，避免近景重复（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
 - chunk 可见道路必须由整城 road skeleton 驱动，并在 chunk 共享边界上连续衔接，不能出现孤路或断路（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - chunk 路面必须使用连续 ribbon/strip mesh 或等价连续表面，而不是显著可见的分段盒子拼接（[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
+- 普通地面道路表面必须支持基于距离的细节分层，以及缓存/异步准备的性能化管线，避免每次 chunk mount 在主线程全量重建 surface mask（[已由 ECN-0007 变更](../ecn/ECN-0007-performance-redline-and-road-surface-pipeline.md)）
 - chunk ground、道路 y 值和建筑基座必须共享同一套连续高度采样，避免整城纯平面（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - 近景建筑必须提供可启停碰撞壳；mid/far LOD 不得保留不可见碰撞（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - 建筑与 roadside props 都必须满足道路缓冲区避让，不得长在路面上；chunk 建筑体量需要达到更高密度并提供多 archetype 变体（[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
@@ -187,6 +190,7 @@
 - 展示当前 chunk 的 visual variant 标识，便于人工检查重复度（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
 - 为主要 E2E 测试输出稳定可解析的 debug 文本
 - 为主要 E2E 测试输出稳定可解析的运行时报告，至少包含 `final_position` 与 `transition_count`（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
+- 将 `60 FPS = 16.67ms/frame` 作为项目级性能红线，在达线前对 rendering/streaming 相关改动持续保留 profiling 证据与回归护栏（[已由 ECN-0007 变更](../ecn/ECN-0007-performance-redline-and-road-surface-pipeline.md)）
 
 **非目标**：
 
@@ -197,6 +201,31 @@
 
 - 自动化测试或脚本输出中必须能读取 `current_chunk_id`、`active_chunk_count`、至少一个 streaming 耗时指标，以及 `transition_count` / `final_position`。
 - 反作弊条款：不得只在文档中写目标数字而没有实际运行时输出。
+
+### REQ-0001-010 道路表面性能红线与专项治理
+
+**动机**：当前项目是 low poly 大世界，如果普通地面道路仍以“每个 chunk mount 现场重建表面数据”的方式存在，运行期帧耗会持续高于可接受范围，后续新功能也将建立在错误的性能底座之上。
+
+**范围**：
+
+- 将 `60 FPS = 16.67ms/frame` 明确为项目级性能红线；
+- 对普通地面道路表面引入缓存、距离分层、异步数据准备；
+- 为未来 surface page / RVT-lite / clipmap 风格的分页表面体系预留稳定 contract；
+- 将 fresh profiling 结果纳入每轮性能专项的验收证据。
+
+**非目标**：
+
+- 不要求 v4 一次性做完完整 RVT 或 clipmap 系统；
+- 不要求用 GPU 计算着色器重写全部道路表面生成；
+- 不做与性能专项无关的新玩法扩展。
+
+**验收口径**：
+
+- fresh runtime profiling 必须持续输出 `wall_frame_avg_usec`、`update_streaming_avg_usec`、`streaming_mount_setup_avg_usec` 等核心指标；
+- 已访问静态 chunk 的普通道路表面数据不得在主线程重复全量生成；
+- `mid/far` 路面细节必须较 near 明显降级，但仍保留道路轮廓；
+- 异步准备路径不得直接在后台线程操作 scene tree 或 GPU 资源；
+- 反作弊条款：不得通过关闭普通地面道路可见性来伪造帧耗下降。
 
 ### REQ-0001-007 端到端 travel 验证
 

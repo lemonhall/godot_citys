@@ -5,7 +5,7 @@ const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrain
 
 const ROAD_CLEARANCE_M := 6.0
 const BUILDING_MARGIN_M := 4.0
-const CANDIDATE_STEP_M := 18.0
+const CANDIDATE_STEP_M := 28.0
 const MAX_BUILDINGS_PER_CHUNK := 18
 const INFILL_TARGET_EXTRA := 4
 
@@ -72,6 +72,7 @@ const BUILDING_ARCHETYPES := [
 		"min_size": Vector2(18.0, 18.0),
 		"max_size": Vector2(24.0, 24.0),
 		"height_range": Vector2(34.0, 64.0),
+		"footprint_scale": 1.9,
 	},
 	{
 		"id": "step_midrise",
@@ -156,7 +157,7 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 		buildings.append(building)
 		occupied.append({
 			"center_2d": building.get("center_2d", Vector2.ZERO),
-			"radius": building.get("footprint_radius_m", 0.0),
+			"radius": building.get("visual_footprint_radius_m", building.get("footprint_radius_m", 0.0)),
 		})
 
 	if buildings.size() < desired_count:
@@ -171,7 +172,7 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 			buildings.append(filler)
 			occupied.append({
 				"center_2d": filler.get("center_2d", Vector2.ZERO),
-				"radius": filler.get("footprint_radius_m", 0.0),
+				"radius": filler.get("visual_footprint_radius_m", filler.get("footprint_radius_m", 0.0)),
 			})
 	return buildings
 
@@ -186,7 +187,7 @@ static func _build_candidate_slots(chunk_center: Vector3, chunk_size_m: float, c
 				float(z_step) * CANDIDATE_STEP_M + cos(float((slot_seed >> 2) % 4096) * 0.013) * 5.5
 			)
 			center_2d = _clamp_to_chunk(center_2d, half_extent)
-			var clearance := _distance_to_roads(center_2d, road_segments)
+			var clearance := _distance_to_roads(center_2d, road_segments, 10.0)
 			if clearance < 10.0:
 				continue
 			var radial_bias := center_2d.length() / maxf(half_extent, 1.0)
@@ -210,21 +211,26 @@ static func _try_build_building(candidate: Dictionary, archetype: Dictionary, ch
 	var min_size: Vector2 = archetype.get("min_size", Vector2(18.0, 18.0))
 	var max_size: Vector2 = archetype.get("max_size", Vector2(28.0, 28.0))
 	var height_range: Vector2 = archetype.get("height_range", Vector2(18.0, 36.0))
+	var footprint_scale := float(archetype.get("footprint_scale", 1.0))
 	var width := snappedf(rng.randf_range(min_size.x, max_size.x) * scale_multiplier, 2.0)
 	var depth := snappedf(rng.randf_range(min_size.y, max_size.y) * scale_multiplier, 2.0)
 	var height := snappedf(rng.randf_range(height_range.x, height_range.y) * lerpf(0.92, 1.08, rng.randf()), 2.0)
 	var center_2d: Vector2 = candidate.get("center_2d", Vector2.ZERO)
 	var footprint_radius := sqrt(width * width + depth * depth) * 0.5
+	var visual_width := width * footprint_scale
+	var visual_depth := depth * footprint_scale
+	var visual_footprint_radius := sqrt(visual_width * visual_width + visual_depth * visual_depth) * 0.5
 	var road_clearance := float(candidate.get("clearance", 0.0)) - footprint_radius
-	if road_clearance < ROAD_CLEARANCE_M:
+	var visual_road_clearance := float(candidate.get("clearance", 0.0)) - visual_footprint_radius
+	if visual_road_clearance < ROAD_CLEARANCE_M:
 		return {}
-	if absf(center_2d.x) + width * 0.5 >= half_extent or absf(center_2d.y) + depth * 0.5 >= half_extent:
+	if absf(center_2d.x) + visual_width * 0.5 >= half_extent or absf(center_2d.y) + visual_depth * 0.5 >= half_extent:
 		return {}
 	for occupied_item in occupied:
 		var occupied_dict: Dictionary = occupied_item
 		var other_center: Vector2 = occupied_dict.get("center_2d", Vector2.ZERO)
 		var other_radius := float(occupied_dict.get("radius", 0.0))
-		if center_2d.distance_to(other_center) < footprint_radius + other_radius + BUILDING_MARGIN_M:
+		if center_2d.distance_to(other_center) < visual_footprint_radius + other_radius + BUILDING_MARGIN_M:
 			return {}
 
 	var yaw_rad := _resolve_building_yaw(center_2d, road_segments, local_seed, archetype.get("id", "slab"))
@@ -237,9 +243,12 @@ static func _try_build_building(candidate: Dictionary, archetype: Dictionary, ch
 		"center": Vector3(center_2d.x, ground_y + height * 0.5, center_2d.y),
 		"center_2d": center_2d,
 		"size": Vector3(width, height, depth),
+		"collision_size": Vector3(maxf(width, visual_width), height, maxf(depth, visual_depth)),
 		"yaw_rad": yaw_rad,
 		"footprint_radius_m": footprint_radius,
+		"visual_footprint_radius_m": visual_footprint_radius,
 		"road_clearance_m": road_clearance,
+		"visual_road_clearance_m": visual_road_clearance,
 		"detail_seed": local_seed,
 		"main_color": _tint_color(palette["base"], rng.randf_range(-0.08, 0.08)),
 		"accent_color": _tint_color(palette["accent"], rng.randf_range(-0.06, 0.10)),
@@ -287,7 +296,7 @@ static func _measure_min_building_clearance(buildings: Array) -> float:
 		return 0.0
 	var min_clearance := INF
 	for building in buildings:
-		min_clearance = minf(min_clearance, float((building as Dictionary).get("road_clearance_m", 0.0)))
+		min_clearance = minf(min_clearance, float((building as Dictionary).get("visual_road_clearance_m", (building as Dictionary).get("road_clearance_m", 0.0))))
 	return min_clearance if min_clearance != INF else 0.0
 
 static func _collect_building_archetypes(buildings: Array) -> Array:
@@ -302,7 +311,7 @@ static func _collect_building_archetypes(buildings: Array) -> Array:
 	archetypes.sort()
 	return archetypes
 
-static func _distance_to_roads(point: Vector2, road_segments: Array) -> float:
+static func _distance_to_roads(point: Vector2, road_segments: Array, early_exit_clearance: float = -1.0) -> float:
 	var min_distance := INF
 	for segment in road_segments:
 		var segment_dict: Dictionary = segment
@@ -315,6 +324,8 @@ static func _distance_to_roads(point: Vector2, road_segments: Array) -> float:
 				min_distance,
 				_distance_to_segment(point, Vector2(a.x, a.z), Vector2(b.x, b.z)) - width * 0.5
 			)
+			if early_exit_clearance >= 0.0 and min_distance <= early_exit_clearance:
+				return min_distance
 	if min_distance == INF:
 		return 9999.0
 	return min_distance
@@ -340,11 +351,11 @@ static func _measure_terrain_relief(chunk_center: Vector3, chunk_size_m: float, 
 	var half_size := chunk_size_m * 0.5
 	var min_height := INF
 	var max_height := -INF
-	for x_index in range(5):
-		for z_index in range(5):
+	for x_index in range(4):
+		for z_index in range(4):
 			var position := Vector2(
-				lerpf(-half_size, half_size, float(x_index) / 4.0),
-				lerpf(-half_size, half_size, float(z_index) / 4.0)
+				lerpf(-half_size, half_size, float(x_index) / 3.0),
+				lerpf(-half_size, half_size, float(z_index) / 3.0)
 			)
 			var height := CityTerrainSampler.sample_height(chunk_center.x + position.x, chunk_center.z + position.y, world_seed)
 			min_height = minf(min_height, height)

@@ -3,9 +3,9 @@ extends Node3D
 const CityChunkScene := preload("res://city_game/world/rendering/CityChunkScene.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 
-const PREPARE_BUDGET_PER_TICK := 4
-const MOUNT_BUDGET_PER_TICK := 3
-const RETIRE_BUDGET_PER_TICK := 2
+const PREPARE_BUDGET_PER_TICK := 1
+const MOUNT_BUDGET_PER_TICK := 1
+const RETIRE_BUDGET_PER_TICK := 1
 const MAX_POOLED_CHUNKS := 8
 
 var _config
@@ -23,6 +23,7 @@ var _last_retire_usec := 0
 var _last_prepare_count := 0
 var _last_mount_count := 0
 var _last_retire_count := 0
+var _last_queue_process_frame := -1
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
@@ -37,10 +38,11 @@ func setup(config, world_data: Dictionary) -> void:
 	_last_prepare_count = 0
 	_last_mount_count = 0
 	_last_retire_count = 0
+	_last_queue_process_frame = -1
 	set_process(true)
 
 func _process(_delta: float) -> void:
-	_process_streaming_queues()
+	_process_streaming_queues_once_per_frame()
 	_update_lod_states(_last_player_position)
 
 func _notification(what: int) -> void:
@@ -58,6 +60,7 @@ func _notification(what: int) -> void:
 	_pending_prepare.clear()
 	_pending_mount_ids.clear()
 	_pending_retire_ids.clear()
+	_last_queue_process_frame = -1
 
 func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> void:
 	if _config == null:
@@ -102,7 +105,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> vo
 			continue
 		_pending_mount_ids.remove_at(pending_index)
 
-	_process_streaming_queues()
+	_process_streaming_queues_once_per_frame()
 	_update_lod_states(player_position)
 
 func get_chunk_ids() -> Array[String]:
@@ -178,6 +181,13 @@ func _process_streaming_queues() -> void:
 	_process_prepare_budget()
 	_process_mount_budget()
 	_process_retire_budget()
+
+func _process_streaming_queues_once_per_frame() -> void:
+	var process_frame := Engine.get_process_frames()
+	if _last_queue_process_frame == process_frame:
+		return
+	_last_queue_process_frame = process_frame
+	_process_streaming_queues()
 
 func _process_prepare_budget() -> void:
 	var prepare_ids: Array[String] = []

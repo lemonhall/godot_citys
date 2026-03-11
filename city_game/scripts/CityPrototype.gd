@@ -183,7 +183,7 @@ func _align_player_to_streamed_ground() -> void:
 	var standing_height := _estimate_player_standing_height()
 	var target_position := Vector3(
 		chunk_center.x + local_point.x,
-		CityChunkGroundSampler.sample_height(local_point, chunk_payload, profile) + standing_height + 0.45,
+		CityChunkGroundSampler.sample_height(local_point, chunk_payload, profile) + standing_height + 0.7,
 		chunk_center.z + local_point.y
 	)
 	if player.has_method("teleport_to_world_position"):
@@ -273,7 +273,7 @@ func _distance_to_profile_buildings(local_point: Vector2, profile: Dictionary) -
 	for building in profile.get("buildings", []):
 		var building_dict: Dictionary = building
 		var center: Vector3 = building_dict.get("center", Vector3.ZERO)
-		var radius := float(building_dict.get("footprint_radius_m", 0.0))
+		var radius := float(building_dict.get("visual_footprint_radius_m", building_dict.get("footprint_radius_m", 0.0)))
 		min_distance = minf(min_distance, local_point.distance_to(Vector2(center.x, center.z)) - radius)
 	return 9999.0 if min_distance == INF else min_distance
 

@@ -3,6 +3,9 @@ extends RefCounted
 const CityChunkKey := preload("res://city_game/world/streaming/CityChunkKey.gd")
 const CityChunkLifecycle := preload("res://city_game/world/streaming/CityChunkLifecycle.gd")
 
+const PREFETCH_EDGE_RATIO := 0.68
+const PREFETCH_DIRECTION_THRESHOLD_M := 2.0
+
 var _config
 var _world_data: Dictionary = {}
 var _current_chunk_key := Vector2i(-1, -1)
@@ -13,6 +16,8 @@ var _sequence := 0
 var _last_prepare_usec := 0
 var _last_mount_usec := 0
 var _last_retire_usec := 0
+var _last_world_position := Vector3.ZERO
+var _has_last_world_position := false
 
 func _init(config = null, world_data: Dictionary = {}) -> void:
 	if config != null:
@@ -29,13 +34,16 @@ func setup(config, world_data: Dictionary = {}) -> void:
 	_last_prepare_usec = 0
 	_last_mount_usec = 0
 	_last_retire_usec = 0
+	_last_world_position = Vector3.ZERO
+	_has_last_world_position = false
 
 func update_for_world_position(world_position: Vector3) -> Array[Dictionary]:
 	if _config == null:
 		return []
 
 	var next_chunk_key: Vector2i = CityChunkKey.world_to_chunk_key(_config, world_position)
-	var target_keys: Array[Vector2i] = CityChunkKey.get_window_keys(_config, next_chunk_key, 2)
+	var focus_chunk_key := _resolve_prefetch_focus_chunk(next_chunk_key, world_position)
+	var target_keys: Array[Vector2i] = CityChunkKey.get_window_keys(_config, focus_chunk_key, 2)
 	var target_chunk_map: Dictionary = {}
 	for chunk_key in target_keys:
 		target_chunk_map[_config.format_chunk_id(chunk_key)] = chunk_key
@@ -78,6 +86,8 @@ func update_for_world_position(world_position: Vector3) -> Array[Dictionary]:
 
 	_current_chunk_key = next_chunk_key
 	_current_chunk_id = _config.format_chunk_id(next_chunk_key)
+	_last_world_position = world_position
+	_has_last_world_position = true
 	return events
 
 func get_current_chunk_id() -> String:
@@ -137,3 +147,37 @@ func _get_sorted_target_ids(target_chunk_map: Dictionary) -> Array[String]:
 		ids.append(str(chunk_id))
 	ids.sort()
 	return ids
+
+func _resolve_prefetch_focus_chunk(current_chunk_key: Vector2i, world_position: Vector3) -> Vector2i:
+	if not _has_last_world_position:
+		return current_chunk_key
+	if _current_chunk_key != Vector2i(-1, -1) and current_chunk_key != _current_chunk_key:
+		return current_chunk_key
+	var focus_chunk_key := current_chunk_key
+	var delta := world_position - _last_world_position
+	var local_ratio := _get_local_chunk_ratio(current_chunk_key, world_position)
+	if absf(delta.x) >= PREFETCH_DIRECTION_THRESHOLD_M:
+		if delta.x > 0.0 and local_ratio.x >= PREFETCH_EDGE_RATIO:
+			focus_chunk_key.x += 1
+		elif delta.x < 0.0 and local_ratio.x <= 1.0 - PREFETCH_EDGE_RATIO:
+			focus_chunk_key.x -= 1
+	if absf(delta.z) >= PREFETCH_DIRECTION_THRESHOLD_M:
+		if delta.z > 0.0 and local_ratio.y >= PREFETCH_EDGE_RATIO:
+			focus_chunk_key.y += 1
+		elif delta.z < 0.0 and local_ratio.y <= 1.0 - PREFETCH_EDGE_RATIO:
+			focus_chunk_key.y -= 1
+	var grid: Vector2i = _config.get_chunk_grid_size()
+	return Vector2i(
+		clampi(focus_chunk_key.x, 0, grid.x - 1),
+		clampi(focus_chunk_key.y, 0, grid.y - 1)
+	)
+
+func _get_local_chunk_ratio(chunk_key: Vector2i, world_position: Vector3) -> Vector2:
+	var bounds: Rect2 = _config.get_world_bounds()
+	var chunk_size := float(_config.chunk_size_m)
+	var chunk_origin_x := bounds.position.x + float(chunk_key.x) * chunk_size
+	var chunk_origin_z := bounds.position.y + float(chunk_key.y) * chunk_size
+	return Vector2(
+		clampf((world_position.x - chunk_origin_x) / chunk_size, 0.0, 1.0),
+		clampf((world_position.z - chunk_origin_z) / chunk_size, 0.0, 1.0)
+	)

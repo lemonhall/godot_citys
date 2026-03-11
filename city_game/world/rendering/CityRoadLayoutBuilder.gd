@@ -143,16 +143,30 @@ static func _make_segment_from_world_polyline(road_class: String, points_2d: Arr
 	var local_points := _world_polyline_to_local_points(points_2d, chunk_center, world_seed)
 	if local_points.size() < 2:
 		return {}
-	local_points = _smooth_ground_profile(local_points, float(template.get("max_grade", 0.08)))
+	var max_grade := float(template.get("max_grade", 0.08))
+	local_points = _smooth_ground_profile(local_points, max_grade)
 	var bridge := template_id == "expressway_elevated" or _should_raise_bridge(road_class, points_2d, seed)
 	var bridge_clearance := 0.0
 	var bridge_range := Vector2.ZERO
 	var deck_thickness := float(template.get("deck_thickness_m", 0.4))
 	if bridge:
 		bridge_clearance = _resolve_bridge_clearance(template_id, seed)
-		bridge_range = Vector2(0.2, 0.8)
-		local_points = _apply_bridge_profile(local_points, points_2d, chunk_center, world_seed, bridge_clearance, bridge_range)
-		deck_thickness = maxf(deck_thickness, 1.0)
+		var bridge_profile := _build_bridge_profile(
+			local_points,
+			points_2d,
+			world_seed,
+			bridge_clearance,
+			max_grade,
+			float(template.get("width_m", 11.0)),
+			template_id
+		)
+		if bridge_profile.is_empty():
+			bridge = false
+			bridge_clearance = 0.0
+		else:
+			bridge_range = bridge_profile.get("bridge_range", Vector2.ZERO)
+			local_points = bridge_profile.get("points", local_points)
+			deck_thickness = maxf(deck_thickness, 1.0)
 	return {
 		"class": road_class,
 		"template_id": template_id,
@@ -323,15 +337,46 @@ static func _enforce_max_grade(points: Array[Vector3], max_grade: float) -> void
 		var clamped_y := clampf(current_point.y, next_point.y - max_delta, next_point.y + max_delta)
 		points[point_index] = Vector3(current_point.x, clamped_y, current_point.z)
 
-static func _apply_bridge_profile(local_points: Array, points_2d: Array, chunk_center: Vector3, world_seed: int, bridge_clearance: float, bridge_range: Vector2) -> Array[Vector3]:
-	var raised_points: Array[Vector3] = []
+static func _build_bridge_profile(local_points: Array, points_2d: Array, world_seed: int, bridge_clearance: float, max_grade: float, road_width: float, template_id: String) -> Dictionary:
+	var total_length := _measure_horizontal_polyline_length(local_points)
+	if total_length <= 1.0 or max_grade <= 0.001:
+		return {}
 	var deck_level := _resolve_bridge_deck_level(points_2d, local_points, world_seed, bridge_clearance)
+	var start_delta := maxf(deck_level - float((local_points[0] as Vector3).y), 0.0)
+	var end_delta := maxf(deck_level - float((local_points[-1] as Vector3).y), 0.0)
+	var minimum_flat_length := _resolve_bridge_min_flat_length(road_width, template_id)
+	var required_ramp_in := _resolve_bridge_transition_length(start_delta, max_grade, road_width, template_id)
+	var required_ramp_out := _resolve_bridge_transition_length(end_delta, max_grade, road_width, template_id)
+	var required_total := required_ramp_in + minimum_flat_length + required_ramp_out
+	if total_length < required_total:
+		return {}
+
+	var slack := total_length - required_total
+	var flat_length := minimum_flat_length + slack * 0.2
+	var transition_slack := maxf(total_length - flat_length - required_ramp_in - required_ramp_out, 0.0)
+	var ramp_in_length := required_ramp_in + transition_slack * 0.5
+	var ramp_out_length := required_ramp_out + transition_slack * 0.5
+	var flat_start_distance := ramp_in_length
+	var flat_end_distance := total_length - ramp_out_length
+	if flat_end_distance <= flat_start_distance:
+		return {}
+
+	var raised_points: Array[Vector3] = []
+	var traversed_distance := 0.0
 	for point_index in range(local_points.size()):
 		var point: Vector3 = local_points[point_index]
-		var t := float(point_index) / float(maxi(local_points.size() - 1, 1))
-		var ramp := _bridge_ramp_factor(t, bridge_range)
+		if point_index > 0:
+			var previous_point: Vector3 = local_points[point_index - 1]
+			traversed_distance += Vector2(previous_point.x, previous_point.z).distance_to(Vector2(point.x, point.z))
+		var ramp := _bridge_ramp_factor_by_distance(traversed_distance, flat_start_distance, flat_end_distance, total_length)
 		raised_points.append(Vector3(point.x, lerpf(point.y, deck_level, ramp), point.z))
-	return raised_points
+	_enforce_max_grade(raised_points, max_grade)
+	if _measure_max_grade(raised_points) > max_grade + 0.01:
+		return {}
+	return {
+		"points": raised_points,
+		"bridge_range": Vector2(flat_start_distance / total_length, flat_end_distance / total_length),
+	}
 
 static func _resolve_bridge_deck_level(points_2d: Array, local_points: Array, world_seed: int, bridge_clearance: float) -> float:
 	var max_ground := -INF
@@ -341,16 +386,41 @@ static func _resolve_bridge_deck_level(points_2d: Array, local_points: Array, wo
 	var endpoint_height := maxf((local_points[0] as Vector3).y, (local_points[-1] as Vector3).y)
 	return maxf(max_ground + bridge_clearance, endpoint_height + bridge_clearance * 0.72)
 
-static func _bridge_ramp_factor(t: float, bridge_range: Vector2) -> float:
-	var enter_start := maxf(bridge_range.x - 0.18, 0.0)
-	var exit_end := minf(bridge_range.y + 0.18, 1.0)
-	if t <= enter_start or t >= exit_end:
+static func _resolve_bridge_transition_length(height_delta: float, max_grade: float, road_width: float, template_id: String) -> float:
+	var physical_length := height_delta / maxf(max_grade, 0.001)
+	var minimum_length := maxf(road_width * (2.0 if template_id == "expressway_elevated" else 1.5), 44.0 if template_id == "expressway_elevated" else 28.0)
+	return maxf(physical_length, minimum_length)
+
+static func _resolve_bridge_min_flat_length(road_width: float, template_id: String) -> float:
+	return maxf(road_width * (1.6 if template_id == "expressway_elevated" else 1.2), 64.0 if template_id == "expressway_elevated" else 36.0)
+
+static func _bridge_ramp_factor_by_distance(distance_m: float, flat_start_distance: float, flat_end_distance: float, total_length: float) -> float:
+	if distance_m <= 0.0 or distance_m >= total_length:
 		return 0.0
-	if t < bridge_range.x:
-		return _smoothstep(enter_start, bridge_range.x, t)
-	if t > bridge_range.y:
-		return 1.0 - _smoothstep(bridge_range.y, exit_end, t)
+	if distance_m < flat_start_distance:
+		return _smoothstep(0.0, flat_start_distance, distance_m)
+	if distance_m > flat_end_distance:
+		return 1.0 - _smoothstep(flat_end_distance, total_length, distance_m)
 	return 1.0
+
+static func _measure_horizontal_polyline_length(points: Array) -> float:
+	var total_length := 0.0
+	for point_index in range(points.size() - 1):
+		var a: Vector3 = points[point_index]
+		var b: Vector3 = points[point_index + 1]
+		total_length += Vector2(a.x, a.z).distance_to(Vector2(b.x, b.z))
+	return total_length
+
+static func _measure_max_grade(points: Array) -> float:
+	var max_grade := 0.0
+	for point_index in range(points.size() - 1):
+		var a: Vector3 = points[point_index]
+		var b: Vector3 = points[point_index + 1]
+		var horizontal_distance := Vector2(a.x, a.z).distance_to(Vector2(b.x, b.z))
+		if horizontal_distance <= 0.001:
+			continue
+		max_grade = maxf(max_grade, absf(b.y - a.y) / horizontal_distance)
+	return max_grade
 
 static func _sample_polyline_2d(points: Array, ratio: float) -> Vector2:
 	var total_length := 0.0

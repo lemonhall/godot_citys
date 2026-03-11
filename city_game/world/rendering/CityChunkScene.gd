@@ -13,7 +13,7 @@ const LOD_FAR := "far"
 
 const NEAR_THRESHOLD_M := 880.0
 const MID_THRESHOLD_M := 1600.0
-const TERRAIN_GRID_STEPS := 12
+const TERRAIN_GRID_STEPS := 6
 
 var _chunk_data: Dictionary = {}
 var _profile: Dictionary = {}
@@ -179,12 +179,14 @@ func _rebuild() -> void:
 	set_lod_mode(LOD_NEAR)
 
 func _build_building(building: Dictionary) -> Node3D:
+	var collision_size: Vector3 = building.get("collision_size", building.get("size", Vector3(18.0, 24.0, 18.0)))
 	var building_root := _build_static_box(
 		str(building.get("name", "Building")),
 		building.get("center", Vector3.ZERO),
 		building.get("size", Vector3(18.0, 24.0, 18.0)),
 		building.get("main_color", Color(0.72, 0.74, 0.78, 1.0)),
-		float(building.get("yaw_rad", 0.0))
+		float(building.get("yaw_rad", 0.0)),
+		collision_size
 	)
 	var size: Vector3 = building.get("size", Vector3.ONE)
 	var accent: Color = building.get("accent_color", Color(0.52, 0.58, 0.66, 1.0))
@@ -215,7 +217,7 @@ func _build_building(building: Dictionary) -> Node3D:
 			_add_local_box(building_root, "SawToothB", Vector3(size.x * 0.18, size.y * 0.2, 0.0), Vector3(size.x * 0.24, maxf(size.y * 0.14, 1.6), size.z * 0.88), accent)
 	return building_root
 
-func _build_static_box(name: String, center: Vector3, size: Vector3, color: Color, yaw_rad: float = 0.0) -> StaticBody3D:
+func _build_static_box(name: String, center: Vector3, size: Vector3, color: Color, yaw_rad: float = 0.0, collision_size: Vector3 = Vector3.ZERO) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.name = name
 	body.position = center
@@ -223,7 +225,7 @@ func _build_static_box(name: String, center: Vector3, size: Vector3, color: Colo
 
 	var collision_shape := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = size
+	shape.size = collision_size if collision_size != Vector3.ZERO else size
 	collision_shape.shape = shape
 	body.add_child(collision_shape)
 	_building_collision_shapes.append(collision_shape)

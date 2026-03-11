@@ -4,6 +4,7 @@ const CityDistrictGraph := preload("res://city_game/world/model/CityDistrictGrap
 const CityRoadGraph := preload("res://city_game/world/model/CityRoadGraph.gd")
 const CityBlockLayout := preload("res://city_game/world/model/CityBlockLayout.gd")
 const CityReferenceRoadGraphBuilder := preload("res://city_game/world/generation/CityReferenceRoadGraphBuilder.gd")
+const CityRoadGraphCache := preload("res://city_game/world/generation/CityRoadGraphCache.gd")
 
 var _last_generation_profile: Dictionary = {}
 
@@ -12,15 +13,23 @@ func generate_world(config) -> Dictionary:
 	var district_started_usec := Time.get_ticks_usec()
 	var district_graph = _build_district_graph(config)
 	var district_usec := Time.get_ticks_usec() - district_started_usec
-	var road_started_usec := Time.get_ticks_usec()
-	var road_graph = _build_road_graph(config, district_graph)
-	var road_usec := Time.get_ticks_usec() - road_started_usec
+	var road_result := _build_or_load_road_graph(config, district_graph)
+	var road_graph: CityRoadGraph = road_result.get("road_graph")
+	var road_usec := int(road_result.get("total_usec", 0))
 	var block_started_usec := Time.get_ticks_usec()
 	var block_layout = _build_block_layout(config)
 	var block_usec := Time.get_ticks_usec() - block_started_usec
 	_last_generation_profile = {
 		"district_usec": district_usec,
 		"road_graph_usec": road_usec,
+		"road_graph_build_usec": int(road_result.get("build_usec", 0)),
+		"road_graph_cache_hit": bool(road_result.get("cache_hit", false)),
+		"road_graph_cache_load_usec": int(road_result.get("cache_load_usec", 0)),
+		"road_graph_cache_write_usec": int(road_result.get("cache_write_usec", 0)),
+		"road_graph_cache_path": str(road_result.get("cache_path", "")),
+		"road_graph_cache_signature": str(road_result.get("cache_signature", "")),
+		"road_graph_cache_size_bytes": int(road_result.get("cache_size_bytes", 0)),
+		"road_graph_cache_error": str(road_result.get("cache_error", "")),
 		"block_layout_usec": block_usec,
 		"total_usec": Time.get_ticks_usec() - total_started_usec,
 		"district_count": district_graph.get_district_count(),
@@ -39,6 +48,9 @@ func generate_world(config) -> Dictionary:
 
 func get_last_generation_profile() -> Dictionary:
 	return _last_generation_profile.duplicate(true)
+
+func get_road_graph_cache_path(config) -> String:
+	return CityRoadGraphCache.new().build_cache_path(config)
 
 func _build_district_graph(config):
 	var graph = CityDistrictGraph.new()
@@ -122,6 +134,47 @@ func _build_road_graph(config, district_graph):
 		_append_district_collector_roads(config, road_graph, district)
 	CityReferenceRoadGraphBuilder.new().build_overlay(config, road_graph)
 	return road_graph
+
+func _build_or_load_road_graph(config, district_graph) -> Dictionary:
+	var cache := CityRoadGraphCache.new()
+	var cache_path := cache.build_cache_path(config)
+	var cache_signature := cache.build_cache_signature(config)
+	var cache_load_started_usec := Time.get_ticks_usec()
+	var cached_result := cache.load_graph(config)
+	var cache_load_usec := Time.get_ticks_usec() - cache_load_started_usec
+	if bool(cached_result.get("hit", false)):
+		return {
+			"road_graph": cached_result.get("road_graph"),
+			"total_usec": cache_load_usec,
+			"build_usec": 0,
+			"cache_hit": true,
+			"cache_load_usec": cache_load_usec,
+			"cache_write_usec": 0,
+			"cache_path": str(cached_result.get("path", cache_path)),
+			"cache_signature": str(cached_result.get("signature", cache_signature)),
+			"cache_size_bytes": int(cached_result.get("size_bytes", 0)),
+			"cache_error": "",
+		}
+
+	var build_started_usec := Time.get_ticks_usec()
+	var road_graph = _build_road_graph(config, district_graph)
+	var build_usec := Time.get_ticks_usec() - build_started_usec
+	var cache_write_started_usec := Time.get_ticks_usec()
+	var save_result := cache.save_graph(config, road_graph)
+	var cache_write_usec := Time.get_ticks_usec() - cache_write_started_usec
+	var write_success := bool(save_result.get("success", false))
+	return {
+		"road_graph": road_graph,
+		"total_usec": build_usec + cache_write_usec,
+		"build_usec": build_usec,
+		"cache_hit": false,
+		"cache_load_usec": cache_load_usec,
+		"cache_write_usec": cache_write_usec,
+		"cache_path": str(save_result.get("path", cache_path)),
+		"cache_signature": str(save_result.get("signature", cache_signature)),
+		"cache_size_bytes": int(save_result.get("size_bytes", 0)),
+		"cache_error": "" if write_success else str(save_result.get("error", str(cached_result.get("error", "")))),
+	}
 
 func _build_block_layout(config):
 	var layout = CityBlockLayout.new()

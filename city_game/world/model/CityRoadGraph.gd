@@ -17,6 +17,28 @@ func add_edge(edge_data: Dictionary) -> void:
 		stored["bounds"] = _build_bounds(stored.get("points", []))
 	edges.append(stored)
 
+func to_cache_payload() -> Dictionary:
+	return {
+		"nodes": nodes.duplicate(true),
+		"edges": edges.duplicate(true),
+		"growth_stats": _growth_stats.duplicate(true),
+		"intersections": _intersections.duplicate(true),
+	}
+
+func load_from_cache_payload(payload: Dictionary) -> void:
+	nodes.clear()
+	edges.clear()
+	_nodes_by_id.clear()
+	_growth_stats.clear()
+	_intersections.clear()
+
+	for node in payload.get("nodes", []):
+		add_node(node)
+	for edge in payload.get("edges", []):
+		add_edge(edge)
+	set_growth_stats(payload.get("growth_stats", {}))
+	set_intersections(payload.get("intersections", []))
+
 func get_node_count() -> int:
 	return nodes.size()
 

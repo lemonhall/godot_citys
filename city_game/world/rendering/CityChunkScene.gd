@@ -464,12 +464,18 @@ func _normalize_lod_mode(mode: String) -> String:
 
 func _build_terrain_mesh(chunk_size_m: float) -> Dictionary:
 	var terrain_mesh_builder = CityTerrainMeshBuilder.new()
-	var terrain_build_result: Dictionary = terrain_mesh_builder.build_profiled_terrain_mesh(
-		chunk_size_m,
-		_chunk_data,
-		_profile,
-		TERRAIN_GRID_STEPS
-	)
+	var terrain_build_result: Dictionary
+	var prebuilt_terrain_result: Dictionary = _chunk_data.get("terrain_mesh_result", {})
+	if not prebuilt_terrain_result.is_empty():
+		terrain_build_result = prebuilt_terrain_result.duplicate(true)
+		terrain_build_result["mesh"] = terrain_mesh_builder.commit_terrain_mesh(terrain_build_result)
+	else:
+		terrain_build_result = terrain_mesh_builder.build_profiled_terrain_mesh(
+			chunk_size_m,
+			_chunk_data,
+			_profile,
+			TERRAIN_GRID_STEPS
+		)
 	var sample_stats: Dictionary = terrain_build_result.get("sample_stats", {})
 	_terrain_page_contract = (terrain_build_result.get("page_contract", {}) as Dictionary).duplicate(true)
 	return {

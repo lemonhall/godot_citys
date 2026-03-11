@@ -6,11 +6,23 @@ const CityTerrainGridTemplate := preload("res://city_game/world/rendering/CityTe
 var _template_catalog := CityTerrainGridTemplate.new()
 
 func build_profiled_terrain_mesh(chunk_size_m: float, chunk_data: Dictionary, profile: Dictionary, grid_steps: int) -> Dictionary:
+	var arrays_result := build_profiled_terrain_arrays(chunk_size_m, chunk_data, profile, grid_steps)
+	var mesh := commit_terrain_mesh(arrays_result)
+	arrays_result["mesh"] = mesh
+	return arrays_result
+
+func build_profiled_terrain_arrays(chunk_size_m: float, chunk_data: Dictionary, profile: Dictionary, grid_steps: int) -> Dictionary:
+	var existing_mesh_result: Dictionary = chunk_data.get("terrain_mesh_result", {})
+	if not existing_mesh_result.is_empty():
+		return existing_mesh_result.duplicate(true)
+	var sample_binding := _resolve_sample_binding(chunk_size_m, chunk_data, profile, grid_steps)
+	return build_profiled_terrain_arrays_from_binding(chunk_size_m, grid_steps, sample_binding)
+
+func build_profiled_terrain_arrays_from_binding(chunk_size_m: float, grid_steps: int, sample_binding: Dictionary) -> Dictionary:
 	var template: Dictionary = _template_catalog.get_template(chunk_size_m, grid_steps)
 	var local_points: PackedVector2Array = template.get("local_points", PackedVector2Array())
 	var uvs: PackedVector2Array = template.get("uvs", PackedVector2Array())
 	var indices: PackedInt32Array = template.get("indices", PackedInt32Array())
-	var sample_binding := _resolve_sample_binding(chunk_size_m, chunk_data, profile, grid_steps)
 	var heights: PackedFloat32Array = sample_binding.get("heights", PackedFloat32Array())
 	var normals: PackedVector3Array = sample_binding.get("normals", PackedVector3Array())
 	var vertices := PackedVector3Array()
@@ -25,16 +37,30 @@ func build_profiled_terrain_mesh(chunk_size_m: float, chunk_data: Dictionary, pr
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_INDEX] = indices
-
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var sample_stats: Dictionary = (sample_binding.get("sample_stats", {}) as Dictionary).duplicate(true)
+	if sample_stats.is_empty():
+		sample_stats = {
+			"current_vertex_sample_count": heights.size(),
+			"unique_vertex_sample_count": heights.size(),
+			"duplicate_sample_count": 0,
+			"raw_terrain_current_usec": 0,
+			"shaped_current_usec": 0,
+			"shaped_unique_usec": 0,
+			"duplication_ratio": 1.0,
+			"template_cache_key": str(sample_binding.get("runtime_key", "")),
+		}
 
 	return {
-		"mesh": mesh,
-		"sample_stats": sample_binding.get("sample_stats", {}),
-		"page_contract": sample_binding.get("page_contract", {}),
+		"arrays": arrays,
+		"sample_stats": sample_stats,
+		"page_contract": (sample_binding.get("page_contract", {}) as Dictionary).duplicate(true),
 		"runtime_hit": bool(sample_binding.get("runtime_hit", false)),
 	}
+
+func commit_terrain_mesh(arrays_result: Dictionary) -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays_result.get("arrays", []))
+	return mesh
 
 func _resolve_sample_binding(chunk_size_m: float, chunk_data: Dictionary, profile: Dictionary, grid_steps: int) -> Dictionary:
 	var existing_binding: Dictionary = chunk_data.get("terrain_page_binding", {})

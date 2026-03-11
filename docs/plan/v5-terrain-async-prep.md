@@ -4,6 +4,17 @@
 
 把 terrain height/normal/page 数据准备迁到异步路径，主线程只保留 mesh/resource commit，进一步压低 streaming 尖峰。
 
+## Status
+
+done
+
+## Evidence
+
+- `tests/world/test_city_terrain_async_pipeline.gd`
+- `tests/world/test_city_streaming_profile_stats.gd`
+- `tests/e2e/test_city_runtime_performance_profile.gd`
+- 最新 isolated runtime profile 区间：`wall_frame_avg_usec = 15535 ~ 16679`、`update_streaming_avg_usec = 14240 ~ 15186`、`streaming_mount_setup_avg_usec = 5505 ~ 6034`
+
 ## PRD Trace
 
 - REQ-0001-003

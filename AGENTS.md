@@ -20,6 +20,9 @@
 - 默认使用 `tests/e2e/test_city_runtime_performance_profile.gd` 作为运行期回归基线。
 - 默认使用 `tests/world/test_city_chunk_setup_profile_breakdown.gd` 和 `tests/world/test_city_road_mask_profile_breakdown.gd` 追热点。
 - 如果做不到 fresh profiling，就不能声称“性能已经改善”。
+- 每完成一个里程碑 `M`，都必须重新跑一轮 fresh profiling，并与上一个里程碑留档的基线对比。
+- 只有在 profiling 结果已经落盘、且确认没有引入新的性能回退之后，该里程碑才允许标记为完成并继续下一个 `M`。
+- profiling 命令必须隔离执行，不得与其它 Godot 测试/实例并行运行；否则 wall-frame 与 streaming 数据会被进程争抢污染，结论无效。
 - 在当前阶段，禁止再引入“每个 chunk mount 时主线程全量重建静态道路表面数据”这一类设计。
 
 ## Profiling 方法论

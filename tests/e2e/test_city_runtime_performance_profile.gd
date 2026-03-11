@@ -64,6 +64,14 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(profile.get("streaming_mount_setup_max_usec", 0)) > 0, "Performance profile must include streaming mount setup maxima"):
 		return
+	if not T.require_true(self, int(profile.get("streaming_terrain_async_dispatch_sample_count", 0)) > 0, "Performance profile must include terrain async dispatch samples"):
+		return
+	if not T.require_true(self, int(profile.get("streaming_terrain_async_complete_sample_count", 0)) > 0, "Performance profile must include completed terrain async samples"):
+		return
+	if not T.require_true(self, int(profile.get("streaming_terrain_commit_sample_count", 0)) > 0, "Performance profile must include terrain commit samples"):
+		return
+	if not T.require_true(self, int(profile.get("streaming_mount_setup_avg_usec", 0)) <= 16000, "M3 runtime profile must keep mount setup average at or below 16000 usec"):
+		return
 
 	world.queue_free()
 	T.pass_and_quit(self)

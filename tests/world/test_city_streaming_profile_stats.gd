@@ -38,6 +38,12 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(profile.get("mount_setup_max_usec", 0)) > 0, "Streaming profile must expose mount setup max usec"):
 		return
+	if not T.require_true(self, int(profile.get("terrain_async_dispatch_sample_count", 0)) > 0, "Streaming profile must record terrain async dispatch samples"):
+		return
+	if not T.require_true(self, int(profile.get("terrain_async_complete_sample_count", 0)) > 0, "Streaming profile must record completed terrain async jobs"):
+		return
+	if not T.require_true(self, int(profile.get("terrain_commit_sample_count", 0)) > 0, "Streaming profile must record terrain commit samples"):
+		return
 
 	renderer.queue_free()
 	T.pass_and_quit(self)

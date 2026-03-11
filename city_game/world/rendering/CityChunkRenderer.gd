@@ -4,6 +4,7 @@ const CityChunkScene := preload("res://city_game/world/rendering/CityChunkScene.
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 const CityRoadSurfacePageProvider := preload("res://city_game/world/rendering/CityRoadSurfacePageProvider.gd")
 const CityTerrainPageProvider := preload("res://city_game/world/rendering/CityTerrainPageProvider.gd")
+const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTerrainMeshBuilder.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
 
 const PREPARE_BUDGET_PER_TICK := 1
@@ -20,6 +21,7 @@ var _prepared_payloads: Dictionary = {}
 var _pending_prepare: Dictionary = {}
 var _surface_waiting_payloads: Dictionary = {}
 var _pending_surface_jobs: Dictionary = {}
+var _pending_terrain_jobs: Dictionary = {}
 var _pending_mount_ids: Array[String] = []
 var _pending_retire_ids: Array[String] = []
 var _scene_pool: Array[Node3D] = []
@@ -51,6 +53,18 @@ var _surface_commit_sample_count := 0
 var _surface_commit_total_usec := 0
 var _surface_commit_max_usec := 0
 var _surface_commit_last_usec := 0
+var _terrain_async_dispatch_sample_count := 0
+var _terrain_async_dispatch_total_usec := 0
+var _terrain_async_dispatch_max_usec := 0
+var _terrain_async_dispatch_last_usec := 0
+var _terrain_async_complete_sample_count := 0
+var _terrain_async_complete_total_usec := 0
+var _terrain_async_complete_max_usec := 0
+var _terrain_async_complete_last_usec := 0
+var _terrain_commit_sample_count := 0
+var _terrain_commit_total_usec := 0
+var _terrain_commit_max_usec := 0
+var _terrain_commit_last_usec := 0
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
@@ -63,6 +77,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_pending_prepare.clear()
 	_surface_waiting_payloads.clear()
 	_pending_surface_jobs.clear()
+	_pending_terrain_jobs.clear()
 	_pending_mount_ids.clear()
 	_pending_retire_ids.clear()
 	_last_prepare_usec = 0
@@ -91,6 +106,11 @@ func _notification(what: int) -> void:
 		var thread: Thread = job_dict.get("thread")
 		if thread != null and thread.is_started():
 			thread.wait_to_finish()
+	for job in _pending_terrain_jobs.values():
+		var job_dict: Dictionary = job
+		var thread: Thread = job_dict.get("thread")
+		if thread != null and thread.is_started():
+			thread.wait_to_finish()
 	for chunk_scene in _chunk_scenes.values():
 		if is_instance_valid(chunk_scene):
 			chunk_scene.free()
@@ -99,6 +119,7 @@ func _notification(what: int) -> void:
 	_pending_prepare.clear()
 	_surface_waiting_payloads.clear()
 	_pending_surface_jobs.clear()
+	_pending_terrain_jobs.clear()
 	_pending_mount_ids.clear()
 	_pending_retire_ids.clear()
 	_last_queue_process_frame = -1
@@ -154,6 +175,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> vo
 		_pending_mount_ids.remove_at(pending_index)
 
 	_prune_surface_job_waiters(target_chunk_ids)
+	_prune_terrain_job_waiters(target_chunk_ids)
 	_process_streaming_queues_once_per_frame()
 	_update_lod_states(player_position)
 
@@ -177,6 +199,7 @@ func get_streaming_budget_stats() -> Dictionary:
 		"retire_budget_per_tick": RETIRE_BUDGET_PER_TICK,
 		"pending_prepare_count": _pending_prepare.size(),
 		"pending_surface_async_count": _pending_surface_jobs.size(),
+		"pending_terrain_async_count": _pending_terrain_jobs.size(),
 		"pending_mount_count": _pending_mount_ids.size(),
 		"pending_retire_count": _pending_retire_ids.size(),
 		"last_prepare_count": _last_prepare_count,
@@ -216,6 +239,21 @@ func get_streaming_profile_stats() -> Dictionary:
 		"surface_commit_avg_usec": _average_usec(_surface_commit_total_usec, _surface_commit_sample_count),
 		"surface_commit_max_usec": _surface_commit_max_usec,
 		"surface_commit_last_usec": _surface_commit_last_usec,
+		"terrain_async_dispatch_sample_count": _terrain_async_dispatch_sample_count,
+		"terrain_async_dispatch_total_usec": _terrain_async_dispatch_total_usec,
+		"terrain_async_dispatch_avg_usec": _average_usec(_terrain_async_dispatch_total_usec, _terrain_async_dispatch_sample_count),
+		"terrain_async_dispatch_max_usec": _terrain_async_dispatch_max_usec,
+		"terrain_async_dispatch_last_usec": _terrain_async_dispatch_last_usec,
+		"terrain_async_complete_sample_count": _terrain_async_complete_sample_count,
+		"terrain_async_complete_total_usec": _terrain_async_complete_total_usec,
+		"terrain_async_complete_avg_usec": _average_usec(_terrain_async_complete_total_usec, _terrain_async_complete_sample_count),
+		"terrain_async_complete_max_usec": _terrain_async_complete_max_usec,
+		"terrain_async_complete_last_usec": _terrain_async_complete_last_usec,
+		"terrain_commit_sample_count": _terrain_commit_sample_count,
+		"terrain_commit_total_usec": _terrain_commit_total_usec,
+		"terrain_commit_avg_usec": _average_usec(_terrain_commit_total_usec, _terrain_commit_sample_count),
+		"terrain_commit_max_usec": _terrain_commit_max_usec,
+		"terrain_commit_last_usec": _terrain_commit_last_usec,
 	}
 
 func reset_streaming_profile_stats() -> void:
@@ -239,6 +277,18 @@ func reset_streaming_profile_stats() -> void:
 	_surface_commit_total_usec = 0
 	_surface_commit_max_usec = 0
 	_surface_commit_last_usec = 0
+	_terrain_async_dispatch_sample_count = 0
+	_terrain_async_dispatch_total_usec = 0
+	_terrain_async_dispatch_max_usec = 0
+	_terrain_async_dispatch_last_usec = 0
+	_terrain_async_complete_sample_count = 0
+	_terrain_async_complete_total_usec = 0
+	_terrain_async_complete_max_usec = 0
+	_terrain_async_complete_last_usec = 0
+	_terrain_commit_sample_count = 0
+	_terrain_commit_total_usec = 0
+	_terrain_commit_max_usec = 0
+	_terrain_commit_last_usec = 0
 
 func get_renderer_stats() -> Dictionary:
 	var lod_mode_counts := {
@@ -283,6 +333,7 @@ func _queue_retire(chunk_id: String) -> void:
 
 func _process_streaming_queues() -> void:
 	_process_retire_budget()
+	_collect_completed_terrain_jobs()
 	_collect_completed_surface_jobs()
 	_process_mount_budget()
 	_process_prepare_budget()
@@ -314,8 +365,13 @@ func _process_prepare_budget() -> void:
 		_record_prepare_profile_sample(Time.get_ticks_usec() - profile_started_usec)
 		payload["surface_page_provider"] = _surface_page_provider
 		payload["terrain_page_provider"] = _terrain_page_provider
-		payload["terrain_page_binding"] = _terrain_page_provider.resolve_chunk_sample_binding(payload, int(CityChunkScene.TERRAIN_GRID_STEPS))
 		payload["initial_lod_mode"] = _resolve_initial_lod_mode(payload)
+		_surface_waiting_payloads[chunk_id] = payload
+		var terrain_page_header: Dictionary = _terrain_page_provider.build_chunk_page_header(payload, int(CityChunkScene.TERRAIN_GRID_STEPS))
+		payload["terrain_page_header"] = terrain_page_header
+		_surface_waiting_payloads[chunk_id] = payload
+		_queue_terrain_job(chunk_id, payload, terrain_page_header, int(CityChunkScene.TERRAIN_GRID_STEPS))
+		payload = (_surface_waiting_payloads.get(chunk_id, payload) as Dictionary).duplicate(true)
 		var detail_mode := _resolve_surface_detail_mode_for_lod(str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR)))
 		var page_header: Dictionary = _surface_page_provider.build_chunk_page_header(payload, detail_mode)
 		payload["surface_page_header"] = page_header
@@ -326,10 +382,11 @@ func _process_prepare_budget() -> void:
 				_surface_page_provider.get_runtime_bundle(runtime_key),
 				true
 			)
-			_enqueue_ready_payload(chunk_id, payload)
+			_surface_waiting_payloads[chunk_id] = payload
 		else:
 			_surface_waiting_payloads[chunk_id] = payload
 			_queue_surface_job(chunk_id, payload, page_header, detail_mode)
+		_try_enqueue_waiting_payload(chunk_id)
 		_pending_prepare.erase(chunk_id)
 		prepared_count += 1
 	_last_prepare_count = prepared_count
@@ -349,6 +406,8 @@ func _process_mount_budget() -> void:
 		var setup_started_usec := Time.get_ticks_usec()
 		chunk_scene.setup(payload)
 		_record_mount_setup_sample(Time.get_ticks_usec() - setup_started_usec)
+		var setup_profile: Dictionary = chunk_scene.get_setup_profile()
+		_record_terrain_commit_sample(int(setup_profile.get("ground_mesh_usec", 0)))
 		chunk_scene.visible = true
 		add_child(chunk_scene)
 		_chunk_scenes[chunk_id] = chunk_scene
@@ -453,6 +512,26 @@ func _record_surface_commit_sample(duration_usec: int) -> void:
 	_surface_commit_max_usec = maxi(_surface_commit_max_usec, duration_usec)
 	_surface_commit_last_usec = duration_usec
 
+func _record_terrain_async_dispatch_sample(duration_usec: int) -> void:
+	_terrain_async_dispatch_sample_count += 1
+	_terrain_async_dispatch_total_usec += duration_usec
+	_terrain_async_dispatch_max_usec = maxi(_terrain_async_dispatch_max_usec, duration_usec)
+	_terrain_async_dispatch_last_usec = duration_usec
+
+func _record_terrain_async_complete_sample(duration_usec: int) -> void:
+	_terrain_async_complete_sample_count += 1
+	_terrain_async_complete_total_usec += duration_usec
+	_terrain_async_complete_max_usec = maxi(_terrain_async_complete_max_usec, duration_usec)
+	_terrain_async_complete_last_usec = duration_usec
+
+func _record_terrain_commit_sample(duration_usec: int) -> void:
+	if duration_usec <= 0:
+		return
+	_terrain_commit_sample_count += 1
+	_terrain_commit_total_usec += duration_usec
+	_terrain_commit_max_usec = maxi(_terrain_commit_max_usec, duration_usec)
+	_terrain_commit_last_usec = duration_usec
+
 func _average_usec(total_usec: int, sample_count: int) -> int:
 	if sample_count <= 0:
 		return 0
@@ -465,6 +544,49 @@ func _enqueue_ready_payload(chunk_id: String, payload: Dictionary) -> void:
 	_prepared_payloads[chunk_id] = payload
 	if not _pending_mount_ids.has(chunk_id):
 		_pending_mount_ids.append(chunk_id)
+
+func _try_enqueue_waiting_payload(chunk_id: String) -> void:
+	if not _surface_waiting_payloads.has(chunk_id):
+		return
+	var payload: Dictionary = _surface_waiting_payloads[chunk_id]
+	var surface_binding: Dictionary = payload.get("surface_page_binding", {})
+	var terrain_mesh_result: Dictionary = payload.get("terrain_mesh_result", {})
+	if surface_binding.is_empty() or terrain_mesh_result.is_empty():
+		_surface_waiting_payloads[chunk_id] = payload
+		return
+	_surface_waiting_payloads.erase(chunk_id)
+	_enqueue_ready_payload(chunk_id, payload)
+
+func _queue_terrain_job(chunk_id: String, payload: Dictionary, page_header: Dictionary, grid_steps: int) -> void:
+	if _pending_terrain_jobs.has(chunk_id):
+		return
+	var runtime_key := str(page_header.get("runtime_key", ""))
+	var existing_runtime_bundle := {}
+	var runtime_hit := false
+	if _terrain_page_provider.has_runtime_bundle(runtime_key):
+		existing_runtime_bundle = _terrain_page_provider.get_runtime_bundle(runtime_key).duplicate(true)
+		runtime_hit = true
+	var job_request := {
+		"chunk_id": chunk_id,
+		"chunk_size_m": float(payload.get("chunk_size_m", 256.0)),
+		"grid_steps": grid_steps,
+		"page_header": page_header.duplicate(true),
+		"page_request": _terrain_page_provider.build_page_request(payload, grid_steps, page_header),
+		"existing_runtime_bundle": existing_runtime_bundle,
+		"runtime_hit": runtime_hit,
+	}
+	var thread := Thread.new()
+	var dispatch_started_usec := Time.get_ticks_usec()
+	var start_error := thread.start(Callable(self, "_prepare_terrain_request_async").bind(job_request))
+	_record_terrain_async_dispatch_sample(Time.get_ticks_usec() - dispatch_started_usec)
+	if start_error != OK:
+		_apply_completed_terrain_job(_prepare_terrain_request_async(job_request))
+		return
+
+	_pending_terrain_jobs[chunk_id] = {
+		"thread": thread,
+		"runtime_key": runtime_key,
+	}
 
 func _queue_surface_job(chunk_id: String, payload: Dictionary, page_header: Dictionary, detail_mode: String) -> void:
 	var runtime_key := str(page_header.get("runtime_key", ""))
@@ -488,17 +610,33 @@ func _queue_surface_job(chunk_id: String, payload: Dictionary, page_header: Dict
 		var runtime_bundle := _surface_page_provider.store_runtime_bundle(runtime_key, surface_data)
 		_record_surface_commit_sample(int(runtime_bundle.get("commit_usec", 0)))
 		payload["surface_page_binding"] = _surface_page_provider.build_chunk_binding(page_header, runtime_bundle, false)
-		_surface_waiting_payloads.erase(chunk_id)
-		_enqueue_ready_payload(chunk_id, payload)
+		_surface_waiting_payloads[chunk_id] = payload
+		_try_enqueue_waiting_payload(chunk_id)
 		return
 
 	_pending_surface_jobs[runtime_key] = {
 		"thread": thread,
-		"page_request": page_request,
 		"waiter_headers": {
 			chunk_id: page_header.duplicate(true),
 		},
 	}
+
+func _collect_completed_terrain_jobs() -> void:
+	var chunk_ids: Array[String] = []
+	for chunk_id in _pending_terrain_jobs.keys():
+		chunk_ids.append(str(chunk_id))
+	chunk_ids.sort()
+
+	for chunk_id in chunk_ids:
+		var job: Dictionary = _pending_terrain_jobs[chunk_id]
+		var thread: Thread = job.get("thread")
+		if thread == null or thread.is_alive():
+			continue
+		var thread_result: Variant = thread.wait_to_finish()
+		_pending_terrain_jobs.erase(chunk_id)
+		if not (thread_result is Dictionary):
+			continue
+		_apply_completed_terrain_job(thread_result)
 
 func _collect_completed_surface_jobs() -> void:
 	var runtime_keys: Array[String] = []
@@ -527,8 +665,8 @@ func _collect_completed_surface_jobs() -> void:
 				continue
 			var payload: Dictionary = _surface_waiting_payloads[chunk_id]
 			payload["surface_page_binding"] = _surface_page_provider.build_chunk_binding(waiter_headers[waiter_chunk_id], runtime_bundle, false)
-			_surface_waiting_payloads.erase(chunk_id)
-			_enqueue_ready_payload(chunk_id, payload)
+			_surface_waiting_payloads[chunk_id] = payload
+			_try_enqueue_waiting_payload(chunk_id)
 		_pending_surface_jobs.erase(runtime_key)
 
 func _prune_surface_job_waiters(target_chunk_ids: Dictionary) -> void:
@@ -542,5 +680,52 @@ func _prune_surface_job_waiters(target_chunk_ids: Dictionary) -> void:
 		job["waiter_headers"] = waiter_headers
 		_pending_surface_jobs[runtime_key] = job
 
+func _prune_terrain_job_waiters(target_chunk_ids: Dictionary) -> void:
+	for chunk_id in _pending_terrain_jobs.keys():
+		if target_chunk_ids.has(str(chunk_id)):
+			continue
+		var job: Dictionary = _pending_terrain_jobs[chunk_id]
+		job["orphaned"] = true
+		_pending_terrain_jobs[chunk_id] = job
+
+func _apply_completed_terrain_job(thread_result: Dictionary) -> void:
+	var chunk_id := str(thread_result.get("chunk_id", ""))
+	_record_terrain_async_complete_sample(int(thread_result.get("prepare_usec", 0)))
+	var runtime_key := str(thread_result.get("runtime_key", ""))
+	var runtime_hit := bool(thread_result.get("runtime_hit", false))
+	if not runtime_hit:
+		_terrain_page_provider.store_runtime_bundle(runtime_key, thread_result.get("runtime_bundle", {}))
+	if not _surface_waiting_payloads.has(chunk_id):
+		return
+	var payload: Dictionary = _surface_waiting_payloads[chunk_id]
+	payload["terrain_page_binding"] = (thread_result.get("terrain_page_binding", {}) as Dictionary).duplicate(true)
+	payload["terrain_mesh_result"] = (thread_result.get("terrain_mesh_result", {}) as Dictionary).duplicate(true)
+	_surface_waiting_payloads[chunk_id] = payload
+	_try_enqueue_waiting_payload(chunk_id)
+
 func _prepare_surface_request_async(surface_request: Dictionary) -> Dictionary:
 	return CityRoadMaskBuilder.prepare_surface_data(surface_request)
+
+func _prepare_terrain_request_async(job_request: Dictionary) -> Dictionary:
+	var started_usec := Time.get_ticks_usec()
+	var page_header: Dictionary = job_request.get("page_header", {})
+	var runtime_bundle: Dictionary = (job_request.get("existing_runtime_bundle", {}) as Dictionary).duplicate(true)
+	var runtime_hit := bool(job_request.get("runtime_hit", false))
+	if runtime_bundle.is_empty():
+		runtime_bundle = CityTerrainPageProvider.prepare_page_bundle(job_request.get("page_request", {}))
+		runtime_hit = false
+	var terrain_page_binding := CityTerrainPageProvider.build_chunk_binding_from_bundle(page_header, runtime_bundle, runtime_hit)
+	var terrain_mesh_result := CityTerrainMeshBuilder.new().build_profiled_terrain_arrays_from_binding(
+		float(job_request.get("chunk_size_m", 256.0)),
+		int(job_request.get("grid_steps", CityChunkScene.TERRAIN_GRID_STEPS)),
+		terrain_page_binding
+	)
+	return {
+		"chunk_id": str(job_request.get("chunk_id", "")),
+		"runtime_key": str(page_header.get("runtime_key", "")),
+		"runtime_hit": runtime_hit,
+		"runtime_bundle": runtime_bundle,
+		"terrain_page_binding": terrain_page_binding,
+		"terrain_mesh_result": terrain_mesh_result,
+		"prepare_usec": Time.get_ticks_usec() - started_usec,
+	}

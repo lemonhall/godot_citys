@@ -30,6 +30,12 @@ func get_runtime_bundle(runtime_key: String) -> Dictionary:
 		return {}
 	return _runtime_pages[runtime_key]
 
+func store_runtime_bundle(runtime_key: String, runtime_bundle: Dictionary) -> Dictionary:
+	if _runtime_pages.has(runtime_key):
+		return _runtime_pages[runtime_key]
+	_runtime_pages[runtime_key] = runtime_bundle.duplicate(true)
+	return _runtime_pages[runtime_key]
+
 func build_chunk_page_header(chunk_data: Dictionary, grid_steps: int) -> Dictionary:
 	var chunk_key: Vector2i = chunk_data.get("chunk_key", Vector2i.ZERO)
 	var chunk_size_m := float(chunk_data.get("chunk_size_m", 256.0))
@@ -44,15 +50,19 @@ func build_chunk_page_header(chunk_data: Dictionary, grid_steps: int) -> Diction
 	}
 
 func resolve_chunk_sample_binding(chunk_data: Dictionary, grid_steps: int) -> Dictionary:
-	var page_header := build_chunk_page_header(chunk_data, grid_steps)
+	var page_request := build_page_request(chunk_data, grid_steps)
+	var page_header: Dictionary = page_request.get("page_header", {})
 	var runtime_key := str(page_header.get("runtime_key", ""))
 	if has_runtime_bundle(runtime_key):
 		return build_chunk_binding(page_header, get_runtime_bundle(runtime_key), true)
-	var runtime_bundle := _build_page_bundle(page_header, int(chunk_data.get("world_seed", chunk_data.get("chunk_seed", 0))))
-	_runtime_pages[runtime_key] = runtime_bundle
+	var runtime_bundle := prepare_page_bundle(page_request)
+	store_runtime_bundle(runtime_key, runtime_bundle)
 	return build_chunk_binding(page_header, runtime_bundle, false)
 
 func build_chunk_binding(page_header: Dictionary, runtime_bundle: Dictionary, runtime_hit: bool) -> Dictionary:
+	return build_chunk_binding_from_bundle(page_header, runtime_bundle, runtime_hit)
+
+static func build_chunk_binding_from_bundle(page_header: Dictionary, runtime_bundle: Dictionary, runtime_hit: bool) -> Dictionary:
 	var page_contract: Dictionary = page_header.get("page_contract", {})
 	var chunk_samples := _extract_chunk_samples(
 		runtime_bundle.get("page_heights", PackedFloat32Array()),
@@ -72,31 +82,52 @@ func build_chunk_binding(page_header: Dictionary, runtime_bundle: Dictionary, ru
 		"build_usec": 0 if runtime_hit else int(runtime_bundle.get("build_usec", 0)),
 	}
 
-func _build_page_bundle(page_header: Dictionary, world_seed: int) -> Dictionary:
+func build_page_request(chunk_data: Dictionary, grid_steps: int, page_header: Dictionary = {}) -> Dictionary:
+	var header := page_header if not page_header.is_empty() else build_chunk_page_header(chunk_data, grid_steps)
+	var world_seed := int(chunk_data.get("world_seed", chunk_data.get("chunk_seed", 0)))
+	var world_bounds := Rect2()
+	if _config != null:
+		world_bounds = _config.get_world_bounds()
+	return {
+		"page_header": header.duplicate(true),
+		"page_contract": (header.get("page_contract", {}) as Dictionary).duplicate(true),
+		"chunk_size_m": float(header.get("chunk_size_m", 256.0)),
+		"grid_steps": int(header.get("grid_steps", grid_steps)),
+		"world_seed": world_seed,
+		"world_bounds": world_bounds,
+		"road_graph": _world_data.get("road_graph"),
+	}
+
+static func prepare_page_bundle(page_request: Dictionary) -> Dictionary:
 	var started_usec := Time.get_ticks_usec()
-	var page_contract: Dictionary = page_header.get("page_contract", {})
-	var chunk_size_m := float(page_header.get("chunk_size_m", 256.0))
-	var chunk_grid_steps := int(page_header.get("grid_steps", 12))
+	var page_header: Dictionary = page_request.get("page_header", {})
+	var page_contract: Dictionary = page_request.get("page_contract", {})
+	var chunk_size_m := float(page_request.get("chunk_size_m", page_header.get("chunk_size_m", 256.0)))
+	var chunk_grid_steps := int(page_request.get("grid_steps", page_header.get("grid_steps", 12)))
+	var world_seed := int(page_request.get("world_seed", 0))
+	var world_bounds: Rect2 = page_request.get("world_bounds", Rect2())
+	var road_graph = page_request.get("road_graph")
 	var chunks_per_page := int(page_contract.get("chunks_per_page", CityTerrainPageLayout.CHUNKS_PER_PAGE))
 	var page_grid_steps := chunk_grid_steps * chunks_per_page
 	var page_heights := PackedFloat32Array()
 	page_heights.resize((page_grid_steps + 1) * (page_grid_steps + 1))
 	var page_normals := PackedVector3Array()
 	page_normals.resize(page_heights.size())
+	var template_catalog := CityTerrainGridTemplate.new()
 
 	var origin_chunk_key: Vector2i = page_contract.get("page_origin_chunk_key", Vector2i.ZERO)
 	for local_y in range(chunks_per_page):
 		for local_x in range(chunks_per_page):
 			var chunk_key := origin_chunk_key + Vector2i(local_x, local_y)
-			var chunk_center := _chunk_center_from_key(chunk_key, chunk_size_m)
+			var chunk_center := _chunk_center_from_key_static(chunk_key, chunk_size_m, world_bounds)
 			var road_layout: Dictionary = CityRoadLayoutBuilder.build_chunk_roads({
 				"chunk_key": chunk_key,
 				"chunk_center": chunk_center,
 				"chunk_size_m": chunk_size_m,
 				"world_seed": world_seed,
-				"road_graph": _world_data.get("road_graph"),
+				"road_graph": road_graph,
 			})
-			var chunk_samples := _build_chunk_samples(chunk_center, chunk_size_m, world_seed, chunk_grid_steps, road_layout.get("segments", []))
+			var chunk_samples := _build_chunk_samples_static(template_catalog, chunk_center, chunk_size_m, world_seed, chunk_grid_steps, road_layout.get("segments", []))
 			_merge_chunk_samples_into_page(
 				page_heights,
 				page_normals,
@@ -115,7 +146,7 @@ func _build_page_bundle(page_header: Dictionary, world_seed: int) -> Dictionary:
 		"build_usec": Time.get_ticks_usec() - started_usec,
 	}
 
-func _extract_chunk_samples(page_heights: PackedFloat32Array, page_normals: PackedVector3Array, page_grid_steps: int, chunk_slot: Vector2i, chunk_grid_steps: int) -> Dictionary:
+static func _extract_chunk_samples(page_heights: PackedFloat32Array, page_normals: PackedVector3Array, page_grid_steps: int, chunk_slot: Vector2i, chunk_grid_steps: int) -> Dictionary:
 	var page_row_stride := page_grid_steps + 1
 	var chunk_row_stride := chunk_grid_steps + 1
 	var start_x := chunk_slot.x * chunk_grid_steps
@@ -149,7 +180,10 @@ func _build_runtime_key(page_contract: Dictionary, chunk_size_m: float, grid_ste
 	]
 
 func _build_chunk_samples(chunk_center: Vector3, chunk_size_m: float, world_seed: int, chunk_grid_steps: int, road_segments: Array) -> Dictionary:
-	var template: Dictionary = _template_catalog.get_template(chunk_size_m, chunk_grid_steps)
+	return _build_chunk_samples_static(_template_catalog, chunk_center, chunk_size_m, world_seed, chunk_grid_steps, road_segments)
+
+static func _build_chunk_samples_static(template_catalog: CityTerrainGridTemplate, chunk_center: Vector3, chunk_size_m: float, world_seed: int, chunk_grid_steps: int, road_segments: Array) -> Dictionary:
+	var template: Dictionary = template_catalog.get_template(chunk_size_m, chunk_grid_steps)
 	var local_points: PackedVector2Array = template.get("local_points", PackedVector2Array())
 	var heights := PackedFloat32Array()
 	heights.resize(local_points.size())
@@ -168,7 +202,7 @@ func _build_chunk_samples(chunk_center: Vector3, chunk_size_m: float, world_seed
 		"normals": _build_normals(heights, chunk_grid_steps + 1, chunk_size_m),
 	}
 
-func _merge_chunk_samples_into_page(page_heights: PackedFloat32Array, page_normals: PackedVector3Array, chunk_heights: PackedFloat32Array, chunk_normals: PackedVector3Array, page_grid_steps: int, chunk_grid_steps: int, chunk_slot: Vector2i) -> void:
+static func _merge_chunk_samples_into_page(page_heights: PackedFloat32Array, page_normals: PackedVector3Array, chunk_heights: PackedFloat32Array, chunk_normals: PackedVector3Array, page_grid_steps: int, chunk_grid_steps: int, chunk_slot: Vector2i) -> void:
 	var page_row_stride := page_grid_steps + 1
 	var chunk_row_stride := chunk_grid_steps + 1
 	var start_x := chunk_slot.x * chunk_grid_steps
@@ -180,7 +214,7 @@ func _merge_chunk_samples_into_page(page_heights: PackedFloat32Array, page_norma
 			page_heights[page_index] = chunk_heights[chunk_index]
 			page_normals[page_index] = chunk_normals[chunk_index]
 
-func _build_normals(heights: PackedFloat32Array, row_stride: int, world_size_m: float) -> PackedVector3Array:
+static func _build_normals(heights: PackedFloat32Array, row_stride: int, world_size_m: float) -> PackedVector3Array:
 	var normals := PackedVector3Array()
 	normals.resize(heights.size())
 	var grid_steps := row_stride - 1
@@ -205,6 +239,9 @@ func _build_normals(heights: PackedFloat32Array, row_stride: int, world_size_m: 
 
 func _chunk_center_from_key(chunk_key: Vector2i, chunk_size_m: float) -> Vector3:
 	var bounds: Rect2 = _config.get_world_bounds()
+	return _chunk_center_from_key_static(chunk_key, chunk_size_m, bounds)
+
+static func _chunk_center_from_key_static(chunk_key: Vector2i, chunk_size_m: float, bounds: Rect2) -> Vector3:
 	return Vector3(
 		bounds.position.x + (float(chunk_key.x) + 0.5) * chunk_size_m,
 		0.0,

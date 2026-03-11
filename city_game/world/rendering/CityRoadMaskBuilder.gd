@@ -15,6 +15,7 @@ static func prepare_surface_data(surface_request: Dictionary) -> Dictionary:
 	var detail_mode := str(surface_request.get("detail_mode", DETAIL_MODE_FULL))
 	var mask_resolution := maxi(int(surface_request.get("mask_resolution", MASK_RESOLUTION)), 1)
 	var surface_world_size_m := float(surface_request.get("surface_world_size_m", 256.0))
+	var surface_origin_m: Vector2 = surface_request.get("surface_origin_m", Vector2(-surface_world_size_m * 0.5, -surface_world_size_m * 0.5))
 	var uv_rect: Rect2 = surface_request.get("uv_rect", Rect2(Vector2.ZERO, Vector2.ONE))
 	var cache_signature := str(surface_request.get("cache_signature", ""))
 	var cache_path := str(surface_request.get("cache_path", ""))
@@ -52,15 +53,15 @@ static func prepare_surface_data(surface_request: Dictionary) -> Dictionary:
 		var paint_started_usec := Time.get_ticks_usec()
 		for road_segment in surface_segments:
 			var segment_dict: Dictionary = road_segment
-			_paint_segment_mask(road_bytes, segment_dict, surface_world_size_m, false, mask_resolution)
+			_paint_segment_mask(road_bytes, segment_dict, surface_world_size_m, surface_origin_m, false, mask_resolution)
 			if detail_mode == DETAIL_MODE_FULL:
-				_paint_segment_mask(stripe_bytes, segment_dict, surface_world_size_m, true, mask_resolution)
+				_paint_segment_mask(stripe_bytes, segment_dict, surface_world_size_m, surface_origin_m, true, mask_resolution)
 
 		for cluster in clusters:
 			var cluster_dict: Dictionary = cluster
 			_paint_disc(
 				road_bytes,
-				_local_point_to_pixel(cluster_dict.get("center", Vector3.ZERO), surface_world_size_m, mask_resolution),
+				_local_point_to_pixel(cluster_dict.get("center", Vector3.ZERO), surface_origin_m, surface_world_size_m, mask_resolution),
 				_world_radius_to_pixels(float(cluster_dict.get("radius", 0.0)), surface_world_size_m, mask_resolution),
 				1.4,
 				mask_resolution
@@ -84,6 +85,7 @@ static func prepare_surface_data(surface_request: Dictionary) -> Dictionary:
 		"page_key": surface_request.get("page_key", Vector2i.ZERO),
 		"detail_mode": detail_mode,
 		"surface_world_size_m": surface_world_size_m,
+		"surface_origin_m": surface_origin_m,
 		"mask_resolution": mask_resolution,
 		"mask_profile_stats": {
 			"surface_scope": str(surface_request.get("surface_scope", "chunk")),
@@ -150,6 +152,7 @@ static func _build_chunk_surface_request(profile: Dictionary, chunk_size_m: floa
 		"cache_path": cache.build_cache_path(profile, chunk_size_m, detail_mode, MASK_RESOLUTION),
 		"surface_segments": profile.get("road_segments", []),
 		"surface_world_size_m": chunk_size_m,
+		"surface_origin_m": Vector2(-chunk_size_m * 0.5, -chunk_size_m * 0.5),
 		"mask_resolution": MASK_RESOLUTION,
 		"detail_mode": detail_mode,
 		"uv_rect": Rect2(Vector2.ZERO, Vector2.ONE),
@@ -165,7 +168,7 @@ static func _extract_surface_segments(raw_segments: Array) -> Array:
 		surface_segments.append(segment_dict)
 	return surface_segments
 
-static func _paint_segment_mask(mask_bytes: PackedByteArray, segment_dict: Dictionary, surface_world_size_m: float, stripe_only: bool, mask_resolution: int) -> void:
+static func _paint_segment_mask(mask_bytes: PackedByteArray, segment_dict: Dictionary, surface_world_size_m: float, surface_origin_m: Vector2, stripe_only: bool, mask_resolution: int) -> void:
 	var points: Array = segment_dict.get("points", [])
 	if points.size() < 2:
 		return
@@ -181,8 +184,8 @@ static func _paint_segment_mask(mask_bytes: PackedByteArray, segment_dict: Dicti
 		var end_point: Vector3 = points[point_index + 1]
 		_paint_capsule_segment(
 			mask_bytes,
-			_local_point_to_pixel(start_point, surface_world_size_m, mask_resolution),
-			_local_point_to_pixel(end_point, surface_world_size_m, mask_resolution),
+			_local_point_to_pixel(start_point, surface_origin_m, surface_world_size_m, mask_resolution),
+			_local_point_to_pixel(end_point, surface_origin_m, surface_world_size_m, mask_resolution),
 			radius_px,
 			feather_px,
 			mask_resolution
@@ -246,9 +249,9 @@ static func _paint_capsule_segment(mask_bytes: PackedByteArray, start_px: Vector
 			var next_value := maxi(current_value, int(round(strength * 255.0)))
 			mask_bytes[byte_index] = next_value
 
-static func _local_point_to_pixel(point: Vector3, surface_world_size_m: float, mask_resolution: int) -> Vector2:
-	var normalized_x := clampf(point.x / maxf(surface_world_size_m, 1.0) + 0.5, 0.0, 1.0)
-	var normalized_z := clampf(point.z / maxf(surface_world_size_m, 1.0) + 0.5, 0.0, 1.0)
+static func _local_point_to_pixel(point: Vector3, surface_origin_m: Vector2, surface_world_size_m: float, mask_resolution: int) -> Vector2:
+	var normalized_x := clampf((point.x - surface_origin_m.x) / maxf(surface_world_size_m, 1.0), 0.0, 1.0)
+	var normalized_z := clampf((point.z - surface_origin_m.y) / maxf(surface_world_size_m, 1.0), 0.0, 1.0)
 	return Vector2(
 		normalized_x * float(mask_resolution - 1),
 		normalized_z * float(mask_resolution - 1)

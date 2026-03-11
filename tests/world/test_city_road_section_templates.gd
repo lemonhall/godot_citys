@@ -33,7 +33,7 @@ func _run() -> void:
 				"world_seed": config.base_seed,
 			})
 
-			if not T.require_true(self, str(layout.get("road_mesh_mode", "")) == "templated_roadbed", "Road layout must advertise templated roadbed rendering"):
+			if not T.require_true(self, str(layout.get("road_mesh_mode", "")) == "terrain_overlay_bridges", "Road layout must advertise terrain-overlay surface roads with 3D bridges"):
 				return
 
 			for segment in layout.get("segments", []):

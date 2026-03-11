@@ -36,10 +36,23 @@ func _run() -> void:
 	for _step in range(72):
 		await physics_frame
 
-	if not T.require_true(self, player.global_position.y > terrain_height + 0.5, "Player must remain above the streamed chunk ground outside the v1 center tile"):
+	var hit := _raycast_surface(world, player)
+	if not T.require_true(self, not hit.is_empty(), "Ground continuity must find the streamed chunk ground under the player"):
+		return
+	var ground_height := float((hit.get("position", Vector3.ZERO) as Vector3).y)
+	if not T.require_true(self, player.global_position.y > ground_height + 0.5, "Player must remain above the streamed chunk ground outside the v1 center tile"):
 		return
 	if not T.require_true(self, player.is_on_floor(), "Player must settle on the streamed chunk ground"):
 		return
 
 	world.queue_free()
 	T.pass_and_quit(self)
+
+func _raycast_surface(world: Node, player: Node3D) -> Dictionary:
+	var query := PhysicsRayQueryParameters3D.create(
+		player.global_position + Vector3.UP * 20.0,
+		player.global_position + Vector3.DOWN * 60.0
+	)
+	query.collide_with_areas = false
+	query.exclude = [player.get_rid()]
+	return world.get_world_3d().direct_space_state.intersect_ray(query)

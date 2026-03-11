@@ -46,9 +46,15 @@ func _run() -> void:
 				return
 			if not T.require_true(self, chunk_scene.has_method("get_bridge_deck_thickness_m"), "Chunk scene must expose get_bridge_deck_thickness_m()"):
 				return
-			if not T.require_true(self, int(chunk_scene.get_road_collision_shape_count()) > 0, "Road system must build collision support for player grounding"):
+			if not T.require_true(self, int(chunk_scene.get_road_collision_shape_count()) > 0, "Bridge decks must still expose collision shapes"):
 				return
 			if not T.require_true(self, int(chunk_scene.get_bridge_collision_shape_count()) > 0, "Bridge decks must build collision support so the player can traverse them"):
+				return
+			if not T.require_true(
+				self,
+				int(chunk_scene.get_road_collision_shape_count()) == int(chunk_scene.get_bridge_collision_shape_count()),
+				"Only bridge decks should keep standalone road collision bodies; surface roads must rely on terrain collision"
+			):
 				return
 			if not T.require_true(self, float(chunk_scene.get_bridge_min_clearance_m()) >= 5.0, "Bridge decks must keep at least 5 meters of clearance"):
 				return

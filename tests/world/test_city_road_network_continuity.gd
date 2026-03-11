@@ -45,7 +45,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(stats.get("curved_road_segment_count", 0)) > 0, "Chunk scene roads must include curved segments, not only straight orthogonal strips"):
 		return
-	if not T.require_true(self, str(stats.get("road_mesh_mode", "")) == "templated_roadbed", "Chunk roads must use templated roadbed rendering, not the old ribbon strips"):
+	if not T.require_true(self, str(stats.get("road_mesh_mode", "")) == "terrain_overlay_bridges", "Chunk roads must use terrain-overlay surface roads and reserve mesh geometry for bridges"):
 		return
 	if not T.require_true(self, int(stats.get("non_axis_road_segment_count", 0)) > 0, "Chunk roads must include clearly non-orthogonal directions to reduce grid feel"):
 		return

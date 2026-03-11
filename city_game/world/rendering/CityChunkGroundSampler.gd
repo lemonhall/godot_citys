@@ -18,7 +18,7 @@ static func _blend_ground_to_roadbed(local_point: Vector2, base_height: float, p
 		if bool(segment_dict.get("bridge", false)):
 			continue
 		var width := float(segment_dict.get("width", 0.0))
-		var influence_radius := width * 0.65 + 2.0
+		var influence_radius := maxf(width * 0.95 + 6.0, 16.0)
 		var points: Array = segment_dict.get("points", [])
 		for point_index in range(points.size() - 1):
 			var a: Vector3 = points[point_index]
@@ -30,9 +30,9 @@ static func _blend_ground_to_roadbed(local_point: Vector2, base_height: float, p
 			var segment_2d := Vector2(b.x - a.x, b.z - a.z)
 			var segment_length_sq := segment_2d.length_squared()
 			var t := 0.0 if segment_length_sq <= 0.001 else clampf((nearest - Vector2(a.x, a.z)).dot(segment_2d) / segment_length_sq, 0.0, 1.0)
-			var road_height := lerpf(a.y, b.y, t) - 0.06
-			var weight := 1.0 - distance / influence_radius
-			var blended_height := lerpf(base_height, road_height, weight * 0.86)
+			var road_height := lerpf(a.y, b.y, t) - 0.02
+			var weight := pow(1.0 - distance / influence_radius, 1.35)
+			var blended_height := lerpf(base_height, road_height, clampf(weight * 0.96, 0.0, 1.0))
 			if distance < best_distance:
 				best_distance = distance
 				shaped_height = blended_height

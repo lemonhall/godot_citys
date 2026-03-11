@@ -82,7 +82,7 @@ static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 		"curved_segment_count": curved_segment_count,
 		"non_axis_road_segment_count": non_axis_road_segment_count,
 		"bridge_count": bridge_count,
-		"road_mesh_mode": "templated_roadbed",
+		"road_mesh_mode": "terrain_overlay_bridges",
 		"road_template_counts": template_counts,
 		"bridge_min_clearance_m": 0.0 if min_bridge_clearance == INF else min_bridge_clearance,
 		"bridge_deck_thickness_m": max_bridge_deck_thickness,
@@ -182,7 +182,7 @@ static func _make_segment_from_world_polyline(road_class: String, points_2d: Arr
 		"bridge": bridge,
 		"bridge_clearance_m": bridge_clearance,
 		"bridge_range": bridge_range,
-	}
+}
 
 static func _get_local_grid_origin(world_seed: int) -> Vector2:
 	return Vector2(

@@ -6,6 +6,8 @@ const CityChunkOccluderBuilder := preload("res://city_game/world/rendering/CityC
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
 const CityRoadMeshBuilder := preload("res://city_game/world/rendering/CityRoadMeshBuilder.gd")
+const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
+const CityGroundRoadOverlayShader := preload("res://city_game/world/rendering/CityGroundRoadOverlay.gdshader")
 
 const LOD_NEAR := "near"
 const LOD_MID := "mid"
@@ -13,7 +15,7 @@ const LOD_FAR := "far"
 
 const NEAR_THRESHOLD_M := 880.0
 const MID_THRESHOLD_M := 1600.0
-const TERRAIN_GRID_STEPS := 6
+const TERRAIN_GRID_STEPS := 12
 
 var _chunk_data: Dictionary = {}
 var _profile: Dictionary = {}
@@ -270,13 +272,22 @@ func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> StaticBody3
 	var mesh_instance := MeshInstance3D.new()
 	mesh_instance.name = "MeshInstance3D"
 	mesh_instance.mesh = terrain_mesh
-	var material := StandardMaterial3D.new()
-	var palette: Dictionary = profile.get("palette", {})
-	material.albedo_color = palette.get("ground", Color(0.12549, 0.333333, 0.168627, 1.0))
-	material.roughness = 1.0
-	mesh_instance.material_override = material
+	mesh_instance.material_override = _build_ground_material(chunk_size_m, profile)
 	ground_body.add_child(mesh_instance)
 	return ground_body
+
+func _build_ground_material(chunk_size_m: float, profile: Dictionary) -> ShaderMaterial:
+	var palette: Dictionary = profile.get("palette", {})
+	var overlay_textures: Dictionary = CityRoadMaskBuilder.build_surface_textures(profile, chunk_size_m)
+	var material := ShaderMaterial.new()
+	material.shader = CityGroundRoadOverlayShader
+	material.set_shader_parameter("chunk_size_m", chunk_size_m)
+	material.set_shader_parameter("ground_color", palette.get("ground", Color(0.12549, 0.333333, 0.168627, 1.0)))
+	material.set_shader_parameter("road_color", palette.get("road", Color(0.16, 0.17, 0.19, 1.0)))
+	material.set_shader_parameter("stripe_color", palette.get("stripe", Color(0.9, 0.8, 0.5, 1.0)))
+	material.set_shader_parameter("road_mask_texture", overlay_textures.get("road_mask_texture"))
+	material.set_shader_parameter("stripe_mask_texture", overlay_textures.get("stripe_mask_texture"))
+	return material
 
 func _build_terrain_mesh(chunk_size_m: float) -> ArrayMesh:
 	var half_size := chunk_size_m * 0.5

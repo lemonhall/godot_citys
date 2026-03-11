@@ -12,24 +12,33 @@ static func build_road_overlay(profile: Dictionary, chunk_data: Dictionary) -> N
 	var support_color: Color = palette.get("mid", Color(0.32, 0.38, 0.44, 1.0))
 
 	var road_segments: Array = profile.get("road_segments", [])
-	var road_surface := _build_road_surface_mesh(road_segments, road_color, false)
+	var bridge_segments := _filter_bridge_segments(road_segments)
+	var road_surface := _build_road_surface_mesh(bridge_segments, road_color, false)
 	if road_surface != null:
 		road_root.add_child(road_surface)
 
-	var stripe_surface := _build_road_surface_mesh(road_segments, stripe_color, true)
+	var stripe_surface := _build_road_surface_mesh(bridge_segments, stripe_color, true)
 	if stripe_surface != null:
 		road_root.add_child(stripe_surface)
 
-	var collision_root := _build_collision_bodies(road_segments)
+	var collision_root := _build_collision_bodies(bridge_segments)
 	road_root.add_child(collision_root)
 	road_root.set_meta("road_collision_shape_count", int(collision_root.get_meta("road_collision_shape_count", 0)))
 	road_root.set_meta("bridge_collision_shape_count", int(collision_root.get_meta("bridge_collision_shape_count", 0)))
 
-	var supports := _build_bridge_supports(road_segments, chunk_data, support_color)
+	var supports := _build_bridge_supports(bridge_segments, chunk_data, support_color)
 	if supports != null:
 		road_root.add_child(supports)
 
 	return road_root
+
+static func _filter_bridge_segments(road_segments: Array) -> Array:
+	var bridge_segments: Array = []
+	for road_segment in road_segments:
+		var segment_dict: Dictionary = road_segment
+		if bool(segment_dict.get("bridge", false)):
+			bridge_segments.append(segment_dict)
+	return bridge_segments
 
 static func _build_road_surface_mesh(road_segments: Array, color: Color, stripe_only: bool) -> MeshInstance3D:
 	var surface_tool := SurfaceTool.new()
@@ -203,11 +212,13 @@ static func _build_intersection_clusters(road_segments: Array) -> Array[Dictiona
 					"radius": width * 0.56,
 					"thickness": thickness,
 					"count": 0,
+					"bridge": bool(segment_dict.get("bridge", false)),
 				}
 			var cluster: Dictionary = clusters[key]
 			cluster["radius"] = maxf(float(cluster.get("radius", 0.0)), width * 0.56)
 			cluster["thickness"] = maxf(float(cluster.get("thickness", 0.0)), thickness)
 			cluster["count"] = int(cluster.get("count", 0)) + 1
+			cluster["bridge"] = bool(cluster.get("bridge", false)) or bool(segment_dict.get("bridge", false))
 			clusters[key] = cluster
 	var results: Array[Dictionary] = []
 	for cluster in clusters.values():
@@ -283,6 +294,8 @@ static func _build_collision_bodies(road_segments: Array) -> Node3D:
 		body.add_child(collision_shape)
 		collision_root.add_child(body)
 		road_collision_shape_count += 1
+		if bool(cluster_dict.get("bridge", false)):
+			bridge_collision_shape_count += 1
 		intersection_index += 1
 	collision_root.set_meta("road_collision_shape_count", road_collision_shape_count)
 	collision_root.set_meta("bridge_collision_shape_count", bridge_collision_shape_count)

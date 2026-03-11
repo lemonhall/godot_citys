@@ -9,6 +9,7 @@ extends CharacterBody3D
 
 var _gravity := ProjectSettings.get_setting("physics/3d/default_gravity") as float
 var _pitch := deg_to_rad(-18.0)
+var _control_enabled := true
 
 func _ready() -> void:
 	camera_rig.rotation.x = _pitch
@@ -17,6 +18,8 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if DisplayServer.get_name() == "headless":
+		return
+	if not _control_enabled:
 		return
 
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -37,10 +40,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
-	elif _jump_requested():
+	elif _control_enabled and _jump_requested():
 		velocity.y = jump_velocity
 
-	var input_dir := _read_move_input()
+	var input_dir := _read_move_input() if _control_enabled else Vector2.ZERO
 	var move_dir := Vector3.ZERO
 	if input_dir.length() > 0.0:
 		var forward := -global_transform.basis.z
@@ -58,6 +61,15 @@ func _physics_process(delta: float) -> void:
 	velocity.z = move_dir.z * speed
 
 	move_and_slide()
+
+func set_control_enabled(enabled: bool) -> void:
+	_control_enabled = enabled
+	if not enabled:
+		velocity.x = 0.0
+		velocity.z = 0.0
+
+func is_control_enabled() -> bool:
+	return _control_enabled
 
 func _read_move_input() -> Vector2:
 	var horizontal := 0.0

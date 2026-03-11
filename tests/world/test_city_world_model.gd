@@ -14,9 +14,9 @@ func _run() -> void:
 	var config = script.new()
 	if not T.require_true(self, config != null, "CityWorldConfig must instantiate"):
 		return
-	if not T.require_true(self, config.world_width_m == 7000, "world_width_m must equal 7000"):
+	if not T.require_true(self, config.world_width_m == 70000, "world_width_m must equal 70000"):
 		return
-	if not T.require_true(self, config.world_depth_m == 7000, "world_depth_m must equal 7000"):
+	if not T.require_true(self, config.world_depth_m == 70000, "world_depth_m must equal 70000"):
 		return
 	if not T.require_true(self, config.chunk_size_m == 256, "chunk_size_m must equal 256"):
 		return
@@ -24,19 +24,19 @@ func _run() -> void:
 		return
 
 	var chunk_grid: Vector2i = config.get_chunk_grid_size()
-	if not T.require_true(self, chunk_grid == Vector2i(28, 28), "Chunk grid must equal 28 x 28"):
+	if not T.require_true(self, chunk_grid == Vector2i(274, 274), "Chunk grid must equal 274 x 274"):
 		return
-	if not T.require_true(self, config.get_chunk_count() == 784, "Chunk count must equal 784"):
+	if not T.require_true(self, config.get_chunk_count() == 75076, "Chunk count must equal 75076"):
 		return
 
 	var district_grid: Vector2i = config.get_district_grid_size()
-	if not T.require_true(self, district_grid == Vector2i(7, 7), "District grid must equal 7 x 7"):
+	if not T.require_true(self, district_grid == Vector2i(70, 70), "District grid must equal 70 x 70"):
 		return
 
 	var bounds: Rect2 = config.get_world_bounds()
-	if not T.require_true(self, bounds.position == Vector2(-3500.0, -3500.0), "World bounds min must equal (-3500, -3500)"):
+	if not T.require_true(self, bounds.position == Vector2(-35000.0, -35000.0), "World bounds min must equal (-35000, -35000)"):
 		return
-	if not T.require_true(self, bounds.size == Vector2(7000.0, 7000.0), "World bounds size must equal (7000, 7000)"):
+	if not T.require_true(self, bounds.size == Vector2(70000.0, 70000.0), "World bounds size must equal (70000, 70000)"):
 		return
 
 	var seed_a: int = config.derive_seed("district", Vector2i(2, 3), 11)
@@ -45,4 +45,3 @@ func _run() -> void:
 		return
 
 	T.pass_and_quit(self)
-

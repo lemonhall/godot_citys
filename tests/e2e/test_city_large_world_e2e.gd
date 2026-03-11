@@ -19,6 +19,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("get_chunk_streamer"), "CityPrototype must expose get_chunk_streamer()"):
 		return
+	if not T.require_true(self, world.has_method("build_runtime_report"), "CityPrototype must expose build_runtime_report()"):
+		return
 
 	var player = world.get_node_or_null("Player")
 	if not T.require_true(self, player != null, "CityPrototype must keep Player node for large world E2E"):
@@ -68,6 +70,13 @@ func _run() -> void:
 	var transition_log: Array = world.get_chunk_streamer().get_transition_log()
 	if not T.require_true(self, transition_log.size() > 0, "Large world E2E must record chunk transition evidence"):
 		return
+
+	var report: Dictionary = world.build_runtime_report(player.global_position)
+	if not T.require_true(self, report.has("final_position"), "Large world E2E report must include final_position"):
+		return
+	if not T.require_true(self, int(report.get("transition_count", 0)) > 0, "Large world E2E report must include transition_count"):
+		return
+	print("CITY_E2E_REPORT %s" % JSON.stringify(report))
 
 	world.queue_free()
 	T.pass_and_quit(self)

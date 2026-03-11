@@ -51,6 +51,9 @@ func get_lod_contract() -> Dictionary:
 func get_prop_multimesh() -> MultiMeshInstance3D:
 	return get_node("NearGroup/Props/StreetLamps") as MultiMeshInstance3D
 
+func get_ground_body() -> StaticBody3D:
+	return get_node_or_null("GroundBody") as StaticBody3D
+
 func get_renderer_stats() -> Dictionary:
 	var prop_multimesh := get_prop_multimesh()
 	return {
@@ -65,6 +68,8 @@ func _rebuild() -> void:
 		child.queue_free()
 
 	var chunk_size_m := float(_chunk_data.get("chunk_size_m", 256.0))
+
+	add_child(_build_ground_body(chunk_size_m))
 
 	var near_group := Node3D.new()
 	near_group.name = "NearGroup"
@@ -98,3 +103,25 @@ func _build_tower(name: String, center: Vector3, size: Vector3, color: Color) ->
 	mesh_instance.material_override = material
 	return mesh_instance
 
+func _build_ground_body(chunk_size_m: float) -> StaticBody3D:
+	var ground_body := StaticBody3D.new()
+	ground_body.name = "GroundBody"
+	ground_body.position.y = -0.5
+
+	var collision_shape := CollisionShape3D.new()
+	collision_shape.name = "CollisionShape3D"
+	collision_shape.shape = BoxShape3D.new()
+	(collision_shape.shape as BoxShape3D).size = Vector3(chunk_size_m, 1.0, chunk_size_m)
+	ground_body.add_child(collision_shape)
+
+	var mesh_instance := MeshInstance3D.new()
+	mesh_instance.name = "MeshInstance3D"
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(chunk_size_m, 1.0, chunk_size_m)
+	mesh_instance.mesh = mesh
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.12549, 0.333333, 0.168627, 1.0)
+	material.roughness = 1.0
+	mesh_instance.material_override = material
+	ground_body.add_child(mesh_instance)
+	return ground_body

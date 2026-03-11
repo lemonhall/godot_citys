@@ -5,9 +5,13 @@ const CityWorldGenerator := preload("res://city_game/world/generation/CityWorldG
 const CityChunkStreamer := preload("res://city_game/world/streaming/CityChunkStreamer.gd")
 const CityChunkNavRuntime := preload("res://city_game/world/navigation/CityChunkNavRuntime.gd")
 
+const CONTROL_MODE_PLAYER := "player"
+const CONTROL_MODE_CAR := "car"
+
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
 @onready var player: Node3D = $Player
+@onready var inspection_car: Node3D = $InspectionCar
 @onready var debug_overlay: CanvasLayer = $DebugOverlay
 @onready var chunk_renderer: Node3D = $ChunkRenderer
 
@@ -15,6 +19,7 @@ var _world_config
 var _world_data: Dictionary = {}
 var _chunk_streamer
 var _navigation_runtime
+var _control_mode := CONTROL_MODE_PLAYER
 
 func _ready() -> void:
 	_world_config = CityWorldConfig.new()
@@ -24,13 +29,23 @@ func _ready() -> void:
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
 
-	update_streaming_for_position(player.global_position)
+	set_control_mode(CONTROL_MODE_PLAYER)
+	update_streaming_for_position(_get_active_anchor_position())
 	_refresh_hud_status()
 
 func _process(_delta: float) -> void:
-	if player == null:
+	var active_anchor := _get_active_anchor()
+	if active_anchor == null:
 		return
-	update_streaming_for_position(player.global_position)
+	update_streaming_for_position(active_anchor.global_position)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_C:
+			set_control_mode(CONTROL_MODE_CAR if _control_mode == CONTROL_MODE_PLAYER else CONTROL_MODE_PLAYER)
 
 func _refresh_hud_status() -> void:
 	if not generated_city.has_method("get_city_summary"):
@@ -40,18 +55,26 @@ func _refresh_hud_status() -> void:
 
 	var snapshot: Dictionary = get_streaming_snapshot()
 	var world_summary := str(_world_data.get("summary", "World data unavailable"))
+	var active_anchor := _get_active_anchor()
+	var active_speed_text := ""
+	if _control_mode == CONTROL_MODE_CAR and inspection_car != null and inspection_car.has_method("get_speed_mps"):
+		active_speed_text = "car_speed=%.1f m/s" % float(inspection_car.get_speed_mps())
 	var lines := PackedStringArray([
 		"City sandbox skeleton",
-		"WASD / arrows move",
-		"Shift sprint  Space jump",
-		"Mouse rotates camera  Esc releases cursor",
+		"WASD / arrows move or drive",
+		"Shift sprint / turbo  Space jump",
+		"Mouse rotates player camera  Esc releases cursor",
+		"Press C to toggle player / inspection car",
+		"control_mode=%s" % _control_mode,
+		"tracked_position=%s" % str(_vector3_to_dict(active_anchor.global_position if active_anchor != null else Vector3.ZERO)),
 		generated_city.get_city_summary(),
 		world_summary,
 		"current_chunk_id=%s | active_chunk_count=%d" % [
 			str(snapshot.get("current_chunk_id", "")),
 			int(snapshot.get("active_chunk_count", 0))
 		],
-		"multimesh_instance_total=%d" % int(snapshot.get("multimesh_instance_total", 0))
+		"multimesh_instance_total=%d" % int(snapshot.get("multimesh_instance_total", 0)),
+		active_speed_text,
 	])
 	hud.set_status("\n".join(lines))
 
@@ -70,12 +93,29 @@ func get_chunk_renderer():
 func get_navigation_runtime():
 	return _navigation_runtime
 
+func get_control_mode() -> String:
+	return _control_mode
+
+func set_control_mode(mode: String) -> void:
+	if mode != CONTROL_MODE_PLAYER and mode != CONTROL_MODE_CAR:
+		return
+	_control_mode = mode
+	if player != null and player.has_method("set_control_enabled"):
+		player.set_control_enabled(mode == CONTROL_MODE_PLAYER)
+	if inspection_car != null and inspection_car.has_method("set_control_enabled"):
+		inspection_car.set_control_enabled(mode == CONTROL_MODE_CAR)
+	_set_camera_current(player.get_node_or_null("CameraRig/Camera3D"), mode == CONTROL_MODE_PLAYER)
+	_set_camera_current(inspection_car.get_node_or_null("CameraRig/Camera3D"), mode == CONTROL_MODE_CAR)
+	_refresh_hud_status()
+
 func get_streaming_snapshot() -> Dictionary:
 	if _chunk_streamer == null:
 		return {}
 	var snapshot: Dictionary = _chunk_streamer.get_streaming_snapshot()
 	if chunk_renderer != null and chunk_renderer.has_method("get_renderer_stats"):
 		snapshot.merge(chunk_renderer.get_renderer_stats(), true)
+	snapshot["control_mode"] = _control_mode
+	snapshot["tracked_position"] = _vector3_to_dict(_get_active_anchor_position())
 	var current_chunk_id := str(snapshot.get("current_chunk_id", ""))
 	if current_chunk_id != "" and chunk_renderer != null and chunk_renderer.has_method("get_chunk_scene_stats"):
 		var current_chunk_stats: Dictionary = chunk_renderer.get_chunk_scene_stats(current_chunk_id)
@@ -98,3 +138,45 @@ func plan_macro_route(start_position: Vector3, goal_position: Vector3) -> Array:
 	if _navigation_runtime == null:
 		return []
 	return _navigation_runtime.plan_route(start_position, goal_position)
+
+func build_runtime_report(subject_position = null) -> Dictionary:
+	var snapshot: Dictionary = get_streaming_snapshot()
+	var resolved_position := _get_active_anchor_position()
+	if subject_position is Vector3:
+		resolved_position = subject_position
+	var transition_count := 0
+	if _chunk_streamer != null:
+		transition_count = _chunk_streamer.get_transition_log().size()
+	return {
+		"control_mode": _control_mode,
+		"current_chunk_id": str(snapshot.get("current_chunk_id", "")),
+		"active_chunk_count": int(snapshot.get("active_chunk_count", 0)),
+		"last_prepare_usec": int(snapshot.get("last_prepare_usec", 0)),
+		"last_mount_usec": int(snapshot.get("last_mount_usec", 0)),
+		"last_retire_usec": int(snapshot.get("last_retire_usec", 0)),
+		"transition_count": transition_count,
+		"final_position": _vector3_to_dict(resolved_position),
+		"lod_mode_counts": snapshot.get("lod_mode_counts", {}),
+		"multimesh_instance_total": int(snapshot.get("multimesh_instance_total", 0)),
+	}
+
+func _get_active_anchor() -> Node3D:
+	if _control_mode == CONTROL_MODE_CAR and inspection_car != null:
+		return inspection_car
+	return player
+
+func _get_active_anchor_position() -> Vector3:
+	var active_anchor := _get_active_anchor()
+	return active_anchor.global_position if active_anchor != null else Vector3.ZERO
+
+func _set_camera_current(camera_node: Node, current: bool) -> void:
+	var camera := camera_node as Camera3D
+	if camera != null:
+		camera.current = current
+
+func _vector3_to_dict(value: Vector3) -> Dictionary:
+	return {
+		"x": snappedf(value.x, 0.01),
+		"y": snappedf(value.y, 0.01),
+		"z": snappedf(value.z, 0.01),
+	}

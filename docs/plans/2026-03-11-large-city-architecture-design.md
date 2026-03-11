@@ -34,11 +34,12 @@ v2 采用 **Option B：数据先行的 chunk streaming 底盘**。
 
 设计约束如下：
 
-1. 世界尺度先锁定为 `7km x 7km`，默认 `1 Godot unit = 1 meter`。
+1. 世界尺度锁定为 `70km x 70km`，默认 `1 Godot unit = 1 meter`。（[已由 ECN-0001 修正](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
 2. 运行时主 chunk 尺寸锁定为 `256m x 256m`。
 3. 玩家周围高成本活跃窗口锁定为 `5x5` chunk；其外只保留低成本元数据或远景代理。
-4. 不在 v2 引入双精度引擎、自定义 origin shifting、车辆交通、行人群体或任务系统。
-5. 任何“几十平方公里已实现”的声明，必须以自动化测试和 debug 证据证明不是“单场景硬撑”或“只扩大地板”。
+4. block / parcel 元数据使用确定性、按 chunk 惰性查询接口，不做整城 eager 展开。
+5. 不在 v2 引入双精度引擎、自定义 origin shifting、车辆交通仿真、行人群体或任务系统；但允许引入开发态巡检车作为人工验收工具。
+6. 任何“几十平方公里已实现”的声明，必须以自动化测试和 debug 证据证明不是“单场景硬撑”或“只扩大地板”。
 
 ## Validation Focus
 

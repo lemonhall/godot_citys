@@ -3,8 +3,8 @@ extends RefCounted
 const DEFAULT_BASE_SEED := 424242
 
 var base_seed: int
-var world_width_m := 7000
-var world_depth_m := 7000
+var world_width_m := 70000
+var world_depth_m := 70000
 var chunk_size_m := 256
 var district_size_m := 1000
 
@@ -34,10 +34,12 @@ func get_district_grid_size() -> Vector2i:
 	)
 
 func format_chunk_id(chunk_key: Vector2i) -> String:
-	return "chunk_%02d_%02d" % [chunk_key.x, chunk_key.y]
+	var width := _grid_index_width(get_chunk_grid_size())
+	return "chunk_%s_%s" % [_pad_index(chunk_key.x, width), _pad_index(chunk_key.y, width)]
 
 func format_district_id(district_key: Vector2i) -> String:
-	return "district_%02d_%02d" % [district_key.x, district_key.y]
+	var width := _grid_index_width(get_district_grid_size())
+	return "district_%s_%s" % [_pad_index(district_key.x, width), _pad_index(district_key.y, width)]
 
 func derive_seed(scope_name: String, coords: Vector2i = Vector2i.ZERO, salt: int = 0) -> int:
 	var hash_value := base_seed & 0x7fffffff
@@ -46,3 +48,12 @@ func derive_seed(scope_name: String, coords: Vector2i = Vector2i.ZERO, salt: int
 	hash_value = int((hash_value + coords.x * 92837111 + coords.y * 689287499 + salt * 283923481) & 0x7fffffff)
 	hash_value = int((hash_value * 1103515245 + 12345) & 0x7fffffff)
 	return hash_value
+
+func _grid_index_width(grid_size: Vector2i) -> int:
+	return maxi(str(grid_size.x - 1).length(), str(grid_size.y - 1).length())
+
+func _pad_index(value: int, width: int) -> String:
+	var text := str(value)
+	while text.length() < width:
+		text = "0" + text
+	return text

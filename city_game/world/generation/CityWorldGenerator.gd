@@ -69,28 +69,7 @@ func _build_road_graph(config, district_graph):
 
 func _build_block_layout(config):
 	var layout = CityBlockLayout.new()
-	var chunk_grid: Vector2i = config.get_chunk_grid_size()
-
-	for x in chunk_grid.x:
-		for y in chunk_grid.y:
-			var chunk_key: Vector2i = Vector2i(x, y)
-			var chunk_id: String = str(config.format_chunk_id(chunk_key))
-			for local_index in 4:
-				var district_key: Vector2i = Vector2i(mini(int(x / 4), 6), mini(int(y / 4), 6))
-				var block_id: String = "%s_block_%d" % [chunk_id, local_index]
-				layout.add_block({
-					"block_id": block_id,
-					"chunk_id": chunk_id,
-					"district_id": config.format_district_id(district_key),
-					"seed": config.derive_seed("block", chunk_key, local_index),
-				})
-				for parcel_index in 4:
-					layout.add_parcel({
-						"parcel_id": "%s_parcel_%d" % [block_id, parcel_index],
-						"block_id": block_id,
-						"chunk_id": chunk_id,
-						"seed": config.derive_seed("parcel", chunk_key, local_index * 10 + parcel_index),
-					})
+	layout.setup(config)
 	return layout
 
 func _build_summary(config, district_graph, road_graph, block_layout) -> String:

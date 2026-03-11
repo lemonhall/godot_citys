@@ -14,6 +14,7 @@ func get_debug_snapshot() -> Dictionary:
 
 func get_debug_text() -> String:
 	var lines := [
+		"control_mode=%s" % str(_snapshot.get("control_mode", "player")),
 		"current_chunk_id=%s" % str(_snapshot.get("current_chunk_id", "")),
 		"active_chunk_count=%d" % int(_snapshot.get("active_chunk_count", 0)),
 		"last_prepare_usec=%d" % int(_snapshot.get("last_prepare_usec", 0)),
@@ -28,6 +29,8 @@ func get_debug_text() -> String:
 		lines.append("current_chunk_multimesh_instance_count=%d" % int(_snapshot.get("current_chunk_multimesh_instance_count", 0)))
 	if _snapshot.has("current_chunk_lod_mode"):
 		lines.append("current_chunk_lod_mode=%s" % str(_snapshot.get("current_chunk_lod_mode", "")))
+	if _snapshot.has("tracked_position"):
+		lines.append("tracked_position=%s" % str(_snapshot.get("tracked_position", {})))
 	return "\n".join(lines)
 
 func _apply_snapshot() -> void:

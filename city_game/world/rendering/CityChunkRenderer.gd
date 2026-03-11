@@ -24,6 +24,14 @@ var _last_prepare_count := 0
 var _last_mount_count := 0
 var _last_retire_count := 0
 var _last_queue_process_frame := -1
+var _prepare_profile_sample_count := 0
+var _prepare_profile_total_usec := 0
+var _prepare_profile_max_usec := 0
+var _prepare_profile_last_usec := 0
+var _mount_setup_sample_count := 0
+var _mount_setup_total_usec := 0
+var _mount_setup_max_usec := 0
+var _mount_setup_last_usec := 0
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
@@ -39,6 +47,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_last_mount_count = 0
 	_last_retire_count = 0
 	_last_queue_process_frame = -1
+	reset_streaming_profile_stats()
 	set_process(true)
 
 func _process(_delta: float) -> void:
@@ -137,6 +146,30 @@ func get_streaming_budget_stats() -> Dictionary:
 		"last_retire_usec": _last_retire_usec,
 	}
 
+func get_streaming_profile_stats() -> Dictionary:
+	return {
+		"prepare_profile_sample_count": _prepare_profile_sample_count,
+		"prepare_profile_total_usec": _prepare_profile_total_usec,
+		"prepare_profile_avg_usec": _average_usec(_prepare_profile_total_usec, _prepare_profile_sample_count),
+		"prepare_profile_max_usec": _prepare_profile_max_usec,
+		"prepare_profile_last_usec": _prepare_profile_last_usec,
+		"mount_setup_sample_count": _mount_setup_sample_count,
+		"mount_setup_total_usec": _mount_setup_total_usec,
+		"mount_setup_avg_usec": _average_usec(_mount_setup_total_usec, _mount_setup_sample_count),
+		"mount_setup_max_usec": _mount_setup_max_usec,
+		"mount_setup_last_usec": _mount_setup_last_usec,
+	}
+
+func reset_streaming_profile_stats() -> void:
+	_prepare_profile_sample_count = 0
+	_prepare_profile_total_usec = 0
+	_prepare_profile_max_usec = 0
+	_prepare_profile_last_usec = 0
+	_mount_setup_sample_count = 0
+	_mount_setup_total_usec = 0
+	_mount_setup_max_usec = 0
+	_mount_setup_last_usec = 0
+
 func get_renderer_stats() -> Dictionary:
 	var lod_mode_counts := {
 		"near": 0,
@@ -157,6 +190,7 @@ func get_renderer_stats() -> Dictionary:
 		"lod_mode_counts": lod_mode_counts,
 	}
 	stats.merge(get_streaming_budget_stats(), true)
+	stats.merge(get_streaming_profile_stats(), true)
 	return stats
 
 func get_chunk_scene_stats(chunk_id: String) -> Dictionary:
@@ -204,7 +238,9 @@ func _process_prepare_budget() -> void:
 			break
 		var entry: Dictionary = _pending_prepare[chunk_id]
 		var payload := _build_chunk_payload(entry)
+		var profile_started_usec := Time.get_ticks_usec()
 		payload["prepared_profile"] = CityChunkProfileBuilder.build_profile(payload)
+		_record_prepare_profile_sample(Time.get_ticks_usec() - profile_started_usec)
 		_prepared_payloads[chunk_id] = payload
 		if not _pending_mount_ids.has(chunk_id):
 			_pending_mount_ids.append(chunk_id)
@@ -224,7 +260,9 @@ func _process_mount_budget() -> void:
 			continue
 		var payload: Dictionary = _prepared_payloads[chunk_id]
 		var chunk_scene := _take_pooled_scene()
+		var setup_started_usec := Time.get_ticks_usec()
 		chunk_scene.setup(payload)
+		_record_mount_setup_sample(Time.get_ticks_usec() - setup_started_usec)
 		chunk_scene.visible = true
 		add_child(chunk_scene)
 		_chunk_scenes[chunk_id] = chunk_scene
@@ -289,3 +327,20 @@ func _duration_or_zero(started_usec: int, item_count: int) -> int:
 	if item_count <= 0:
 		return 0
 	return maxi(int(Time.get_ticks_usec() - started_usec), 1)
+
+func _record_prepare_profile_sample(duration_usec: int) -> void:
+	_prepare_profile_sample_count += 1
+	_prepare_profile_total_usec += duration_usec
+	_prepare_profile_max_usec = maxi(_prepare_profile_max_usec, duration_usec)
+	_prepare_profile_last_usec = duration_usec
+
+func _record_mount_setup_sample(duration_usec: int) -> void:
+	_mount_setup_sample_count += 1
+	_mount_setup_total_usec += duration_usec
+	_mount_setup_max_usec = maxi(_mount_setup_max_usec, duration_usec)
+	_mount_setup_last_usec = duration_usec
+
+func _average_usec(total_usec: int, sample_count: int) -> int:
+	if sample_count <= 0:
+		return 0
+	return int(round(float(total_usec) / float(sample_count)))

@@ -33,11 +33,33 @@ var _minimap_cache_key := ""
 var _minimap_cache_hits := 0
 var _minimap_cache_misses := 0
 var _minimap_rebuild_count := 0
+var _world_generation_usec := 0
+var _world_generation_profile: Dictionary = {}
+var _update_streaming_sample_count := 0
+var _update_streaming_total_usec := 0
+var _update_streaming_max_usec := 0
+var _update_streaming_last_usec := 0
+var _hud_refresh_sample_count := 0
+var _hud_refresh_total_usec := 0
+var _hud_refresh_max_usec := 0
+var _hud_refresh_last_usec := 0
+var _frame_step_sample_count := 0
+var _frame_step_total_usec := 0
+var _frame_step_max_usec := 0
+var _frame_step_last_usec := 0
+var _minimap_request_count := 0
+var _minimap_build_total_usec := 0
+var _minimap_build_max_usec := 0
+var _minimap_build_last_usec := 0
 
 func _ready() -> void:
 	_configure_environment()
 	_world_config = CityWorldConfig.new()
-	_world_data = CityWorldGenerator.new().generate_world(_world_config)
+	var world_generator := CityWorldGenerator.new()
+	var generation_started_usec := Time.get_ticks_usec()
+	_world_data = world_generator.generate_world(_world_config)
+	_world_generation_usec = Time.get_ticks_usec() - generation_started_usec
+	_world_generation_profile = (_world_data.get("generation_profile", {}) as Dictionary).duplicate(true)
 	_chunk_streamer = CityChunkStreamer.new(_world_config, _world_data)
 	_navigation_runtime = CityChunkNavRuntime.new(_world_config, _world_data)
 	_minimap_projector = CityMinimapProjector.new(_world_config, _world_data)
@@ -56,7 +78,9 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if player == null:
 		return
+	var frame_started_usec := Time.get_ticks_usec()
 	update_streaming_for_position(player.global_position)
+	_record_frame_step_sample(Time.get_ticks_usec() - frame_started_usec)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if DisplayServer.get_name() == "headless":
@@ -67,6 +91,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			set_control_mode(CONTROL_MODE_INSPECTION if _control_mode == CONTROL_MODE_PLAYER else CONTROL_MODE_PLAYER)
 
 func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
+	var refresh_started_usec := Time.get_ticks_usec()
 	if not generated_city.has_method("get_city_summary"):
 		return
 	if not hud.has_method("set_status"):
@@ -100,6 +125,7 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 		hud.set_debug_text(debug_overlay.get_debug_text())
 	if hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
+	_record_hud_refresh_sample(Time.get_ticks_usec() - refresh_started_usec)
 
 func get_world_config():
 	return _world_config
@@ -147,6 +173,7 @@ func get_streaming_snapshot() -> Dictionary:
 	return snapshot
 
 func update_streaming_for_position(world_position: Vector3) -> Array:
+	var started_usec := Time.get_ticks_usec()
 	if _chunk_streamer == null:
 		return []
 	var events: Array = _chunk_streamer.update_for_world_position(world_position)
@@ -157,6 +184,7 @@ func update_streaming_for_position(world_position: Vector3) -> Array:
 		debug_overlay.set_snapshot(snapshot)
 		debug_overlay.visible = false
 	_refresh_hud_status(snapshot)
+	_record_update_streaming_sample(Time.get_ticks_usec() - started_usec)
 	return events
 
 func plan_macro_route(start_position: Vector3, goal_position: Vector3) -> Array:
@@ -188,6 +216,7 @@ func build_runtime_report(subject_position = null) -> Dictionary:
 func build_minimap_snapshot() -> Dictionary:
 	if _minimap_projector == null:
 		return {}
+	_minimap_request_count += 1
 	var center_world_position := _get_active_anchor_position()
 	var player_world_position := player.global_position if player != null else Vector3.ZERO
 	var player_heading := player.rotation.y if player != null else 0.0
@@ -198,6 +227,7 @@ func build_minimap_snapshot() -> Dictionary:
 
 	_minimap_cache_misses += 1
 	_minimap_rebuild_count += 1
+	var minimap_started_usec := Time.get_ticks_usec()
 	var snapshot: Dictionary = _minimap_projector.build_snapshot(
 		center_world_position,
 		player_world_position,
@@ -208,6 +238,7 @@ func build_minimap_snapshot() -> Dictionary:
 	snapshot["route_overlay"] = _minimap_route_overlay.duplicate(true)
 	_minimap_cache_key = cache_key
 	_minimap_snapshot_cache = snapshot.duplicate(true)
+	_record_minimap_build_sample(Time.get_ticks_usec() - minimap_started_usec)
 	return snapshot
 
 func build_minimap_route_overlay(start_position: Vector3, goal_position: Vector3) -> Dictionary:
@@ -226,6 +257,61 @@ func get_minimap_cache_stats() -> Dictionary:
 		"hit_count": _minimap_cache_hits,
 		"miss_count": _minimap_cache_misses,
 		"rebuild_count": _minimap_rebuild_count,
+	}
+
+func reset_performance_profile() -> void:
+	_update_streaming_sample_count = 0
+	_update_streaming_total_usec = 0
+	_update_streaming_max_usec = 0
+	_update_streaming_last_usec = 0
+	_hud_refresh_sample_count = 0
+	_hud_refresh_total_usec = 0
+	_hud_refresh_max_usec = 0
+	_hud_refresh_last_usec = 0
+	_frame_step_sample_count = 0
+	_frame_step_total_usec = 0
+	_frame_step_max_usec = 0
+	_frame_step_last_usec = 0
+	_minimap_request_count = 0
+	_minimap_build_total_usec = 0
+	_minimap_build_max_usec = 0
+	_minimap_build_last_usec = 0
+	_minimap_cache_hits = 0
+	_minimap_cache_misses = 0
+	_minimap_rebuild_count = 0
+	_invalidate_minimap_cache()
+	if chunk_renderer != null and chunk_renderer.has_method("reset_streaming_profile_stats"):
+		chunk_renderer.reset_streaming_profile_stats()
+
+func get_performance_profile() -> Dictionary:
+	var streaming_profile: Dictionary = {}
+	if chunk_renderer != null and chunk_renderer.has_method("get_streaming_profile_stats"):
+		streaming_profile = chunk_renderer.get_streaming_profile_stats()
+	return {
+		"world_generation_usec": _world_generation_usec,
+		"world_generation_profile": _world_generation_profile.duplicate(true),
+		"update_streaming_sample_count": _update_streaming_sample_count,
+		"update_streaming_avg_usec": _average_usec(_update_streaming_total_usec, _update_streaming_sample_count),
+		"update_streaming_max_usec": _update_streaming_max_usec,
+		"update_streaming_last_usec": _update_streaming_last_usec,
+		"hud_refresh_sample_count": _hud_refresh_sample_count,
+		"hud_refresh_avg_usec": _average_usec(_hud_refresh_total_usec, _hud_refresh_sample_count),
+		"hud_refresh_max_usec": _hud_refresh_max_usec,
+		"frame_step_sample_count": _frame_step_sample_count,
+		"frame_step_avg_usec": _average_usec(_frame_step_total_usec, _frame_step_sample_count),
+		"frame_step_max_usec": _frame_step_max_usec,
+		"minimap_request_count": _minimap_request_count,
+		"minimap_build_avg_usec": _average_usec(_minimap_build_total_usec, _minimap_rebuild_count),
+		"minimap_build_max_usec": _minimap_build_max_usec,
+		"minimap_cache_hits": _minimap_cache_hits,
+		"minimap_cache_misses": _minimap_cache_misses,
+		"minimap_rebuild_count": _minimap_rebuild_count,
+		"streaming_prepare_profile_max_usec": int(streaming_profile.get("prepare_profile_max_usec", 0)),
+		"streaming_prepare_profile_avg_usec": int(streaming_profile.get("prepare_profile_avg_usec", 0)),
+		"streaming_prepare_profile_sample_count": int(streaming_profile.get("prepare_profile_sample_count", 0)),
+		"streaming_mount_setup_max_usec": int(streaming_profile.get("mount_setup_max_usec", 0)),
+		"streaming_mount_setup_avg_usec": int(streaming_profile.get("mount_setup_avg_usec", 0)),
+		"streaming_mount_setup_sample_count": int(streaming_profile.get("mount_setup_sample_count", 0)),
 	}
 
 func _align_player_to_streamed_ground() -> void:
@@ -381,6 +467,34 @@ func _build_minimap_cache_key(center_world_position: Vector3, player_world_posit
 func _invalidate_minimap_cache() -> void:
 	_minimap_cache_key = ""
 	_minimap_snapshot_cache.clear()
+
+func _record_update_streaming_sample(duration_usec: int) -> void:
+	_update_streaming_sample_count += 1
+	_update_streaming_total_usec += duration_usec
+	_update_streaming_max_usec = maxi(_update_streaming_max_usec, duration_usec)
+	_update_streaming_last_usec = duration_usec
+
+func _record_hud_refresh_sample(duration_usec: int) -> void:
+	_hud_refresh_sample_count += 1
+	_hud_refresh_total_usec += duration_usec
+	_hud_refresh_max_usec = maxi(_hud_refresh_max_usec, duration_usec)
+	_hud_refresh_last_usec = duration_usec
+
+func _record_frame_step_sample(duration_usec: int) -> void:
+	_frame_step_sample_count += 1
+	_frame_step_total_usec += duration_usec
+	_frame_step_max_usec = maxi(_frame_step_max_usec, duration_usec)
+	_frame_step_last_usec = duration_usec
+
+func _record_minimap_build_sample(duration_usec: int) -> void:
+	_minimap_build_total_usec += duration_usec
+	_minimap_build_max_usec = maxi(_minimap_build_max_usec, duration_usec)
+	_minimap_build_last_usec = duration_usec
+
+func _average_usec(total_usec: int, sample_count: int) -> int:
+	if sample_count <= 0:
+		return 0
+	return int(round(float(total_usec) / float(sample_count)))
 
 func _configure_environment() -> void:
 	if world_environment == null:

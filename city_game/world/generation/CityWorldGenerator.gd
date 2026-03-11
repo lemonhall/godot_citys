@@ -5,17 +5,40 @@ const CityRoadGraph := preload("res://city_game/world/model/CityRoadGraph.gd")
 const CityBlockLayout := preload("res://city_game/world/model/CityBlockLayout.gd")
 const CityReferenceRoadGraphBuilder := preload("res://city_game/world/generation/CityReferenceRoadGraphBuilder.gd")
 
+var _last_generation_profile: Dictionary = {}
+
 func generate_world(config) -> Dictionary:
+	var total_started_usec := Time.get_ticks_usec()
+	var district_started_usec := Time.get_ticks_usec()
 	var district_graph = _build_district_graph(config)
+	var district_usec := Time.get_ticks_usec() - district_started_usec
+	var road_started_usec := Time.get_ticks_usec()
 	var road_graph = _build_road_graph(config, district_graph)
+	var road_usec := Time.get_ticks_usec() - road_started_usec
+	var block_started_usec := Time.get_ticks_usec()
 	var block_layout = _build_block_layout(config)
+	var block_usec := Time.get_ticks_usec() - block_started_usec
+	_last_generation_profile = {
+		"district_usec": district_usec,
+		"road_graph_usec": road_usec,
+		"block_layout_usec": block_usec,
+		"total_usec": Time.get_ticks_usec() - total_started_usec,
+		"district_count": district_graph.get_district_count(),
+		"road_edge_count": road_graph.get_edge_count(),
+		"block_count": block_layout.get_block_count(),
+		"parcel_count": block_layout.get_parcel_count(),
+	}
 	return {
 		"seed": config.base_seed,
 		"district_graph": district_graph,
 		"road_graph": road_graph,
 		"block_layout": block_layout,
+		"generation_profile": _last_generation_profile.duplicate(true),
 		"summary": _build_summary(config, district_graph, road_graph, block_layout),
 	}
+
+func get_last_generation_profile() -> Dictionary:
+	return _last_generation_profile.duplicate(true)
 
 func _build_district_graph(config):
 	var graph = CityDistrictGraph.new()

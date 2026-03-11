@@ -25,6 +25,7 @@ var _setup_profile: Dictionary = {}
 var _current_lod_mode := LOD_NEAR
 var _current_surface_detail_mode := SURFACE_DETAIL_FULL
 var _surface_page_contract: Dictionary = {}
+var _terrain_page_contract: Dictionary = {}
 var _building_collision_shapes: Array[CollisionShape3D] = []
 var _building_collisions_enabled := true
 
@@ -81,6 +82,9 @@ func get_setup_profile() -> Dictionary:
 
 func get_surface_page_contract() -> Dictionary:
 	return _surface_page_contract.duplicate(true)
+
+func get_terrain_page_contract() -> Dictionary:
+	return _terrain_page_contract.duplicate(true)
 
 func get_visual_variant_id() -> String:
 	return str(_profile.get("variant_id", ""))
@@ -173,6 +177,7 @@ func get_renderer_stats() -> Dictionary:
 		"building_collision_shape_count": get_building_collision_shape_count(),
 		"building_count": get_building_count(),
 		"surface_page_key": _surface_page_contract.get("page_key", Vector2i.ZERO),
+		"terrain_page_key": _terrain_page_contract.get("page_key", Vector2i.ZERO),
 	}
 
 func _rebuild() -> void:
@@ -216,6 +221,7 @@ func _rebuild() -> void:
 	setup_profile["ground_vertex_sample_count"] = int(ground_result.get("vertex_sample_count", 0))
 	setup_profile["ground_unique_vertex_count"] = int(ground_result.get("unique_vertex_count", 0))
 	setup_profile["ground_duplication_ratio"] = float(ground_result.get("duplication_ratio", 0.0))
+	setup_profile["ground_runtime_page_hit"] = bool(ground_result.get("runtime_page_hit", false))
 
 	var near_group := Node3D.new()
 	near_group.name = "NearGroup"
@@ -368,6 +374,7 @@ func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 		"vertex_sample_count": int(terrain_build_result.get("vertex_sample_count", 0)),
 		"unique_vertex_count": int(terrain_build_result.get("unique_vertex_count", 0)),
 		"duplication_ratio": float(terrain_build_result.get("duplication_ratio", 0.0)),
+		"runtime_page_hit": bool(terrain_build_result.get("runtime_page_hit", false)),
 	}
 
 func _build_ground_material(chunk_size_m: float, profile: Dictionary, detail_mode: String = SURFACE_DETAIL_FULL) -> Dictionary:
@@ -464,11 +471,13 @@ func _build_terrain_mesh(chunk_size_m: float) -> Dictionary:
 		TERRAIN_GRID_STEPS
 	)
 	var sample_stats: Dictionary = terrain_build_result.get("sample_stats", {})
+	_terrain_page_contract = (terrain_build_result.get("page_contract", {}) as Dictionary).duplicate(true)
 	return {
 		"mesh": terrain_build_result.get("mesh"),
 		"vertex_sample_count": int(sample_stats.get("current_vertex_sample_count", 0)),
 		"unique_vertex_count": int(sample_stats.get("unique_vertex_sample_count", 0)),
 		"duplication_ratio": float(sample_stats.get("duplication_ratio", 0.0)),
+		"runtime_page_hit": bool(terrain_build_result.get("runtime_hit", false)),
 	}
 
 func _set_building_collisions_enabled(enabled: bool) -> void:

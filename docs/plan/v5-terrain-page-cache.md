@@ -66,3 +66,11 @@
 
 - terrain page 边界如果没有预留共享边/halo 样本，法线连续性会比高度连续性更难处理。
 - 如果 page signature 漂移，缓存收益会被随机种子和参数抖动吃掉。
+
+## Evidence
+
+- `tests/world/test_city_terrain_page_contract.gd`：PASS
+- `tests/world/test_city_terrain_page_runtime_sharing.gd`：PASS，第二个相邻 chunk binding 命中 runtime page cache
+- `tests/world/test_city_terrain_page_seam_continuity.gd`：PASS，east/west 边界高度与法线连续
+- `tests/world/test_city_chunk_setup_profile_breakdown.gd`：PASS，`ground_mesh_usec = 134~298`
+- `tests/e2e/test_city_runtime_performance_profile.gd`：PASS，当前 `wall_frame_avg_usec = 33746`、`streaming_mount_setup_avg_usec = 8094`

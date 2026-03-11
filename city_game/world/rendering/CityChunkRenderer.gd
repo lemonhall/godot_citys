@@ -3,6 +3,7 @@ extends Node3D
 const CityChunkScene := preload("res://city_game/world/rendering/CityChunkScene.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 const CityRoadSurfacePageProvider := preload("res://city_game/world/rendering/CityRoadSurfacePageProvider.gd")
+const CityTerrainPageProvider := preload("res://city_game/world/rendering/CityTerrainPageProvider.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
 
 const PREPARE_BUDGET_PER_TICK := 1
@@ -13,6 +14,7 @@ const MAX_POOLED_CHUNKS := 8
 var _config
 var _world_data: Dictionary = {}
 var _surface_page_provider = CityRoadSurfacePageProvider.new()
+var _terrain_page_provider = CityTerrainPageProvider.new()
 var _chunk_scenes: Dictionary = {}
 var _prepared_payloads: Dictionary = {}
 var _pending_prepare: Dictionary = {}
@@ -55,6 +57,8 @@ func setup(config, world_data: Dictionary) -> void:
 	_world_data = world_data
 	_surface_page_provider = CityRoadSurfacePageProvider.new()
 	_surface_page_provider.setup(_config, _world_data)
+	_terrain_page_provider = CityTerrainPageProvider.new()
+	_terrain_page_provider.setup(_config, _world_data)
 	_prepared_payloads.clear()
 	_pending_prepare.clear()
 	_surface_waiting_payloads.clear()
@@ -99,6 +103,7 @@ func _notification(what: int) -> void:
 	_pending_retire_ids.clear()
 	_last_queue_process_frame = -1
 	_surface_page_provider.clear()
+	_terrain_page_provider.clear()
 
 func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> void:
 	if _config == null:
@@ -181,6 +186,7 @@ func get_streaming_budget_stats() -> Dictionary:
 		"last_mount_usec": _last_mount_usec,
 		"last_retire_usec": _last_retire_usec,
 		"surface_runtime_page_count": _surface_page_provider.get_runtime_page_count(),
+		"terrain_runtime_page_count": _terrain_page_provider.get_runtime_page_count(),
 	}
 
 func get_streaming_profile_stats() -> Dictionary:
@@ -307,6 +313,8 @@ func _process_prepare_budget() -> void:
 		payload["prepared_profile"] = CityChunkProfileBuilder.build_profile(payload)
 		_record_prepare_profile_sample(Time.get_ticks_usec() - profile_started_usec)
 		payload["surface_page_provider"] = _surface_page_provider
+		payload["terrain_page_provider"] = _terrain_page_provider
+		payload["terrain_page_binding"] = _terrain_page_provider.resolve_chunk_sample_binding(payload, int(CityChunkScene.TERRAIN_GRID_STEPS))
 		payload["initial_lod_mode"] = _resolve_initial_lod_mode(payload)
 		var detail_mode := _resolve_surface_detail_mode_for_lod(str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR)))
 		var page_header: Dictionary = _surface_page_provider.build_chunk_page_header(payload, detail_mode)

@@ -80,3 +80,7 @@ func _jump_requested() -> bool:
 func _sprint_requested() -> bool:
 	return Input.is_key_pressed(KEY_SHIFT)
 
+func teleport_to_world_position(world_position: Vector3) -> void:
+	global_position = world_position
+	velocity = Vector3.ZERO
+

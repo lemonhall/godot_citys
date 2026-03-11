@@ -1,9 +1,10 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://city_game/scripts/CityPrototype.gd" id="1"]
 [ext_resource type="Script" path="res://city_game/scripts/CityBlockGrid.gd" id="2"]
 [ext_resource type="Script" path="res://city_game/scripts/PlayerController.gd" id="3"]
 [ext_resource type="Script" path="res://city_game/ui/PrototypeHud.gd" id="4"]
+[ext_resource type="Script" path="res://city_game/world/debug/CityDebugOverlay.gd" id="5"]
 
 [sub_resource type="Environment" id="1"]
 background_mode = 2
@@ -93,4 +94,25 @@ text = "godot_citys"
 
 [node name="Status" type="Label" parent="Hud/Margin/Panel/VBox"]
 text = "Booting city skeleton..."
+autowrap_mode = 3
+
+[node name="DebugOverlay" type="CanvasLayer" parent="."]
+layer = 2
+script = ExtResource("5")
+
+[node name="DebugMargin" type="MarginContainer" parent="DebugOverlay"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -364.0
+offset_top = -164.0
+offset_right = -20.0
+offset_bottom = -20.0
+
+[node name="DebugPanel" type="PanelContainer" parent="DebugOverlay/DebugMargin"]
+
+[node name="DebugLabel" type="Label" parent="DebugOverlay/DebugMargin/DebugPanel"]
+text = "current_chunk_id=\nactive_chunk_count=0"
 autowrap_mode = 3

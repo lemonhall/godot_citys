@@ -3,6 +3,7 @@ extends RefCounted
 const CityDistrictGraph := preload("res://city_game/world/model/CityDistrictGraph.gd")
 const CityRoadGraph := preload("res://city_game/world/model/CityRoadGraph.gd")
 const CityBlockLayout := preload("res://city_game/world/model/CityBlockLayout.gd")
+const CityReferenceRoadGraphBuilder := preload("res://city_game/world/generation/CityReferenceRoadGraphBuilder.gd")
 
 func generate_world(config) -> Dictionary:
 	var district_graph = _build_district_graph(config)
@@ -98,6 +99,7 @@ func _build_road_graph(config, district_graph):
 				_attach_edge_bounds(road_graph.edges[-1])
 	for district in district_graph.districts:
 		_append_district_collector_roads(config, road_graph, district)
+	CityReferenceRoadGraphBuilder.new().build_overlay(config, road_graph)
 	return road_graph
 
 func _build_block_layout(config):

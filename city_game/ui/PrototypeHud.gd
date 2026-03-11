@@ -3,6 +3,7 @@ extends CanvasLayer
 var _status_text := "Booting city skeleton..."
 var _debug_text := ""
 var _debug_expanded := false
+var _minimap_snapshot: Dictionary = {}
 
 func _ready() -> void:
 	var toggle_button := get_node_or_null("Root/ToggleButton") as Button
@@ -17,6 +18,16 @@ func set_status(text: String) -> void:
 func set_debug_text(text: String) -> void:
 	_debug_text = text
 	_apply_state()
+
+func set_minimap_snapshot(snapshot: Dictionary) -> void:
+	_minimap_snapshot = snapshot.duplicate(true)
+	_apply_state()
+
+func get_minimap_state() -> Dictionary:
+	return {
+		"expanded": _debug_expanded,
+		"snapshot": _minimap_snapshot.duplicate(true),
+	}
 
 func toggle_debug_expanded() -> void:
 	_debug_expanded = not _debug_expanded
@@ -33,6 +44,7 @@ func _apply_state() -> void:
 	var toggle_button := get_node_or_null("Root/ToggleButton") as Button
 	var status_label := get_node_or_null("Root/Panel/VBox/Status") as Label
 	var debug_label := get_node_or_null("Root/Panel/VBox/DebugText") as Label
+	var minimap_view := get_node_or_null("Root/MinimapFrame/MinimapView")
 	if panel != null:
 		panel.visible = _debug_expanded
 	if toggle_button != null:
@@ -41,3 +53,5 @@ func _apply_state() -> void:
 		status_label.text = _status_text
 	if debug_label != null:
 		debug_label.text = _debug_text
+	if minimap_view != null and minimap_view.has_method("set_snapshot"):
+		minimap_view.set_snapshot(_minimap_snapshot)

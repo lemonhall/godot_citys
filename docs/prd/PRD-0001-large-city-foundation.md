@@ -25,6 +25,7 @@
 - 低成本天空氛围、同轮廓 LOD 与确定性视觉变体（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
 - world-space 连续道路骨架、轻量地形高差与近景建筑碰撞（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - 更自然的本地道路场、道路缓冲区避让、多 archetype 占位建筑、折叠巡检 UI 与少量桥梁占位（[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
+- 参考式连续道路图、共享 2D 城市投影、小地图与导航路径可视化（[已由 ECN-0006 变更](../ecn/ECN-0006-reference-roadgraph-and-minimap.md)）
 - chunk-local 导航与跨 chunk 自动化 travel 流程验证
 - 性能与 streaming debug 观测面板
 - 开发态高速巡检模式与稳定运行时报告（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
@@ -74,7 +75,7 @@
 **范围**：
 
 - 生成 district graph
-- 生成 arterial / secondary road graph，并为 chunk 渲染提供可查询的 world-space 连续道路骨架（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)，[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
+- 生成参考式全局 continuous road graph，并为 chunk 渲染与 2D 城市投影同时提供可查询的 world-space 连续道路骨架（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)，[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)，[已由 ECN-0006 变更](../ecn/ECN-0006-reference-roadgraph-and-minimap.md)）
 - 提供 block / parcel 的确定性、按 chunk 查询的元数据接口（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
 - 允许 chunk 在没有高模资源时先用占位表现
 
@@ -87,6 +88,7 @@
 
 - 世界生成 API 能在不实例化整座城市场景节点的前提下，返回完整 district / road 图，以及可按 chunk 查询的 block / parcel 元数据契约。
 - 自动化测试至少断言生成结果包含非空 district graph、完整道路边集合、完整 block / parcel 统计，以及 `get_blocks_for_chunk()` 这类惰性查询接口。
+- 自动化测试至少断言道路图存在非正交连续段、局部吸附/切分后形成真实交叉连接，而不是仅由规则 district 边与每 chunk 本地补路拼接得出。（[已由 ECN-0006 变更](../ecn/ECN-0006-reference-roadgraph-and-minimap.md)）
 - 反作弊条款：任何验收都不得仅靠扩大 `CityPrototype.tscn` 中的静态几何来宣称“城市已扩容”。
 
 ### REQ-0001-003 受边界约束的 chunk streaming
@@ -236,6 +238,30 @@
 
 - 自动化测试至少断言：场景中不存在 legacy `Ground` 与 `InspectionCar`，可切换到 `inspection` 模式，且切换后 `active_chunk_count` 仍然 `<= 25`。
 - 人工试玩时应能通过高速巡检模式在大城市范围内快速检查 chunk streaming、LOD 与运行时观测。
+
+### REQ-0001-009 2D 小地图与导航投影
+
+**动机**：`70km x 70km` 城市如果没有一张与 3D 世界严格同源的 2D 地图层，人工巡检、路径辨认、道路命名和后续导航 UI 都会失去锚点。
+
+**范围**：
+
+- 基于同一份 world road graph 生成 2D 城市投影；
+- 在 HUD 中提供默认折叠的小地图视图；
+- 小地图至少显示道路骨架、玩家位置、玩家朝向、当前路径高亮；
+- 小地图坐标与 3D 世界坐标之间提供稳定可测的投影接口。
+
+**非目标**：
+
+- 不做最终美术风格地图瓦片
+- 不做完整 GPS 语音导航
+- 不做全量兴趣点数据库
+
+**验收口径**：
+
+- 自动化测试至少断言：同一 seed 下，小地图道路投影与 world road graph 拓扑一致，不能生成另一份独立随机路网。
+- 自动化测试至少断言：给定世界坐标，2D 小地图能稳定投影玩家位置和路线折线。
+- 自动化测试至少断言：HUD 小地图默认折叠，可展开，并显示玩家标记与至少一条路径高亮。
+- 反作弊条款：不得用静态贴图或与真实道路无关的示意图冒充小地图。
 
 ## Open Questions
 

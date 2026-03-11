@@ -7,6 +7,7 @@ const CityChunkKey := preload("res://city_game/world/streaming/CityChunkKey.gd")
 const CityChunkNavRuntime := preload("res://city_game/world/navigation/CityChunkNavRuntime.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
+const CityMinimapProjector := preload("res://city_game/world/map/CityMinimapProjector.gd")
 
 const CONTROL_MODE_PLAYER := "player"
 const CONTROL_MODE_INSPECTION := "inspection"
@@ -23,6 +24,8 @@ var _world_data: Dictionary = {}
 var _chunk_streamer
 var _navigation_runtime
 var _control_mode := CONTROL_MODE_PLAYER
+var _minimap_projector
+var _minimap_route_overlay: Dictionary = {}
 
 func _ready() -> void:
 	_configure_environment()
@@ -30,6 +33,7 @@ func _ready() -> void:
 	_world_data = CityWorldGenerator.new().generate_world(_world_config)
 	_chunk_streamer = CityChunkStreamer.new(_world_config, _world_data)
 	_navigation_runtime = CityChunkNavRuntime.new(_world_config, _world_data)
+	_minimap_projector = CityMinimapProjector.new(_world_config, _world_data)
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
 	if debug_overlay != null:
@@ -87,6 +91,8 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 	hud.set_status("\n".join(lines))
 	if hud.has_method("set_debug_text") and debug_overlay != null and debug_overlay.has_method("get_debug_text"):
 		hud.set_debug_text(debug_overlay.get_debug_text())
+	if hud.has_method("set_minimap_snapshot"):
+		hud.set_minimap_snapshot(build_minimap_snapshot())
 
 func get_world_config():
 	return _world_config
@@ -171,6 +177,28 @@ func build_runtime_report(subject_position = null) -> Dictionary:
 		"lod_mode_counts": snapshot.get("lod_mode_counts", {}),
 		"multimesh_instance_total": int(snapshot.get("multimesh_instance_total", 0)),
 	}
+
+func build_minimap_snapshot() -> Dictionary:
+	if _minimap_projector == null:
+		return {}
+	var snapshot: Dictionary = _minimap_projector.build_snapshot(
+		_get_active_anchor_position(),
+		player.global_position if player != null else Vector3.ZERO,
+		player.rotation.y if player != null else 0.0,
+		[],
+		1600.0
+	)
+	snapshot["route_overlay"] = _minimap_route_overlay.duplicate(true)
+	return snapshot
+
+func build_minimap_route_overlay(start_position: Vector3, goal_position: Vector3) -> Dictionary:
+	if _minimap_projector == null:
+		return {}
+	var route: Array = plan_macro_route(start_position, goal_position)
+	_minimap_route_overlay = _minimap_projector.build_route_overlay(_get_active_anchor_position(), start_position, goal_position, route, 1600.0)
+	if hud != null and hud.has_method("set_minimap_snapshot"):
+		hud.set_minimap_snapshot(build_minimap_snapshot())
+	return _minimap_route_overlay.duplicate(true)
 
 func _align_player_to_streamed_ground() -> void:
 	if player == null or _world_config == null:

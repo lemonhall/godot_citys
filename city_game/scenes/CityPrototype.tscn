@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://city_game/scripts/CityPrototype.gd" id="1"]
 [ext_resource type="Script" path="res://city_game/scripts/CityBlockGrid.gd" id="2"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://city_game/ui/PrototypeHud.gd" id="4"]
 [ext_resource type="Script" path="res://city_game/world/debug/CityDebugOverlay.gd" id="5"]
 [ext_resource type="Script" path="res://city_game/world/rendering/CityChunkRenderer.gd" id="6"]
+[ext_resource type="Script" path="res://city_game/ui/CityMinimapView.gd" id="7"]
 
 [sub_resource type="Environment" id="1"]
 background_mode = 2
@@ -93,6 +94,24 @@ autowrap_mode = 3
 [node name="DebugText" type="Label" parent="Hud/Root/Panel/VBox"]
 text = ""
 autowrap_mode = 3
+
+[node name="MinimapFrame" type="PanelContainer" parent="Hud/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -256.0
+offset_top = 24.0
+offset_right = -24.0
+offset_bottom = 256.0
+
+[node name="MinimapView" type="Control" parent="Hud/Root/MinimapFrame"]
+custom_minimum_size = Vector2(220, 220)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("7")
 
 [node name="DebugOverlay" type="CanvasLayer" parent="."]
 layer = 2

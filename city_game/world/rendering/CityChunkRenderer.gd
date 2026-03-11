@@ -80,6 +80,7 @@ func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 		"chunk_key": chunk_key,
 		"chunk_center": _chunk_center_from_key(chunk_key),
 		"chunk_size_m": float(_config.chunk_size_m),
+		"chunk_seed": _config.derive_seed("render_chunk", chunk_key),
 	}
 
 func _chunk_center_from_key(chunk_key: Vector2i) -> Vector3:

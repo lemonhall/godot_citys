@@ -22,6 +22,7 @@
 - `70km x 70km` 级城市骨架生成（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
 - `256m x 256m` chunk 流式加载底盘
 - chunk-local 实例化渲染、远景代理、遮挡体和占位地表碰撞壳（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
+- 低成本天空氛围、同轮廓 LOD 与确定性视觉变体（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
 - chunk-local 导航与跨 chunk 自动化 travel 流程验证
 - 性能与 streaming debug 观测面板
 - 开发态高速巡检模式与稳定运行时报告（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
@@ -116,8 +117,11 @@
 
 - 重复性 props 使用 chunk-local `MultiMeshInstance3D`
 - chunk 支持近景实体、中景合批、远景代理
+- near / mid / far 必须从同一份 chunk visual profile 派生，保持主轮廓连续（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
+- 邻近 chunk 必须基于 chunk seed 生成确定性视觉变体，避免近景重复（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
 - block 自动生成基础遮挡体或 `ArrayOccluder3D`
 - chunk 必须提供占位地表与碰撞壳，保证离开中心原型区后仍可连续步行/高速巡检（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
+- `WorldEnvironment` 必须提供低成本 sky/fog 氛围，避免城市漂浮在单色背景前（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
 - 提供 debug 统计，显示每个 chunk 的实例数与降级状态
 
 **非目标**：
@@ -129,6 +133,8 @@
 
 - 至少一种重复类资产必须通过 `MultiMeshInstance3D` 渲染，而不是逐个 `MeshInstance3D`。
 - 自动化测试和 debug 证据必须能证明近/中/远至少三档表现存在。
+- 自动化测试至少断言：mid/far 代理保留与 near 一致的主轮廓签名，不能用完全无关的蓝色盒子替代近景建筑。
+- 自动化测试至少断言：不同 chunk 产生不同的确定性视觉变体，而同一 chunk 多次生成签名一致。
 - 自动化测试至少断言：演员离开中心起始区后，仍能落在 streamed chunk 的占位地表上，而不是掉穿世界。
 - 场景中不得再保留与 chunk 地表重叠的 legacy `Ground` 节点作为承托面。（[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
 - 反作弊条款：远景代理不得与近景使用同一份完整高细节节点树。
@@ -161,6 +167,7 @@
 
 - 提供开发态 overlay 或日志输出
 - 展示玩家当前 chunk、活跃 chunk 数、最近 chunk 生成耗时、当前 chunk 的实例统计
+- 展示当前 chunk 的 visual variant 标识，便于人工检查重复度（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
 - 为主要 E2E 测试输出稳定可解析的 debug 文本
 - 为主要 E2E 测试输出稳定可解析的运行时报告，至少包含 `final_position` 与 `transition_count`（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
 

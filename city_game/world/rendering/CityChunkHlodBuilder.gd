@@ -1,29 +1,44 @@
 extends RefCounted
 
-static func build_mid_proxy(chunk_size_m: float) -> MeshInstance3D:
-	var proxy := MeshInstance3D.new()
+static func build_mid_proxy(profile: Dictionary) -> Node3D:
+	return _build_proxy_group("MidProxy", profile, "mid")
+
+static func build_far_proxy(profile: Dictionary) -> Node3D:
+	return _build_proxy_group("FarProxy", profile, "far")
+
+static func _build_proxy_group(name: String, profile: Dictionary, palette_key: String) -> Node3D:
+	var proxy := Node3D.new()
 	proxy.name = "MidProxy"
-	proxy.mesh = _build_box_mesh(Vector3(chunk_size_m * 0.72, 22.0, chunk_size_m * 0.72))
-	proxy.position = Vector3(0.0, 11.0, 0.0)
-	proxy.material_override = _build_material(Color(0.35, 0.46, 0.58, 1.0))
+	proxy.name = name
+
+	var mesh_instance := MultiMeshInstance3D.new()
+	mesh_instance.name = "Massing"
+	var box_mesh := BoxMesh.new()
+	box_mesh.size = Vector3.ONE
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = box_mesh
+
+	var towers: Array = profile.get("towers", [])
+	multimesh.instance_count = towers.size() + 1
+	for tower_index in range(towers.size()):
+		var tower: Dictionary = towers[tower_index]
+		multimesh.set_instance_transform(tower_index, _build_scaled_transform(tower.get("center", Vector3.ZERO), tower.get("size", Vector3.ONE)))
+
+	var podium: Dictionary = profile.get("podium", {})
+	multimesh.set_instance_transform(towers.size(), _build_scaled_transform(podium.get("center", Vector3.ZERO), podium.get("size", Vector3.ONE)))
+	mesh_instance.multimesh = multimesh
+	mesh_instance.material_override = _build_material(profile, palette_key)
+	proxy.add_child(mesh_instance)
 	return proxy
 
-static func build_far_proxy(chunk_size_m: float) -> MeshInstance3D:
-	var proxy := MeshInstance3D.new()
-	proxy.name = "FarProxy"
-	proxy.mesh = _build_box_mesh(Vector3(chunk_size_m * 0.82, 12.0, chunk_size_m * 0.82))
-	proxy.position = Vector3(0.0, 6.0, 0.0)
-	proxy.material_override = _build_material(Color(0.24, 0.32, 0.42, 1.0))
-	return proxy
+static func _build_scaled_transform(center: Vector3, size: Vector3) -> Transform3D:
+	var basis := Basis.IDENTITY.scaled(size)
+	return Transform3D(basis, center)
 
-static func _build_box_mesh(size: Vector3) -> BoxMesh:
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	return mesh
-
-static func _build_material(color: Color) -> StandardMaterial3D:
+static func _build_material(profile: Dictionary, palette_key: String) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
-	material.albedo_color = color
+	var palette: Dictionary = profile.get("palette", {})
+	material.albedo_color = palette.get(palette_key, Color(0.35, 0.46, 0.58, 1.0))
 	material.roughness = 1.0
 	return material
-

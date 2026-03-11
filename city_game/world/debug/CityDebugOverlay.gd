@@ -29,6 +29,8 @@ func get_debug_text() -> String:
 		lines.append("current_chunk_multimesh_instance_count=%d" % int(_snapshot.get("current_chunk_multimesh_instance_count", 0)))
 	if _snapshot.has("current_chunk_lod_mode"):
 		lines.append("current_chunk_lod_mode=%s" % str(_snapshot.get("current_chunk_lod_mode", "")))
+	if _snapshot.has("current_chunk_visual_variant_id"):
+		lines.append("current_chunk_visual_variant_id=%s" % str(_snapshot.get("current_chunk_visual_variant_id", "")))
 	if _snapshot.has("tracked_position"):
 		lines.append("tracked_position=%s" % str(_snapshot.get("tracked_position", {})))
 	return "\n".join(lines)

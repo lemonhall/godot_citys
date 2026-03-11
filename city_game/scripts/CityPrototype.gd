@@ -11,6 +11,7 @@ const CONTROL_MODE_INSPECTION := "inspection"
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
 @onready var player: Node3D = $Player
+@onready var world_environment: WorldEnvironment = $WorldEnvironment
 @onready var debug_overlay: CanvasLayer = $DebugOverlay
 @onready var chunk_renderer: Node3D = $ChunkRenderer
 
@@ -21,6 +22,7 @@ var _navigation_runtime
 var _control_mode := CONTROL_MODE_PLAYER
 
 func _ready() -> void:
+	_configure_environment()
 	_world_config = CityWorldConfig.new()
 	_world_data = CityWorldGenerator.new().generate_world(_world_config)
 	_chunk_streamer = CityChunkStreamer.new(_world_config, _world_data)
@@ -71,6 +73,7 @@ func _refresh_hud_status() -> void:
 			int(snapshot.get("active_chunk_count", 0))
 		],
 		"multimesh_instance_total=%d" % int(snapshot.get("multimesh_instance_total", 0)),
+		"visual_variant=%s" % str(snapshot.get("current_chunk_visual_variant_id", "")),
 		active_speed_text,
 	])
 	hud.set_status("\n".join(lines))
@@ -117,6 +120,7 @@ func get_streaming_snapshot() -> Dictionary:
 		var current_chunk_stats: Dictionary = chunk_renderer.get_chunk_scene_stats(current_chunk_id)
 		snapshot["current_chunk_multimesh_instance_count"] = int(current_chunk_stats.get("multimesh_instance_count", 0))
 		snapshot["current_chunk_lod_mode"] = str(current_chunk_stats.get("lod_mode", ""))
+		snapshot["current_chunk_visual_variant_id"] = str(current_chunk_stats.get("visual_variant_id", ""))
 	return snapshot
 
 func update_streaming_for_position(world_position: Vector3) -> Array:
@@ -170,3 +174,36 @@ func _vector3_to_dict(value: Vector3) -> Dictionary:
 		"y": snappedf(value.y, 0.01),
 		"z": snappedf(value.z, 0.01),
 	}
+
+func _configure_environment() -> void:
+	if world_environment == null:
+		return
+	var environment := world_environment.environment
+	if environment == null:
+		environment = Environment.new()
+		world_environment.environment = environment
+
+	var sky_material := ProceduralSkyMaterial.new()
+	sky_material.sky_top_color = Color(0.168627, 0.270588, 0.431373, 1.0)
+	sky_material.sky_horizon_color = Color(0.580392, 0.737255, 0.839216, 1.0)
+	sky_material.ground_horizon_color = Color(0.627451, 0.654902, 0.615686, 1.0)
+	sky_material.ground_bottom_color = Color(0.137255, 0.164706, 0.145098, 1.0)
+	sky_material.sky_curve = 0.22
+	sky_material.ground_curve = 0.08
+	sky_material.sun_angle_max = 18.0
+
+	var sky := Sky.new()
+	sky.sky_material = sky_material
+
+	environment.background_mode = Environment.BG_SKY
+	environment.sky = sky
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	environment.ambient_light_energy = 0.75
+	environment.ambient_light_sky_contribution = 0.8
+	environment.fog_enabled = true
+	environment.fog_density = 0.00065
+	environment.fog_aerial_perspective = 0.55
+	environment.fog_light_color = Color(0.643137, 0.741176, 0.803922, 1.0)
+	environment.fog_light_energy = 0.8
+	environment.fog_sky_affect = 1.0
+	environment.fog_sun_scatter = 0.18

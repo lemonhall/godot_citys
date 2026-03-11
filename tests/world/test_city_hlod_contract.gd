@@ -28,9 +28,17 @@ func _run() -> void:
 		return
 	if not T.require_true(self, chunk_scene.has_node("FarProxy"), "Chunk scene must provide FarProxy"):
 		return
+	if not T.require_true(self, chunk_scene.has_method("get_lod_signature"), "Chunk scene must expose get_lod_signature()"):
+		return
+	if not T.require_true(self, chunk_scene.has_method("get_profile_signature"), "Chunk scene must expose get_profile_signature()"):
+		return
 
 	var contract: Dictionary = chunk_scene.get_lod_contract()
 	if not T.require_true(self, contract.get("modes", []) == ["near", "mid", "far"], "LOD contract must expose near/mid/far modes"):
+		return
+	if not T.require_true(self, chunk_scene.get_lod_signature("near") == chunk_scene.get_lod_signature("mid"), "Mid LOD must preserve the same silhouette signature as near LOD"):
+		return
+	if not T.require_true(self, chunk_scene.get_lod_signature("mid") == chunk_scene.get_lod_signature("far"), "Far LOD must preserve the same silhouette signature as near/mid LOD"):
 		return
 
 	chunk_scene.set_lod_mode("mid")

@@ -1,12 +1,11 @@
 extends RefCounted
 
+const CityRoadTemplateCatalog := preload("res://city_game/world/rendering/CityRoadTemplateCatalog.gd")
 const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
 
 const QUERY_MARGIN_M := 56.0
 const LOCAL_CELL_SIZE_M := 320.0
 const LOCAL_CELL_MARGIN_M := 96.0
-const LOCAL_ROAD_WIDTH_M := 8.0
-const LOCAL_ARC_WIDTH_M := 6.5
 
 static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 	var chunk_center: Vector3 = chunk_data.get("chunk_center", Vector3.ZERO)
@@ -23,19 +22,18 @@ static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 	var road_graph = chunk_data.get("road_graph")
 	if road_graph != null and road_graph.has_method("get_edges_intersecting_rect"):
 		for edge in road_graph.get_edges_intersecting_rect(expanded_rect):
-			var points_2d: Array = edge.get("points", [])
-			if points_2d.size() < 2:
-				continue
-			var local_points := _vector2_polyline_to_local_points(points_2d, chunk_center, world_seed)
-			if not _polyline_intersects_chunk(local_points, half_size):
-				continue
-			segments.append(_make_segment(
+			var segment := _make_segment_from_world_polyline(
 				str(edge.get("class", "arterial")),
-				float(edge.get("width_m", 20.0)),
-				local_points,
+				edge.get("points", []),
 				chunk_center,
-				world_seed
-			))
+				world_seed,
+				int(edge.get("seed", world_seed))
+			)
+			if segment.is_empty():
+				continue
+			if not _polyline_intersects_chunk(segment.get("points", []), half_size):
+				continue
+			segments.append(segment)
 
 	segments.append_array(_build_local_cell_roads(expanded_rect.grow(LOCAL_CELL_MARGIN_M), chunk_center, half_size, world_seed))
 
@@ -48,6 +46,15 @@ static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 	var curved_segment_count := 0
 	var non_axis_road_segment_count := 0
 	var bridge_count := 0
+	var template_counts := {
+		"expressway_elevated": 0,
+		"arterial": 0,
+		"local": 0,
+		"service": 0,
+	}
+	var min_bridge_clearance := INF
+	var max_bridge_deck_thickness := 0.0
+
 	for segment in segments:
 		var points: Array = segment.get("points", [])
 		_accumulate_connectors(connectors, points, half_size)
@@ -55,8 +62,13 @@ static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 			curved_segment_count += 1
 		if _is_non_axis(points):
 			non_axis_road_segment_count += 1
+		var template_id := str(segment.get("template_id", "local"))
+		if template_counts.has(template_id):
+			template_counts[template_id] += 1
 		if bool(segment.get("bridge", false)):
 			bridge_count += 1
+			min_bridge_clearance = minf(min_bridge_clearance, float(segment.get("bridge_clearance_m", 0.0)))
+			max_bridge_deck_thickness = maxf(max_bridge_deck_thickness, float(segment.get("deck_thickness_m", 0.0)))
 
 	for side in connectors.keys():
 		var values: Array = connectors[side]
@@ -69,8 +81,11 @@ static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 		"curved_segment_count": curved_segment_count,
 		"non_axis_road_segment_count": non_axis_road_segment_count,
 		"bridge_count": bridge_count,
-		"road_mesh_mode": "ribbon",
-		"signature": _build_signature(connectors, curved_segment_count, segments.size(), non_axis_road_segment_count, bridge_count),
+		"road_mesh_mode": "templated_roadbed",
+		"road_template_counts": template_counts,
+		"bridge_min_clearance_m": 0.0 if min_bridge_clearance == INF else min_bridge_clearance,
+		"bridge_deck_thickness_m": max_bridge_deck_thickness,
+		"signature": _build_signature(connectors, curved_segment_count, segments.size(), non_axis_road_segment_count, bridge_count, template_counts),
 	}
 
 static func _build_local_cell_roads(expanded_rect: Rect2, chunk_center: Vector3, half_size: float, world_seed: int) -> Array[Dictionary]:
@@ -92,32 +107,65 @@ static func _build_local_cell_roads(expanded_rect: Rect2, chunk_center: Vector3,
 				"north": _build_local_cell_portal(cell_key, cell_min, "north", world_seed),
 				"south": _build_local_cell_portal(cell_key, cell_min, "south", world_seed),
 			}
-			for side in portals.keys():
-				var spoke_points_2d := _build_local_spoke_points(portals[side], hub, side, _cell_seed(world_seed, "local_spoke_%s" % side, cell_key))
-				var local_points := _vector2_polyline_to_local_points(spoke_points_2d, chunk_center, world_seed)
-				if _polyline_intersects_chunk(local_points, half_size):
-					segments.append(_make_segment("local", LOCAL_ROAD_WIDTH_M, local_points, chunk_center, world_seed))
 
-			var arc_points_2d := _build_local_arc_points(portals, hub, cell_key, world_seed)
-			var arc_points := _vector2_polyline_to_local_points(arc_points_2d, chunk_center, world_seed)
-			if _polyline_intersects_chunk(arc_points, half_size):
-				segments.append(_make_segment("local", LOCAL_ARC_WIDTH_M, arc_points, chunk_center, world_seed))
+			var east_west := _build_local_axis_points(
+				portals["west"],
+				portals["east"],
+				hub,
+				_cell_seed(world_seed, "local_axis_we", cell_key)
+			)
+			var east_west_segment := _make_segment_from_world_polyline("local", east_west, chunk_center, world_seed, _cell_seed(world_seed, "local_segment_we", cell_key))
+			if not east_west_segment.is_empty() and _polyline_intersects_chunk(east_west_segment.get("points", []), half_size):
+				segments.append(east_west_segment)
+
+			var north_south := _build_local_axis_points(
+				portals["north"],
+				portals["south"],
+				hub,
+				_cell_seed(world_seed, "local_axis_ns", cell_key)
+			)
+			var north_south_segment := _make_segment_from_world_polyline("local", north_south, chunk_center, world_seed, _cell_seed(world_seed, "local_segment_ns", cell_key))
+			if not north_south_segment.is_empty() and _polyline_intersects_chunk(north_south_segment.get("points", []), half_size):
+				segments.append(north_south_segment)
+
+			if _should_add_service_link(cell_key, world_seed):
+				var service_points := _build_local_service_points(portals, hub, cell_key, world_seed)
+				var service_segment := _make_segment_from_world_polyline("service", service_points, chunk_center, world_seed, _cell_seed(world_seed, "local_segment_service", cell_key))
+				if not service_segment.is_empty() and _polyline_intersects_chunk(service_segment.get("points", []), half_size):
+					segments.append(service_segment)
 	return segments
 
-static func _make_segment(road_class: String, width: float, local_points: Array[Vector3], chunk_center: Vector3, world_seed: int) -> Dictionary:
-	var segment := {
+static func _make_segment_from_world_polyline(road_class: String, points_2d: Array, chunk_center: Vector3, world_seed: int, seed: int) -> Dictionary:
+	if points_2d.size() < 2:
+		return {}
+	var template_id := CityRoadTemplateCatalog.get_template_id_for_class(road_class)
+	var template := CityRoadTemplateCatalog.get_template(template_id)
+	var local_points := _world_polyline_to_local_points(points_2d, chunk_center, world_seed)
+	if local_points.size() < 2:
+		return {}
+	local_points = _smooth_ground_profile(local_points, float(template.get("max_grade", 0.08)))
+	var bridge := template_id == "expressway_elevated" or _should_raise_bridge(road_class, points_2d, seed)
+	var bridge_clearance := 0.0
+	var bridge_range := Vector2.ZERO
+	var deck_thickness := float(template.get("deck_thickness_m", 0.4))
+	if bridge:
+		bridge_clearance = _resolve_bridge_clearance(template_id, seed)
+		bridge_range = Vector2(0.2, 0.8)
+		local_points = _apply_bridge_profile(local_points, points_2d, chunk_center, world_seed, bridge_clearance, bridge_range)
+		deck_thickness = maxf(deck_thickness, 1.0)
+	return {
 		"class": road_class,
-		"width": width,
+		"template_id": template_id,
+		"lane_count_total": int(template.get("lane_count_total", 2)),
+		"width": float(template.get("width_m", 11.0)),
+		"median_width_m": float(template.get("median_width_m", 0.0)),
+		"shoulder_width_m": float(template.get("shoulder_width_m", 0.0)),
+		"deck_thickness_m": deck_thickness,
 		"points": local_points,
-		"bridge": false,
-		"bridge_height_m": 0.0,
+		"bridge": bridge,
+		"bridge_clearance_m": bridge_clearance,
+		"bridge_range": bridge_range,
 	}
-	if _should_raise_bridge(road_class, local_points, chunk_center, world_seed):
-		var bridge_height := 6.0 if road_class == "arterial" else 4.5
-		segment["bridge"] = true
-		segment["bridge_height_m"] = bridge_height
-		segment["points"] = _apply_bridge_profile(local_points, bridge_height)
-	return segment
 
 static func _get_local_grid_origin(world_seed: int) -> Vector2:
 	return Vector2(
@@ -128,8 +176,8 @@ static func _get_local_grid_origin(world_seed: int) -> Vector2:
 static func _build_local_cell_hub(cell_key: Vector2i, cell_min: Vector2, world_seed: int) -> Vector2:
 	var hub_seed := _cell_seed(world_seed, "local_hub", cell_key)
 	var center := cell_min + Vector2.ONE * LOCAL_CELL_SIZE_M * 0.5
-	var jitter_x := sin(float(hub_seed % 4096) * 0.013) * 68.0
-	var jitter_y := cos(float((hub_seed >> 2) % 4096) * 0.015) * 64.0
+	var jitter_x := sin(float(hub_seed % 4096) * 0.011) * 58.0
+	var jitter_y := cos(float((hub_seed >> 2) % 4096) * 0.013) * 54.0
 	return center + Vector2(jitter_x, jitter_y)
 
 static func _build_local_cell_portal(cell_key: Vector2i, cell_min: Vector2, side: String, world_seed: int) -> Vector2:
@@ -137,13 +185,13 @@ static func _build_local_cell_portal(cell_key: Vector2i, cell_min: Vector2, side
 	var offset_ratio := _cell_boundary_ratio(world_seed, cell_key, side)
 	match side:
 		"west":
-			return Vector2(cell_min.x, lerpf(cell_min.y + LOCAL_CELL_SIZE_M * 0.16, cell_max.y - LOCAL_CELL_SIZE_M * 0.16, offset_ratio))
+			return Vector2(cell_min.x, lerpf(cell_min.y + LOCAL_CELL_SIZE_M * 0.18, cell_max.y - LOCAL_CELL_SIZE_M * 0.18, offset_ratio))
 		"east":
-			return Vector2(cell_max.x, lerpf(cell_min.y + LOCAL_CELL_SIZE_M * 0.16, cell_max.y - LOCAL_CELL_SIZE_M * 0.16, offset_ratio))
+			return Vector2(cell_max.x, lerpf(cell_min.y + LOCAL_CELL_SIZE_M * 0.18, cell_max.y - LOCAL_CELL_SIZE_M * 0.18, offset_ratio))
 		"north":
-			return Vector2(lerpf(cell_min.x + LOCAL_CELL_SIZE_M * 0.16, cell_max.x - LOCAL_CELL_SIZE_M * 0.16, offset_ratio), cell_min.y)
+			return Vector2(lerpf(cell_min.x + LOCAL_CELL_SIZE_M * 0.18, cell_max.x - LOCAL_CELL_SIZE_M * 0.18, offset_ratio), cell_min.y)
 		"south":
-			return Vector2(lerpf(cell_min.x + LOCAL_CELL_SIZE_M * 0.16, cell_max.x - LOCAL_CELL_SIZE_M * 0.16, offset_ratio), cell_max.y)
+			return Vector2(lerpf(cell_min.x + LOCAL_CELL_SIZE_M * 0.18, cell_max.x - LOCAL_CELL_SIZE_M * 0.18, offset_ratio), cell_max.y)
 	return cell_min + Vector2.ONE * LOCAL_CELL_SIZE_M * 0.5
 
 static func _cell_boundary_ratio(world_seed: int, cell_key: Vector2i, side: String) -> float:
@@ -154,55 +202,45 @@ static func _cell_boundary_ratio(world_seed: int, cell_key: Vector2i, side: Stri
 	elif side == "south":
 		boundary_key.y += 1
 	var seed := _cell_seed(world_seed, seed_scope, boundary_key)
-	return 0.5 + sin(float(seed % 8192) * 0.009) * 0.26
+	return 0.5 + sin(float(seed % 8192) * 0.009) * 0.23
 
-static func _build_local_spoke_points(portal: Vector2, hub: Vector2, side: String, seed: int) -> Array[Vector2]:
-	var inward := Vector2.ZERO
-	var lateral := Vector2.ZERO
-	match side:
-		"west":
-			inward = Vector2.RIGHT
-			lateral = Vector2.UP
-		"east":
-			inward = Vector2.LEFT
-			lateral = Vector2.UP
-		"north":
-			inward = Vector2.DOWN
-			lateral = Vector2.RIGHT
-		"south":
-			inward = Vector2.UP
-			lateral = Vector2.RIGHT
-	var shoulder := 36.0 + float(seed % 24)
-	var bend := sin(float(seed % 4096) * 0.01) * 42.0
+static func _build_local_axis_points(start_portal: Vector2, end_portal: Vector2, hub: Vector2, seed: int) -> Array[Vector2]:
+	var direction := (end_portal - start_portal).normalized()
+	var normal := Vector2(-direction.y, direction.x)
+	var lateral_sway := sin(float(seed % 4096) * 0.012) * 46.0
+	var anchor := start_portal.lerp(end_portal, 0.5).lerp(hub, 0.56) + normal * lateral_sway
 	return [
-		portal,
-		portal + inward * shoulder + lateral * bend * 0.22,
-		portal.lerp(hub, 0.58) + lateral * bend,
-		hub,
+		start_portal,
+		start_portal.lerp(anchor, 0.36),
+		anchor,
+		end_portal.lerp(anchor, 0.36),
+		end_portal,
 	]
 
-static func _build_local_arc_points(portals: Dictionary, hub: Vector2, cell_key: Vector2i, world_seed: int) -> Array[Vector2]:
-	var arc_seed := _cell_seed(world_seed, "local_arc", cell_key)
+static func _build_local_service_points(portals: Dictionary, hub: Vector2, cell_key: Vector2i, world_seed: int) -> Array[Vector2]:
+	var service_seed := _cell_seed(world_seed, "local_service", cell_key)
 	var side_pairs := [
 		["west", "north"],
 		["north", "east"],
 		["east", "south"],
 		["south", "west"],
 	]
-	var pair: Array = side_pairs[int(posmod(arc_seed, side_pairs.size()))]
+	var pair: Array = side_pairs[int(posmod(service_seed, side_pairs.size()))]
 	var start_portal: Vector2 = portals.get(pair[0], hub)
 	var end_portal: Vector2 = portals.get(pair[1], hub)
-	var drift := Vector2(
-		sin(float(arc_seed % 4096) * 0.007) * 44.0,
-		cos(float((arc_seed >> 3) % 4096) * 0.011) * 44.0
-	)
+	var direction := (end_portal - start_portal).normalized()
+	var normal := Vector2(-direction.y, direction.x)
+	var shoulder := 22.0 + float(service_seed % 11)
 	return [
 		start_portal,
-		start_portal.lerp(hub, 0.42) + drift,
-		hub + drift * 0.35,
-		end_portal.lerp(hub, 0.42) + drift,
+		start_portal.lerp(hub, 0.44) + normal * shoulder,
+		hub + normal * shoulder * 0.35,
+		end_portal.lerp(hub, 0.44) + normal * shoulder,
 		end_portal,
 	]
+
+static func _should_add_service_link(cell_key: Vector2i, world_seed: int) -> bool:
+	return posmod(_cell_seed(world_seed, "local_service_enable", cell_key), 3) == 0
 
 static func _cell_seed(world_seed: int, scope: String, cell_key: Vector2i) -> int:
 	var seed := int((world_seed * 33 + cell_key.x * 92837111 + cell_key.y * 689287499) & 0x7fffffff)
@@ -210,49 +248,39 @@ static func _cell_seed(world_seed: int, scope: String, cell_key: Vector2i) -> in
 		seed = int((seed * 31 + int(byte_value) + 19) & 0x7fffffff)
 	return seed
 
-static func _should_raise_bridge(road_class: String, local_points: Array[Vector3], chunk_center: Vector3, world_seed: int) -> bool:
-	if road_class != "arterial" and road_class != "collector":
+static func _should_raise_bridge(road_class: String, points_2d: Array, seed: int) -> bool:
+	if road_class != "arterial" and road_class != "secondary":
 		return false
-	if local_points.size() < 2:
+	if points_2d.size() < 2:
 		return false
-	var midpoint := _polyline_midpoint(local_points)
-	var world_mid := Vector2(chunk_center.x + midpoint.x, chunk_center.z + midpoint.z)
-	var grid_x := int(round(world_mid.x / 320.0))
-	var grid_y := int(round(world_mid.y / 320.0))
-	var marker := posmod(grid_x * 17 + grid_y * 13 + int(world_seed) + (11 if road_class == "arterial" else 5), 11)
-	return marker == 0 or (absf(world_mid.x) <= 1400.0 and absf(world_mid.y) <= 1400.0 and marker <= 1)
+	var midpoint := _polyline_midpoint_2d(points_2d)
+	var center_bias := absf(midpoint.x) <= 2600.0 and absf(midpoint.y) <= 2600.0
+	var marker := posmod(int(round(midpoint.x / 320.0)) * 13 + int(round(midpoint.y / 320.0)) * 17 + seed, 17)
+	return center_bias and marker <= 3
 
-static func _polyline_midpoint(points: Array[Vector3]) -> Vector3:
+static func _resolve_bridge_clearance(template_id: String, seed: int) -> float:
+	if template_id == "expressway_elevated":
+		return 6.5 + float(posmod(seed, 4))
+	return 5.0 + float(posmod(seed, 3))
+
+static func _polyline_midpoint_2d(points: Array) -> Vector2:
 	if points.is_empty():
-		return Vector3.ZERO
+		return Vector2.ZERO
 	var total_length := 0.0
 	for point_index in range(points.size() - 1):
-		total_length += points[point_index].distance_to(points[point_index + 1])
+		total_length += (points[point_index] as Vector2).distance_to(points[point_index + 1] as Vector2)
 	var target_length := total_length * 0.5
 	var traversed := 0.0
 	for point_index in range(points.size() - 1):
-		var a: Vector3 = points[point_index]
-		var b: Vector3 = points[point_index + 1]
+		var a: Vector2 = points[point_index]
+		var b: Vector2 = points[point_index + 1]
 		var segment_length := a.distance_to(b)
 		if traversed + segment_length >= target_length and segment_length > 0.001:
-			var t := (target_length - traversed) / segment_length
-			return a.lerp(b, t)
+			return a.lerp(b, (target_length - traversed) / segment_length)
 		traversed += segment_length
 	return points[-1]
 
-static func _apply_bridge_profile(local_points: Array[Vector3], bridge_height: float) -> Array[Vector3]:
-	var raised_points: Array[Vector3] = []
-	if local_points.size() <= 2:
-		return local_points.duplicate()
-	for point_index in range(local_points.size()):
-		var point: Vector3 = local_points[point_index]
-		var t := float(point_index) / float(local_points.size() - 1)
-		var lift := sin(t * PI)
-		lift *= lift * bridge_height
-		raised_points.append(Vector3(point.x, point.y + lift, point.z))
-	return raised_points
-
-static func _vector2_polyline_to_local_points(points_2d: Array, chunk_center: Vector3, world_seed: int) -> Array[Vector3]:
+static func _world_polyline_to_local_points(points_2d: Array, chunk_center: Vector3, world_seed: int) -> Array[Vector3]:
 	var local_points: Array[Vector3] = []
 	for point in points_2d:
 		var world_point: Vector2 = point
@@ -262,6 +290,84 @@ static func _vector2_polyline_to_local_points(points_2d: Array, chunk_center: Ve
 			world_point.y - chunk_center.z
 		))
 	return local_points
+
+static func _smooth_ground_profile(local_points: Array, max_grade: float) -> Array[Vector3]:
+	if local_points.size() <= 2:
+		return local_points.duplicate()
+	var smoothed: Array[Vector3] = []
+	for point in local_points:
+		smoothed.append(point)
+	for _iteration in range(2):
+		for point_index in range(1, smoothed.size() - 1):
+			var prev_point: Vector3 = smoothed[point_index - 1]
+			var current_point: Vector3 = smoothed[point_index]
+			var next_point: Vector3 = smoothed[point_index + 1]
+			var blended_y := (prev_point.y + current_point.y * 2.0 + next_point.y) * 0.25
+			smoothed[point_index] = Vector3(current_point.x, lerpf(current_point.y, blended_y, 0.72), current_point.z)
+	_enforce_max_grade(smoothed, max_grade)
+	return smoothed
+
+static func _enforce_max_grade(points: Array[Vector3], max_grade: float) -> void:
+	for point_index in range(1, points.size()):
+		var prev_point: Vector3 = points[point_index - 1]
+		var current_point: Vector3 = points[point_index]
+		var horizontal_distance := maxf(Vector2(prev_point.x, prev_point.z).distance_to(Vector2(current_point.x, current_point.z)), 1.0)
+		var max_delta := horizontal_distance * max_grade
+		var clamped_y := clampf(current_point.y, prev_point.y - max_delta, prev_point.y + max_delta)
+		points[point_index] = Vector3(current_point.x, clamped_y, current_point.z)
+	for point_index in range(points.size() - 2, -1, -1):
+		var next_point: Vector3 = points[point_index + 1]
+		var current_point: Vector3 = points[point_index]
+		var horizontal_distance := maxf(Vector2(next_point.x, next_point.z).distance_to(Vector2(current_point.x, current_point.z)), 1.0)
+		var max_delta := horizontal_distance * max_grade
+		var clamped_y := clampf(current_point.y, next_point.y - max_delta, next_point.y + max_delta)
+		points[point_index] = Vector3(current_point.x, clamped_y, current_point.z)
+
+static func _apply_bridge_profile(local_points: Array, points_2d: Array, chunk_center: Vector3, world_seed: int, bridge_clearance: float, bridge_range: Vector2) -> Array[Vector3]:
+	var raised_points: Array[Vector3] = []
+	var deck_level := _resolve_bridge_deck_level(points_2d, local_points, world_seed, bridge_clearance)
+	for point_index in range(local_points.size()):
+		var point: Vector3 = local_points[point_index]
+		var t := float(point_index) / float(maxi(local_points.size() - 1, 1))
+		var ramp := _bridge_ramp_factor(t, bridge_range)
+		raised_points.append(Vector3(point.x, lerpf(point.y, deck_level, ramp), point.z))
+	return raised_points
+
+static func _resolve_bridge_deck_level(points_2d: Array, local_points: Array, world_seed: int, bridge_clearance: float) -> float:
+	var max_ground := -INF
+	for ratio in [0.22, 0.35, 0.5, 0.65, 0.78]:
+		var sample_point := _sample_polyline_2d(points_2d, float(ratio))
+		max_ground = maxf(max_ground, CityTerrainSampler.sample_height(sample_point.x, sample_point.y, world_seed))
+	var endpoint_height := maxf((local_points[0] as Vector3).y, (local_points[-1] as Vector3).y)
+	return maxf(max_ground + bridge_clearance, endpoint_height + bridge_clearance * 0.72)
+
+static func _bridge_ramp_factor(t: float, bridge_range: Vector2) -> float:
+	var enter_start := maxf(bridge_range.x - 0.18, 0.0)
+	var exit_end := minf(bridge_range.y + 0.18, 1.0)
+	if t <= enter_start or t >= exit_end:
+		return 0.0
+	if t < bridge_range.x:
+		return _smoothstep(enter_start, bridge_range.x, t)
+	if t > bridge_range.y:
+		return 1.0 - _smoothstep(bridge_range.y, exit_end, t)
+	return 1.0
+
+static func _sample_polyline_2d(points: Array, ratio: float) -> Vector2:
+	var total_length := 0.0
+	for point_index in range(points.size() - 1):
+		total_length += (points[point_index] as Vector2).distance_to(points[point_index + 1] as Vector2)
+	if total_length <= 0.001:
+		return points[0]
+	var target_length := total_length * clampf(ratio, 0.0, 1.0)
+	var traversed := 0.0
+	for point_index in range(points.size() - 1):
+		var a: Vector2 = points[point_index]
+		var b: Vector2 = points[point_index + 1]
+		var segment_length := a.distance_to(b)
+		if traversed + segment_length >= target_length and segment_length > 0.001:
+			return a.lerp(b, (target_length - traversed) / segment_length)
+		traversed += segment_length
+	return points[-1]
 
 static func _polyline_intersects_chunk(points: Array, half_size: float) -> bool:
 	for point in points:
@@ -342,12 +448,18 @@ static func _is_non_axis(points: Array) -> bool:
 			return true
 	return false
 
-static func _build_signature(connectors: Dictionary, curved_segment_count: int, segment_count: int, non_axis_count: int, bridge_count: int) -> String:
+static func _build_signature(connectors: Dictionary, curved_segment_count: int, segment_count: int, non_axis_count: int, bridge_count: int, template_counts: Dictionary) -> String:
 	var parts := PackedStringArray([
 		"segments=%d" % segment_count,
 		"curved=%d" % curved_segment_count,
 		"non_axis=%d" % non_axis_count,
 		"bridges=%d" % bridge_count,
+		"templates=%s/%s/%s/%s" % [
+			int(template_counts.get("expressway_elevated", 0)),
+			int(template_counts.get("arterial", 0)),
+			int(template_counts.get("local", 0)),
+			int(template_counts.get("service", 0)),
+		],
 	])
 	for side in ["north", "south", "east", "west"]:
 		var values: Array = connectors.get(side, [])
@@ -359,3 +471,9 @@ static func _to_string_array(values: Array) -> PackedStringArray:
 	for value in values:
 		strings.append("%.2f" % float(value))
 	return strings
+
+static func _smoothstep(edge0: float, edge1: float, value: float) -> float:
+	if is_equal_approx(edge0, edge1):
+		return 0.0
+	var t := clampf((value - edge0) / (edge1 - edge0), 0.0, 1.0)
+	return t * t * (3.0 - 2.0 * t)

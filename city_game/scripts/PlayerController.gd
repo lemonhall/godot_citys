@@ -8,6 +8,8 @@ extends CharacterBody3D
 @export var mouse_sensitivity := 0.003
 @export var min_pitch_deg := -68.0
 @export var max_pitch_deg := 35.0
+@export var player_floor_snap_length := 0.9
+@export var inspection_floor_snap_length := 1.8
 
 @onready var camera_rig: Node3D = $CameraRig
 
@@ -15,9 +17,11 @@ var _gravity := ProjectSettings.get_setting("physics/3d/default_gravity") as flo
 var _pitch := deg_to_rad(-18.0)
 var _control_enabled := true
 var _speed_profile := "player"
+var _stabilization_suspend_frames := 0
 
 func _ready() -> void:
 	camera_rig.rotation.x = _pitch
+	floor_snap_length = _current_floor_snap_length()
 	if DisplayServer.get_name() != "headless":
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
@@ -43,6 +47,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 func _physics_process(delta: float) -> void:
+	floor_snap_length = _current_floor_snap_length()
+	if _stabilization_suspend_frames > 0:
+		_stabilization_suspend_frames -= 1
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
 	elif _control_enabled and _jump_requested():
@@ -65,7 +72,15 @@ func _physics_process(delta: float) -> void:
 	velocity.x = move_dir.x * speed
 	velocity.z = move_dir.z * speed
 
+	if velocity.y <= 0.0 and not _jump_requested():
+		apply_floor_snap()
 	move_and_slide()
+	if _stabilization_suspend_frames <= 0 and velocity.y <= 0.0 and not _jump_requested():
+		var snapped_to_ground := _stabilize_ground_contact()
+		if snapped_to_ground and not is_on_floor():
+			apply_floor_snap()
+			velocity.y = -0.01
+			move_and_slide()
 
 func set_control_enabled(enabled: bool) -> void:
 	_control_enabled = enabled
@@ -96,6 +111,15 @@ func get_pitch_limits_degrees() -> Dictionary:
 		"max": max_pitch_deg,
 	}
 
+func get_floor_snap_config() -> Dictionary:
+	return {
+		"player": player_floor_snap_length,
+		"inspection": inspection_floor_snap_length,
+	}
+
+func suspend_ground_stabilization(frame_count: int) -> void:
+	_stabilization_suspend_frames = maxi(_stabilization_suspend_frames, frame_count)
+
 func _read_move_input() -> Vector2:
 	var horizontal := 0.0
 	if Input.is_key_pressed(KEY_A) or Input.is_action_pressed("ui_left"):
@@ -122,6 +146,43 @@ func _current_walk_speed() -> float:
 
 func _current_sprint_speed() -> float:
 	return inspection_sprint_speed if _speed_profile == "inspection" else sprint_speed
+
+func _current_floor_snap_length() -> float:
+	return inspection_floor_snap_length if _speed_profile == "inspection" else player_floor_snap_length
+
+func _stabilize_ground_contact() -> bool:
+	if get_world_3d() == null or get_world_3d().direct_space_state == null:
+		return false
+	var standing_height := _estimate_standing_height()
+	var probe_length := standing_height + _current_floor_snap_length() + 0.6
+	var query := PhysicsRayQueryParameters3D.create(
+		global_position + Vector3.UP * 0.25,
+		global_position + Vector3.DOWN * probe_length
+	)
+	query.collide_with_areas = false
+	query.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return false
+	var hit_position: Vector3 = hit.get("position", global_position)
+	var target_y := hit_position.y + standing_height
+	if absf(global_position.y - target_y) > _current_floor_snap_length() + 0.75:
+		return false
+	global_position.y = target_y
+	velocity.y = 0.0
+	return true
+
+func _estimate_standing_height() -> float:
+	var collision_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if collision_shape == null or collision_shape.shape == null:
+		return 1.0
+	if collision_shape.shape is CapsuleShape3D:
+		var capsule := collision_shape.shape as CapsuleShape3D
+		return capsule.radius + capsule.height * 0.5
+	if collision_shape.shape is BoxShape3D:
+		var box := collision_shape.shape as BoxShape3D
+		return box.size.y * 0.5
+	return 1.0
 
 func teleport_to_world_position(world_position: Vector3) -> void:
 	global_position = world_position

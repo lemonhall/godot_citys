@@ -57,11 +57,13 @@ func _build_road_graph(config, district_graph):
 				var horizontal_class: String = _resolve_road_class(district_grid, Vector2i(x, y), true)
 				road_graph.add_edge({
 					"edge_id": "road_h_%02d_%02d" % [x, y],
+					"road_id": "road_h_%02d_%02d" % [x, y],
 					"from": source_id,
 					"to": to_id_h,
 					"class": horizontal_class,
+					"display_name": _build_road_name(horizontal_class, true, y),
 					"seed": config.derive_seed("road_h", Vector2i(x, y)),
-					"width_m": 22.0 if horizontal_class == "arterial" else 14.0,
+					"width_m": _resolve_width_for_class(horizontal_class),
 					"points": _build_edge_points(
 						config,
 						road_graph.get_node_by_id(source_id).get("center", Vector2.ZERO),
@@ -77,11 +79,13 @@ func _build_road_graph(config, district_graph):
 				var vertical_class: String = _resolve_road_class(district_grid, Vector2i(x, y), false)
 				road_graph.add_edge({
 					"edge_id": "road_v_%02d_%02d" % [x, y],
+					"road_id": "road_v_%02d_%02d" % [x, y],
 					"from": source_id,
 					"to": to_id_v,
 					"class": vertical_class,
+					"display_name": _build_road_name(vertical_class, false, x),
 					"seed": config.derive_seed("road_v", Vector2i(x, y)),
-					"width_m": 20.0 if vertical_class == "arterial" else 12.0,
+					"width_m": _resolve_width_for_class(vertical_class),
 					"points": _build_edge_points(
 						config,
 						road_graph.get_node_by_id(source_id).get("center", Vector2.ZERO),
@@ -123,12 +127,26 @@ func _build_road_anchor(config, center: Vector2, district_key: Vector2i) -> Vect
 
 func _resolve_road_class(district_grid: Vector2i, edge_key: Vector2i, horizontal: bool) -> String:
 	if horizontal:
-		if edge_key.y % 4 == 0 or edge_key.y == district_grid.y / 2:
+		if edge_key.y == district_grid.y / 2 or edge_key.y % 9 == 0:
+			return "expressway_elevated"
+		if edge_key.y % 4 == 0:
 			return "arterial"
 	else:
-		if edge_key.x % 4 == 0 or edge_key.x == district_grid.x / 2:
+		if edge_key.x == district_grid.x / 2 or edge_key.x % 9 == 0:
+			return "expressway_elevated"
+		if edge_key.x % 4 == 0:
 			return "arterial"
 	return "secondary"
+
+func _resolve_width_for_class(road_class: String) -> float:
+	match road_class:
+		"expressway_elevated":
+			return 34.0
+		"arterial":
+			return 22.0
+		"collector":
+			return 11.0
+	return 11.0
 
 func _build_edge_points(config, from_center: Vector2, to_center: Vector2, horizontal: bool, seed: int, road_class: String) -> Array[Vector2]:
 	var direction := (to_center - from_center).normalized()
@@ -175,11 +193,13 @@ func _append_district_collector_roads(config, road_graph: CityRoadGraph, distric
 		var edge_seed: int = int(config.derive_seed("district_collector_%s" % side, district_key))
 		var edge := {
 			"edge_id": "%s_collector_%s" % [district_id, side],
+			"road_id": "%s_collector_%s" % [district_id, side],
 			"from": district_id,
 			"to": district_id,
 			"class": "collector",
+			"display_name": "%s Connector" % district_id,
 			"seed": edge_seed,
-			"width_m": 10.0,
+			"width_m": 11.0,
 			"points": _build_boundary_to_hub_points(portal, hub, side, edge_seed),
 		}
 		road_graph.add_edge(edge)
@@ -246,3 +266,8 @@ func _build_boundary_to_hub_points(portal: Vector2, hub: Vector2, side: String, 
 		end_control,
 		hub,
 	]
+
+func _build_road_name(road_class: String, horizontal: bool, index: int) -> String:
+	var prefix := "Skyway" if road_class == "expressway_elevated" else ("Avenue" if road_class == "arterial" else "Street")
+	var axis := "E" if horizontal else "N"
+	return "%s %s%02d" % [prefix, axis, index]

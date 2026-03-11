@@ -128,6 +128,9 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 		"non_axis_road_segment_count": int(road_layout.get("non_axis_road_segment_count", 0)),
 		"bridge_count": int(road_layout.get("bridge_count", 0)),
 		"road_mesh_mode": str(road_layout.get("road_mesh_mode", "ribbon")),
+		"road_template_counts": (road_layout.get("road_template_counts", {}) as Dictionary).duplicate(true),
+		"bridge_min_clearance_m": float(road_layout.get("bridge_min_clearance_m", 0.0)),
+		"bridge_deck_thickness_m": float(road_layout.get("bridge_deck_thickness_m", 0.0)),
 		"terrain_relief_m": terrain_relief,
 		"signature": "",
 	}

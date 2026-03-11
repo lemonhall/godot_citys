@@ -4,15 +4,15 @@ const CityChunkMultimeshBuilder := preload("res://city_game/world/rendering/City
 const CityChunkHlodBuilder := preload("res://city_game/world/rendering/CityChunkHlodBuilder.gd")
 const CityChunkOccluderBuilder := preload("res://city_game/world/rendering/CityChunkOccluderBuilder.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
+const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
 const CityRoadMeshBuilder := preload("res://city_game/world/rendering/CityRoadMeshBuilder.gd")
-const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
 
 const LOD_NEAR := "near"
 const LOD_MID := "mid"
 const LOD_FAR := "far"
 
-const NEAR_THRESHOLD_M := 440.0
-const MID_THRESHOLD_M := 900.0
+const NEAR_THRESHOLD_M := 880.0
+const MID_THRESHOLD_M := 1600.0
 const TERRAIN_GRID_STEPS := 12
 
 var _chunk_data: Dictionary = {}
@@ -23,7 +23,9 @@ var _building_collisions_enabled := true
 
 func setup(chunk_data: Dictionary) -> void:
 	_chunk_data = chunk_data.duplicate(true)
-	_profile = CityChunkProfileBuilder.build_profile(_chunk_data)
+	_profile = (chunk_data.get("prepared_profile", {}) as Dictionary).duplicate(true)
+	if _profile.is_empty():
+		_profile = CityChunkProfileBuilder.build_profile(_chunk_data)
 	name = str(_chunk_data.get("chunk_id", "ChunkScene"))
 	position = _chunk_data.get("chunk_center", Vector3.ZERO)
 	_rebuild()
@@ -95,6 +97,24 @@ func get_building_count() -> int:
 func get_building_archetype_ids() -> Array:
 	return (_profile.get("building_archetype_ids", []) as Array).duplicate()
 
+func get_road_collision_shape_count() -> int:
+	var road_overlay := get_node_or_null("NearGroup/RoadOverlay") as Node
+	if road_overlay != null and road_overlay.has_meta("road_collision_shape_count"):
+		return int(road_overlay.get_meta("road_collision_shape_count"))
+	return 0
+
+func get_bridge_collision_shape_count() -> int:
+	var road_overlay := get_node_or_null("NearGroup/RoadOverlay") as Node
+	if road_overlay != null and road_overlay.has_meta("bridge_collision_shape_count"):
+		return int(road_overlay.get_meta("bridge_collision_shape_count"))
+	return 0
+
+func get_bridge_min_clearance_m() -> float:
+	return float(_profile.get("bridge_min_clearance_m", 0.0))
+
+func get_bridge_deck_thickness_m() -> float:
+	return float(_profile.get("bridge_deck_thickness_m", 0.0))
+
 func get_min_building_road_clearance_m() -> float:
 	return float(_profile.get("min_building_road_clearance_m", 0.0))
 
@@ -118,6 +138,11 @@ func get_renderer_stats() -> Dictionary:
 		"non_axis_road_segment_count": int(_profile.get("non_axis_road_segment_count", 0)),
 		"bridge_count": int(_profile.get("bridge_count", 0)),
 		"road_mesh_mode": str(_profile.get("road_mesh_mode", "ribbon")),
+		"road_template_counts": (_profile.get("road_template_counts", {}) as Dictionary).duplicate(true),
+		"road_collision_shape_count": get_road_collision_shape_count(),
+		"bridge_collision_shape_count": get_bridge_collision_shape_count(),
+		"bridge_min_clearance_m": get_bridge_min_clearance_m(),
+		"bridge_deck_thickness_m": get_bridge_deck_thickness_m(),
 		"terrain_relief_m": get_terrain_relief_m(),
 		"building_collision_shape_count": get_building_collision_shape_count(),
 		"building_count": get_building_count(),
@@ -125,7 +150,8 @@ func get_renderer_stats() -> Dictionary:
 
 func _rebuild() -> void:
 	for child in get_children():
-		child.queue_free()
+		remove_child(child)
+		child.free()
 	_building_collision_shapes.clear()
 
 	var chunk_size_m := float(_chunk_data.get("chunk_size_m", 256.0))
@@ -136,7 +162,8 @@ func _rebuild() -> void:
 	near_group.name = "NearGroup"
 	add_child(near_group)
 
-	near_group.add_child(CityRoadMeshBuilder.build_road_overlay(_profile, _chunk_data))
+	var road_overlay := CityRoadMeshBuilder.build_road_overlay(_profile, _chunk_data)
+	near_group.add_child(road_overlay)
 	var props := Node3D.new()
 	props.name = "Props"
 	near_group.add_child(props)
@@ -272,11 +299,8 @@ func _build_terrain_mesh(chunk_size_m: float) -> ArrayMesh:
 	return surface_tool.commit()
 
 func _sample_ground_vertex(local_x: float, local_z: float) -> Vector3:
-	var chunk_center: Vector3 = _chunk_data.get("chunk_center", Vector3.ZERO)
-	var world_seed := int(_chunk_data.get("world_seed", _chunk_data.get("chunk_seed", 0)))
-	var world_x := chunk_center.x + local_x
-	var world_z := chunk_center.z + local_z
-	return Vector3(local_x, CityTerrainSampler.sample_height(world_x, world_z, world_seed), local_z)
+	var shaped_height := CityChunkGroundSampler.sample_height(Vector2(local_x, local_z), _chunk_data, _profile)
+	return Vector3(local_x, shaped_height, local_z)
 
 func _add_triangle(surface_tool: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, uv_a: Vector2, uv_b: Vector2, uv_c: Vector2) -> void:
 	surface_tool.set_uv(uv_a)

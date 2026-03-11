@@ -3,8 +3,10 @@ extends Node3D
 const CityWorldConfig := preload("res://city_game/world/model/CityWorldConfig.gd")
 const CityWorldGenerator := preload("res://city_game/world/generation/CityWorldGenerator.gd")
 const CityChunkStreamer := preload("res://city_game/world/streaming/CityChunkStreamer.gd")
+const CityChunkKey := preload("res://city_game/world/streaming/CityChunkKey.gd")
 const CityChunkNavRuntime := preload("res://city_game/world/navigation/CityChunkNavRuntime.gd")
-const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
+const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
+const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
 
 const CONTROL_MODE_PLAYER := "player"
 const CONTROL_MODE_INSPECTION := "inspection"
@@ -33,6 +35,8 @@ func _ready() -> void:
 	if debug_overlay != null:
 		debug_overlay.visible = false
 	_align_player_to_streamed_ground()
+	if player != null and player.has_method("suspend_ground_stabilization"):
+		player.suspend_ground_stabilization(24)
 
 	set_control_mode(CONTROL_MODE_PLAYER)
 	update_streaming_for_position(_get_active_anchor_position())
@@ -171,19 +175,121 @@ func build_runtime_report(subject_position = null) -> Dictionary:
 func _align_player_to_streamed_ground() -> void:
 	if player == null or _world_config == null:
 		return
-	var anchor := player.global_position
+	var initial_anchor := player.global_position
+	var chunk_payload := _build_chunk_payload_for_world_position(initial_anchor)
+	var profile := CityChunkProfileBuilder.build_profile(chunk_payload)
+	var chunk_center: Vector3 = chunk_payload.get("chunk_center", Vector3.ZERO)
+	var local_point := _resolve_spawn_local_point(chunk_payload, profile)
+	var standing_height := _estimate_player_standing_height()
 	var target_position := Vector3(
-		anchor.x,
-		CityTerrainSampler.sample_height(anchor.x, anchor.z, _world_config.base_seed) + 1.1,
-		anchor.z
+		chunk_center.x + local_point.x,
+		CityChunkGroundSampler.sample_height(local_point, chunk_payload, profile) + standing_height + 0.45,
+		chunk_center.z + local_point.y
 	)
 	if player.has_method("teleport_to_world_position"):
 		player.teleport_to_world_position(target_position)
 	else:
 		player.global_position = target_position
 
+func _snap_player_to_active_surface() -> bool:
+	if player == null or get_world_3d() == null:
+		return false
+	var space_state := get_world_3d().direct_space_state
+	if space_state == null:
+		return false
+	var from := player.global_position + Vector3.UP * 12.0
+	var to := player.global_position + Vector3.DOWN * 24.0
+	var query := PhysicsRayQueryParameters3D.create(from, to)
+	query.collide_with_areas = false
+	query.exclude = [player.get_rid()]
+	var hit := space_state.intersect_ray(query)
+	if hit.is_empty():
+		return false
+	var standing_height := _estimate_player_standing_height()
+	var hit_position: Vector3 = hit.get("position", player.global_position)
+	var target_position := Vector3(player.global_position.x, hit_position.y + standing_height, player.global_position.z)
+	if player.has_method("teleport_to_world_position"):
+		player.teleport_to_world_position(target_position)
+	else:
+		player.global_position = target_position
+	return true
+
 func _get_active_anchor_position() -> Vector3:
 	return player.global_position if player != null else Vector3.ZERO
+
+func _build_chunk_payload_for_world_position(world_position: Vector3) -> Dictionary:
+	var chunk_key := CityChunkKey.world_to_chunk_key(_world_config, world_position)
+	var bounds: Rect2 = _world_config.get_world_bounds()
+	var chunk_center := Vector3(
+		bounds.position.x + (float(chunk_key.x) + 0.5) * float(_world_config.chunk_size_m),
+		0.0,
+		bounds.position.y + (float(chunk_key.y) + 0.5) * float(_world_config.chunk_size_m)
+	)
+	return {
+		"chunk_id": _world_config.format_chunk_id(chunk_key),
+		"chunk_key": chunk_key,
+		"chunk_center": chunk_center,
+		"chunk_size_m": float(_world_config.chunk_size_m),
+		"chunk_seed": _world_config.derive_seed("render_chunk", chunk_key),
+		"world_seed": int(_world_config.base_seed),
+		"road_graph": _world_data.get("road_graph"),
+	}
+
+func _resolve_spawn_local_point(chunk_payload: Dictionary, profile: Dictionary) -> Vector2:
+	var chunk_size := float(chunk_payload.get("chunk_size_m", 256.0))
+	var half_extent := chunk_size * 0.5 - 24.0
+	var best_point := Vector2.ZERO
+	var best_score := -INF
+	for local_x in range(-96, 97, 24):
+		for local_z in range(-96, 97, 24):
+			var candidate := Vector2(
+				clampf(float(local_x), -half_extent, half_extent),
+				clampf(float(local_z), -half_extent, half_extent)
+			)
+			var road_clearance := _distance_to_profile_roads(candidate, profile)
+			var building_clearance := _distance_to_profile_buildings(candidate, profile)
+			var center_penalty := candidate.length() * 0.08
+			var score := minf(road_clearance, 48.0) + minf(building_clearance, 48.0) - center_penalty
+			if score > best_score:
+				best_score = score
+				best_point = candidate
+	return best_point
+
+func _distance_to_profile_roads(local_point: Vector2, profile: Dictionary) -> float:
+	var min_distance := INF
+	for road_segment in profile.get("road_segments", []):
+		var segment_dict: Dictionary = road_segment
+		var width := float(segment_dict.get("width", 0.0))
+		var points: Array = segment_dict.get("points", [])
+		for point_index in range(points.size() - 1):
+			var a: Vector3 = points[point_index]
+			var b: Vector3 = points[point_index + 1]
+			var distance := Geometry2D.get_closest_point_to_segment(local_point, Vector2(a.x, a.z), Vector2(b.x, b.z)).distance_to(local_point) - width * 0.5
+			min_distance = minf(min_distance, distance)
+	return 9999.0 if min_distance == INF else min_distance
+
+func _distance_to_profile_buildings(local_point: Vector2, profile: Dictionary) -> float:
+	var min_distance := INF
+	for building in profile.get("buildings", []):
+		var building_dict: Dictionary = building
+		var center: Vector3 = building_dict.get("center", Vector3.ZERO)
+		var radius := float(building_dict.get("footprint_radius_m", 0.0))
+		min_distance = minf(min_distance, local_point.distance_to(Vector2(center.x, center.z)) - radius)
+	return 9999.0 if min_distance == INF else min_distance
+
+func _estimate_player_standing_height() -> float:
+	if player == null:
+		return 1.0
+	var collision_shape := player.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if collision_shape == null or collision_shape.shape == null:
+		return 1.0
+	if collision_shape.shape is CapsuleShape3D:
+		var capsule := collision_shape.shape as CapsuleShape3D
+		return capsule.radius + capsule.height * 0.5
+	if collision_shape.shape is BoxShape3D:
+		var box := collision_shape.shape as BoxShape3D
+		return box.size.y * 0.5
+	return 1.0
 
 func _set_camera_current(camera_node: Node, current: bool) -> void:
 	var camera := camera_node as Camera3D

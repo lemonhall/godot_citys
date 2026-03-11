@@ -45,23 +45,21 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(stats.get("curved_road_segment_count", 0)) > 0, "Chunk scene roads must include curved segments, not only straight orthogonal strips"):
 		return
-	if not T.require_true(self, str(stats.get("road_mesh_mode", "")) == "ribbon", "Chunk roads must use continuous ribbon mesh rendering, not box-by-box strips"):
+	if not T.require_true(self, str(stats.get("road_mesh_mode", "")) == "templated_roadbed", "Chunk roads must use templated roadbed rendering, not the old ribbon strips"):
 		return
 	if not T.require_true(self, int(stats.get("non_axis_road_segment_count", 0)) > 0, "Chunk roads must include clearly non-orthogonal directions to reduce grid feel"):
 		return
 
 	var bridge_count := 0
-	for sample_key in [
-		Vector2i(135, 135),
-		Vector2i(136, 136),
-		Vector2i(137, 136),
-	]:
-		var sample_scene = chunk_scene_script.new()
-		root.add_child(sample_scene)
-		await process_frame
-		sample_scene.setup(_make_chunk_payload(config, world_data, sample_key))
-		bridge_count += int(sample_scene.get_renderer_stats().get("bridge_count", 0))
-		sample_scene.queue_free()
+	for sample_x in range(134, 139):
+		for sample_y in range(134, 139):
+			var sample_key := Vector2i(sample_x, sample_y)
+			var sample_scene = chunk_scene_script.new()
+			root.add_child(sample_scene)
+			await process_frame
+			sample_scene.setup(_make_chunk_payload(config, world_data, sample_key))
+			bridge_count += int(sample_scene.get_renderer_stats().get("bridge_count", 0))
+			sample_scene.queue_free()
 	if not T.require_true(self, bridge_count > 0, "Road sampling near the city center must include at least some bridge/overpass placeholders"):
 		return
 

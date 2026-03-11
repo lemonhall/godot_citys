@@ -15,6 +15,7 @@
 
 - 建立世界配置对象、seed 约定、坐标与 chunk 网格规则
 - 建立 district / road / block / parcel 的核心数据结构
+- 让 `road_graph` 提供可按 world rect 查询的 world-space 连续道路几何（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - 将 block / parcel 改为按 chunk 惰性查询的元数据接口
 - 提供不依赖整城实例化的世界生成 API
 
@@ -29,7 +30,8 @@
 1. 固定 seed 下生成结果可复现：两次运行得到相同的 district IDs、chunk IDs、block 计数和 parcel 计数。
 2. 自动化测试断言世界尺寸固定为 `70000m x 70000m`，主 chunk 尺寸固定为 `256m x 256m`。
 3. 自动化测试断言世界生成 API 在未实例化 `CityPrototype.tscn` 的情况下可返回完整 district / road 图，以及可按 chunk 查询的 block / parcel 元数据接口。
-4. 反作弊条款：不得把“把当前 `GeneratedCity` 生成更多方块”或“仅把世界常量改大但仍 eager 展开整城 block/parcel”作为本计划完成证据。
+4. 自动化测试断言 `road_graph` 可按 world rect 查询曲线化道路边，为 chunk 渲染提供连续道路骨架。
+5. 反作弊条款：不得把“把当前 `GeneratedCity` 生成更多方块”或“仅把世界常量改大但仍 eager 展开整城 block/parcel”作为本计划完成证据。
 
 ## Files
 

@@ -40,7 +40,14 @@ func _run() -> void:
 	var road_graph = world_a["road_graph"]
 	if not T.require_true(self, road_graph.has_method("get_edge_count"), "road_graph must expose get_edge_count()"):
 		return
+	if not T.require_true(self, road_graph.has_method("get_edges_intersecting_rect"), "road_graph must expose get_edges_intersecting_rect() for chunk-local road queries"):
+		return
 	if not T.require_true(self, road_graph.get_edge_count() == 9660, "road_graph must contain the full 70km arterial grid"):
+		return
+	var center_edges: Array = road_graph.get_edges_intersecting_rect(Rect2(Vector2(-640.0, -640.0), Vector2(1280.0, 1280.0)))
+	if not T.require_true(self, center_edges.size() > 0, "road_graph must provide world-space edges around the city center window"):
+		return
+	if not T.require_true(self, (center_edges[0] as Dictionary).get("points", []).size() >= 3, "road_graph edges must carry curved world-space polyline points"):
 		return
 
 	var block_layout = world_a["block_layout"]

@@ -81,6 +81,8 @@ func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 		"chunk_center": _chunk_center_from_key(chunk_key),
 		"chunk_size_m": float(_config.chunk_size_m),
 		"chunk_seed": _config.derive_seed("render_chunk", chunk_key),
+		"world_seed": int(_config.base_seed),
+		"road_graph": _world_data.get("road_graph"),
 	}
 
 func _chunk_center_from_key(chunk_key: Vector2i) -> Vector3:

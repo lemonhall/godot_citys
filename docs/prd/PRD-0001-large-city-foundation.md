@@ -23,6 +23,7 @@
 - `256m x 256m` chunk 流式加载底盘
 - chunk-local 实例化渲染、远景代理、遮挡体和占位地表碰撞壳（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
 - 低成本天空氛围、同轮廓 LOD 与确定性视觉变体（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
+- world-space 连续道路骨架、轻量地形高差与近景建筑碰撞（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - chunk-local 导航与跨 chunk 自动化 travel 流程验证
 - 性能与 streaming debug 观测面板
 - 开发态高速巡检模式与稳定运行时报告（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
@@ -72,7 +73,7 @@
 **范围**：
 
 - 生成 district graph
-- 生成 arterial / secondary road graph
+- 生成 arterial / secondary road graph，并为 chunk 渲染提供可查询的 world-space 连续道路骨架（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - 提供 block / parcel 的确定性、按 chunk 查询的元数据接口（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
 - 允许 chunk 在没有高模资源时先用占位表现
 
@@ -119,6 +120,9 @@
 - chunk 支持近景实体、中景合批、远景代理
 - near / mid / far 必须从同一份 chunk visual profile 派生，保持主轮廓连续（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
 - 邻近 chunk 必须基于 chunk seed 生成确定性视觉变体，避免近景重复（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
+- chunk 可见道路必须由整城 road skeleton 驱动，并在 chunk 共享边界上连续衔接，不能出现孤路或断路（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
+- chunk ground、道路 y 值和建筑基座必须共享同一套连续高度采样，避免整城纯平面（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
+- 近景建筑必须提供可启停碰撞壳；mid/far LOD 不得保留不可见碰撞（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - block 自动生成基础遮挡体或 `ArrayOccluder3D`
 - chunk 必须提供占位地表与碰撞壳，保证离开中心原型区后仍可连续步行/高速巡检（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
 - `WorldEnvironment` 必须提供低成本 sky/fog 氛围，避免城市漂浮在单色背景前（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
@@ -135,6 +139,9 @@
 - 自动化测试和 debug 证据必须能证明近/中/远至少三档表现存在。
 - 自动化测试至少断言：mid/far 代理保留与 near 一致的主轮廓签名，不能用完全无关的蓝色盒子替代近景建筑。
 - 自动化测试至少断言：不同 chunk 产生不同的确定性视觉变体，而同一 chunk 多次生成签名一致。
+- 自动化测试至少断言：相邻 chunk 的道路连接点在共享边界上连续，且可见道路存在曲率变化，不是 per-chunk 随机孤路。
+- 自动化测试至少断言：近景建筑提供可启停碰撞壳，mid/far LOD 时不可见碰撞会停用。
+- 自动化测试至少断言：chunk 地表存在可见高差，而不是整块纯平面。
 - 自动化测试至少断言：演员离开中心起始区后，仍能落在 streamed chunk 的占位地表上，而不是掉穿世界。
 - 场景中不得再保留与 chunk 地表重叠的 legacy `Ground` 节点作为承托面。（[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
 - 反作弊条款：远景代理不得与近景使用同一份完整高细节节点树。

@@ -10,6 +10,10 @@ func _run() -> void:
 	if scene == null or not (scene is PackedScene):
 		T.fail_and_quit(self, "Missing CityPrototype.tscn for ground continuity")
 		return
+	var terrain_script := load("res://city_game/world/rendering/CityTerrainSampler.gd")
+	if terrain_script == null:
+		T.fail_and_quit(self, "Missing CityTerrainSampler.gd for ground continuity")
+		return
 
 	var world := (scene as PackedScene).instantiate()
 	root.add_child(world)
@@ -24,14 +28,15 @@ func _run() -> void:
 	if not T.require_true(self, player.has_method("teleport_to_world_position"), "PlayerController must expose teleport_to_world_position()"):
 		return
 
-	var far_position := Vector3(1536.0, 2.0, 26.0)
+	var terrain_height := float(terrain_script.sample_height(1536.0, 26.0, world.get_world_config().base_seed))
+	var far_position := Vector3(1536.0, terrain_height + 6.0, 26.0)
 	player.teleport_to_world_position(far_position)
 	world.update_streaming_for_position(far_position)
 
 	for _step in range(72):
 		await physics_frame
 
-	if not T.require_true(self, player.global_position.y > 0.5, "Player must remain above the streamed chunk ground outside the v1 center tile"):
+	if not T.require_true(self, player.global_position.y > terrain_height + 0.5, "Player must remain above the streamed chunk ground outside the v1 center tile"):
 		return
 	if not T.require_true(self, player.is_on_floor(), "Player must settle on the streamed chunk ground"):
 		return

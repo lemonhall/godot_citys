@@ -36,6 +36,10 @@ func _run() -> void:
 	var contract: Dictionary = chunk_scene.get_lod_contract()
 	if not T.require_true(self, contract.get("modes", []) == ["near", "mid", "far"], "LOD contract must expose near/mid/far modes"):
 		return
+	if not T.require_true(self, float(contract.get("near_threshold_m", 0.0)) >= 440.0, "Near LOD threshold must be expanded to at least double the previous range"):
+		return
+	if not T.require_true(self, float(contract.get("mid_threshold_m", 0.0)) >= 900.0, "Mid LOD threshold must be expanded to keep a broader natural transition band"):
+		return
 	if not T.require_true(self, chunk_scene.get_lod_signature("near") == chunk_scene.get_lod_signature("mid"), "Mid LOD must preserve the same silhouette signature as near LOD"):
 		return
 	if not T.require_true(self, chunk_scene.get_lod_signature("mid") == chunk_scene.get_lod_signature("far"), "Far LOD must preserve the same silhouette signature as near/mid LOD"):

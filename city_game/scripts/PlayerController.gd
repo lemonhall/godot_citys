@@ -2,6 +2,8 @@ extends CharacterBody3D
 
 @export var walk_speed := 8.0
 @export var sprint_speed := 13.0
+@export var inspection_walk_speed := 96.0
+@export var inspection_sprint_speed := 180.0
 @export var jump_velocity := 4.5
 @export var mouse_sensitivity := 0.003
 
@@ -10,6 +12,7 @@ extends CharacterBody3D
 var _gravity := ProjectSettings.get_setting("physics/3d/default_gravity") as float
 var _pitch := deg_to_rad(-18.0)
 var _control_enabled := true
+var _speed_profile := "player"
 
 func _ready() -> void:
 	camera_rig.rotation.x = _pitch
@@ -56,7 +59,7 @@ func _physics_process(delta: float) -> void:
 
 		move_dir = (right * input_dir.x + forward * input_dir.y).normalized()
 
-	var speed := sprint_speed if _sprint_requested() else walk_speed
+	var speed := _current_sprint_speed() if _sprint_requested() else _current_walk_speed()
 	velocity.x = move_dir.x * speed
 	velocity.z = move_dir.z * speed
 
@@ -70,6 +73,20 @@ func set_control_enabled(enabled: bool) -> void:
 
 func is_control_enabled() -> bool:
 	return _control_enabled
+
+func set_speed_profile(profile: String) -> void:
+	if profile != "player" and profile != "inspection":
+		return
+	_speed_profile = profile
+
+func get_speed_profile() -> String:
+	return _speed_profile
+
+func get_walk_speed_mps() -> float:
+	return _current_walk_speed()
+
+func get_sprint_speed_mps() -> float:
+	return _current_sprint_speed()
 
 func _read_move_input() -> Vector2:
 	var horizontal := 0.0
@@ -91,6 +108,12 @@ func _jump_requested() -> bool:
 
 func _sprint_requested() -> bool:
 	return Input.is_key_pressed(KEY_SHIFT)
+
+func _current_walk_speed() -> float:
+	return inspection_walk_speed if _speed_profile == "inspection" else walk_speed
+
+func _current_sprint_speed() -> float:
+	return inspection_sprint_speed if _speed_profile == "inspection" else sprint_speed
 
 func teleport_to_world_position(world_position: Vector3) -> void:
 	global_position = world_position

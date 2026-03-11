@@ -15,6 +15,9 @@ func _run() -> void:
 	root.add_child(world)
 	await process_frame
 
+	if not T.require_true(self, world.get_node_or_null("Ground") == null, "Ground continuity must rely on chunk ground, not legacy Ground"):
+		return
+
 	var player = world.get_node_or_null("Player")
 	if not T.require_true(self, player != null, "CityPrototype must keep Player node for ground continuity"):
 		return

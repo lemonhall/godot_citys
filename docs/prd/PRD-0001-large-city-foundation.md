@@ -24,7 +24,7 @@
 - chunk-local 实例化渲染、远景代理、遮挡体和占位地表碰撞壳（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
 - chunk-local 导航与跨 chunk 自动化 travel 流程验证
 - 性能与 streaming debug 观测面板
-- 开发态巡检车与稳定运行时报告（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
+- 开发态高速巡检模式与稳定运行时报告（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
 
 不包含：
 
@@ -39,7 +39,7 @@
 - 不追求 v2 阶段的美术完成度
 - 不追求“整城所有细节同屏常驻”
 - 不追求一次性做完城市最终玩法
-- 开发态巡检车不等于交通仿真系统；v2 仍不包含真实车辆 AI、交通规则或碰撞博弈
+- 高速巡检模式不等于交通仿真系统；v2 仍不包含真实车辆 AI、交通规则或碰撞博弈
 
 ## Requirements
 
@@ -92,7 +92,7 @@
 
 **范围**：
 
-- 基于玩家或开发态巡检车的位置决定进入/退出的 chunk（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
+- 基于玩家或开发态高速巡检模式下的玩家位置决定进入/退出的 chunk（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
 - 高成本活跃窗口固定为玩家周围 `5x5` chunk
 - chunk 准备流程支持后台数据准备与主线程挂载
 - 提供 warm / cold 元数据层，避免所有内容都被卸空
@@ -105,7 +105,7 @@
 **验收口径**：
 
 - 任意时刻高成本活跃 chunk 数量不得超过 25。
-- 玩家或巡检车跨越至少 8 个 chunk 的自动化 travel / drive 测试过程中，不允许出现空引用、重复加载同一 chunk ID 或活跃 chunk 上限失控。
+- 玩家在普通或高速巡检模式下跨越至少 8 个 chunk 的自动化 travel 测试过程中，不允许出现空引用、重复加载同一 chunk ID 或活跃 chunk 上限失控。
 - 反作弊条款：不得通过“只加载 1 个 chunk 且禁用移动”来满足上限要求。
 
 ### REQ-0001-004 分块渲染降级与实例化
@@ -117,7 +117,7 @@
 - 重复性 props 使用 chunk-local `MultiMeshInstance3D`
 - chunk 支持近景实体、中景合批、远景代理
 - block 自动生成基础遮挡体或 `ArrayOccluder3D`
-- chunk 必须提供占位地表与碰撞壳，保证离开中心原型区后仍可连续步行/驾驶巡检（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
+- chunk 必须提供占位地表与碰撞壳，保证离开中心原型区后仍可连续步行/高速巡检（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
 - 提供 debug 统计，显示每个 chunk 的实例数与降级状态
 
 **非目标**：
@@ -129,7 +129,8 @@
 
 - 至少一种重复类资产必须通过 `MultiMeshInstance3D` 渲染，而不是逐个 `MeshInstance3D`。
 - 自动化测试和 debug 证据必须能证明近/中/远至少三档表现存在。
-- 自动化测试至少断言：演员离开中心起始地板后，仍能落在 streamed chunk 的占位地表上，而不是掉穿世界。
+- 自动化测试至少断言：演员离开中心起始区后，仍能落在 streamed chunk 的占位地表上，而不是掉穿世界。
+- 场景中不得再保留与 chunk 地表重叠的 legacy `Ground` 节点作为承托面。（[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
 - 反作弊条款：远景代理不得与近景使用同一份完整高细节节点树。
 
 ### REQ-0001-005 分块导航与宏观路由
@@ -192,15 +193,15 @@
 - 运行一个 headless E2E 测试，自动推动玩家跨越至少 `2048m` 路径，最终输出 `PASS`。
 - E2E 日志中必须包含 chunk 迁移证据、最终位置和活跃 chunk 统计，而不是只检查场景能 instantiate。
 
-### REQ-0001-008 开发态巡检载具
+### REQ-0001-008 开发态高速巡检模式
 
-**动机**：如果 v2 只有 headless 自动测试，没有人工可驾驶的巡检入口，就很难快速验证 chunk streaming、地表承托和 debug 观测是否真的成立。
+**动机**：如果 v2 只有 headless 自动测试，没有人工可快速切换的高速巡检入口，就很难快速验证 chunk streaming、地表承托和 debug 观测是否真的成立。
 
 **范围**：
 
-- 在 `CityPrototype.tscn` 中提供一个开发态巡检车
-- 允许在玩家与巡检车之间切换控制权
-- 巡检车接入同一套 streaming / debug 观测链路
+- 在 `CityPrototype.tscn` 中允许玩家切换到高速巡检速度档
+- 高速巡检模式接入同一套 streaming / debug 观测链路
+- HUD/debug 输出中体现当前 `control_mode`
 
 **非目标**：
 
@@ -210,8 +211,8 @@
 
 **验收口径**：
 
-- 自动化测试至少断言：场景中存在巡检车，可切换到巡检车模式，且切换后 `active_chunk_count` 仍然 `<= 25`。
-- 人工试玩时应能通过巡检车在大城市范围内驾驶检查 chunk streaming、LOD 与运行时观测。
+- 自动化测试至少断言：场景中不存在 legacy `Ground` 与 `InspectionCar`，可切换到 `inspection` 模式，且切换后 `active_chunk_count` 仍然 `<= 25`。
+- 人工试玩时应能通过高速巡检模式在大城市范围内快速检查 chunk streaming、LOD 与运行时观测。
 
 ## Open Questions
 

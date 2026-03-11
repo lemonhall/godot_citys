@@ -4,8 +4,8 @@ render_mode depth_draw_opaque, cull_back;
 uniform vec4 ground_color : source_color = vec4(0.12549, 0.333333, 0.168627, 1.0);
 uniform vec4 road_color : source_color = vec4(0.16, 0.17, 0.19, 1.0);
 uniform vec4 stripe_color : source_color = vec4(0.9, 0.8, 0.5, 1.0);
-uniform sampler2D road_mask_texture : filter_linear_mipmap, repeat_disable;
-uniform sampler2D stripe_mask_texture : filter_linear_mipmap, repeat_disable;
+uniform sampler2D road_mask_texture : filter_linear, repeat_disable;
+uniform sampler2D stripe_mask_texture : filter_linear, repeat_disable;
 uniform float chunk_size_m = 256.0;
 
 varying vec2 overlay_uv;

@@ -50,6 +50,16 @@ func _run() -> void:
 				return
 			if not T.require_true(self, material.get_shader_parameter("stripe_mask_texture") != null, "Terrain road overlay must bind a stripe mask texture"):
 				return
+			var road_image := (material.get_shader_parameter("road_mask_texture") as Texture2D).get_image()
+			var stripe_image := (material.get_shader_parameter("stripe_mask_texture") as Texture2D).get_image()
+			if not T.require_true(self, road_image.get_format() == Image.FORMAT_L8, "Road overlay mask texture must use a single-channel image format"):
+				return
+			if not T.require_true(self, stripe_image.get_format() == Image.FORMAT_L8, "Stripe overlay mask texture must use a single-channel image format"):
+				return
+			if not T.require_true(self, not road_image.has_mipmaps(), "Road overlay mask texture must stay mipmap-free to avoid soft blurry roads"):
+				return
+			if not T.require_true(self, not stripe_image.has_mipmaps(), "Stripe overlay mask texture must stay mipmap-free to preserve road markings"):
+				return
 			chunk_scene.queue_free()
 			break
 		if found_surface_road_chunk:

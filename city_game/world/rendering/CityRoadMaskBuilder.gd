@@ -3,10 +3,12 @@ extends RefCounted
 const MASK_RESOLUTION := 256
 
 static func build_surface_textures(profile: Dictionary, chunk_size_m: float) -> Dictionary:
-	var road_image := Image.create(MASK_RESOLUTION, MASK_RESOLUTION, false, Image.FORMAT_RGBA8)
-	var stripe_image := Image.create(MASK_RESOLUTION, MASK_RESOLUTION, false, Image.FORMAT_RGBA8)
-	road_image.fill(Color(0.0, 0.0, 0.0, 1.0))
-	stripe_image.fill(Color(0.0, 0.0, 0.0, 1.0))
+	var road_bytes := PackedByteArray()
+	road_bytes.resize(MASK_RESOLUTION * MASK_RESOLUTION)
+	road_bytes.fill(0)
+	var stripe_bytes := PackedByteArray()
+	stripe_bytes.resize(MASK_RESOLUTION * MASK_RESOLUTION)
+	stripe_bytes.fill(0)
 
 	var surface_segments: Array = []
 	for road_segment in profile.get("road_segments", []):
@@ -14,27 +16,27 @@ static func build_surface_textures(profile: Dictionary, chunk_size_m: float) -> 
 		if bool(segment_dict.get("bridge", false)):
 			continue
 		surface_segments.append(segment_dict)
-		_paint_segment_mask(road_image, segment_dict, chunk_size_m, false)
-		_paint_segment_mask(stripe_image, segment_dict, chunk_size_m, true)
+		_paint_segment_mask(road_bytes, segment_dict, chunk_size_m, false)
+		_paint_segment_mask(stripe_bytes, segment_dict, chunk_size_m, true)
 
 	for cluster in _build_intersection_clusters(surface_segments):
 		var cluster_dict: Dictionary = cluster
 		_paint_disc(
-			road_image,
+			road_bytes,
 			_local_point_to_pixel(cluster_dict.get("center", Vector3.ZERO), chunk_size_m),
 			_world_radius_to_pixels(float(cluster_dict.get("radius", 0.0)), chunk_size_m),
 			1.4
 		)
 
-	road_image.generate_mipmaps()
-	stripe_image.generate_mipmaps()
+	var road_image := Image.create_from_data(MASK_RESOLUTION, MASK_RESOLUTION, false, Image.FORMAT_L8, road_bytes)
+	var stripe_image := Image.create_from_data(MASK_RESOLUTION, MASK_RESOLUTION, false, Image.FORMAT_L8, stripe_bytes)
 	return {
 		"road_mask_texture": ImageTexture.create_from_image(road_image),
 		"stripe_mask_texture": ImageTexture.create_from_image(stripe_image),
 		"surface_segment_count": surface_segments.size(),
 	}
 
-static func _paint_segment_mask(image: Image, segment_dict: Dictionary, chunk_size_m: float, stripe_only: bool) -> void:
+static func _paint_segment_mask(mask_bytes: PackedByteArray, segment_dict: Dictionary, chunk_size_m: float, stripe_only: bool) -> void:
 	var points: Array = segment_dict.get("points", [])
 	if points.size() < 2:
 		return
@@ -55,7 +57,7 @@ static func _paint_segment_mask(image: Image, segment_dict: Dictionary, chunk_si
 			var ratio := float(sample_index) / float(sample_count)
 			var sample_point := start_point.lerp(end_point, ratio)
 			_paint_disc(
-				image,
+				mask_bytes,
 				_local_point_to_pixel(sample_point, chunk_size_m),
 				radius_px,
 				feather_px
@@ -71,7 +73,7 @@ static func _resolve_mask_radius_m(segment_dict: Dictionary, stripe_only: bool) 
 		return 0.22
 	return float(segment_dict.get("width", 11.0)) * 0.5 + 0.4
 
-static func _paint_disc(image: Image, center_px: Vector2, radius_px: float, feather_px: float) -> void:
+static func _paint_disc(mask_bytes: PackedByteArray, center_px: Vector2, radius_px: float, feather_px: float) -> void:
 	if radius_px <= 0.0:
 		return
 	var min_x := maxi(0, int(floor(center_px.x - radius_px - feather_px)))
@@ -86,9 +88,10 @@ static func _paint_disc(image: Image, center_px: Vector2, radius_px: float, feat
 			var strength := clampf((radius_px + falloff - distance_to_center) / falloff, 0.0, 1.0)
 			if strength <= 0.0:
 				continue
-			var current_value := image.get_pixel(pixel_x, pixel_y).r
-			var next_value := maxf(current_value, strength)
-			image.set_pixel(pixel_x, pixel_y, Color(next_value, next_value, next_value, 1.0))
+			var byte_index := pixel_y * MASK_RESOLUTION + pixel_x
+			var current_value := int(mask_bytes[byte_index])
+			var next_value := maxi(current_value, int(round(strength * 255.0)))
+			mask_bytes[byte_index] = next_value
 
 static func _local_point_to_pixel(point: Vector3, chunk_size_m: float) -> Vector2:
 	var normalized_x := clampf(point.x / maxf(chunk_size_m, 1.0) + 0.5, 0.0, 1.0)

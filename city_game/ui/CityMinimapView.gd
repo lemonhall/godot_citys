@@ -31,15 +31,18 @@ func _draw() -> void:
 	var player_position: Vector2 = player_marker.get("position", Vector2(map_size * 0.5, map_size * 0.5))
 	_draw_player_marker(player_position, float(player_marker.get("heading_rad", 0.0)))
 
-func _draw_marker(marker_position: Vector2, color: Color, radius: float) -> void:
-	draw_circle(marker_position, radius, color)
-
-func _draw_player_marker(marker_position: Vector2, heading_rad: float) -> void:
-	var forward := Vector2(sin(heading_rad), cos(heading_rad))
-	var right := Vector2(forward.y, -forward.x)
-	var points := PackedVector2Array([
+func build_player_marker_polygon(marker_position: Vector2, heading_rad: float) -> PackedVector2Array:
+	var forward := Vector2(sin(heading_rad), -cos(heading_rad))
+	var right := Vector2(-forward.y, forward.x)
+	return PackedVector2Array([
 		marker_position + forward * 9.0,
 		marker_position - forward * 6.0 + right * 5.0,
 		marker_position - forward * 6.0 - right * 5.0,
 	])
+
+func _draw_marker(marker_position: Vector2, color: Color, radius: float) -> void:
+	draw_circle(marker_position, radius, color)
+
+func _draw_player_marker(marker_position: Vector2, heading_rad: float) -> void:
+	var points := build_player_marker_polygon(marker_position, heading_rad)
 	draw_colored_polygon(points, Color(0.3, 0.88, 1.0, 1.0))

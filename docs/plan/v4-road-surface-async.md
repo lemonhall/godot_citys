@@ -4,6 +4,21 @@
 
 把道路 surface mask 的 CPU 数据准备迁到异步路径，主线程只做最终资源提交，进一步削掉 streaming 尖峰。
 
+## 实现状态
+
+已完成。当前实现把 road surface pipeline 拆成三段：
+
+- `CityRoadMaskBuilder.prepare_surface_data()`：只做 byte mask、cache load/save、profile 统计，允许在线程内运行。
+- `CityRoadMaskBuilder.commit_surface_textures()`：只做 `Image` / `ImageTexture` 创建，明确留在主线程。
+- `CityChunkRenderer`：维护 page 级 async job 队列，先 dispatch，再在后续 frame collect 完成结果，最后做 main-thread commit 与 chunk mount。
+
+当前 profiling 里已显式暴露：
+
+- `surface_async_dispatch_*`
+- `surface_async_complete_*`
+- `surface_commit_*`
+- `pending_surface_async_count`
+
 ## PRD Trace
 
 - REQ-0001-003
@@ -50,3 +65,9 @@
 
 - Godot 场景树和 GPU 资源线程安全边界很窄，线程里只能做数据准备，不能乱碰资源和节点。
 - 如果异步完成回调没有和 streaming 生命周期绑定，chunk 退场后容易回写无效对象。
+
+## Evidence
+
+- `tests/world/test_city_road_surface_async_pipeline.gd`
+- `tests/world/test_city_streaming_profile_stats.gd`
+- `tests/e2e/test_city_runtime_performance_profile.gd`

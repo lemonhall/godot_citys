@@ -2,6 +2,8 @@ extends Node3D
 
 const CityChunkScene := preload("res://city_game/world/rendering/CityChunkScene.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
+const CityRoadSurfacePageProvider := preload("res://city_game/world/rendering/CityRoadSurfacePageProvider.gd")
+const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
 
 const PREPARE_BUDGET_PER_TICK := 1
 const MOUNT_BUDGET_PER_TICK := 1
@@ -10,9 +12,12 @@ const MAX_POOLED_CHUNKS := 8
 
 var _config
 var _world_data: Dictionary = {}
+var _surface_page_provider = CityRoadSurfacePageProvider.new()
 var _chunk_scenes: Dictionary = {}
 var _prepared_payloads: Dictionary = {}
 var _pending_prepare: Dictionary = {}
+var _surface_waiting_payloads: Dictionary = {}
+var _pending_surface_jobs: Dictionary = {}
 var _pending_mount_ids: Array[String] = []
 var _pending_retire_ids: Array[String] = []
 var _scene_pool: Array[Node3D] = []
@@ -32,12 +37,28 @@ var _mount_setup_sample_count := 0
 var _mount_setup_total_usec := 0
 var _mount_setup_max_usec := 0
 var _mount_setup_last_usec := 0
+var _surface_async_dispatch_sample_count := 0
+var _surface_async_dispatch_total_usec := 0
+var _surface_async_dispatch_max_usec := 0
+var _surface_async_dispatch_last_usec := 0
+var _surface_async_complete_sample_count := 0
+var _surface_async_complete_total_usec := 0
+var _surface_async_complete_max_usec := 0
+var _surface_async_complete_last_usec := 0
+var _surface_commit_sample_count := 0
+var _surface_commit_total_usec := 0
+var _surface_commit_max_usec := 0
+var _surface_commit_last_usec := 0
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
-	_world_data = world_data.duplicate(true)
+	_world_data = world_data
+	_surface_page_provider = CityRoadSurfacePageProvider.new()
+	_surface_page_provider.setup(_config, _world_data)
 	_prepared_payloads.clear()
 	_pending_prepare.clear()
+	_surface_waiting_payloads.clear()
+	_pending_surface_jobs.clear()
 	_pending_mount_ids.clear()
 	_pending_retire_ids.clear()
 	_last_prepare_usec = 0
@@ -61,15 +82,23 @@ func _notification(what: int) -> void:
 		if is_instance_valid(chunk_scene):
 			chunk_scene.free()
 	_scene_pool.clear()
+	for job in _pending_surface_jobs.values():
+		var job_dict: Dictionary = job
+		var thread: Thread = job_dict.get("thread")
+		if thread != null and thread.is_started():
+			thread.wait_to_finish()
 	for chunk_scene in _chunk_scenes.values():
 		if is_instance_valid(chunk_scene):
 			chunk_scene.free()
 	_chunk_scenes.clear()
 	_prepared_payloads.clear()
 	_pending_prepare.clear()
+	_surface_waiting_payloads.clear()
+	_pending_surface_jobs.clear()
 	_pending_mount_ids.clear()
 	_pending_retire_ids.clear()
 	_last_queue_process_frame = -1
+	_surface_page_provider.clear()
 
 func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> void:
 	if _config == null:
@@ -84,7 +113,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> vo
 	var new_entries: Array[Dictionary] = []
 	for entry in active_chunk_entries:
 		var chunk_id := str(entry.get("chunk_id", ""))
-		if _chunk_scenes.has(chunk_id) or _prepared_payloads.has(chunk_id) or _pending_prepare.has(chunk_id):
+		if _chunk_scenes.has(chunk_id) or _prepared_payloads.has(chunk_id) or _pending_prepare.has(chunk_id) or _surface_waiting_payloads.has(chunk_id):
 			continue
 		new_entries.append(entry)
 	new_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
@@ -108,12 +137,18 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> vo
 			continue
 		_pending_prepare.erase(chunk_id)
 
+	for chunk_id in _surface_waiting_payloads.keys():
+		if target_chunk_ids.has(chunk_id):
+			continue
+		_surface_waiting_payloads.erase(chunk_id)
+
 	for pending_index in range(_pending_mount_ids.size() - 1, -1, -1):
 		var pending_chunk_id := _pending_mount_ids[pending_index]
 		if target_chunk_ids.has(pending_chunk_id):
 			continue
 		_pending_mount_ids.remove_at(pending_index)
 
+	_prune_surface_job_waiters(target_chunk_ids)
 	_process_streaming_queues_once_per_frame()
 	_update_lod_states(player_position)
 
@@ -136,6 +171,7 @@ func get_streaming_budget_stats() -> Dictionary:
 		"mount_budget_per_tick": MOUNT_BUDGET_PER_TICK,
 		"retire_budget_per_tick": RETIRE_BUDGET_PER_TICK,
 		"pending_prepare_count": _pending_prepare.size(),
+		"pending_surface_async_count": _pending_surface_jobs.size(),
 		"pending_mount_count": _pending_mount_ids.size(),
 		"pending_retire_count": _pending_retire_ids.size(),
 		"last_prepare_count": _last_prepare_count,
@@ -144,6 +180,7 @@ func get_streaming_budget_stats() -> Dictionary:
 		"last_prepare_usec": _last_prepare_usec,
 		"last_mount_usec": _last_mount_usec,
 		"last_retire_usec": _last_retire_usec,
+		"surface_runtime_page_count": _surface_page_provider.get_runtime_page_count(),
 	}
 
 func get_streaming_profile_stats() -> Dictionary:
@@ -158,6 +195,21 @@ func get_streaming_profile_stats() -> Dictionary:
 		"mount_setup_avg_usec": _average_usec(_mount_setup_total_usec, _mount_setup_sample_count),
 		"mount_setup_max_usec": _mount_setup_max_usec,
 		"mount_setup_last_usec": _mount_setup_last_usec,
+		"surface_async_dispatch_sample_count": _surface_async_dispatch_sample_count,
+		"surface_async_dispatch_total_usec": _surface_async_dispatch_total_usec,
+		"surface_async_dispatch_avg_usec": _average_usec(_surface_async_dispatch_total_usec, _surface_async_dispatch_sample_count),
+		"surface_async_dispatch_max_usec": _surface_async_dispatch_max_usec,
+		"surface_async_dispatch_last_usec": _surface_async_dispatch_last_usec,
+		"surface_async_complete_sample_count": _surface_async_complete_sample_count,
+		"surface_async_complete_total_usec": _surface_async_complete_total_usec,
+		"surface_async_complete_avg_usec": _average_usec(_surface_async_complete_total_usec, _surface_async_complete_sample_count),
+		"surface_async_complete_max_usec": _surface_async_complete_max_usec,
+		"surface_async_complete_last_usec": _surface_async_complete_last_usec,
+		"surface_commit_sample_count": _surface_commit_sample_count,
+		"surface_commit_total_usec": _surface_commit_total_usec,
+		"surface_commit_avg_usec": _average_usec(_surface_commit_total_usec, _surface_commit_sample_count),
+		"surface_commit_max_usec": _surface_commit_max_usec,
+		"surface_commit_last_usec": _surface_commit_last_usec,
 	}
 
 func reset_streaming_profile_stats() -> void:
@@ -169,6 +221,18 @@ func reset_streaming_profile_stats() -> void:
 	_mount_setup_total_usec = 0
 	_mount_setup_max_usec = 0
 	_mount_setup_last_usec = 0
+	_surface_async_dispatch_sample_count = 0
+	_surface_async_dispatch_total_usec = 0
+	_surface_async_dispatch_max_usec = 0
+	_surface_async_dispatch_last_usec = 0
+	_surface_async_complete_sample_count = 0
+	_surface_async_complete_total_usec = 0
+	_surface_async_complete_max_usec = 0
+	_surface_async_complete_last_usec = 0
+	_surface_commit_sample_count = 0
+	_surface_commit_total_usec = 0
+	_surface_commit_max_usec = 0
+	_surface_commit_last_usec = 0
 
 func get_renderer_stats() -> Dictionary:
 	var lod_mode_counts := {
@@ -212,12 +276,8 @@ func _queue_retire(chunk_id: String) -> void:
 	_pending_retire_ids.append(chunk_id)
 
 func _process_streaming_queues() -> void:
-	if _should_use_warm_start_pipeline():
-		_process_prepare_budget()
-		_process_mount_budget()
-		_process_retire_budget()
-		return
 	_process_retire_budget()
+	_collect_completed_surface_jobs()
 	_process_mount_budget()
 	_process_prepare_budget()
 
@@ -246,9 +306,22 @@ func _process_prepare_budget() -> void:
 		var profile_started_usec := Time.get_ticks_usec()
 		payload["prepared_profile"] = CityChunkProfileBuilder.build_profile(payload)
 		_record_prepare_profile_sample(Time.get_ticks_usec() - profile_started_usec)
-		_prepared_payloads[chunk_id] = payload
-		if not _pending_mount_ids.has(chunk_id):
-			_pending_mount_ids.append(chunk_id)
+		payload["surface_page_provider"] = _surface_page_provider
+		payload["initial_lod_mode"] = _resolve_initial_lod_mode(payload)
+		var detail_mode := _resolve_surface_detail_mode_for_lod(str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR)))
+		var page_header: Dictionary = _surface_page_provider.build_chunk_page_header(payload, detail_mode)
+		payload["surface_page_header"] = page_header
+		var runtime_key := str(page_header.get("runtime_key", ""))
+		if _surface_page_provider.has_runtime_bundle(runtime_key):
+			payload["surface_page_binding"] = _surface_page_provider.build_chunk_binding(
+				page_header,
+				_surface_page_provider.get_runtime_bundle(runtime_key),
+				true
+			)
+			_enqueue_ready_payload(chunk_id, payload)
+		else:
+			_surface_waiting_payloads[chunk_id] = payload
+			_queue_surface_job(chunk_id, payload, page_header, detail_mode)
 		_pending_prepare.erase(chunk_id)
 		prepared_count += 1
 	_last_prepare_count = prepared_count
@@ -264,7 +337,6 @@ func _process_mount_budget() -> void:
 		if not _prepared_payloads.has(chunk_id):
 			continue
 		var payload: Dictionary = _prepared_payloads[chunk_id]
-		payload["initial_lod_mode"] = _resolve_initial_lod_mode(payload)
 		var chunk_scene := _take_pooled_scene()
 		var setup_started_usec := Time.get_ticks_usec()
 		chunk_scene.setup(payload)
@@ -355,10 +427,112 @@ func _record_mount_setup_sample(duration_usec: int) -> void:
 	_mount_setup_max_usec = maxi(_mount_setup_max_usec, duration_usec)
 	_mount_setup_last_usec = duration_usec
 
+func _record_surface_async_dispatch_sample(duration_usec: int) -> void:
+	_surface_async_dispatch_sample_count += 1
+	_surface_async_dispatch_total_usec += duration_usec
+	_surface_async_dispatch_max_usec = maxi(_surface_async_dispatch_max_usec, duration_usec)
+	_surface_async_dispatch_last_usec = duration_usec
+
+func _record_surface_async_complete_sample(duration_usec: int) -> void:
+	_surface_async_complete_sample_count += 1
+	_surface_async_complete_total_usec += duration_usec
+	_surface_async_complete_max_usec = maxi(_surface_async_complete_max_usec, duration_usec)
+	_surface_async_complete_last_usec = duration_usec
+
+func _record_surface_commit_sample(duration_usec: int) -> void:
+	_surface_commit_sample_count += 1
+	_surface_commit_total_usec += duration_usec
+	_surface_commit_max_usec = maxi(_surface_commit_max_usec, duration_usec)
+	_surface_commit_last_usec = duration_usec
+
 func _average_usec(total_usec: int, sample_count: int) -> int:
 	if sample_count <= 0:
 		return 0
 	return int(round(float(total_usec) / float(sample_count)))
 
-func _should_use_warm_start_pipeline() -> bool:
-	return _chunk_scenes.is_empty() and _prepared_payloads.is_empty()
+func _resolve_surface_detail_mode_for_lod(lod_mode: String) -> String:
+	return CityChunkScene.SURFACE_DETAIL_FULL if lod_mode == CityChunkScene.LOD_NEAR else CityChunkScene.SURFACE_DETAIL_COARSE
+
+func _enqueue_ready_payload(chunk_id: String, payload: Dictionary) -> void:
+	_prepared_payloads[chunk_id] = payload
+	if not _pending_mount_ids.has(chunk_id):
+		_pending_mount_ids.append(chunk_id)
+
+func _queue_surface_job(chunk_id: String, payload: Dictionary, page_header: Dictionary, detail_mode: String) -> void:
+	var runtime_key := str(page_header.get("runtime_key", ""))
+	if _pending_surface_jobs.has(runtime_key):
+		var existing_job: Dictionary = _pending_surface_jobs[runtime_key]
+		var waiter_headers: Dictionary = existing_job.get("waiter_headers", {})
+		waiter_headers[chunk_id] = page_header.duplicate(true)
+		existing_job["waiter_headers"] = waiter_headers
+		_pending_surface_jobs[runtime_key] = existing_job
+		return
+
+	var page_request := _surface_page_provider.build_page_request(payload, detail_mode, page_header)
+	var thread := Thread.new()
+	var dispatch_started_usec := Time.get_ticks_usec()
+	var start_error := thread.start(Callable(self, "_prepare_surface_request_async").bind(page_request.get("surface_request", {})))
+	_record_surface_async_dispatch_sample(Time.get_ticks_usec() - dispatch_started_usec)
+	if start_error != OK:
+		var surface_data := _prepare_surface_request_async(page_request.get("surface_request", {}))
+		var surface_stats: Dictionary = surface_data.get("mask_profile_stats", {})
+		_record_surface_async_complete_sample(int(surface_stats.get("prepare_total_usec", surface_stats.get("total_usec", 0))))
+		var runtime_bundle := _surface_page_provider.store_runtime_bundle(runtime_key, surface_data)
+		_record_surface_commit_sample(int(runtime_bundle.get("commit_usec", 0)))
+		payload["surface_page_binding"] = _surface_page_provider.build_chunk_binding(page_header, runtime_bundle, false)
+		_surface_waiting_payloads.erase(chunk_id)
+		_enqueue_ready_payload(chunk_id, payload)
+		return
+
+	_pending_surface_jobs[runtime_key] = {
+		"thread": thread,
+		"page_request": page_request,
+		"waiter_headers": {
+			chunk_id: page_header.duplicate(true),
+		},
+	}
+
+func _collect_completed_surface_jobs() -> void:
+	var runtime_keys: Array[String] = []
+	for runtime_key in _pending_surface_jobs.keys():
+		runtime_keys.append(str(runtime_key))
+	runtime_keys.sort()
+
+	for runtime_key in runtime_keys:
+		var job: Dictionary = _pending_surface_jobs[runtime_key]
+		var thread: Thread = job.get("thread")
+		if thread == null or thread.is_alive():
+			continue
+		var thread_result: Variant = thread.wait_to_finish()
+		if not (thread_result is Dictionary):
+			_pending_surface_jobs.erase(runtime_key)
+			continue
+		var surface_data: Dictionary = thread_result
+		var surface_stats: Dictionary = surface_data.get("mask_profile_stats", {})
+		_record_surface_async_complete_sample(int(surface_stats.get("prepare_total_usec", surface_stats.get("total_usec", 0))))
+		var runtime_bundle := _surface_page_provider.store_runtime_bundle(runtime_key, surface_data)
+		_record_surface_commit_sample(int(runtime_bundle.get("commit_usec", 0)))
+		var waiter_headers: Dictionary = job.get("waiter_headers", {})
+		for waiter_chunk_id in waiter_headers.keys():
+			var chunk_id := str(waiter_chunk_id)
+			if not _surface_waiting_payloads.has(chunk_id):
+				continue
+			var payload: Dictionary = _surface_waiting_payloads[chunk_id]
+			payload["surface_page_binding"] = _surface_page_provider.build_chunk_binding(waiter_headers[waiter_chunk_id], runtime_bundle, false)
+			_surface_waiting_payloads.erase(chunk_id)
+			_enqueue_ready_payload(chunk_id, payload)
+		_pending_surface_jobs.erase(runtime_key)
+
+func _prune_surface_job_waiters(target_chunk_ids: Dictionary) -> void:
+	for runtime_key in _pending_surface_jobs.keys():
+		var job: Dictionary = _pending_surface_jobs[runtime_key]
+		var waiter_headers: Dictionary = job.get("waiter_headers", {})
+		for waiter_chunk_id in waiter_headers.keys():
+			if target_chunk_ids.has(str(waiter_chunk_id)):
+				continue
+			waiter_headers.erase(waiter_chunk_id)
+		job["waiter_headers"] = waiter_headers
+		_pending_surface_jobs[runtime_key] = job
+
+func _prepare_surface_request_async(surface_request: Dictionary) -> Dictionary:
+	return CityRoadMaskBuilder.prepare_surface_data(surface_request)

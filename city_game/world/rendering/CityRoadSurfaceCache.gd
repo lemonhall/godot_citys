@@ -4,6 +4,9 @@ const CACHE_SCHEMA_VERSION := 1
 const CACHE_DIRECTORY := "user://cache/world/road_surface"
 const DEFAULT_MASK_RESOLUTION := 256
 
+func build_cache_path_from_signature(signature: String) -> String:
+	return "%s/road_surface_%s.bin" % [CACHE_DIRECTORY, signature.md5_text()]
+
 func build_cache_signature(profile: Dictionary, chunk_size_m: float, detail_mode: String = "full", mask_resolution: int = DEFAULT_MASK_RESOLUTION) -> String:
 	var road_signature := str(profile.get("road_signature", profile.get("signature", "")))
 	return "v%d_res%d_chunk%d_mode%s_road%s" % [
@@ -16,16 +19,22 @@ func build_cache_signature(profile: Dictionary, chunk_size_m: float, detail_mode
 
 func build_cache_path(profile: Dictionary, chunk_size_m: float, detail_mode: String = "full", mask_resolution: int = DEFAULT_MASK_RESOLUTION) -> String:
 	var signature := build_cache_signature(profile, chunk_size_m, detail_mode, mask_resolution)
-	return "%s/road_surface_%s.bin" % [CACHE_DIRECTORY, signature.md5_text()]
+	return build_cache_path_from_signature(signature)
 
-func clear_cache_for_profile(profile: Dictionary, chunk_size_m: float, detail_mode: String = "full", mask_resolution: int = DEFAULT_MASK_RESOLUTION) -> void:
-	var cache_path := build_cache_path(profile, chunk_size_m, detail_mode, mask_resolution)
+func clear_cache_for_signature(signature: String) -> void:
+	var cache_path := build_cache_path_from_signature(signature)
 	if FileAccess.file_exists(cache_path):
 		DirAccess.remove_absolute(cache_path)
 
+func clear_cache_for_profile(profile: Dictionary, chunk_size_m: float, detail_mode: String = "full", mask_resolution: int = DEFAULT_MASK_RESOLUTION) -> void:
+	clear_cache_for_signature(build_cache_signature(profile, chunk_size_m, detail_mode, mask_resolution))
+
 func load_surface_masks(profile: Dictionary, chunk_size_m: float, detail_mode: String = "full", mask_resolution: int = DEFAULT_MASK_RESOLUTION) -> Dictionary:
-	var cache_path := build_cache_path(profile, chunk_size_m, detail_mode, mask_resolution)
 	var signature := build_cache_signature(profile, chunk_size_m, detail_mode, mask_resolution)
+	return load_surface_masks_by_signature(signature)
+
+func load_surface_masks_by_signature(signature: String) -> Dictionary:
+	var cache_path := build_cache_path_from_signature(signature)
 	if not FileAccess.file_exists(cache_path):
 		return {
 			"hit": false,
@@ -97,8 +106,11 @@ func load_surface_masks(profile: Dictionary, chunk_size_m: float, detail_mode: S
 	}
 
 func save_surface_masks(profile: Dictionary, chunk_size_m: float, road_bytes: PackedByteArray, stripe_bytes: PackedByteArray, detail_mode: String = "full", mask_resolution: int = DEFAULT_MASK_RESOLUTION) -> Dictionary:
-	var cache_path := build_cache_path(profile, chunk_size_m, detail_mode, mask_resolution)
 	var signature := build_cache_signature(profile, chunk_size_m, detail_mode, mask_resolution)
+	return save_surface_masks_by_signature(signature, road_bytes, stripe_bytes)
+
+func save_surface_masks_by_signature(signature: String, road_bytes: PackedByteArray, stripe_bytes: PackedByteArray) -> Dictionary:
+	var cache_path := build_cache_path_from_signature(signature)
 	var make_dir_error := DirAccess.make_dir_recursive_absolute(CACHE_DIRECTORY)
 	if make_dir_error != OK:
 		return {

@@ -24,11 +24,18 @@ var _profile: Dictionary = {}
 var _setup_profile: Dictionary = {}
 var _current_lod_mode := LOD_NEAR
 var _current_surface_detail_mode := SURFACE_DETAIL_FULL
+var _surface_page_contract: Dictionary = {}
 var _building_collision_shapes: Array[CollisionShape3D] = []
 var _building_collisions_enabled := true
 
 func setup(chunk_data: Dictionary) -> void:
+	var surface_page_provider = chunk_data.get("surface_page_provider")
+	var surface_page_binding: Dictionary = chunk_data.get("surface_page_binding", {})
 	_chunk_data = chunk_data.duplicate(true)
+	if surface_page_provider != null:
+		_chunk_data["surface_page_provider"] = surface_page_provider
+	if not surface_page_binding.is_empty():
+		_chunk_data["surface_page_binding"] = surface_page_binding
 	_profile = (chunk_data.get("prepared_profile", {}) as Dictionary).duplicate(true)
 	if _profile.is_empty():
 		_profile = CityChunkProfileBuilder.build_profile(_chunk_data)
@@ -71,6 +78,9 @@ func get_profile_signature() -> String:
 
 func get_setup_profile() -> Dictionary:
 	return _setup_profile.duplicate(true)
+
+func get_surface_page_contract() -> Dictionary:
+	return _surface_page_contract.duplicate(true)
 
 func get_visual_variant_id() -> String:
 	return str(_profile.get("variant_id", ""))
@@ -162,6 +172,7 @@ func get_renderer_stats() -> Dictionary:
 		"terrain_relief_m": get_terrain_relief_m(),
 		"building_collision_shape_count": get_building_collision_shape_count(),
 		"building_count": get_building_count(),
+		"surface_page_key": _surface_page_contract.get("page_key", Vector2i.ZERO),
 	}
 
 func _rebuild() -> void:
@@ -355,8 +366,17 @@ func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 func _build_ground_material(chunk_size_m: float, profile: Dictionary, detail_mode: String = SURFACE_DETAIL_FULL) -> Dictionary:
 	var palette: Dictionary = profile.get("palette", {})
 	var mask_started_usec := Time.get_ticks_usec()
-	var overlay_textures: Dictionary = CityRoadMaskBuilder.build_surface_textures(profile, chunk_size_m, detail_mode)
-	var mask_textures_usec := Time.get_ticks_usec() - mask_started_usec
+	var surface_binding := _resolve_surface_binding(profile, chunk_size_m, detail_mode)
+	var mask_resolve_usec := Time.get_ticks_usec() - mask_started_usec
+	var mask_stats: Dictionary = surface_binding.get("mask_profile_stats", {})
+	var uv_rect: Rect2 = surface_binding.get("uv_rect", Rect2(Vector2.ZERO, Vector2.ONE))
+	_surface_page_contract = (surface_binding.get("page_contract", {
+		"page_key": surface_binding.get("page_key", Vector2i.ZERO),
+		"uv_rect": uv_rect,
+		"chunks_per_page": 1,
+		"page_world_size_m": chunk_size_m,
+		"page_origin_chunk_key": _chunk_data.get("chunk_key", Vector2i.ZERO),
+	}) as Dictionary).duplicate(true)
 	var material_started_usec := Time.get_ticks_usec()
 	var material := ShaderMaterial.new()
 	material.shader = CityGroundRoadOverlayShader
@@ -365,16 +385,51 @@ func _build_ground_material(chunk_size_m: float, profile: Dictionary, detail_mod
 	material.set_shader_parameter("road_color", palette.get("road", Color(0.16, 0.17, 0.19, 1.0)))
 	material.set_shader_parameter("stripe_color", palette.get("stripe", Color(0.9, 0.8, 0.5, 1.0)))
 	material.set_shader_parameter("stripe_enabled", detail_mode == SURFACE_DETAIL_FULL)
-	material.set_shader_parameter("road_mask_texture", overlay_textures.get("road_mask_texture"))
-	material.set_shader_parameter("stripe_mask_texture", overlay_textures.get("stripe_mask_texture"))
+	material.set_shader_parameter("road_mask_texture", surface_binding.get("road_mask_texture"))
+	material.set_shader_parameter("stripe_mask_texture", surface_binding.get("stripe_mask_texture"))
+	material.set_shader_parameter("surface_uv_offset", uv_rect.position)
+	material.set_shader_parameter("surface_uv_scale", uv_rect.size)
 	return {
 		"material": material,
-		"mask_textures_usec": mask_textures_usec,
-		"mask_cache_hit": bool((overlay_textures.get("mask_profile_stats", {}) as Dictionary).get("cache_hit", false)),
-		"mask_cache_load_usec": int((overlay_textures.get("mask_profile_stats", {}) as Dictionary).get("cache_load_usec", 0)),
-		"mask_cache_write_usec": int((overlay_textures.get("mask_profile_stats", {}) as Dictionary).get("cache_write_usec", 0)),
+		"mask_textures_usec": maxi(int(surface_binding.get("commit_usec", 0)), mask_resolve_usec),
+		"mask_cache_hit": bool(mask_stats.get("cache_hit", false)),
+		"mask_cache_load_usec": int(mask_stats.get("cache_load_usec", 0)),
+		"mask_cache_write_usec": int(mask_stats.get("cache_write_usec", 0)),
 		"shader_material_usec": Time.get_ticks_usec() - material_started_usec,
 	}
+
+func _resolve_surface_binding(profile: Dictionary, chunk_size_m: float, detail_mode: String) -> Dictionary:
+	var existing_binding: Dictionary = _chunk_data.get("surface_page_binding", {})
+	if not existing_binding.is_empty() and str(existing_binding.get("detail_mode", "")) == detail_mode:
+		return existing_binding
+
+	var surface_page_provider = _chunk_data.get("surface_page_provider")
+	if surface_page_provider != null and surface_page_provider.has_method("resolve_chunk_surface_binding"):
+		var resolved_binding: Dictionary = surface_page_provider.resolve_chunk_surface_binding(_chunk_data, detail_mode)
+		_chunk_data["surface_page_binding"] = resolved_binding
+		return resolved_binding
+
+	var fallback_result: Dictionary = CityRoadMaskBuilder.build_surface_textures(profile, chunk_size_m, detail_mode)
+	var fallback_stats: Dictionary = fallback_result.get("mask_profile_stats", {})
+	var fallback_binding := {
+		"page_contract": {
+			"page_key": _chunk_data.get("chunk_key", Vector2i.ZERO),
+			"uv_rect": Rect2(Vector2.ZERO, Vector2.ONE),
+			"chunks_per_page": 1,
+			"page_world_size_m": chunk_size_m,
+			"page_origin_chunk_key": _chunk_data.get("chunk_key", Vector2i.ZERO),
+		},
+		"page_key": _chunk_data.get("chunk_key", Vector2i.ZERO),
+		"uv_rect": Rect2(Vector2.ZERO, Vector2.ONE),
+		"detail_mode": detail_mode,
+		"road_mask_texture": fallback_result.get("road_mask_texture"),
+		"stripe_mask_texture": fallback_result.get("stripe_mask_texture"),
+		"mask_profile_stats": fallback_stats,
+		"commit_usec": int(fallback_stats.get("commit_total_usec", 0)),
+		"runtime_hit": false,
+	}
+	_chunk_data["surface_page_binding"] = fallback_binding
+	return fallback_binding
 
 func _apply_ground_surface_detail_mode(detail_mode: String) -> void:
 	var mesh_instance := get_node_or_null("GroundBody/MeshInstance3D") as MeshInstance3D

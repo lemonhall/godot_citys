@@ -8,6 +8,8 @@ uniform sampler2D road_mask_texture : filter_linear, repeat_disable;
 uniform sampler2D stripe_mask_texture : filter_linear, repeat_disable;
 uniform bool stripe_enabled = true;
 uniform float chunk_size_m = 256.0;
+uniform vec2 surface_uv_offset = vec2(0.0, 0.0);
+uniform vec2 surface_uv_scale = vec2(1.0, 1.0);
 
 varying vec2 overlay_uv;
 
@@ -16,8 +18,9 @@ void vertex() {
 }
 
 void fragment() {
-	float road_mask = clamp(texture(road_mask_texture, overlay_uv).r, 0.0, 1.0);
-	float stripe_mask = stripe_enabled ? clamp(texture(stripe_mask_texture, overlay_uv).r, 0.0, 1.0) : 0.0;
+	vec2 surface_uv = surface_uv_offset + overlay_uv * surface_uv_scale;
+	float road_mask = clamp(texture(road_mask_texture, surface_uv).r, 0.0, 1.0);
+	float stripe_mask = stripe_enabled ? clamp(texture(stripe_mask_texture, surface_uv).r, 0.0, 1.0) : 0.0;
 	float paved = smoothstep(0.08, 0.9, road_mask);
 	float stripe = smoothstep(0.12, 0.9, stripe_mask) * paved;
 	vec3 base_albedo = mix(ground_color.rgb, road_color.rgb, paved);

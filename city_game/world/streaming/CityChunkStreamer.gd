@@ -93,6 +93,12 @@ func get_active_chunk_ids() -> Array[String]:
 	ids.sort()
 	return ids
 
+func get_active_chunk_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	for chunk_id in get_active_chunk_ids():
+		entries.append((_active_chunks[chunk_id] as Dictionary).duplicate(true))
+	return entries
+
 func get_active_chunk_count() -> int:
 	return _active_chunks.size()
 

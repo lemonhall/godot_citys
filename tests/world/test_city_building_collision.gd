@@ -34,6 +34,23 @@ func _run() -> void:
 		return
 	if not T.require_true(self, chunk_scene.has_method("are_building_collisions_enabled"), "Chunk scene must expose are_building_collisions_enabled()"):
 		return
+	if not T.require_true(self, chunk_scene.has_method("get_building_count"), "Chunk scene must expose get_building_count()"):
+		return
+	if not T.require_true(self, chunk_scene.has_method("get_min_building_road_clearance_m"), "Chunk scene must expose get_min_building_road_clearance_m()"):
+		return
+	if not T.require_true(self, chunk_scene.has_method("get_min_prop_road_clearance_m"), "Chunk scene must expose get_min_prop_road_clearance_m()"):
+		return
+	if not T.require_true(self, chunk_scene.has_method("get_building_archetype_ids"), "Chunk scene must expose get_building_archetype_ids()"):
+		return
+
+	if not T.require_true(self, int(chunk_scene.get_building_count()) >= 12, "Center chunk must keep a denser building field, not only a few sparse masses"):
+		return
+	if not T.require_true(self, float(chunk_scene.get_min_building_road_clearance_m()) >= 6.0, "Buildings must keep a minimum road clearance and must not spawn on the road surface"):
+		return
+	if not T.require_true(self, float(chunk_scene.get_min_prop_road_clearance_m()) >= 2.5, "Roadside props must stay out of the drivable road surface"):
+		return
+	if not T.require_true(self, (chunk_scene.get_building_archetype_ids() as Array).size() >= 4, "Building generation must expose multiple archetypes inside one chunk"):
+		return
 
 	chunk_scene.set_lod_mode("near")
 	if not T.require_true(self, int(chunk_scene.get_building_collision_shape_count()) > 0, "Near LOD must build collision shapes for buildings"):

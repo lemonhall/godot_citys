@@ -18,12 +18,15 @@
 - 让 near / mid / far 共享同一份 chunk visual profile，保持轮廓连续
 - 为不同 chunk 提供确定性视觉变体
 - 让可见道路由 world-space 连续道路骨架驱动，而不是 per-chunk 随机 avenue（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
+- 让 chunk 路面改为连续 ribbon mesh，并把本地道路从“方格规则占位”升级为更自然的世界道路场（[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
 - 为近景建筑补充可启停碰撞壳
+- 让建筑与 roadside props 满足道路避让与占用检查，并提升 chunk 建筑密度与 archetype 多样性（[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
 - 为 block 自动生成基础遮挡体
 - 为每个 streamed chunk 提供占位地表与碰撞壳，保证连续步行/高速巡检
 - 为每个 streamed chunk 提供轻量连续地形高差
+- 提供少量高架/桥梁占位，打破纯平道路体验（[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
 - 使用低成本 sky/fog 统一远景氛围
-- 输出每个 chunk 的实例数与 LOD 档位
+- 输出每个 chunk 的实例数与 LOD 档位，并将 HUD/debug 信息整合为默认折叠的巡检面板（[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
 
 不做什么：
 
@@ -38,11 +41,14 @@
 3. 自动化测试能证明 mid/far 代理保留与 near 一致的主轮廓签名，而不是无关盒子。
 4. 自动化测试能证明不同 chunk 存在确定性视觉变体，且同一 chunk 多次生成签名一致。
 5. 自动化测试能证明相邻 chunk 的道路连接点在共享边界上连续，且道路包含曲线变化，不是 per-chunk 随机孤路。
-6. 自动化测试能证明近景建筑具有碰撞壳，且 mid/far LOD 时这些碰撞会停用。
-7. 自动化测试能证明 `WorldEnvironment` 提供 sky/fog 氛围，而不是单色背景。
-8. 自动化测试能证明 chunk 地表存在可见高差，而不是整块纯平面。
-9. 自动化测试能证明离开中心原型区后，演员仍能落在 streamed chunk 的占位地表上。
-10. 反作弊条款：不得仅通过隐藏节点名称、空 `Node3D` 占位、孤岛地板、legacy `Ground`、无关蓝色盒子或 per-chunk 随机道路贴片来宣称大世界地表/HLOD 已成立。
+6. 自动化测试能证明 chunk 道路存在显著非正交方向，并且路面由连续 mesh/ribbon 表达，而不是大量分段盒子贴片。
+7. 自动化测试能证明近景建筑具有碰撞壳，且 mid/far LOD 时这些碰撞会停用。
+8. 自动化测试能证明建筑与 roadside props 保持道路退距，且中心 chunk 建筑数量与 archetype 数量达到约定阈值。
+9. 自动化测试能证明 `WorldEnvironment` 提供 sky/fog 氛围，而不是单色背景。
+10. 自动化测试能证明 chunk 地表存在可见高差，并包含可感知坡度。
+11. 自动化测试能证明至少存在少量桥梁/高架占位。
+12. 自动化测试能证明离开中心原型区后，演员仍能落在 streamed chunk 的占位地表上。
+13. 反作弊条款：不得仅通过隐藏节点名称、空 `Node3D` 占位、孤岛地板、legacy `Ground`、无关蓝色盒子、分段道路盒子或 per-chunk 随机道路贴片来宣称大世界地表/HLOD 已成立。
 
 ## Files
 

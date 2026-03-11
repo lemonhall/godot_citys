@@ -39,6 +39,17 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(scene_a.get_visual_variant_id()) != "", "Chunk variation must expose a stable visual variant id"):
 		return
+	if not T.require_true(self, scene_a.has_method("get_building_archetype_ids"), "Chunk scene must expose get_building_archetype_ids() for diversity review"):
+		return
+	var archetypes_a: Array = scene_a.get_building_archetype_ids()
+	var archetypes_b: Array = scene_b.get_building_archetype_ids()
+	var combined_archetypes: Dictionary = {}
+	for archetype_id in archetypes_a:
+		combined_archetypes[str(archetype_id)] = true
+	for archetype_id in archetypes_b:
+		combined_archetypes[str(archetype_id)] = true
+	if not T.require_true(self, combined_archetypes.size() >= 6, "Adjacent chunks must expose a broader set of building archetypes to reduce repetition"):
+		return
 
 	scene_a.queue_free()
 	scene_a_clone.queue_free()

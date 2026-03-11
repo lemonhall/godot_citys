@@ -19,21 +19,25 @@ static func _build_proxy_group(name: String, profile: Dictionary, palette_key: S
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.mesh = box_mesh
 
-	var towers: Array = profile.get("towers", [])
-	multimesh.instance_count = towers.size() + 1
-	for tower_index in range(towers.size()):
-		var tower: Dictionary = towers[tower_index]
-		multimesh.set_instance_transform(tower_index, _build_scaled_transform(tower.get("center", Vector3.ZERO), tower.get("size", Vector3.ONE)))
-
-	var podium: Dictionary = profile.get("podium", {})
-	multimesh.set_instance_transform(towers.size(), _build_scaled_transform(podium.get("center", Vector3.ZERO), podium.get("size", Vector3.ONE)))
+	var buildings: Array = profile.get("buildings", [])
+	multimesh.instance_count = buildings.size()
+	for building_index in range(buildings.size()):
+		var building: Dictionary = buildings[building_index]
+		multimesh.set_instance_transform(
+			building_index,
+			_build_scaled_transform(
+				building.get("center", Vector3.ZERO),
+				building.get("size", Vector3.ONE),
+				float(building.get("yaw_rad", 0.0))
+			)
+		)
 	mesh_instance.multimesh = multimesh
 	mesh_instance.material_override = _build_material(profile, palette_key)
 	proxy.add_child(mesh_instance)
 	return proxy
 
-static func _build_scaled_transform(center: Vector3, size: Vector3) -> Transform3D:
-	var basis := Basis.IDENTITY.scaled(size)
+static func _build_scaled_transform(center: Vector3, size: Vector3, yaw_rad: float = 0.0) -> Transform3D:
+	var basis := Basis(Vector3.UP, yaw_rad).scaled(size)
 	return Transform3D(basis, center)
 
 static func _build_material(profile: Dictionary, palette_key: String) -> StandardMaterial3D:

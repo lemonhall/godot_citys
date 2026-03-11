@@ -4,6 +4,7 @@ const CityChunkMultimeshBuilder := preload("res://city_game/world/rendering/City
 const CityChunkHlodBuilder := preload("res://city_game/world/rendering/CityChunkHlodBuilder.gd")
 const CityChunkOccluderBuilder := preload("res://city_game/world/rendering/CityChunkOccluderBuilder.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
+const CityRoadMeshBuilder := preload("res://city_game/world/rendering/CityRoadMeshBuilder.gd")
 const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
 
 const LOD_NEAR := "near"
@@ -88,6 +89,21 @@ func are_building_collisions_enabled() -> bool:
 func get_terrain_relief_m() -> float:
 	return float(_profile.get("terrain_relief_m", 0.0))
 
+func get_building_count() -> int:
+	return int(_profile.get("building_count", 0))
+
+func get_building_archetype_ids() -> Array:
+	return (_profile.get("building_archetype_ids", []) as Array).duplicate()
+
+func get_min_building_road_clearance_m() -> float:
+	return float(_profile.get("min_building_road_clearance_m", 0.0))
+
+func get_min_prop_road_clearance_m() -> float:
+	var prop_multimesh := get_prop_multimesh()
+	if prop_multimesh != null and prop_multimesh.has_meta("min_road_clearance_m"):
+		return float(prop_multimesh.get_meta("min_road_clearance_m"))
+	return 0.0
+
 func get_renderer_stats() -> Dictionary:
 	var prop_multimesh := get_prop_multimesh()
 	return {
@@ -99,8 +115,12 @@ func get_renderer_stats() -> Dictionary:
 		"near_child_count": get_node("NearGroup").get_child_count(),
 		"road_segment_count": (_profile.get("road_segments", []) as Array).size(),
 		"curved_road_segment_count": int(_profile.get("curved_road_segment_count", 0)),
+		"non_axis_road_segment_count": int(_profile.get("non_axis_road_segment_count", 0)),
+		"bridge_count": int(_profile.get("bridge_count", 0)),
+		"road_mesh_mode": str(_profile.get("road_mesh_mode", "ribbon")),
 		"terrain_relief_m": get_terrain_relief_m(),
 		"building_collision_shape_count": get_building_collision_shape_count(),
+		"building_count": get_building_count(),
 	}
 
 func _rebuild() -> void:
@@ -116,14 +136,13 @@ func _rebuild() -> void:
 	near_group.name = "NearGroup"
 	add_child(near_group)
 
-	near_group.add_child(_build_road_overlay(_profile))
+	near_group.add_child(CityRoadMeshBuilder.build_road_overlay(_profile, _chunk_data))
 	var props := Node3D.new()
 	props.name = "Props"
 	near_group.add_child(props)
 
-	near_group.add_child(_build_podium(_profile.get("podium", {})))
-	for tower in _profile.get("towers", []):
-		near_group.add_child(_build_tower(tower))
+	for building in _profile.get("buildings", []):
+		near_group.add_child(_build_building(building))
 	props.add_child(CityChunkMultimeshBuilder.build_street_lamps(_profile))
 
 	add_child(CityChunkHlodBuilder.build_mid_proxy(_profile))
@@ -132,39 +151,48 @@ func _rebuild() -> void:
 
 	set_lod_mode(LOD_NEAR)
 
-func _build_tower(tower: Dictionary) -> Node3D:
-	var tower_root := Node3D.new()
-	tower_root.name = str(tower.get("name", "Tower"))
-
-	var center: Vector3 = tower.get("center", Vector3.ZERO)
-	var size: Vector3 = tower.get("size", Vector3.ONE)
-	var color: Color = tower.get("main_color", Color(0.74, 0.74, 0.78, 1.0))
-	tower_root.add_child(_build_static_box("%s_Body" % tower_root.name, center, size, color))
-
-	var band_color: Color = tower.get("band_color", color)
-	var band_width := float(tower.get("band_width", 2.0))
-	var band_count := int(tower.get("band_count", 2))
-	for band_index in range(band_count):
-		var band_y := center.y - size.y * 0.3 + float(band_index) * size.y * 0.28
-		var band_size := Vector3(size.x + 0.15, maxf(size.y * 0.06, 1.6), band_width)
-		var north_center := Vector3(center.x, band_y, center.z - size.z * 0.5 + band_width * 0.5)
-		var south_center := Vector3(center.x, band_y, center.z + size.z * 0.5 - band_width * 0.5)
-		tower_root.add_child(_build_box_instance("%s_BandNorth_%d" % [tower_root.name, band_index], north_center, band_size, band_color))
-		tower_root.add_child(_build_box_instance("%s_BandSouth_%d" % [tower_root.name, band_index], south_center, band_size, band_color))
-	return tower_root
-
-func _build_podium(podium: Dictionary) -> StaticBody3D:
-	return _build_static_box(
-		"NearPodium",
-		podium.get("center", Vector3.ZERO),
-		podium.get("size", Vector3(68.0, 4.0, 62.0)),
-		podium.get("color", Color(0.45, 0.47, 0.5, 1.0))
+func _build_building(building: Dictionary) -> Node3D:
+	var building_root := _build_static_box(
+		str(building.get("name", "Building")),
+		building.get("center", Vector3.ZERO),
+		building.get("size", Vector3(18.0, 24.0, 18.0)),
+		building.get("main_color", Color(0.72, 0.74, 0.78, 1.0)),
+		float(building.get("yaw_rad", 0.0))
 	)
+	var size: Vector3 = building.get("size", Vector3.ONE)
+	var accent: Color = building.get("accent_color", Color(0.52, 0.58, 0.66, 1.0))
+	var roof: Color = building.get("roof_color", accent)
+	var archetype_id := str(building.get("archetype_id", "mass"))
+	match archetype_id:
+		"slab":
+			_add_local_box(building_root, "FinWest", Vector3(-size.x * 0.34, 0.0, 0.0), Vector3(0.9, size.y * 0.92, size.z + 0.2), accent)
+			_add_local_box(building_root, "FinEast", Vector3(size.x * 0.34, 0.0, 0.0), Vector3(0.9, size.y * 0.92, size.z + 0.2), accent)
+		"needle":
+			_add_local_box(building_root, "Crown", Vector3(0.0, size.y * 0.38, 0.0), Vector3(size.x * 0.56, maxf(size.y * 0.16, 2.6), size.z * 0.56), roof)
+			_add_local_box(building_root, "Spire", Vector3(0.0, size.y * 0.5 + 1.8, 0.0), Vector3(size.x * 0.18, 3.6, size.z * 0.18), accent)
+		"courtyard":
+			_add_local_box(building_root, "WingNorth", Vector3(0.0, 0.0, -size.z * 0.28), Vector3(size.x, size.y * 0.22, size.z * 0.22), accent)
+			_add_local_box(building_root, "WingSouth", Vector3(0.0, 0.0, size.z * 0.28), Vector3(size.x, size.y * 0.22, size.z * 0.22), accent)
+			_add_local_box(building_root, "RoofFrame", Vector3(0.0, size.y * 0.36, 0.0), Vector3(size.x * 0.82, maxf(size.y * 0.08, 1.4), size.z * 0.82), roof)
+		"podium_tower":
+			_add_local_box(building_root, "Podium", Vector3(0.0, -size.y * 0.34, 0.0), Vector3(size.x * 1.9, maxf(size.y * 0.24, 5.0), size.z * 1.9), accent)
+			_add_local_box(building_root, "Cap", Vector3(0.0, size.y * 0.4, 0.0), Vector3(size.x * 0.5, maxf(size.y * 0.1, 1.6), size.z * 0.5), roof)
+		"step_midrise":
+			_add_local_box(building_root, "SetbackA", Vector3(0.0, size.y * 0.2, 0.0), Vector3(size.x * 0.78, maxf(size.y * 0.2, 2.0), size.z * 0.78), accent)
+			_add_local_box(building_root, "SetbackB", Vector3(0.0, size.y * 0.38, 0.0), Vector3(size.x * 0.56, maxf(size.y * 0.14, 1.6), size.z * 0.56), roof)
+		"midrise_bar":
+			_add_local_box(building_root, "RoofUnitA", Vector3(-size.x * 0.18, size.y * 0.36, 0.0), Vector3(size.x * 0.22, maxf(size.y * 0.12, 1.4), size.z * 0.24), roof)
+			_add_local_box(building_root, "RoofUnitB", Vector3(size.x * 0.18, size.y * 0.36, 0.0), Vector3(size.x * 0.22, maxf(size.y * 0.12, 1.4), size.z * 0.24), accent)
+		"industrial":
+			_add_local_box(building_root, "SawToothA", Vector3(-size.x * 0.18, size.y * 0.28, 0.0), Vector3(size.x * 0.24, maxf(size.y * 0.18, 1.8), size.z * 0.88), roof)
+			_add_local_box(building_root, "SawToothB", Vector3(size.x * 0.18, size.y * 0.2, 0.0), Vector3(size.x * 0.24, maxf(size.y * 0.14, 1.6), size.z * 0.88), accent)
+	return building_root
 
-func _build_static_box(name: String, center: Vector3, size: Vector3, color: Color) -> StaticBody3D:
+func _build_static_box(name: String, center: Vector3, size: Vector3, color: Color, yaw_rad: float = 0.0) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.name = name
 	body.position = center
+	body.rotation.y = yaw_rad
 
 	var collision_shape := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
@@ -185,10 +213,10 @@ func _build_static_box(name: String, center: Vector3, size: Vector3, color: Colo
 	body.add_child(mesh_instance)
 	return body
 
-func _build_box_instance(name: String, center: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
+func _add_local_box(parent: Node3D, name: String, local_center: Vector3, size: Vector3, color: Color) -> void:
 	var mesh_instance := MeshInstance3D.new()
 	mesh_instance.name = name
-	mesh_instance.position = center
+	mesh_instance.position = local_center
 	var mesh := BoxMesh.new()
 	mesh.size = size
 	mesh_instance.mesh = mesh
@@ -196,70 +224,7 @@ func _build_box_instance(name: String, center: Vector3, size: Vector3, color: Co
 	material.albedo_color = color
 	material.roughness = 1.0
 	mesh_instance.material_override = material
-	return mesh_instance
-
-func _build_road_overlay(profile: Dictionary) -> Node3D:
-	var road_root := Node3D.new()
-	road_root.name = "RoadOverlay"
-	var palette: Dictionary = profile.get("palette", {})
-	var road_color: Color = palette.get("road", Color(0.16, 0.17, 0.19, 1.0))
-	var stripe_color: Color = palette.get("stripe", Color(0.9, 0.8, 0.5, 1.0))
-
-	for segment_index in range((profile.get("road_segments", []) as Array).size()):
-		var segment: Dictionary = profile["road_segments"][segment_index]
-		var points: Array = segment.get("points", [])
-		var width := float(segment.get("width", 10.0))
-		var is_arterial := str(segment.get("class", "secondary")) == "arterial" or width >= 12.0
-		for point_index in range(points.size() - 1):
-			var a: Vector3 = points[point_index]
-			var b: Vector3 = points[point_index + 1]
-			var surface := _build_road_piece(
-				"Road_%d_%d" % [segment_index, point_index],
-				a,
-				b,
-				width,
-				_tint_color(road_color, -0.04 if is_arterial else 0.0),
-				0.10,
-				0.05
-			)
-			if surface != null:
-				road_root.add_child(surface)
-			if is_arterial:
-				var stripe := _build_road_piece(
-					"Stripe_%d_%d" % [segment_index, point_index],
-					a,
-					b,
-					0.8,
-					stripe_color,
-					0.03,
-					0.11
-				)
-				if stripe != null:
-					road_root.add_child(stripe)
-	return road_root
-
-func _build_road_piece(name: String, a: Vector3, b: Vector3, width: float, color: Color, height: float, y_offset: float) -> MeshInstance3D:
-	var planar_delta := Vector3(b.x - a.x, 0.0, b.z - a.z)
-	var length := planar_delta.length()
-	if length <= 1.0:
-		return null
-
-	var mesh_instance := MeshInstance3D.new()
-	mesh_instance.name = name
-	mesh_instance.position = Vector3(
-		(a.x + b.x) * 0.5,
-		(a.y + b.y) * 0.5 + y_offset,
-		(a.z + b.z) * 0.5
-	)
-	mesh_instance.rotation.y = atan2(planar_delta.x, planar_delta.z)
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(width, height, length)
-	mesh_instance.mesh = mesh
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 1.0
-	mesh_instance.material_override = material
-	return mesh_instance
+	parent.add_child(mesh_instance)
 
 func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> StaticBody3D:
 	var ground_body := StaticBody3D.new()
@@ -325,8 +290,3 @@ func _set_building_collisions_enabled(enabled: bool) -> void:
 	_building_collisions_enabled = enabled
 	for collision_shape in _building_collision_shapes:
 		collision_shape.disabled = not enabled
-
-func _tint_color(color: Color, delta: float) -> Color:
-	if delta >= 0.0:
-		return color.lerp(Color.WHITE, delta)
-	return color.lerp(Color.BLACK, -delta)

@@ -6,6 +6,8 @@ extends CharacterBody3D
 @export var inspection_sprint_speed := 180.0
 @export var jump_velocity := 4.5
 @export var mouse_sensitivity := 0.003
+@export var min_pitch_deg := -68.0
+@export var max_pitch_deg := 35.0
 
 @onready var camera_rig: Node3D = $CameraRig
 
@@ -28,7 +30,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var motion := event as InputEventMouseMotion
 		rotate_y(-motion.relative.x * mouse_sensitivity)
-		_pitch = clamp(_pitch - motion.relative.y * mouse_sensitivity, deg_to_rad(-60.0), deg_to_rad(10.0))
+		_pitch = clamp(_pitch - motion.relative.y * mouse_sensitivity, deg_to_rad(min_pitch_deg), deg_to_rad(max_pitch_deg))
 		camera_rig.rotation.x = _pitch
 	elif event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
@@ -87,6 +89,12 @@ func get_walk_speed_mps() -> float:
 
 func get_sprint_speed_mps() -> float:
 	return _current_sprint_speed()
+
+func get_pitch_limits_degrees() -> Dictionary:
+	return {
+		"min": min_pitch_deg,
+		"max": max_pitch_deg,
+	}
 
 func _read_move_input() -> Vector2:
 	var horizontal := 0.0

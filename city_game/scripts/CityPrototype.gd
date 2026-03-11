@@ -4,6 +4,7 @@ const CityWorldConfig := preload("res://city_game/world/model/CityWorldConfig.gd
 const CityWorldGenerator := preload("res://city_game/world/generation/CityWorldGenerator.gd")
 const CityChunkStreamer := preload("res://city_game/world/streaming/CityChunkStreamer.gd")
 const CityChunkNavRuntime := preload("res://city_game/world/navigation/CityChunkNavRuntime.gd")
+const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
 
 const CONTROL_MODE_PLAYER := "player"
 const CONTROL_MODE_INSPECTION := "inspection"
@@ -29,6 +30,9 @@ func _ready() -> void:
 	_navigation_runtime = CityChunkNavRuntime.new(_world_config, _world_data)
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
+	if debug_overlay != null:
+		debug_overlay.visible = false
+	_align_player_to_streamed_ground()
 
 	set_control_mode(CONTROL_MODE_PLAYER)
 	update_streaming_for_position(_get_active_anchor_position())
@@ -47,13 +51,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_C:
 			set_control_mode(CONTROL_MODE_INSPECTION if _control_mode == CONTROL_MODE_PLAYER else CONTROL_MODE_PLAYER)
 
-func _refresh_hud_status() -> void:
+func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 	if not generated_city.has_method("get_city_summary"):
 		return
 	if not hud.has_method("set_status"):
 		return
 
-	var snapshot: Dictionary = get_streaming_snapshot()
+	var snapshot: Dictionary = snapshot_override.duplicate(true) if not snapshot_override.is_empty() else get_streaming_snapshot()
 	var world_summary := str(_world_data.get("summary", "World data unavailable"))
 	var active_speed_text := ""
 	if player != null and player.has_method("get_walk_speed_mps") and player.has_method("get_sprint_speed_mps"):
@@ -77,6 +81,8 @@ func _refresh_hud_status() -> void:
 		active_speed_text,
 	])
 	hud.set_status("\n".join(lines))
+	if hud.has_method("set_debug_text") and debug_overlay != null and debug_overlay.has_method("get_debug_text"):
+		hud.set_debug_text(debug_overlay.get_debug_text())
 
 func get_world_config():
 	return _world_config
@@ -129,9 +135,11 @@ func update_streaming_for_position(world_position: Vector3) -> Array:
 	var events: Array = _chunk_streamer.update_for_world_position(world_position)
 	if chunk_renderer != null and chunk_renderer.has_method("sync_streaming"):
 		chunk_renderer.sync_streaming(_chunk_streamer.get_active_chunk_entries(), world_position)
+	var snapshot: Dictionary = get_streaming_snapshot()
 	if debug_overlay != null and debug_overlay.has_method("set_snapshot"):
-		debug_overlay.set_snapshot(get_streaming_snapshot())
-	_refresh_hud_status()
+		debug_overlay.set_snapshot(snapshot)
+		debug_overlay.visible = false
+	_refresh_hud_status(snapshot)
 	return events
 
 func plan_macro_route(start_position: Vector3, goal_position: Vector3) -> Array:
@@ -159,6 +167,20 @@ func build_runtime_report(subject_position = null) -> Dictionary:
 		"lod_mode_counts": snapshot.get("lod_mode_counts", {}),
 		"multimesh_instance_total": int(snapshot.get("multimesh_instance_total", 0)),
 	}
+
+func _align_player_to_streamed_ground() -> void:
+	if player == null or _world_config == null:
+		return
+	var anchor := player.global_position
+	var target_position := Vector3(
+		anchor.x,
+		CityTerrainSampler.sample_height(anchor.x, anchor.z, _world_config.base_seed) + 1.1,
+		anchor.z
+	)
+	if player.has_method("teleport_to_world_position"):
+		player.teleport_to_world_position(target_position)
+	else:
+		player.global_position = target_position
 
 func _get_active_anchor_position() -> Vector3:
 	return player.global_position if player != null else Vector3.ZERO

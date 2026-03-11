@@ -14,6 +14,12 @@ func _run() -> void:
 	var overlay = overlay_script.new()
 	if not T.require_true(self, overlay != null, "CityDebugOverlay must instantiate"):
 		return
+	if not T.require_true(self, overlay.has_method("is_expanded"), "CityDebugOverlay must expose is_expanded() for folded inspection UI"):
+		return
+	if not T.require_true(self, overlay.has_method("toggle_expanded"), "CityDebugOverlay must expose toggle_expanded()"):
+		return
+	if not T.require_true(self, not overlay.is_expanded(), "Debug overlay must stay folded by default"):
+		return
 
 	var snapshot := {
 		"current_chunk_id": "chunk_13_13",
@@ -31,6 +37,10 @@ func _run() -> void:
 	if not T.require_true(self, "active_chunk_count=25" in text, "Debug text must include active_chunk_count"):
 		return
 	if not T.require_true(self, "last_prepare_usec=17" in text, "Debug text must include last_prepare_usec"):
+		return
+
+	overlay.toggle_expanded()
+	if not T.require_true(self, overlay.is_expanded(), "Debug overlay must expand on demand"):
 		return
 
 	overlay.free()

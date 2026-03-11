@@ -92,6 +92,8 @@ func _build_road_graph(config, district_graph):
 					),
 				})
 				_attach_edge_bounds(road_graph.edges[-1])
+	for district in district_graph.districts:
+		_append_district_collector_roads(config, road_graph, district)
 	return road_graph
 
 func _build_block_layout(config):
@@ -162,3 +164,85 @@ func _attach_edge_bounds(edge: Dictionary) -> void:
 		max_x = maxf(max_x, world_point.x)
 		max_y = maxf(max_y, world_point.y)
 	edge["bounds"] = Rect2(Vector2(min_x, min_y), Vector2(max_x - min_x, max_y - min_y))
+
+func _append_district_collector_roads(config, road_graph: CityRoadGraph, district: Dictionary) -> void:
+	var district_key: Vector2i = district.get("district_key", Vector2i.ZERO)
+	var district_id := str(district.get("district_id", ""))
+	var district_center: Vector2 = district.get("center", Vector2.ZERO)
+	var hub := _build_district_local_hub(config, district_center, district_key)
+	for side in ["west", "east", "north", "south"]:
+		var portal := _build_district_boundary_portal(config, district_key, side)
+		var edge_seed: int = int(config.derive_seed("district_collector_%s" % side, district_key))
+		var edge := {
+			"edge_id": "%s_collector_%s" % [district_id, side],
+			"from": district_id,
+			"to": district_id,
+			"class": "collector",
+			"seed": edge_seed,
+			"width_m": 10.0,
+			"points": _build_boundary_to_hub_points(portal, hub, side, edge_seed),
+		}
+		road_graph.add_edge(edge)
+		_attach_edge_bounds(road_graph.edges[-1])
+
+func _build_district_local_hub(config, district_center: Vector2, district_key: Vector2i) -> Vector2:
+	var jitter_x := sin(float(config.derive_seed("district_hub_x", district_key) % 4096) * 0.017) * 138.0
+	var jitter_y := cos(float(config.derive_seed("district_hub_y", district_key) % 4096) * 0.019) * 132.0
+	return district_center + Vector2(jitter_x, jitter_y)
+
+func _build_district_boundary_portal(config, district_key: Vector2i, side: String) -> Vector2:
+	var bounds: Rect2 = config.get_world_bounds()
+	var district_size := float(config.district_size_m)
+	var district_min := Vector2(
+		bounds.position.x + float(district_key.x) * district_size,
+		bounds.position.y + float(district_key.y) * district_size
+	)
+	var district_max := district_min + Vector2.ONE * district_size
+	var offset_ratio := _boundary_offset_ratio(config, district_key, side)
+
+	match side:
+		"west":
+			return Vector2(district_min.x, lerpf(district_min.y + district_size * 0.18, district_max.y - district_size * 0.18, offset_ratio))
+		"east":
+			return Vector2(district_max.x, lerpf(district_min.y + district_size * 0.18, district_max.y - district_size * 0.18, offset_ratio))
+		"north":
+			return Vector2(lerpf(district_min.x + district_size * 0.18, district_max.x - district_size * 0.18, offset_ratio), district_min.y)
+		"south":
+			return Vector2(lerpf(district_min.x + district_size * 0.18, district_max.x - district_size * 0.18, offset_ratio), district_max.y)
+	return district_min + Vector2.ONE * district_size * 0.5
+
+func _boundary_offset_ratio(config, district_key: Vector2i, side: String) -> float:
+	if side == "west" or side == "east":
+		var boundary_x := district_key.x if side == "west" else district_key.x + 1
+		var boundary_seed: int = int(config.derive_seed("district_boundary_v", Vector2i(boundary_x, district_key.y)))
+		return 0.5 + sin(float(boundary_seed % 8192) * 0.013) * 0.22
+	var boundary_y := district_key.y if side == "north" else district_key.y + 1
+	var horizontal_seed: int = int(config.derive_seed("district_boundary_h", Vector2i(district_key.x, boundary_y)))
+	return 0.5 + cos(float(horizontal_seed % 8192) * 0.015) * 0.22
+
+func _build_boundary_to_hub_points(portal: Vector2, hub: Vector2, side: String, seed: int) -> Array[Vector2]:
+	var inward := Vector2.ZERO
+	var lateral := Vector2.ZERO
+	match side:
+		"west":
+			inward = Vector2.RIGHT
+			lateral = Vector2.UP
+		"east":
+			inward = Vector2.LEFT
+			lateral = Vector2.UP
+		"north":
+			inward = Vector2.DOWN
+			lateral = Vector2.RIGHT
+		"south":
+			inward = Vector2.UP
+			lateral = Vector2.RIGHT
+	var shoulder := 132.0 + float(seed % 60)
+	var lateral_bias := sin(float(seed % 4096) * 0.011) * 96.0
+	var start_control := portal + inward * shoulder + lateral * lateral_bias * 0.28
+	var end_control := portal.lerp(hub, 0.62) + lateral * lateral_bias
+	return [
+		portal,
+		start_control,
+		end_control,
+		hub,
+	]

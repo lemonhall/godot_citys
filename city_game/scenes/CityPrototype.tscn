@@ -61,27 +61,42 @@ fov = 65.0
 [node name="Hud" type="CanvasLayer" parent="."]
 script = ExtResource("4")
 
-[node name="Margin" type="MarginContainer" parent="Hud"]
+[node name="Root" type="Control" parent="Hud"]
 anchors_preset = 1
 anchor_right = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+
+[node name="ToggleButton" type="Button" parent="Hud/Root"]
 offset_left = 24.0
-offset_top = 24.0
-offset_right = -24.0
-offset_bottom = 220.0
+offset_top = 22.0
+offset_right = 128.0
+offset_bottom = 52.0
+text = "Inspect HUD"
 
-[node name="Panel" type="PanelContainer" parent="Hud/Margin"]
+[node name="Panel" type="PanelContainer" parent="Hud/Root"]
+visible = false
+offset_left = 24.0
+offset_top = 64.0
+offset_right = 508.0
+offset_bottom = 344.0
 
-[node name="VBox" type="VBoxContainer" parent="Hud/Margin/Panel"]
+[node name="VBox" type="VBoxContainer" parent="Hud/Root/Panel"]
 
-[node name="Title" type="Label" parent="Hud/Margin/Panel/VBox"]
+[node name="Title" type="Label" parent="Hud/Root/Panel/VBox"]
 text = "godot_citys"
 
-[node name="Status" type="Label" parent="Hud/Margin/Panel/VBox"]
+[node name="Status" type="Label" parent="Hud/Root/Panel/VBox"]
 text = "Booting city skeleton..."
+autowrap_mode = 3
+
+[node name="DebugText" type="Label" parent="Hud/Root/Panel/VBox"]
+text = ""
 autowrap_mode = 3
 
 [node name="DebugOverlay" type="CanvasLayer" parent="."]
 layer = 2
+visible = false
 script = ExtResource("5")
 
 [node name="DebugMargin" type="MarginContainer" parent="DebugOverlay"]

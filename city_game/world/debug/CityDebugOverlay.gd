@@ -1,6 +1,7 @@
 extends CanvasLayer
 
 var _snapshot: Dictionary = {}
+var _expanded := false
 
 func _ready() -> void:
 	_apply_snapshot()
@@ -11,6 +12,15 @@ func set_snapshot(snapshot: Dictionary) -> void:
 
 func get_debug_snapshot() -> Dictionary:
 	return _snapshot.duplicate(true)
+
+func set_expanded(expanded: bool) -> void:
+	_expanded = expanded
+
+func toggle_expanded() -> void:
+	_expanded = not _expanded
+
+func is_expanded() -> bool:
+	return _expanded
 
 func get_debug_text() -> String:
 	var lines := [

@@ -84,3 +84,16 @@ func teleport_to_world_position(world_position: Vector3) -> void:
 	global_position = world_position
 	velocity = Vector3.ZERO
 
+func advance_toward_world_position(target_position: Vector3, step_distance: float) -> bool:
+	var planar_delta := Vector3(target_position.x - global_position.x, 0.0, target_position.z - global_position.z)
+	var planar_distance := planar_delta.length()
+	if planar_distance <= step_distance:
+		global_position = Vector3(target_position.x, target_position.y, target_position.z)
+		velocity = Vector3.ZERO
+		return true
+
+	var direction := planar_delta / planar_distance
+	global_position += direction * step_distance
+	global_position.y = target_position.y
+	velocity = Vector3.ZERO
+	return false

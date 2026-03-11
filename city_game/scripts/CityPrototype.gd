@@ -3,6 +3,7 @@ extends Node3D
 const CityWorldConfig := preload("res://city_game/world/model/CityWorldConfig.gd")
 const CityWorldGenerator := preload("res://city_game/world/generation/CityWorldGenerator.gd")
 const CityChunkStreamer := preload("res://city_game/world/streaming/CityChunkStreamer.gd")
+const CityChunkNavRuntime := preload("res://city_game/world/navigation/CityChunkNavRuntime.gd")
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -13,11 +14,13 @@ const CityChunkStreamer := preload("res://city_game/world/streaming/CityChunkStr
 var _world_config
 var _world_data: Dictionary = {}
 var _chunk_streamer
+var _navigation_runtime
 
 func _ready() -> void:
 	_world_config = CityWorldConfig.new()
 	_world_data = CityWorldGenerator.new().generate_world(_world_config)
 	_chunk_streamer = CityChunkStreamer.new(_world_config, _world_data)
+	_navigation_runtime = CityChunkNavRuntime.new(_world_config, _world_data)
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
 
@@ -64,6 +67,9 @@ func get_chunk_streamer():
 func get_chunk_renderer():
 	return chunk_renderer
 
+func get_navigation_runtime():
+	return _navigation_runtime
+
 func get_streaming_snapshot() -> Dictionary:
 	if _chunk_streamer == null:
 		return {}
@@ -87,3 +93,8 @@ func update_streaming_for_position(world_position: Vector3) -> Array:
 		debug_overlay.set_snapshot(get_streaming_snapshot())
 	_refresh_hud_status()
 	return events
+
+func plan_macro_route(start_position: Vector3, goal_position: Vector3) -> Array:
+	if _navigation_runtime == null:
+		return []
+	return _navigation_runtime.plan_route(start_position, goal_position)

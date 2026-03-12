@@ -15,6 +15,8 @@
 
 - 为 runtime profile 增加 crowd update / spawn / render commit 分项
 - 扩展 overlay / HUD / minimap 调试层，暴露 crowd tier 计数和 page/cache 指标
+- 增加 `小键盘 *` 的全局行人显隐调试开关
+- 增加 `小键盘 -` 的 FPS 开关，并将 FPS 固定显示在右上角
 - 建立有人流条件下的 warm / first-visit profiling 基线
 - 把 `pedestrian_mode = lite` 写成默认验收口径
 
@@ -28,8 +30,10 @@
 
 1. `pedestrian_mode = lite` 且固定 density 预设下，fresh warm traversal 与 first-visit traversal 的 `wall_frame_avg_usec` 必须都 `<= 16667`。
 2. profiling 输出必须新增 `crowd_update_avg_usec`、`crowd_spawn_avg_usec`、`crowd_render_commit_avg_usec`、`ped_tier0_count`、`ped_tier1_count`、`ped_tier2_count`、`ped_tier3_count` 与至少一个 crowd page/cache 指标。
-3. 自动化测试必须证明 crowd debug overlay 默认折叠，打开后能读取上述关键字段；minimap crowd debug layer 必须使用真实 pedestrian lane / density 数据。
-4. 反作弊条款：不得在 profiling 时临时关闭 pedestrians、把 density 改成 `0`、仅显示空壳占位或绕开 first-visit 冷路径。
+3. 自动化测试必须证明：按下 `小键盘 *` 后，行人可见性会在“全部显示 / 全部隐藏”之间切换，再次按下可恢复。
+4. 自动化测试必须证明：按下 `小键盘 -` 后，右上角 FPS 文本会显示/隐藏；FPS `< 30` 为红色，`30-50` 为黄色，`> 50` 为绿色。
+5. 自动化测试必须证明 crowd debug overlay 默认折叠，打开后能读取上述关键字段；minimap crowd debug layer 必须使用真实 pedestrian lane / density 数据。
+6. 反作弊条款：不得在 profiling 时临时关闭 pedestrians、把 density 改成 `0`、仅显示空壳占位或绕开 first-visit 冷路径。
 
 ## Files
 
@@ -37,9 +41,11 @@
 - Modify: `city_game/ui/PrototypeHud.gd`
 - Modify: `city_game/ui/CityMinimapView.gd`
 - Modify: `city_game/world/map/CityMinimapProjector.gd`
+- Modify: `city_game/scripts/PlayerController.gd`
 - Modify: `tests/e2e/test_city_runtime_performance_profile.gd`
 - Create: `tests/e2e/test_city_pedestrian_performance_profile.gd`
 - Create: `tests/world/test_city_pedestrian_debug_overlay.gd`
+- Create: `tests/world/test_city_fps_overlay_toggle.gd`
 - Create: `tests/world/test_city_minimap_pedestrian_debug_layer.gd`
 - Create: `tests/world/test_city_pedestrian_profile_stats.gd`
 
@@ -48,6 +54,7 @@
 1. 写失败测试（红）
    - `test_city_pedestrian_profile_stats.gd` 断言新的 crowd profiling 字段存在。
    - `test_city_pedestrian_debug_overlay.gd` 断言 crowd overlay 默认折叠、可展开并输出 tier 计数。
+   - `test_city_fps_overlay_toggle.gd` 断言 `小键盘 -` 的 FPS 开关、右上角位置与三段颜色阈值。
    - `test_city_minimap_pedestrian_debug_layer.gd` 断言 minimap crowd layer 与 lane / density 数据同源。
 2. 跑到红
    - 运行上述测试与 crowd profile 脚本，预期 FAIL，原因是 crowd 相关观测字段与基线尚不存在。
@@ -68,3 +75,4 @@
 - 如果 crowd profiling 只看总帧耗，不拆 `update / spawn / render commit`，很快会失去热点定位能力。
 - 如果 minimap crowd layer 走的是另一套简化随机数据，后续 debug 和真实世界状态会重新断链。
 - 如果没有 first-visit 基线，系统很容易在 warm 状态“看起来没事”，但玩家第一次到新区域时卡顿失控。
+- 如果 crowd 可见性开关只是“暂停更新但仍继续渲染”或 FPS 开关位置漂移，就会让调试手感继续很差。

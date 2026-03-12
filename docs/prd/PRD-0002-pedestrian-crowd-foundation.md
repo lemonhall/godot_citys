@@ -166,6 +166,8 @@
 
 - 提供 crowd 相关 debug overlay / log 字段
 - 提供默认折叠、可展开的 crowd 调试面板
+- 提供全局 crowd 可见性调试开关：按下 `小键盘 *` 时，可在“全部显示 / 全部隐藏”之间切换行人可见性
+- 提供全局 FPS 调试开关：按下 `小键盘 -` 时，在画面右上角显示/隐藏 FPS
 - 暴露当前各 tier 数量、spawn / despawn 统计、lane graph page 命中、crowd update 耗时
 - minimap 至少提供 crowd density 或 pedestrian debug markers 的调试图层
 
@@ -177,6 +179,8 @@
 **验收口径**：
 
 - 自动化测试或脚本输出中必须能读取 `ped_tier0_count`、`ped_tier1_count`、`ped_tier2_count`、`ped_tier3_count`、`crowd_update_avg_usec` 和至少一个 crowd page/cache 指标。
+- 自动化测试至少断言：按下 `小键盘 *` 后，行人可见性会在“全部显示 / 全部隐藏”之间切换，再次按下可恢复。
+- 自动化测试至少断言：按下 `小键盘 -` 后，右上角 FPS 文本会显示/隐藏；FPS `< 30` 为红色，`30-50` 为黄色，`> 50` 为绿色。
 - 自动化测试至少断言：minimap crowd debug layer 使用与 3D crowd 同源的 lane / density 数据，而不是另一份独立随机示意图。
 - 反作弊条款：不得只在文档中写 crowd 预算数字而没有实际运行时输出。
 

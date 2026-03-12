@@ -5,6 +5,7 @@ const CityRoadGraph := preload("res://city_game/world/model/CityRoadGraph.gd")
 const CityBlockLayout := preload("res://city_game/world/model/CityBlockLayout.gd")
 const CityReferenceRoadGraphBuilder := preload("res://city_game/world/generation/CityReferenceRoadGraphBuilder.gd")
 const CityRoadGraphCache := preload("res://city_game/world/generation/CityRoadGraphCache.gd")
+const CityPedestrianWorldBuilder := preload("res://city_game/world/pedestrians/generation/CityPedestrianWorldBuilder.gd")
 
 var _last_generation_profile: Dictionary = {}
 
@@ -19,6 +20,9 @@ func generate_world(config) -> Dictionary:
 	var block_started_usec := Time.get_ticks_usec()
 	var block_layout = _build_block_layout(config)
 	var block_usec := Time.get_ticks_usec() - block_started_usec
+	var pedestrian_started_usec := Time.get_ticks_usec()
+	var pedestrian_query = _build_pedestrian_query(config, district_graph, road_graph)
+	var pedestrian_usec := Time.get_ticks_usec() - pedestrian_started_usec
 	_last_generation_profile = {
 		"district_usec": district_usec,
 		"road_graph_usec": road_usec,
@@ -31,6 +35,7 @@ func generate_world(config) -> Dictionary:
 		"road_graph_cache_size_bytes": int(road_result.get("cache_size_bytes", 0)),
 		"road_graph_cache_error": str(road_result.get("cache_error", "")),
 		"block_layout_usec": block_usec,
+		"pedestrian_world_usec": pedestrian_usec,
 		"total_usec": Time.get_ticks_usec() - total_started_usec,
 		"district_count": district_graph.get_district_count(),
 		"road_edge_count": road_graph.get_edge_count(),
@@ -42,6 +47,7 @@ func generate_world(config) -> Dictionary:
 		"district_graph": district_graph,
 		"road_graph": road_graph,
 		"block_layout": block_layout,
+		"pedestrian_query": pedestrian_query,
 		"generation_profile": _last_generation_profile.duplicate(true),
 		"summary": _build_summary(config, district_graph, road_graph, block_layout),
 	}
@@ -180,6 +186,9 @@ func _build_block_layout(config):
 	var layout = CityBlockLayout.new()
 	layout.setup(config)
 	return layout
+
+func _build_pedestrian_query(config, district_graph, road_graph):
+	return CityPedestrianWorldBuilder.new().build(config, district_graph, road_graph)
 
 func _build_summary(config, district_graph, road_graph, block_layout) -> String:
 	return "%dkm x %dkm seed %d | %d districts | %d roads | %d blocks | %d parcels" % [

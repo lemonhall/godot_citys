@@ -1,11 +1,15 @@
 extends CharacterBody3D
 
 signal primary_fire_requested
+signal grenade_throw_requested
+signal weapon_mode_changed(weapon_mode: String)
 
 const TRAVERSAL_MODE_GROUNDED := "grounded"
 const TRAVERSAL_MODE_AIRBORNE := "airborne"
 const TRAVERSAL_MODE_WALL_CLIMB := "wall_climb"
 const TRAVERSAL_MODE_GROUND_SLAM := "ground_slam"
+const WEAPON_MODE_RIFLE := "rifle"
+const WEAPON_MODE_GRENADE := "grenade"
 
 @export var walk_speed := 8.0
 @export var sprint_speed := 18.5
@@ -21,6 +25,9 @@ const TRAVERSAL_MODE_GROUND_SLAM := "ground_slam"
 @export var primary_fire_shoulder_offset := Vector3(0.46, 1.22, -0.18)
 @export var primary_fire_forward_offset_m := 0.72
 @export var aim_trace_distance_m := 240.0
+@export var grenade_hold_offset := Vector3(0.52, 1.18, -0.62)
+@export var grenade_throw_speed_mps := 24.0
+@export var grenade_throw_upward_boost_mps := 6.4
 @export var ads_camera_local_position := Vector3(0.58, 2.05, 4.2)
 @export var ads_camera_fov := 42.0
 @export var ads_transition_speed := 8.0
@@ -49,9 +56,11 @@ var _control_enabled := true
 var _speed_profile := "player"
 var _stabilization_suspend_frames := 0
 var _collision_resume_process_frames := 0
+var _weapon_mode := WEAPON_MODE_RIFLE
 var _primary_fire_cooldown_remaining := 0.0
 var _primary_fire_active := false
 var _aim_down_sights_active := false
+var _grenade_ready_active := false
 var _ads_blend := 0.0
 var _default_camera_local_position := Vector3.ZERO
 var _default_camera_fov := 65.0
@@ -60,8 +69,10 @@ var _traversal_mode := TRAVERSAL_MODE_GROUNDED
 var _wall_climb_normal := Vector3.ZERO
 var _wall_climb_contact_point := Vector3.ZERO
 var _traversal_fx_root: Node3D = null
+var _grenade_hold_visual: MeshInstance3D = null
 var _active_shockwaves: Array[Dictionary] = []
 var _camera_shake_remaining_sec := 0.0
+var _camera_shake_total_duration_sec := 0.0
 var _camera_shake_amplitude_m := 0.0
 var _slam_impact_count := 0
 var _last_slam_impact_speed := 0.0
@@ -75,6 +86,8 @@ func _ready() -> void:
 		_default_camera_fov = camera.fov
 	_rng.seed = 1337
 	_ensure_traversal_fx_root()
+	_ensure_grenade_hold_visual()
+	_update_grenade_hold_visual()
 	floor_snap_length = _current_floor_snap_length()
 	if DisplayServer.get_name() != "headless":
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
@@ -107,17 +120,28 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
 		if button.button_index == MOUSE_BUTTON_LEFT:
-			set_primary_fire_active(button.pressed)
+			if _weapon_mode == WEAPON_MODE_RIFLE:
+				set_primary_fire_active(button.pressed)
+			elif button.pressed:
+				request_grenade_throw()
 		elif button.button_index == MOUSE_BUTTON_RIGHT:
-			set_aim_down_sights_active(button.pressed)
+			if _weapon_mode == WEAPON_MODE_RIFLE:
+				set_aim_down_sights_active(button.pressed)
+			else:
+				set_grenade_ready_active(button.pressed)
 		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 		elif button.pressed and button.button_index == MOUSE_BUTTON_RIGHT:
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	elif event is InputEventKey:
 		var key_event := event as InputEventKey
-		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_CTRL:
-			request_ground_slam()
+		if key_event.pressed and not key_event.echo:
+			if key_event.keycode == KEY_CTRL:
+				request_ground_slam()
+			elif key_event.keycode == KEY_1:
+				set_weapon_mode(WEAPON_MODE_RIFLE)
+			elif key_event.keycode == KEY_2:
+				set_weapon_mode(WEAPON_MODE_GRENADE)
 	elif event.is_action_pressed("ui_cancel"):
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -174,12 +198,32 @@ func set_control_enabled(enabled: bool) -> void:
 	_control_enabled = enabled
 	if not enabled:
 		_primary_fire_active = false
-		_aim_down_sights_active = false
 		velocity.x = 0.0
 		velocity.z = 0.0
+	_clear_transient_weapon_state()
 
 func is_control_enabled() -> bool:
 	return _control_enabled
+
+func set_weapon_mode(mode: String) -> void:
+	if mode != WEAPON_MODE_RIFLE and mode != WEAPON_MODE_GRENADE:
+		return
+	if _weapon_mode == mode:
+		_update_grenade_hold_visual()
+		return
+	_weapon_mode = mode
+	_clear_transient_weapon_state()
+	weapon_mode_changed.emit(_weapon_mode)
+
+func get_weapon_mode() -> String:
+	return _weapon_mode
+
+func get_weapon_state() -> Dictionary:
+	return {
+		"mode": _weapon_mode,
+		"grenade_ready": _grenade_ready_active,
+		"aim_down_sights_active": _aim_down_sights_active,
+	}
 
 func set_speed_profile(profile: String) -> void:
 	if profile != "player" and profile != "inspection":
@@ -232,19 +276,27 @@ func get_traversal_fx_state() -> Dictionary:
 		"shockwave_visible": _active_shockwaves.size() > 0,
 		"shockwave_count": _active_shockwaves.size(),
 		"camera_shake_remaining_sec": _camera_shake_remaining_sec,
+		"camera_shake_total_duration_sec": _camera_shake_total_duration_sec,
 		"camera_shake_amplitude_m": _camera_shake_amplitude_m,
 	}
 
 func set_primary_fire_active(active: bool) -> void:
-	_primary_fire_active = active and _control_enabled
+	_primary_fire_active = active and _control_enabled and _weapon_mode == WEAPON_MODE_RIFLE
 	if _primary_fire_active:
 		request_primary_fire()
 
 func set_aim_down_sights_active(active: bool) -> void:
-	_aim_down_sights_active = active and _control_enabled
+	_aim_down_sights_active = active and _control_enabled and _weapon_mode == WEAPON_MODE_RIFLE
 
 func is_aim_down_sights_active() -> bool:
 	return _aim_down_sights_active
+
+func set_grenade_ready_active(active: bool) -> void:
+	_grenade_ready_active = active and _control_enabled and _weapon_mode == WEAPON_MODE_GRENADE
+	_update_grenade_hold_visual()
+
+func is_grenade_ready_active() -> bool:
+	return _grenade_ready_active
 
 func get_camera_fov_state() -> Dictionary:
 	return {
@@ -257,10 +309,24 @@ func get_camera_fov_state() -> Dictionary:
 func request_primary_fire() -> bool:
 	if not _control_enabled:
 		return false
+	if _weapon_mode != WEAPON_MODE_RIFLE:
+		return false
 	if _primary_fire_cooldown_remaining > 0.0:
 		return false
 	_primary_fire_cooldown_remaining = primary_fire_cooldown_sec
 	primary_fire_requested.emit()
+	return true
+
+func request_grenade_throw() -> bool:
+	if not _control_enabled:
+		return false
+	if _weapon_mode != WEAPON_MODE_GRENADE:
+		return false
+	if not _grenade_ready_active:
+		return false
+	_grenade_ready_active = false
+	_update_grenade_hold_visual()
+	grenade_throw_requested.emit()
 	return true
 
 func request_wall_climb() -> bool:
@@ -302,6 +368,32 @@ func get_projectile_direction() -> Vector3:
 	var aim_target := _resolve_aim_target_world_position()
 	return (aim_target - spawn_origin).normalized()
 
+func get_grenade_spawn_transform() -> Transform3D:
+	var aim_basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
+	var right := global_transform.basis.x.normalized()
+	var up := Vector3.UP
+	var player_forward := (-global_transform.basis.z).normalized()
+	var origin := global_position
+	origin += right * grenade_hold_offset.x
+	origin += up * grenade_hold_offset.y
+	origin += player_forward * absf(grenade_hold_offset.z)
+	return Transform3D(aim_basis, origin)
+
+func get_grenade_launch_velocity() -> Vector3:
+	var spawn_origin := get_grenade_spawn_transform().origin
+	var aim_target := _resolve_aim_target_world_position()
+	var direction := (aim_target - spawn_origin).normalized()
+	if direction.length_squared() <= 0.0001:
+		direction = (-global_transform.basis.z).normalized()
+	var planar_direction := Vector3(direction.x, 0.0, direction.z)
+	if planar_direction.length_squared() <= 0.0001:
+		planar_direction = Vector3(-global_transform.basis.z.x, 0.0, -global_transform.basis.z.z).normalized()
+	if planar_direction.length_squared() <= 0.0001:
+		planar_direction = Vector3.FORWARD
+	var launch_velocity := planar_direction.normalized() * grenade_throw_speed_mps
+	launch_velocity.y = maxf(direction.y * grenade_throw_speed_mps * 0.45 + grenade_throw_upward_boost_mps, grenade_throw_upward_boost_mps)
+	return launch_velocity
+
 func get_aim_target_world_position() -> Vector3:
 	return _resolve_aim_target_world_position()
 
@@ -322,6 +414,11 @@ func _resolve_aim_target_world_position() -> Vector3:
 
 func suspend_ground_stabilization(frame_count: int) -> void:
 	_stabilization_suspend_frames = maxi(_stabilization_suspend_frames, frame_count)
+
+func trigger_camera_shake(duration_sec: float, amplitude_m: float) -> void:
+	_camera_shake_total_duration_sec = maxf(duration_sec, 0.0)
+	_camera_shake_remaining_sec = maxf(_camera_shake_remaining_sec, _camera_shake_total_duration_sec)
+	_camera_shake_amplitude_m = maxf(_camera_shake_amplitude_m, amplitude_m)
 
 func _read_move_input() -> Vector2:
 	var horizontal := 0.0
@@ -515,12 +612,43 @@ func _ensure_traversal_fx_root() -> void:
 	add_child(fx_root)
 	_traversal_fx_root = fx_root
 
+func _ensure_grenade_hold_visual() -> void:
+	if get_node_or_null("GrenadeHoldVisual") != null:
+		_grenade_hold_visual = get_node_or_null("GrenadeHoldVisual") as MeshInstance3D
+		return
+	var mesh_instance := MeshInstance3D.new()
+	mesh_instance.name = "GrenadeHoldVisual"
+	mesh_instance.position = grenade_hold_offset
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.13
+	mesh.height = 0.26
+	mesh_instance.mesh = mesh
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.219608, 0.243137, 0.294118, 1.0)
+	material.emission_enabled = true
+	material.emission = Color(0.34902, 0.901961, 0.654902, 1.0)
+	material.emission_energy_multiplier = 0.2
+	mesh_instance.material_override = material
+	mesh_instance.visible = false
+	add_child(mesh_instance)
+	_grenade_hold_visual = mesh_instance
+
+func _update_grenade_hold_visual() -> void:
+	if _grenade_hold_visual == null or not is_instance_valid(_grenade_hold_visual):
+		return
+	_grenade_hold_visual.visible = _weapon_mode == WEAPON_MODE_GRENADE and _grenade_ready_active and _control_enabled
+
+func _clear_transient_weapon_state() -> void:
+	_primary_fire_active = false
+	_aim_down_sights_active = false
+	_grenade_ready_active = false
+	_update_grenade_hold_visual()
+
 func _trigger_ground_slam_impact(impact_speed: float) -> void:
 	_slam_impact_count += 1
 	_last_slam_impact_speed = impact_speed
 	_spawn_ground_slam_shockwave()
-	_camera_shake_remaining_sec = ground_slam_camera_shake_duration_sec
-	_camera_shake_amplitude_m = ground_slam_camera_shake_amplitude_m
+	trigger_camera_shake(ground_slam_camera_shake_duration_sec, ground_slam_camera_shake_amplitude_m)
 
 func _spawn_ground_slam_shockwave() -> void:
 	_ensure_traversal_fx_root()
@@ -590,13 +718,14 @@ func _update_camera_shake(delta: float) -> void:
 		return
 	if _camera_shake_remaining_sec <= 0.0:
 		_camera_shake_remaining_sec = 0.0
+		_camera_shake_total_duration_sec = 0.0
 		_camera_shake_amplitude_m = 0.0
 		camera_rig.position = _camera_rig_base_position
 		return
 	_camera_shake_remaining_sec = maxf(_camera_shake_remaining_sec - delta, 0.0)
 	var normalized := 0.0
-	if ground_slam_camera_shake_duration_sec > 0.0:
-		normalized = _camera_shake_remaining_sec / ground_slam_camera_shake_duration_sec
+	if _camera_shake_total_duration_sec > 0.0:
+		normalized = _camera_shake_remaining_sec / _camera_shake_total_duration_sec
 	var current_amplitude := _camera_shake_amplitude_m * normalized
 	var shake_offset := Vector3(
 		_rng.randf_range(-current_amplitude, current_amplitude),

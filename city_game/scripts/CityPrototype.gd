@@ -9,6 +9,7 @@ const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityCh
 const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
 const CityMinimapProjector := preload("res://city_game/world/map/CityMinimapProjector.gd")
 const CityProjectile := preload("res://city_game/combat/CityProjectile.gd")
+const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
 const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
 
 const CONTROL_MODE_PLAYER := "player"
@@ -54,6 +55,7 @@ var _minimap_build_max_usec := 0
 var _minimap_build_last_usec := 0
 var _combat_root: Node3D = null
 var _projectile_root: Node3D = null
+var _grenade_root: Node3D = null
 var _enemy_projectile_root: Node3D = null
 var _enemy_root: Node3D = null
 
@@ -119,7 +121,8 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 		"Shift sprint  Space jump",
 		"Mouse rotates player camera  Esc releases cursor",
 		"Press C to toggle normal / inspection speed",
-		"Left click fires  Right click ADS  Numpad / spawns trauma squad enemy",
+		"1 rifle  2 grenade  Left click fires / throws  Right click ADS / hold grenade",
+		"Numpad / spawns trauma squad enemy",
 		"control_mode=%s" % _control_mode,
 		"tracked_position=%s" % str(_vector3_to_dict(player.global_position if player != null else Vector3.ZERO)),
 		generated_city.get_city_summary(),
@@ -130,11 +133,13 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 		],
 		"current_chunk_lod=%s" % str(snapshot.get("current_chunk_lod_mode", "")),
 		"visual_variant=%s" % str(snapshot.get("current_chunk_visual_variant_id", "")),
-		"combat=player_projectiles:%d enemy_projectiles:%d enemies:%d" % [
+		"combat=player_projectiles:%d grenades:%d enemy_projectiles:%d enemies:%d" % [
 			get_active_projectile_count(),
+			get_active_grenade_count(),
 			get_active_enemy_projectile_count(),
 			get_active_enemy_count()
 		],
+		_weapon_status_text(),
 		active_speed_text,
 	])
 	hud.set_status("\n".join(lines))
@@ -179,8 +184,17 @@ func fire_player_projectile_toward(target_world_position: Vector3) -> Node3D:
 func get_active_projectile_count() -> int:
 	return 0 if _projectile_root == null else _projectile_root.get_child_count()
 
+func get_active_grenade_count() -> int:
+	return 0 if _grenade_root == null else _grenade_root.get_child_count()
+
 func get_active_enemy_projectile_count() -> int:
 	return 0 if _enemy_projectile_root == null else _enemy_projectile_root.get_child_count()
+
+func throw_player_grenade() -> Node3D:
+	if player == null or not player.has_method("get_grenade_spawn_transform") or not player.has_method("get_grenade_launch_velocity"):
+		return null
+	var spawn_transform: Transform3D = player.get_grenade_spawn_transform()
+	return _spawn_grenade(spawn_transform.origin, player.get_grenade_launch_velocity())
 
 func spawn_trauma_enemy() -> CharacterBody3D:
 	var spawn_position := _resolve_enemy_spawn_world_position(_get_active_anchor_position())
@@ -259,6 +273,12 @@ func _ensure_combat_roots() -> void:
 			_projectile_root = Node3D.new()
 			_projectile_root.name = "Projectiles"
 			_combat_root.add_child(_projectile_root)
+	if _grenade_root == null:
+		_grenade_root = _combat_root.get_node_or_null("Grenades") as Node3D
+		if _grenade_root == null:
+			_grenade_root = Node3D.new()
+			_grenade_root.name = "Grenades"
+			_combat_root.add_child(_grenade_root)
 	if _enemy_projectile_root == null:
 		_enemy_projectile_root = _combat_root.get_node_or_null("EnemyProjectiles") as Node3D
 		if _enemy_projectile_root == null:
@@ -273,19 +293,27 @@ func _ensure_combat_roots() -> void:
 			_combat_root.add_child(_enemy_root)
 
 func _connect_player_combat() -> void:
-	if player == null or not player.has_signal("primary_fire_requested"):
+	if player == null:
 		return
-	var callable := Callable(self, "_on_player_primary_fire_requested")
-	if not player.primary_fire_requested.is_connected(callable):
-		player.primary_fire_requested.connect(callable)
+	if player.has_signal("primary_fire_requested"):
+		var primary_fire_callable := Callable(self, "_on_player_primary_fire_requested")
+		if not player.primary_fire_requested.is_connected(primary_fire_callable):
+			player.primary_fire_requested.connect(primary_fire_callable)
+	if player.has_signal("grenade_throw_requested"):
+		var grenade_throw_callable := Callable(self, "_on_player_grenade_throw_requested")
+		if not player.grenade_throw_requested.is_connected(grenade_throw_callable):
+			player.grenade_throw_requested.connect(grenade_throw_callable)
 
 func _on_player_primary_fire_requested() -> void:
 	fire_player_projectile()
 
+func _on_player_grenade_throw_requested() -> void:
+	throw_player_grenade()
+
 func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 	_ensure_combat_roots()
 	if _projectile_root == null:
-		return null
+		return
 	var projectile := CityProjectile.new()
 	projectile.configure(
 		origin,
@@ -299,6 +327,15 @@ func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 	)
 	_projectile_root.add_child(projectile)
 	return projectile
+
+func _spawn_grenade(origin: Vector3, launch_velocity: Vector3) -> Node3D:
+	_ensure_combat_roots()
+	if _grenade_root == null:
+		return null
+	var grenade := CityGrenade.new()
+	grenade.configure(origin, launch_velocity, player, player)
+	_grenade_root.add_child(grenade)
+	return grenade
 
 func _connect_enemy_combat(enemy: Node) -> void:
 	if enemy == null or not enemy.has_signal("projectile_fire_requested"):
@@ -449,6 +486,14 @@ func _build_crosshair_state() -> Dictionary:
 		"world_target": world_target,
 		"aim_down_sights_active": player.is_aim_down_sights_active() if player.has_method("is_aim_down_sights_active") else false,
 	}
+
+func _weapon_status_text() -> String:
+	if player == null or not player.has_method("get_weapon_state"):
+		return ""
+	var weapon_state: Dictionary = player.get_weapon_state()
+	var mode := str(weapon_state.get("mode", "rifle"))
+	var grenade_ready := bool(weapon_state.get("grenade_ready", false))
+	return "weapon=%s grenade_ready=%s" % [mode, str(grenade_ready)]
 
 func reset_performance_profile() -> void:
 	_update_streaming_sample_count = 0

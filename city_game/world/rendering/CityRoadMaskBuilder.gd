@@ -1,6 +1,7 @@
 extends RefCounted
 
 const MASK_RESOLUTION := 256
+const MIN_READABLE_STRIPE_RADIUS_PX := 0.2
 const CityRoadSurfaceCache := preload("res://city_game/world/rendering/CityRoadSurfaceCache.gd")
 const DETAIL_MODE_FULL := "full"
 const DETAIL_MODE_COARSE := "coarse"
@@ -40,6 +41,8 @@ static func prepare_surface_data(surface_request: Dictionary) -> Dictionary:
 	var stripe_bytes := PackedByteArray()
 	var surface_segments := _extract_surface_segments(surface_request.get("surface_segments", []))
 	var clusters := _build_intersection_clusters(surface_segments)
+	var stripe_review := _review_stripe_paint(surface_segments, surface_world_size_m, mask_resolution, detail_mode)
+	var stripe_paint_enabled := bool(stripe_review.get("enabled", false))
 	var paint_usec := 0
 	var cache_write_usec := 0
 	if bool(cache_result.get("hit", false)):
@@ -54,7 +57,7 @@ static func prepare_surface_data(surface_request: Dictionary) -> Dictionary:
 		for road_segment in surface_segments:
 			var segment_dict: Dictionary = road_segment
 			_paint_segment_mask(road_bytes, segment_dict, surface_world_size_m, surface_origin_m, false, mask_resolution)
-			if detail_mode == DETAIL_MODE_FULL:
+			if stripe_paint_enabled:
 				_paint_segment_mask(stripe_bytes, segment_dict, surface_world_size_m, surface_origin_m, true, mask_resolution)
 
 		for cluster in clusters:
@@ -98,7 +101,9 @@ static func prepare_surface_data(surface_request: Dictionary) -> Dictionary:
 			"cache_signature": str(cache_result.get("signature", cache_signature)),
 			"cache_error": str(cache_result.get("error", "")),
 			"detail_mode": detail_mode,
-			"stripe_paint_enabled": detail_mode == DETAIL_MODE_FULL,
+			"stripe_paint_enabled": stripe_paint_enabled,
+			"stripe_min_radius_px": float(stripe_review.get("min_radius_px", 0.0)),
+			"stripe_max_radius_px": float(stripe_review.get("max_radius_px", 0.0)),
 			"paint_usec": paint_usec,
 			"image_usec": 0,
 			"texture_usec": 0,
@@ -200,6 +205,31 @@ static func _resolve_mask_radius_m(segment_dict: Dictionary, stripe_only: bool) 
 			return 0.28
 		return 0.22
 	return float(segment_dict.get("width", 11.0)) * 0.5 + 0.4
+
+static func _review_stripe_paint(surface_segments: Array, surface_world_size_m: float, mask_resolution: int, detail_mode: String) -> Dictionary:
+	var review := {
+		"enabled": detail_mode == DETAIL_MODE_FULL,
+		"min_radius_px": 0.0,
+		"max_radius_px": 0.0,
+	}
+	if detail_mode != DETAIL_MODE_FULL:
+		return review
+	var found_radius := false
+	var min_radius_px := INF
+	var max_radius_px := 0.0
+	for road_segment in surface_segments:
+		var segment_dict: Dictionary = road_segment
+		var stripe_radius_px := _world_radius_to_pixels(_resolve_mask_radius_m(segment_dict, true), surface_world_size_m, mask_resolution)
+		if stripe_radius_px <= 0.0:
+			continue
+		found_radius = true
+		min_radius_px = minf(min_radius_px, stripe_radius_px)
+		max_radius_px = maxf(max_radius_px, stripe_radius_px)
+	if found_radius:
+		review["min_radius_px"] = min_radius_px
+		review["max_radius_px"] = max_radius_px
+		review["enabled"] = min_radius_px >= MIN_READABLE_STRIPE_RADIUS_PX
+	return review
 
 static func _paint_disc(mask_bytes: PackedByteArray, center_px: Vector2, radius_px: float, feather_px: float, mask_resolution: int) -> void:
 	if radius_px <= 0.0:

@@ -515,7 +515,10 @@ func _build_ground_material(chunk_size_m: float, profile: Dictionary, detail_mod
 	material.set_shader_parameter("ground_color", palette.get("ground", Color(0.12549, 0.333333, 0.168627, 1.0)))
 	material.set_shader_parameter("road_color", palette.get("road", Color(0.16, 0.17, 0.19, 1.0)))
 	material.set_shader_parameter("stripe_color", palette.get("stripe", Color(0.9, 0.8, 0.5, 1.0)))
-	material.set_shader_parameter("stripe_enabled", detail_mode == SURFACE_DETAIL_FULL)
+	material.set_shader_parameter(
+		"stripe_enabled",
+		detail_mode == SURFACE_DETAIL_FULL and bool(mask_stats.get("stripe_paint_enabled", true))
+	)
 	material.set_shader_parameter("road_mask_texture", surface_binding.get("road_mask_texture"))
 	material.set_shader_parameter("stripe_mask_texture", surface_binding.get("stripe_mask_texture"))
 	material.set_shader_parameter("surface_uv_offset", uv_rect.position)

@@ -5,6 +5,8 @@ signal projectile_fire_requested(origin: Vector3, direction: Vector3)
 const BEHAVIOR_APPROACH := "approach"
 const BEHAVIOR_ORBIT := "orbit"
 const ROLE_ID_ASSAULT := "assault"
+const HEALTH_BAR_FILL_DEPTH_OFFSET_M := -0.028
+const HEALTH_BAR_WORLD_OFFSET := Vector3(0.0, 2.85, 0.0)
 
 @export var chase_speed_mps := 10.5
 @export var orbit_speed_mps := 8.0
@@ -71,6 +73,7 @@ func _ready() -> void:
 	_ensure_health_bar()
 	floor_snap_length = floor_snap_length_m
 	_update_health_feedback()
+	_update_health_bar_transform()
 	_update_visual_state()
 
 func configure(target: Node3D) -> void:
@@ -160,6 +163,7 @@ func _physics_process(delta: float) -> void:
 	if velocity.y <= 0.0:
 		_stabilize_ground_contact()
 	_face_target()
+	_update_health_bar_transform()
 
 func _update_behavior_mode() -> void:
 	if _target == null or not is_instance_valid(_target):
@@ -483,17 +487,29 @@ func _ensure_visual() -> void:
 func _ensure_health_bar() -> void:
 	if get_node_or_null("HealthBar") != null:
 		_health_bar_root = get_node_or_null("HealthBar") as Node3D
+		var existing_back := _health_bar_root.get_node_or_null("Back") as MeshInstance3D if _health_bar_root != null else null
 		var existing_fill_anchor := _health_bar_root.get_node_or_null("FillAnchor") as Node3D if _health_bar_root != null else null
 		_health_bar_fill_anchor = existing_fill_anchor
+		if _health_bar_root != null:
+			_health_bar_root.top_level = true
+		if existing_back != null:
+			existing_back.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var existing_back_material := existing_back.material_override as StandardMaterial3D
+			if existing_back_material != null:
+				existing_back_material.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
 		if existing_fill_anchor != null:
 			var existing_fill := existing_fill_anchor.get_node_or_null("Fill") as MeshInstance3D
 			if existing_fill != null:
+				existing_fill.position.z = HEALTH_BAR_FILL_DEPTH_OFFSET_M
+				existing_fill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				_health_bar_fill_material = existing_fill.material_override as StandardMaterial3D
+				if _health_bar_fill_material != null:
+					_health_bar_fill_material.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
 		return
 
 	var health_bar_root := Node3D.new()
 	health_bar_root.name = "HealthBar"
-	health_bar_root.position = Vector3(0.0, 2.85, 0.0)
+	health_bar_root.top_level = true
 
 	var back := MeshInstance3D.new()
 	back.name = "Back"
@@ -502,6 +518,7 @@ func _ensure_health_bar() -> void:
 	back_material.albedo_color = Color(0.08, 0.09, 0.11, 0.88)
 	back_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	back.material_override = back_material
+	back.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	health_bar_root.add_child(back)
 
 	var fill_anchor := Node3D.new()
@@ -510,12 +527,13 @@ func _ensure_health_bar() -> void:
 
 	var fill := MeshInstance3D.new()
 	fill.name = "Fill"
-	fill.position = Vector3(0.54, 0.0, 0.0)
+	fill.position = Vector3(0.54, 0.0, HEALTH_BAR_FILL_DEPTH_OFFSET_M)
 	fill.mesh = _build_health_bar_mesh(1.08, 0.06, 0.032)
 	var fill_material := StandardMaterial3D.new()
 	fill_material.albedo_color = Color(0.941176, 0.235294, 0.235294, 1.0)
 	fill_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	fill.material_override = fill_material
+	fill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	fill_anchor.add_child(fill)
 	health_bar_root.add_child(fill_anchor)
 	add_child(health_bar_root)
@@ -523,6 +541,7 @@ func _ensure_health_bar() -> void:
 	_health_bar_root = health_bar_root
 	_health_bar_fill_anchor = fill_anchor
 	_health_bar_fill_material = fill_material
+	_update_health_bar_transform()
 
 func _update_health_feedback() -> void:
 	if _health_bar_root == null or _health_bar_fill_anchor == null:
@@ -542,6 +561,23 @@ func _build_health_bar_mesh(width: float, height: float, depth: float) -> BoxMes
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(width, height, depth)
 	return mesh
+
+func _update_health_bar_transform() -> void:
+	if _health_bar_root == null or not is_instance_valid(_health_bar_root):
+		return
+	var bar_position := global_position + HEALTH_BAR_WORLD_OFFSET
+	_health_bar_root.global_position = bar_position
+	var active_camera := get_viewport().get_camera_3d() if get_viewport() != null else null
+	if active_camera == null or not is_instance_valid(active_camera):
+		return
+	var look_target := active_camera.global_position
+	look_target.y = bar_position.y
+	var planar_delta := look_target - bar_position
+	planar_delta.y = 0.0
+	if planar_delta.length_squared() <= 0.0001:
+		return
+	_health_bar_root.look_at(look_target, Vector3.UP, true)
+	_health_bar_root.rotate_y(PI)
 
 func _recharge_pressure_energy(delta: float) -> void:
 	if pressure_dash_energy_max <= 0.0:

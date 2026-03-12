@@ -18,6 +18,9 @@ func _run() -> void:
 	var player := world.get_node_or_null("Player") as Node3D
 	if not T.require_true(self, player != null, "Trauma health feedback contract requires Player node"):
 		return
+	var camera := player.get_node_or_null("CameraRig/Camera3D") as Camera3D
+	if not T.require_true(self, camera != null, "Trauma health feedback contract requires CameraRig/Camera3D so health bars stay readable from third-person camera angles"):
+		return
 	if not T.require_true(self, world.has_method("spawn_trauma_enemy_at_world_position"), "CityPrototype must expose spawn_trauma_enemy_at_world_position() for trauma health feedback tests"):
 		return
 	if not T.require_true(self, world.has_method("get_active_enemy_count"), "CityPrototype must expose get_active_enemy_count() for trauma health feedback tests"):
@@ -40,6 +43,45 @@ func _run() -> void:
 	var health_bar: Node = enemy.get_node_or_null("HealthBar")
 	if not T.require_true(self, health_bar != null, "Trauma enemy must keep a visible HealthBar node so kills are readable in gameplay"):
 		return
+	var health_bar_root := health_bar as Node3D
+	if not T.require_true(self, health_bar_root != null, "Trauma enemy health bar contract requires HealthBar to remain a Node3D"):
+		return
+	var back := health_bar.get_node_or_null("Back") as MeshInstance3D
+	if not T.require_true(self, back != null, "Trauma enemy health bar must keep a dark Back mesh for contrast"):
+		return
+	var back_material := back.material_override as StandardMaterial3D
+	if not T.require_true(self, back_material != null, "Trauma enemy health bar background must keep its own StandardMaterial3D for combat readability"):
+		return
+	var fill_anchor := health_bar.get_node_or_null("FillAnchor") as Node3D
+	if not T.require_true(self, fill_anchor != null, "Trauma enemy health bar must keep a FillAnchor node so damage can visibly shrink the fill"):
+		return
+	var fill := health_bar.get_node_or_null("FillAnchor/Fill") as MeshInstance3D
+	if not T.require_true(self, fill != null, "Trauma enemy health bar must keep a visible Fill mesh instead of only a dark background"):
+		return
+	var fill_material := fill.material_override as StandardMaterial3D
+	if not T.require_true(self, fill_material != null, "Trauma enemy health bar fill must keep its own StandardMaterial3D so health can stay readable"):
+		return
+	if not T.require_true(self, back.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF and fill.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "Trauma enemy health bar meshes must not cast world shadows that read as stray black slashes on the ground"):
+		return
+	if not T.require_true(self, fill_material.albedo_color.r > 0.5, "Trauma enemy health bar fill must start bright enough to read as full health instead of an all-black bar"):
+		return
+	if not T.require_true(self, fill.position.z < back.position.z - 0.005, "Trauma enemy health bar fill must sit in front of the dark background so full health does not read as black"):
+		return
+	if not T.require_true(self, is_equal_approx(fill_anchor.scale.x, 1.0), "Full-health trauma enemies must start with an unshrunk health bar fill"):
+		return
+	for _frame in range(4):
+		await physics_frame
+	if not T.require_true(self, health_bar_root.top_level, "Trauma enemy health bar root must decouple from enemy body rotation so the third-person camera can read it from side angles"):
+		return
+	var initial_alignment := _planar_facing_alignment(health_bar_root, camera)
+	if not T.require_true(self, initial_alignment >= 0.92, "Trauma enemy health bar must face the active gameplay camera instead of only inheriting the enemy body yaw (alignment=%0.3f)" % initial_alignment):
+		return
+	player.rotate_y(deg_to_rad(90.0))
+	for _frame in range(4):
+		await physics_frame
+	var rotated_alignment := _planar_facing_alignment(health_bar_root, camera)
+	if not T.require_true(self, rotated_alignment >= 0.92, "Rotating the third-person camera around the player must keep the trauma enemy health bar facing the camera instead of turning edge-on (alignment=%0.3f)" % rotated_alignment):
+		return
 
 	enemy.apply_projectile_hit(1.0, enemy.global_position, Vector3.ZERO)
 	await process_frame
@@ -48,6 +90,8 @@ func _run() -> void:
 	if not T.require_true(self, float(damaged_state.get("current", 0.0)) < float(initial_state.get("current", 0.0)), "Projectile hits must reduce the trauma enemy health state"):
 		return
 	if not T.require_true(self, float(damaged_state.get("ratio", 1.0)) < 1.0, "Projectile hits must reduce the trauma enemy health ratio"):
+		return
+	if not T.require_true(self, is_equal_approx(fill_anchor.scale.x, 2.0 / 3.0), "A 3-health trauma enemy must visibly lose about one third of the bar after a 1-damage projectile hit"):
 		return
 	if not T.require_true(self, bool(damaged_state.get("visible", false)), "Trauma enemy health feedback must stay visible after taking damage"):
 		return
@@ -62,3 +106,14 @@ func _run() -> void:
 
 	world.queue_free()
 	T.pass_and_quit(self)
+
+func _planar_facing_alignment(node: Node3D, camera: Camera3D) -> float:
+	var to_camera := camera.global_position - node.global_position
+	to_camera.y = 0.0
+	if to_camera.length_squared() <= 0.0001:
+		return 1.0
+	var facing := -node.global_transform.basis.z
+	facing.y = 0.0
+	if facing.length_squared() <= 0.0001:
+		return -1.0
+	return facing.normalized().dot(to_camera.normalized())

@@ -142,6 +142,8 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 		hud.set_debug_text(debug_overlay.get_debug_text())
 	if hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
+	if hud.has_method("set_crosshair_state"):
+		hud.set_crosshair_state(_build_crosshair_state())
 	_record_hud_refresh_sample(Time.get_ticks_usec() - refresh_started_usec)
 
 func get_world_config():
@@ -416,6 +418,34 @@ func get_minimap_cache_stats() -> Dictionary:
 		"hit_count": _minimap_cache_hits,
 		"miss_count": _minimap_cache_misses,
 		"rebuild_count": _minimap_rebuild_count,
+	}
+
+func _build_crosshair_state() -> Dictionary:
+	var viewport_size := Vector2(
+		float(ProjectSettings.get_setting("display/window/size/viewport_width")),
+		float(ProjectSettings.get_setting("display/window/size/viewport_height"))
+	)
+	if get_viewport() != null:
+		var visible_rect := get_viewport().get_visible_rect()
+		if visible_rect.size.x > 0.0 and visible_rect.size.y > 0.0:
+			viewport_size = visible_rect.size
+	if player == null or not player.has_method("get_aim_target_world_position"):
+		return {
+			"visible": false,
+			"screen_position": viewport_size * 0.5,
+			"viewport_size": viewport_size,
+			"world_target": Vector3.ZERO,
+		}
+	var camera := player.get_node_or_null("CameraRig/Camera3D") as Camera3D
+	var world_target: Vector3 = player.get_aim_target_world_position()
+	var screen_position := viewport_size * 0.5
+	if camera != null:
+		screen_position = camera.unproject_position(world_target)
+	return {
+		"visible": true,
+		"screen_position": screen_position,
+		"viewport_size": viewport_size,
+		"world_target": world_target,
 	}
 
 func reset_performance_profile() -> void:

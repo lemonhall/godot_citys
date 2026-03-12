@@ -23,6 +23,9 @@ const ROLE_ID_ASSAULT := "assault"
 @export var burst_cooldown_sec := 1.6
 @export var burst_interval_sec := 0.11
 @export var burst_shot_count := 3
+@export var camouflage_duration_sec := 0.42
+@export var camouflage_min_alpha := 0.18
+@export var camouflage_flicker_hz := 18.0
 
 var _gravity := ProjectSettings.get_setting("physics/3d/default_gravity") as float
 var _target: Node3D = null
@@ -35,6 +38,10 @@ var _orbit_direction_sign := 1.0
 var _burst_cooldown_remaining := 0.0
 var _burst_interval_remaining := 0.0
 var _burst_shots_remaining := 0
+var _camouflage_remaining_sec := 0.0
+var _camouflage_alpha := 1.0
+var _body: MeshInstance3D = null
+var _body_material: StandardMaterial3D = null
 
 func _ready() -> void:
 	add_to_group("city_enemy")
@@ -42,6 +49,7 @@ func _ready() -> void:
 	_ensure_collision()
 	_ensure_visual()
 	floor_snap_length = floor_snap_length_m
+	_update_visual_state()
 
 func configure(target: Node3D) -> void:
 	_target = target
@@ -61,6 +69,13 @@ func get_behavior_mode() -> String:
 func get_standing_height() -> float:
 	return _estimate_standing_height()
 
+func get_camouflage_state() -> Dictionary:
+	return {
+		"active": _camouflage_remaining_sec > 0.0,
+		"alpha": _camouflage_alpha,
+		"time_remaining_sec": _camouflage_remaining_sec,
+	}
+
 func apply_projectile_hit(projectile_damage: float, _hit_position: Vector3, _impulse: Vector3) -> void:
 	_health -= projectile_damage
 	if _health <= 0.0:
@@ -74,9 +89,12 @@ func _physics_process(delta: float) -> void:
 		_burst_cooldown_remaining = maxf(_burst_cooldown_remaining - delta, 0.0)
 	if _burst_interval_remaining > 0.0:
 		_burst_interval_remaining = maxf(_burst_interval_remaining - delta, 0.0)
+	if _camouflage_remaining_sec > 0.0:
+		_camouflage_remaining_sec = maxf(_camouflage_remaining_sec - delta, 0.0)
 	_evaluate_incoming_projectiles()
 	_update_behavior_mode()
 	_update_ranged_fire()
+	_update_visual_state()
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
 	var move_direction := _compute_move_direction()
@@ -170,6 +188,7 @@ func _execute_dodge(projectile_direction: Vector3) -> bool:
 	_dodge_count += 1
 	_dodge_cooldown_remaining = dodge_cooldown_sec
 	_behavior_mode = BEHAVIOR_ORBIT
+	_activate_camouflage()
 	return true
 
 func _update_ranged_fire() -> void:
@@ -288,6 +307,30 @@ func _face_target() -> void:
 	look_target.y = global_position.y
 	look_at(look_target, Vector3.UP, true)
 
+func _activate_camouflage() -> void:
+	_camouflage_remaining_sec = camouflage_duration_sec
+	_update_visual_state()
+
+func _update_visual_state() -> void:
+	if _body_material == null:
+		return
+	if _camouflage_remaining_sec > 0.0:
+		var phase := (camouflage_duration_sec - _camouflage_remaining_sec) * camouflage_flicker_hz * TAU
+		var flicker := 0.5 + 0.5 * sin(phase)
+		_camouflage_alpha = lerpf(camouflage_min_alpha, 0.42, flicker)
+		_body_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_body_material.albedo_color = Color(0.62, 0.88, 1.0, _camouflage_alpha)
+		_body_material.emission_enabled = true
+		_body_material.emission = Color(0.33, 0.92, 1.0, 1.0)
+		_body_material.emission_energy_multiplier = 1.3 + (1.0 - _camouflage_alpha) * 1.1
+		return
+	_camouflage_alpha = 1.0
+	_body_material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+	_body_material.albedo_color = Color(0.141176, 0.156863, 0.203922, 1.0)
+	_body_material.emission_enabled = true
+	_body_material.emission = Color(1.0, 0.227451, 0.227451, 1.0)
+	_body_material.emission_energy_multiplier = 0.55
+
 func _estimate_standing_height() -> float:
 	var collision_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
 	if collision_shape == null or collision_shape.shape == null:
@@ -310,6 +353,9 @@ func _ensure_collision() -> void:
 
 func _ensure_visual() -> void:
 	if get_node_or_null("Body") != null:
+		_body = get_node_or_null("Body") as MeshInstance3D
+		if _body != null:
+			_body_material = _body.material_override as StandardMaterial3D
 		return
 	var body := MeshInstance3D.new()
 	body.name = "Body"
@@ -324,3 +370,5 @@ func _ensure_visual() -> void:
 	material.emission_energy_multiplier = 0.55
 	body.material_override = material
 	add_child(body)
+	_body = body
+	_body_material = material

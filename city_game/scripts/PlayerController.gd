@@ -171,6 +171,9 @@ func get_projectile_direction() -> Vector3:
 	var aim_target := _resolve_aim_target_world_position()
 	return (aim_target - spawn_origin).normalized()
 
+func get_aim_target_world_position() -> Vector3:
+	return _resolve_aim_target_world_position()
+
 func _resolve_aim_target_world_position() -> Vector3:
 	var basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
 	var origin := camera.global_position if camera != null else global_position + Vector3.UP * 1.4

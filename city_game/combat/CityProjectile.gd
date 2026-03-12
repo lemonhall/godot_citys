@@ -21,7 +21,7 @@ func _ready() -> void:
 func configure(
 	origin: Vector3,
 	direction: Vector3,
-	owner: Node = null,
+	owner_node: Node = null,
 	projectile_damage: float = 1.0,
 	group_name: String = "city_projectile",
 	target_group_name: String = "city_enemy",
@@ -30,7 +30,7 @@ func configure(
 ) -> void:
 	position = origin
 	_direction = direction.normalized() if direction.length_squared() > 0.0001 else Vector3.FORWARD
-	_owner = owner
+	_owner = owner_node
 	damage = projectile_damage
 	_group_name = group_name
 	_target_group_name = target_group_name

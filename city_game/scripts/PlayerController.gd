@@ -156,7 +156,7 @@ func request_primary_fire() -> bool:
 	return true
 
 func get_projectile_spawn_transform() -> Transform3D:
-	var basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
+	var aim_basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
 	var right := global_transform.basis.x.normalized()
 	var up := Vector3.UP
 	var player_forward := (-global_transform.basis.z).normalized()
@@ -164,7 +164,7 @@ func get_projectile_spawn_transform() -> Transform3D:
 	origin += right * primary_fire_shoulder_offset.x
 	origin += up * primary_fire_shoulder_offset.y
 	origin += player_forward * (primary_fire_forward_offset_m + primary_fire_shoulder_offset.z)
-	return Transform3D(basis, origin)
+	return Transform3D(aim_basis, origin)
 
 func get_projectile_direction() -> Vector3:
 	var spawn_origin := get_projectile_spawn_transform().origin
@@ -175,9 +175,9 @@ func get_aim_target_world_position() -> Vector3:
 	return _resolve_aim_target_world_position()
 
 func _resolve_aim_target_world_position() -> Vector3:
-	var basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
+	var aim_basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
 	var origin := camera.global_position if camera != null else global_position + Vector3.UP * 1.4
-	var forward := (-basis.z).normalized()
+	var forward := (-aim_basis.z).normalized()
 	var fallback_target := origin + forward * aim_trace_distance_m
 	if get_world_3d() == null or get_world_3d().direct_space_state == null:
 		return fallback_target

@@ -181,7 +181,6 @@ static func _paint_segment_mask(mask_bytes: PackedByteArray, segment_dict: Dicti
 	if stripe_only and template_id == "service":
 		return
 
-	var width_m := float(segment_dict.get("width", 11.0))
 	var radius_px := _world_radius_to_pixels(_resolve_mask_radius_m(segment_dict, stripe_only), surface_world_size_m, mask_resolution)
 	var feather_px := 1.0 if stripe_only else 1.5
 	for point_index in range(points.size() - 1):

@@ -173,8 +173,8 @@ func _execute_dodge(projectile_direction: Vector3) -> bool:
 	var current_position := global_position
 	var best_position := current_position
 	var best_score: float = INF
-	for sign in [-1.0, 1.0]:
-		var candidate: Vector3 = current_position + lateral * dodge_distance_m * sign
+	for direction_sign in [-1.0, 1.0]:
+		var candidate: Vector3 = current_position + lateral * dodge_distance_m * direction_sign
 		candidate = _resolve_surface_position(candidate)
 		var score: float = candidate.distance_to(_target.global_position) if _target != null and is_instance_valid(_target) else 0.0
 		if score < best_score:

@@ -87,7 +87,7 @@ func _downsample_sample_binding(source_binding: Dictionary, source_grid_steps: i
 	var source_heights: PackedFloat32Array = source_binding.get("heights", PackedFloat32Array())
 	if target_grid_steps <= 0 or source_grid_steps <= 0 or target_grid_steps >= source_grid_steps:
 		return source_binding.duplicate(true)
-	var factor := int(source_grid_steps / target_grid_steps)
+	var factor := int(float(source_grid_steps) / float(target_grid_steps))
 	if factor <= 0 or factor * target_grid_steps != source_grid_steps:
 		return source_binding.duplicate(true)
 	var source_row_stride := source_grid_steps + 1
@@ -145,17 +145,17 @@ func _resolve_sample_binding(chunk_size_m: float, chunk_data: Dictionary, profil
 	var terrain_page_provider = chunk_data.get("terrain_page_provider")
 	if terrain_page_provider != null and terrain_page_provider.has_method("resolve_chunk_sample_binding"):
 		var page_binding: Dictionary = terrain_page_provider.resolve_chunk_sample_binding(chunk_data, grid_steps)
-		var heights: PackedFloat32Array = page_binding.get("heights", PackedFloat32Array())
+		var page_heights: PackedFloat32Array = page_binding.get("heights", PackedFloat32Array())
 		return {
-			"heights": heights,
+			"heights": page_heights,
 			"normals": page_binding.get("normals", PackedVector3Array()),
 			"runtime_hit": bool(page_binding.get("runtime_hit", false)),
 			"page_contract": (page_binding.get("page_contract", {}) as Dictionary).duplicate(true),
 			"runtime_key": str(page_binding.get("runtime_key", "")),
 			"chunk_size_m": chunk_size_m,
 			"sample_stats": {
-				"current_vertex_sample_count": heights.size(),
-				"unique_vertex_sample_count": heights.size(),
+				"current_vertex_sample_count": page_heights.size(),
+				"unique_vertex_sample_count": page_heights.size(),
 				"duplicate_sample_count": 0,
 				"raw_terrain_current_usec": 0,
 				"shaped_current_usec": 0,
@@ -169,15 +169,15 @@ func _resolve_sample_binding(chunk_size_m: float, chunk_data: Dictionary, profil
 	var sample_started_usec := Time.get_ticks_usec()
 	var template: Dictionary = _template_catalog.get_template(chunk_size_m, grid_steps)
 	var local_points: PackedVector2Array = template.get("local_points", PackedVector2Array())
-	var heights := PackedFloat32Array()
-	heights.resize(local_points.size())
+	var sampled_heights := PackedFloat32Array()
+	sampled_heights.resize(local_points.size())
 	for point_index in range(local_points.size()):
 		var local_point := local_points[point_index]
-		heights[point_index] = CityChunkGroundSampler.sample_height(local_point, chunk_data, profile)
+		sampled_heights[point_index] = CityChunkGroundSampler.sample_height(local_point, chunk_data, profile)
 	var shaped_usec := Time.get_ticks_usec() - sample_started_usec
 	return {
-		"heights": heights,
-		"normals": _build_normals(heights, row_stride, chunk_size_m),
+		"heights": sampled_heights,
+		"normals": _build_normals(sampled_heights, row_stride, chunk_size_m),
 		"runtime_hit": false,
 		"page_contract": {},
 		"chunk_size_m": chunk_size_m,

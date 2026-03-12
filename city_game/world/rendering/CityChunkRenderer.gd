@@ -672,17 +672,17 @@ func _queue_surface_job(chunk_id: String, payload: Dictionary, page_header: Dict
 		return
 
 	var page_request := _surface_page_provider.build_page_request(payload, detail_mode, page_header)
-	var waiter_headers := {
+	var initial_waiter_headers := {
 		chunk_id: page_header.duplicate(true),
 	}
 	if _pending_surface_jobs.size() >= SURFACE_ASYNC_CONCURRENCY_LIMIT:
 		_queued_surface_jobs.append({
 			"runtime_key": runtime_key,
 			"page_request": page_request,
-			"waiter_headers": waiter_headers,
+			"waiter_headers": initial_waiter_headers,
 		})
 		return
-	_dispatch_surface_job_request(runtime_key, page_request, waiter_headers)
+	_dispatch_surface_job_request(runtime_key, page_request, initial_waiter_headers)
 
 func _dispatch_surface_job_request(runtime_key: String, page_request: Dictionary, waiter_headers: Dictionary) -> void:
 	var thread := Thread.new()

@@ -38,7 +38,9 @@ func _run() -> void:
 	streamer.update_for_world_position(target_world_position)
 	controller.update_active_chunks(streamer.get_active_chunk_entries(), target_world_position, 0.25)
 	var promoted_state_snapshot: Dictionary = controller.get_state_snapshot(pedestrian_id)
-	if not T.require_true(self, str(promoted_state_snapshot.get("tier", "")) == "tier2", "Approaching the candidate must promote it into Tier 2"):
+	if not T.require_true(self, str(promoted_state_snapshot.get("tier", "")) == "tier3", "Approaching the candidate must promote it into Tier 3 once reactive nearfield takes over"):
+		return
+	if not T.require_true(self, ["yield", "sidestep"].has(str(promoted_state_snapshot.get("reaction_state", ""))), "Reactive nearfield promotion must attach a proximity reaction state"):
 		return
 	if not T.require_true(self, str(promoted_state_snapshot.get("pedestrian_id", "")) == pedestrian_id, "Pedestrian ID must remain stable after promotion"):
 		return
@@ -52,7 +54,9 @@ func _run() -> void:
 	var demoted_state_snapshot: Dictionary = controller.get_state_snapshot(pedestrian_id)
 	print("CITY_PEDESTRIAN_IDENTITY_CONTINUITY %s" % JSON.stringify(demoted_state_snapshot))
 
-	if not T.require_true(self, str(demoted_state_snapshot.get("tier", "")) == "tier1", "Moving away from the candidate must demote it back into Tier 1 while it stays active"):
+	if not T.require_true(self, str(demoted_state_snapshot.get("tier", "")) == "tier1", "Moving away from the candidate must demote it back into Tier 1 after the reactive nearfield is cleared"):
+		return
+	if not T.require_true(self, str(demoted_state_snapshot.get("reaction_state", "")) == "none", "Leaving the reactive nearfield must clear the transient proximity reaction"):
 		return
 	if not T.require_true(self, str(demoted_state_snapshot.get("pedestrian_id", "")) == pedestrian_id, "Pedestrian ID must remain stable after demotion"):
 		return

@@ -37,10 +37,12 @@
 - Create: `city_game/world/pedestrians/streaming/CityPedestrianStreamer.gd`
 - Create: `city_game/world/pedestrians/simulation/CityPedestrianReactiveAgent.gd`
 - Create: `city_game/world/pedestrians/simulation/CityPedestrianReactionModel.gd`
-- Modify: `city_game/combat/CityProjectile.gd`
-- Modify: `city_game/combat/CityGrenade.gd`
-- Modify: `city_game/scripts/PlayerController.gd`
-- Modify: `city_game/world/streaming/CityChunkLifecycle.gd`
+- Modify: `city_game/scripts/CityPrototype.gd`
+- Modify: `city_game/world/pedestrians/rendering/CityPedestrianCrowdRenderer.gd`
+- Modify: `city_game/world/pedestrians/simulation/CityPedestrianState.gd`
+- Modify: `city_game/world/pedestrians/simulation/CityPedestrianTierController.gd`
+- Modify: `city_game/world/rendering/CityChunkRenderer.gd`
+- Modify: `city_game/world/rendering/CityChunkScene.gd`
 - Create: `tests/world/test_city_pedestrian_streaming_budget.gd`
 - Create: `tests/world/test_city_pedestrian_page_cache.gd`
 - Create: `tests/world/test_city_pedestrian_reactive_behavior.gd`
@@ -71,3 +73,19 @@
 - 如果 Tier 3 promotion 没有硬预算，reactive crowd 会很快从“少量近场反应”扩散成“全城 AI”。
 - 如果 crowd streamer 和 chunk lifecycle 脱节，首访与回访都可能重新变成热路径。
 - 如果 reaction model 直接依赖武器脚本细节，后续玩法扩展会让 pedestrian 系统非常脆弱。
+
+## Result
+
+- 已落地 `CityPedestrianBudget + CityPedestrianStreamer + CityPedestrianReactionModel + CityPedestrianReactiveAgent` 的分层运行时骨架，并由 `CityPedestrianTierController` 统一做 Tier 1/2/3 分配。
+- `nearfield_budget = 96`，`tier3_budget = 24`，其中 Tier 3 只承载玩家近身、子弹近掠、枪声与爆炸触发的 reactive nearfield。
+- `CityPrototype.gd` 已把 projectile / grenade explosion 事件接到 `CityChunkRenderer -> CityPedestrianTierController`，避免 pedestrian 系统直接耦合武器脚本实现细节。
+- `CityPedestrianStreamer.gd` 已提供 page/cache 生命周期，当前以 chunk page 为单位保证 cache hit 与 duplicate page load 可观测。
+- identity continuity 契约在 M4 下仍成立，但“玩家贴近 pedestrian”现在会优先升为 Tier 3 reactive nearfield，而不再沿用 M3 的纯 Tier 2 接近逻辑。
+
+## Verification
+
+- `res://tests/world/test_city_pedestrian_streaming_budget.gd`
+- `res://tests/world/test_city_pedestrian_page_cache.gd`
+- `res://tests/world/test_city_pedestrian_reactive_behavior.gd`
+- `res://tests/world/test_city_pedestrian_projectile_reaction.gd`
+- `res://tests/e2e/test_city_pedestrian_travel_flow.gd`

@@ -15,7 +15,7 @@ research 入口：[2026-03-12-open-world-pedestrian-crowd-performance-research.m
 | M1 行人世界模型 | deterministic crowd config、density profile、spawn seed 与 chunk query API | 固定 seed 下 pedestrian roster / density / lane references 可复现；不依赖场景节点即可查询 | `tests/world/test_city_pedestrian_world_model.gd`、`tests/world/test_city_pedestrian_density_profile.gd` | done |
 | M2 Sidewalk / Crossing Lane Graph | 从 `road_graph` / `block` 派生 pedestrian lane graph，并保证 spawn grounding 与跨 chunk 连续 | sidewalk / crossing lane 拓扑连续；spawn anchors 不长在机动车路面上 | `tests/world/test_city_pedestrian_lane_graph.gd`、`tests/world/test_city_pedestrian_spawn_grounding.gd`、`tests/world/test_city_pedestrian_lane_graph_continuity.gd` | done |
 | M3 Ambient Crowd Tiering | Tier 0-2 表示、`MultiMesh` 中远景、近景 lightweight agents、identity continuity | Tier 1 batched representation 成立；tier 切换保留 `pedestrian_id`；Tier 1/2 数量不超预算 | `tests/world/test_city_pedestrian_lod_contract.gd`、`tests/world/test_city_pedestrian_batch_rendering.gd`、`tests/world/test_city_pedestrian_identity_continuity.gd` | done |
-| M4 Streaming Budget + Reactive Nearfield | promotion / demotion / despawn、near-player reaction、局部避让与 travel 稳定性 | `8` chunk travel 无 count leak；Tier 3 `<= 24`；玩家靠近/开火/爆炸可触发近场反应 | `tests/world/test_city_pedestrian_streaming_budget.gd`、`tests/world/test_city_pedestrian_reactive_behavior.gd`、`tests/e2e/test_city_pedestrian_travel_flow.gd` | todo |
+| M4 Streaming Budget + Reactive Nearfield | promotion / demotion / despawn、near-player reaction、局部避让与 travel 稳定性 | `8` chunk travel 无 count leak；Tier 3 `<= 24`；玩家靠近/开火/爆炸可触发近场反应 | `tests/world/test_city_pedestrian_streaming_budget.gd`、`tests/world/test_city_pedestrian_page_cache.gd`、`tests/world/test_city_pedestrian_reactive_behavior.gd`、`tests/world/test_city_pedestrian_projectile_reaction.gd`、`tests/e2e/test_city_pedestrian_travel_flow.gd` | done |
 | M5 红线收口与观测护栏 | crowd profile 拆项、overlay / minimap debug layer、全局 crowd/FPS 调试开关、fresh warm/first-visit profiling | `pedestrian_mode = lite` 下 warm / first-visit 都守住 `16.67ms/frame`；crowd 指标可观测；`小键盘 *` / `小键盘 -` 调试开关成立 | `tests/e2e/test_city_pedestrian_performance_profile.gd`、`tests/world/test_city_pedestrian_debug_overlay.gd`、`tests/world/test_city_fps_overlay_toggle.gd`、`tests/world/test_city_minimap_pedestrian_debug_layer.gd` | todo |
 
 ## 计划索引
@@ -33,8 +33,8 @@ research 入口：[2026-03-12-open-world-pedestrian-crowd-performance-research.m
 | REQ-0002-001 | `v6-pedestrian-world-model.md` | `tests/world/test_city_pedestrian_world_model.gd`、`tests/world/test_city_pedestrian_density_profile.gd` | `--script res://tests/world/test_city_pedestrian_world_model.gd` | 2026-03-12 本地 headless `PASS`，已验证 deterministic query、density profile 与 lane references 可复现 | done |
 | REQ-0002-002 | `v6-pedestrian-lane-graph.md` | `tests/world/test_city_pedestrian_lane_graph.gd`、`tests/world/test_city_pedestrian_lane_graph_continuity.gd`、`tests/world/test_city_pedestrian_spawn_grounding.gd` | `--script res://tests/world/test_city_pedestrian_lane_graph.gd` | 2026-03-12 本地 headless `PASS`，已验证 sidewalk / crossing lane graph 连续，spawn anchors 不落在车行道内部 | done |
 | REQ-0002-003 | `v6-pedestrian-ambient-tiering.md` | `tests/world/test_city_pedestrian_lod_contract.gd`、`tests/world/test_city_pedestrian_batch_rendering.gd`、`tests/world/test_city_pedestrian_identity_continuity.gd` | `--script res://tests/world/test_city_pedestrian_lod_contract.gd` | 2026-03-12 本地 headless `PASS`，已验证 Tier 0-2、Tier 1 `MultiMesh` 合批、近景 lightweight agents 与 identity continuity | done |
-| REQ-0002-004 | `v6-pedestrian-streaming-and-reactivity.md` | `tests/world/test_city_pedestrian_streaming_budget.gd`、`tests/world/test_city_pedestrian_page_cache.gd` | `--script res://tests/e2e/test_city_pedestrian_travel_flow.gd` | 待实现 | todo |
-| REQ-0002-005 | `v6-pedestrian-streaming-and-reactivity.md` | `tests/world/test_city_pedestrian_reactive_behavior.gd`、`tests/world/test_city_pedestrian_projectile_reaction.gd` | `--script res://tests/e2e/test_city_pedestrian_travel_flow.gd` | 待实现 | todo |
+| REQ-0002-004 | `v6-pedestrian-streaming-and-reactivity.md` | `tests/world/test_city_pedestrian_streaming_budget.gd`、`tests/world/test_city_pedestrian_page_cache.gd` | `--script res://tests/e2e/test_city_pedestrian_travel_flow.gd` | 2026-03-12 本地 headless `PASS`，已验证 `8` chunk travel 无 count leak、page cache 命中有效、duplicate page load 保持为 `0` | done |
+| REQ-0002-005 | `v6-pedestrian-streaming-and-reactivity.md` | `tests/world/test_city_pedestrian_reactive_behavior.gd`、`tests/world/test_city_pedestrian_projectile_reaction.gd` | `--script res://tests/e2e/test_city_pedestrian_travel_flow.gd` | 2026-03-12 本地 headless `PASS`，已验证玩家靠近、开火、子弹近掠与爆炸都可触发 Tier 3 reactive nearfield，且 Tier 3 持续 `<= 24` | done |
 | REQ-0002-006 | `v6-pedestrian-redline-guard.md` | `tests/world/test_city_pedestrian_debug_overlay.gd`、`tests/world/test_city_minimap_pedestrian_debug_layer.gd` | `--script res://tests/e2e/test_city_pedestrian_performance_profile.gd` | 待实现 | todo |
 | REQ-0002-007 | `v6-pedestrian-redline-guard.md` | `tests/world/test_city_streaming_frame_guard.gd`、`tests/world/test_city_pedestrian_profile_stats.gd` | `--script res://tests/e2e/test_city_pedestrian_performance_profile.gd` | 待实现 | todo |
 
@@ -44,8 +44,6 @@ research 入口：[2026-03-12-open-world-pedestrian-crowd-performance-research.m
 
 ## 差异列表
 
-- 当前项目已具备 `road_graph`、chunk streaming、terrain / road surface 性能底盘、小地图与基础 debug overlay，但街道仍缺乏可信人流。
-- 当前没有与 `road_graph` 同源的 pedestrian lane graph，无法生成连续的 sidewalk / crossing crowd。
-- 当前没有 crowd 的 tiered representation，若直接上完整 agent，极易重新打穿 `16.67ms/frame` 红线。
-- 当前没有 crowd profile 指标、crowd minimap 调试层、crowd page/cache 命中证据，也没有“有人流时”的 E2E travel/profile 基线。
-- 因此 `v6` 的主线不是“先摆人”，而是“先把 world model -> lane graph -> tiering -> streaming budget -> redline guard 一条链打通”。
+- `v6` 的 pedestrian world model、lane graph、ambient tiering 与 streaming/reactive nearfield 已经打通，但还没有 fresh profiling 证明 `pedestrian_mode = lite` 在 warm / first-visit 下持续守住 `16.67ms/frame`。
+- 当前仍缺 crowd profile 拆项、crowd minimap debug layer、全局 crowd/FPS 调试开关与对应回归测试，M5 需要把“能跑”收口到“可观测且守红线”。
+- 现阶段仍禁止把 reactive nearfield 扩展成全城高成本 agent；后续任何 pedestrian 新功能都必须继续服从预算、流式加载连续性和运行期性能。

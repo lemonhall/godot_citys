@@ -228,6 +228,7 @@ func get_renderer_stats() -> Dictionary:
 		"terrain_lod_contract": terrain_lod_contract,
 		"pedestrian_tier1_count": int(pedestrian_crowd_stats.get("tier1_count", 0)),
 		"pedestrian_tier2_count": int(pedestrian_crowd_stats.get("tier2_count", 0)),
+		"pedestrian_tier3_count": int(pedestrian_crowd_stats.get("tier3_count", 0)),
 		"pedestrian_multimesh_instance_count": int(pedestrian_crowd_stats.get("tier1_instance_count", 0)),
 	}
 
@@ -242,6 +243,7 @@ func get_pedestrian_crowd_stats() -> Dictionary:
 			"tier0_count": 0,
 			"tier1_count": 0,
 			"tier2_count": 0,
+			"tier3_count": 0,
 			"tier1_instance_count": 0,
 		}
 	return (_pedestrian_crowd.get_crowd_stats() as Dictionary).duplicate(true)

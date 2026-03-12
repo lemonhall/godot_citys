@@ -163,6 +163,11 @@ func get_chunk_streamer():
 func get_chunk_renderer():
 	return chunk_renderer
 
+func get_pedestrian_runtime_snapshot() -> Dictionary:
+	if chunk_renderer == null or not chunk_renderer.has_method("get_pedestrian_runtime_snapshot"):
+		return {}
+	return chunk_renderer.get_pedestrian_runtime_snapshot()
+
 func get_navigation_runtime():
 	return _navigation_runtime
 
@@ -337,6 +342,8 @@ func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 		Color(0.360784, 0.713725, 1.0, 1.0)
 	)
 	_projectile_root.add_child(projectile)
+	if chunk_renderer != null and chunk_renderer.has_method("notify_projectile_event"):
+		chunk_renderer.notify_projectile_event(origin, direction, projectile.max_distance_m if projectile != null else 36.0)
 	return projectile
 
 func _spawn_grenade(origin: Vector3, launch_velocity: Vector3) -> Node3D:
@@ -345,8 +352,15 @@ func _spawn_grenade(origin: Vector3, launch_velocity: Vector3) -> Node3D:
 		return null
 	var grenade := CityGrenade.new()
 	grenade.configure(origin, launch_velocity, player, player)
+	if grenade.has_signal("exploded"):
+		grenade.exploded.connect(_on_player_grenade_exploded)
 	_grenade_root.add_child(grenade)
 	return grenade
+
+func _on_player_grenade_exploded(world_position: Vector3, radius_m: float) -> void:
+	if chunk_renderer == null or not chunk_renderer.has_method("notify_explosion_event"):
+		return
+	chunk_renderer.notify_explosion_event(world_position, radius_m)
 
 func _connect_enemy_combat(enemy: Node) -> void:
 	if enemy == null or not enemy.has_signal("projectile_fire_requested"):

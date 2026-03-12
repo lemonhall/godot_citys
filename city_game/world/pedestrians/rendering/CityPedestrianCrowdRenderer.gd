@@ -1,18 +1,23 @@
 extends Node3D
 
 const CityPedestrianCrowdBatch := preload("res://city_game/world/pedestrians/rendering/CityPedestrianCrowdBatch.gd")
+const CityPedestrianReactiveAgent := preload("res://city_game/world/pedestrians/simulation/CityPedestrianReactiveAgent.gd")
 
 var _chunk_center := Vector3.ZERO
 var _pedestrian_batch: CityPedestrianCrowdBatch = null
 var _tier2_root: Node3D = null
 var _tier2_agents: Dictionary = {}
+var _tier3_root: Node3D = null
+var _tier3_agents: Dictionary = {}
 var _last_snapshot := {
 	"chunk_id": "",
 	"tier0_count": 0,
 	"tier1_count": 0,
 	"tier2_count": 0,
+	"tier3_count": 0,
 	"tier1_states": [],
 	"tier2_states": [],
+	"tier3_states": [],
 }
 
 func setup(chunk_data: Dictionary) -> void:
@@ -27,6 +32,7 @@ func apply_chunk_snapshot(snapshot: Dictionary) -> void:
 	var tier1_states: Array = normalized_snapshot.get("tier1_states", [])
 	_pedestrian_batch.configure_from_states(tier1_states, _chunk_center)
 	_sync_tier2_agents(normalized_snapshot.get("tier2_states", []))
+	_sync_tier3_agents(normalized_snapshot.get("tier3_states", []))
 
 func get_batch() -> MultiMeshInstance3D:
 	_ensure_nodes()
@@ -37,6 +43,7 @@ func get_crowd_stats() -> Dictionary:
 		"tier0_count": int(_last_snapshot.get("tier0_count", 0)),
 		"tier1_count": int(_last_snapshot.get("tier1_count", 0)),
 		"tier2_count": int(_last_snapshot.get("tier2_count", 0)),
+		"tier3_count": int(_last_snapshot.get("tier3_count", 0)),
 		"tier1_instance_count": _pedestrian_batch.multimesh.instance_count if _pedestrian_batch != null and _pedestrian_batch.multimesh != null else 0,
 	}
 
@@ -48,6 +55,10 @@ func _ensure_nodes() -> void:
 		_tier2_root = Node3D.new()
 		_tier2_root.name = "Tier2Agents"
 		add_child(_tier2_root)
+	if _tier3_root == null:
+		_tier3_root = Node3D.new()
+		_tier3_root.name = "Tier3Agents"
+		add_child(_tier3_root)
 
 func _sync_tier2_agents(states: Array) -> void:
 	var keep_ids: Dictionary = {}
@@ -68,6 +79,27 @@ func _sync_tier2_agents(states: Array) -> void:
 		if agent_root != null and is_instance_valid(agent_root):
 			agent_root.queue_free()
 		_tier2_agents.erase(pedestrian_id)
+
+func _sync_tier3_agents(states: Array) -> void:
+	var keep_ids: Dictionary = {}
+	for state_variant in states:
+		var state: Dictionary = state_variant
+		var pedestrian_id := str(state.get("pedestrian_id", ""))
+		keep_ids[pedestrian_id] = true
+		var agent_root: CityPedestrianReactiveAgent = _tier3_agents.get(pedestrian_id)
+		if agent_root == null:
+			agent_root = CityPedestrianReactiveAgent.new()
+			agent_root.name = pedestrian_id.replace(":", "_")
+			_tier3_agents[pedestrian_id] = agent_root
+			_tier3_root.add_child(agent_root)
+		agent_root.apply_state(state, _chunk_center)
+	for pedestrian_id in _tier3_agents.keys():
+		if keep_ids.has(str(pedestrian_id)):
+			continue
+		var agent_root: CityPedestrianReactiveAgent = _tier3_agents[pedestrian_id]
+		if agent_root != null and is_instance_valid(agent_root):
+			agent_root.queue_free()
+		_tier3_agents.erase(pedestrian_id)
 
 func _build_tier2_agent(pedestrian_id: String) -> Node3D:
 	var root := Node3D.new()
@@ -107,14 +139,18 @@ func _normalize_snapshot(snapshot: Dictionary) -> Dictionary:
 			"tier0_count": 0,
 			"tier1_count": 0,
 			"tier2_count": 0,
+			"tier3_count": 0,
 			"tier1_states": [],
 			"tier2_states": [],
+			"tier3_states": [],
 		}
 	return {
 		"chunk_id": str(snapshot.get("chunk_id", "")),
 		"tier0_count": int(snapshot.get("tier0_count", 0)),
 		"tier1_count": int(snapshot.get("tier1_count", 0)),
 		"tier2_count": int(snapshot.get("tier2_count", 0)),
+		"tier3_count": int(snapshot.get("tier3_count", 0)),
 		"tier1_states": (snapshot.get("tier1_states", []) as Array).duplicate(true),
 		"tier2_states": (snapshot.get("tier2_states", []) as Array).duplicate(true),
+		"tier3_states": (snapshot.get("tier3_states", []) as Array).duplicate(true),
 	}

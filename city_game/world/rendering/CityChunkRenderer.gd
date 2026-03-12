@@ -72,6 +72,9 @@ var _terrain_commit_total_usec := 0
 var _terrain_commit_max_usec := 0
 var _terrain_commit_last_usec := 0
 var _pedestrian_tier_controller = null
+var _last_pedestrian_player_position := Vector3.ZERO
+var _last_pedestrian_player_velocity := Vector3.ZERO
+var _has_pedestrian_player_context := false
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
@@ -98,6 +101,9 @@ func setup(config, world_data: Dictionary) -> void:
 	_last_retire_count = 0
 	_last_queue_process_frame = -1
 	_pedestrian_tier_controller = null
+	_last_pedestrian_player_position = Vector3.ZERO
+	_last_pedestrian_player_velocity = Vector3.ZERO
+	_has_pedestrian_player_context = false
 	if _world_data.has("pedestrian_query"):
 		_pedestrian_tier_controller = CityPedestrianTierController.new()
 		_pedestrian_tier_controller.setup(_config, _world_data)
@@ -144,6 +150,9 @@ func _notification(what: int) -> void:
 	_surface_page_provider.clear()
 	_terrain_page_provider.clear()
 	_pedestrian_tier_controller = null
+	_last_pedestrian_player_position = Vector3.ZERO
+	_last_pedestrian_player_velocity = Vector3.ZERO
+	_has_pedestrian_player_context = false
 
 func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> void:
 	if _config == null:
@@ -343,6 +352,7 @@ func get_renderer_stats() -> Dictionary:
 	var pedestrian_multimesh_instance_total := 0
 	var pedestrian_tier1_total := 0
 	var pedestrian_tier2_total := 0
+	var pedestrian_tier3_total := 0
 	for chunk_id in get_chunk_ids():
 		var chunk_scene = _chunk_scenes[chunk_id]
 		var chunk_stats: Dictionary = chunk_scene.get_renderer_stats()
@@ -353,19 +363,26 @@ func get_renderer_stats() -> Dictionary:
 		pedestrian_multimesh_instance_total += int(chunk_stats.get("pedestrian_multimesh_instance_count", 0))
 		pedestrian_tier1_total += int(chunk_stats.get("pedestrian_tier1_count", 0))
 		pedestrian_tier2_total += int(chunk_stats.get("pedestrian_tier2_count", 0))
+		pedestrian_tier3_total += int(chunk_stats.get("pedestrian_tier3_count", 0))
 	var pedestrian_budget_contract := {}
 	var pedestrian_global_snapshot := {}
+	var pedestrian_runtime_snapshot := {}
 	if _pedestrian_tier_controller != null:
 		pedestrian_budget_contract = _pedestrian_tier_controller.get_budget_contract()
 		pedestrian_global_snapshot = _pedestrian_tier_controller.get_global_snapshot()
+		pedestrian_runtime_snapshot = _pedestrian_tier_controller.get_runtime_snapshot()
 	var stats := {
 		"active_rendered_chunk_count": get_chunk_scene_count(),
 		"multimesh_instance_total": multimesh_instance_total,
 		"pedestrian_multimesh_instance_total": pedestrian_multimesh_instance_total,
 		"pedestrian_tier1_total": pedestrian_tier1_total,
 		"pedestrian_tier2_total": pedestrian_tier2_total,
+		"pedestrian_tier3_total": pedestrian_tier3_total,
 		"pedestrian_active_state_count": int(pedestrian_global_snapshot.get("active_state_count", 0)),
 		"pedestrian_budget_contract": pedestrian_budget_contract.duplicate(true),
+		"pedestrian_page_cache_hit_count": int(pedestrian_runtime_snapshot.get("page_cache_hit_count", 0)),
+		"pedestrian_page_cache_miss_count": int(pedestrian_runtime_snapshot.get("page_cache_miss_count", 0)),
+		"pedestrian_duplicate_page_load_count": int(pedestrian_runtime_snapshot.get("duplicate_page_load_count", 0)),
 		"lod_mode_counts": lod_mode_counts,
 	}
 	stats.merge(get_streaming_budget_stats(), true)
@@ -376,6 +393,21 @@ func get_chunk_scene_stats(chunk_id: String) -> Dictionary:
 	if not _chunk_scenes.has(chunk_id):
 		return {}
 	return (_chunk_scenes[chunk_id] as Node).get_renderer_stats()
+
+func get_pedestrian_runtime_snapshot() -> Dictionary:
+	if _pedestrian_tier_controller == null or not _pedestrian_tier_controller.has_method("get_runtime_snapshot"):
+		return {}
+	return _pedestrian_tier_controller.get_runtime_snapshot()
+
+func notify_projectile_event(origin: Vector3, direction: Vector3, range_m: float = 36.0) -> void:
+	if _pedestrian_tier_controller == null or not _pedestrian_tier_controller.has_method("notify_projectile_event"):
+		return
+	_pedestrian_tier_controller.notify_projectile_event(origin, direction, range_m)
+
+func notify_explosion_event(world_position: Vector3, radius_m: float) -> void:
+	if _pedestrian_tier_controller == null or not _pedestrian_tier_controller.has_method("notify_explosion_event"):
+		return
+	_pedestrian_tier_controller.notify_explosion_event(world_position, radius_m)
 
 func _build_target_chunk_map(active_chunk_entries: Array) -> Dictionary:
 	var map := {}
@@ -521,6 +553,15 @@ func _update_lod_states(player_position: Vector3) -> void:
 func _update_pedestrian_crowd(player_position: Vector3, delta: float) -> void:
 	if _pedestrian_tier_controller == null:
 		return
+	var player_velocity := Vector3.ZERO
+	if _has_pedestrian_player_context and delta > 0.0:
+		player_velocity = (player_position - _last_pedestrian_player_position) / delta
+	elif _has_pedestrian_player_context:
+		player_velocity = _last_pedestrian_player_velocity
+	_pedestrian_tier_controller.set_player_context(player_position, player_velocity)
+	_last_pedestrian_player_position = player_position
+	_last_pedestrian_player_velocity = player_velocity
+	_has_pedestrian_player_context = true
 	_pedestrian_tier_controller.update_active_chunks(_last_active_chunk_entries, player_position, delta)
 	for chunk_id in get_chunk_ids():
 		var chunk_scene: Node3D = _chunk_scenes[chunk_id]

@@ -2,8 +2,13 @@ extends SceneTree
 
 const T := preload("res://tests/_test_util.gd")
 
+var _primary_fire_request_count := 0
+
 func _init() -> void:
 	call_deferred("_run")
+
+func _on_primary_fire_requested() -> void:
+	_primary_fire_request_count += 1
 
 func _run() -> void:
 	var scene := load("res://city_game/scenes/CityPrototype.tscn")
@@ -26,6 +31,9 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("get_active_projectile_count"), "CityPrototype must expose get_active_projectile_count() for combat verification"):
 		return
+	var primary_fire_callable := Callable(self, "_on_primary_fire_requested")
+	if not player.primary_fire_requested.is_connected(primary_fire_callable):
+		player.primary_fire_requested.connect(primary_fire_callable)
 
 	var camera := player.get_node_or_null("CameraRig/Camera3D") as Camera3D
 	if not T.require_true(self, camera != null, "Player combat contract requires CameraRig/Camera3D for third-person firing"):
@@ -54,11 +62,16 @@ func _run() -> void:
 		return
 
 	var projectile_count_before_auto := int(world.get_active_projectile_count())
+	_primary_fire_request_count = 0
+	var peak_projectile_count := projectile_count_before_auto
 	player.set_primary_fire_active(true)
 	for _frame in range(24):
-		await process_frame
+		await physics_frame
+		peak_projectile_count = maxi(peak_projectile_count, int(world.get_active_projectile_count()))
 	player.set_primary_fire_active(false)
-	if not T.require_true(self, int(world.get_active_projectile_count()) >= projectile_count_before_auto + 2, "Holding primary fire must produce automatic rifle bursts instead of single-shot only"):
+	if not T.require_true(self, _primary_fire_request_count >= 2, "Holding primary fire must emit repeated rifle fire requests instead of single-shot only"):
+		return
+	if not T.require_true(self, peak_projectile_count >= projectile_count_before_auto + 1, "Holding primary fire must keep spawning additional projectiles during the automatic burst window"):
 		return
 
 	world.queue_free()

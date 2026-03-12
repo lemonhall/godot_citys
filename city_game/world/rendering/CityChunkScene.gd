@@ -20,6 +20,7 @@ const MID_THRESHOLD_M := 1600.0
 const TERRAIN_GRID_STEPS := 12
 const TERRAIN_GRID_STEPS_MID := 6
 const TERRAIN_GRID_STEPS_FAR := 3
+const BUILDING_ORNAMENT_OVERLAP_M := 0.08
 
 var _chunk_data: Dictionary = {}
 var _profile: Dictionary = {}
@@ -321,27 +322,39 @@ func _build_building(building: Dictionary) -> Node3D:
 	var archetype_id := str(building.get("archetype_id", "mass"))
 	match archetype_id:
 		"slab":
-			_add_local_box(building_root, "FinWest", Vector3(-size.x * 0.34, 0.0, 0.0), Vector3(0.9, size.y * 0.92, size.z + 0.2), accent)
-			_add_local_box(building_root, "FinEast", Vector3(size.x * 0.34, 0.0, 0.0), Vector3(0.9, size.y * 0.92, size.z + 0.2), accent)
+			var fin_size := Vector3(0.9, size.y * 0.92, size.z + 0.2)
+			_add_side_box(building_root, "FinWest", size, "west", 0.0, 0.0, fin_size, accent)
+			_add_side_box(building_root, "FinEast", size, "east", 0.0, 0.0, fin_size, accent)
 		"needle":
-			_add_local_box(building_root, "Crown", Vector3(0.0, size.y * 0.38, 0.0), Vector3(size.x * 0.56, maxf(size.y * 0.16, 2.6), size.z * 0.56), roof)
-			_add_local_box(building_root, "Spire", Vector3(0.0, size.y * 0.5 + 1.8, 0.0), Vector3(size.x * 0.18, 3.6, size.z * 0.18), accent)
+			var crown_size := Vector3(size.x * 0.56, maxf(size.y * 0.16, 2.6), size.z * 0.56)
+			var spire_size := Vector3(size.x * 0.18, 3.6, size.z * 0.18)
+			_add_roof_box(building_root, "Crown", size, Vector2.ZERO, crown_size, roof)
+			_add_roof_stack_box(building_root, "Spire", size, Vector2.ZERO, crown_size.y - BUILDING_ORNAMENT_OVERLAP_M, spire_size, accent)
 		"courtyard":
-			_add_local_box(building_root, "WingNorth", Vector3(0.0, 0.0, -size.z * 0.28), Vector3(size.x, size.y * 0.22, size.z * 0.22), accent)
-			_add_local_box(building_root, "WingSouth", Vector3(0.0, 0.0, size.z * 0.28), Vector3(size.x, size.y * 0.22, size.z * 0.22), accent)
-			_add_local_box(building_root, "RoofFrame", Vector3(0.0, size.y * 0.36, 0.0), Vector3(size.x * 0.82, maxf(size.y * 0.08, 1.4), size.z * 0.82), roof)
+			var wing_size := Vector3(size.x, size.y * 0.22, size.z * 0.22)
+			var roof_frame_size := Vector3(size.x * 0.82, maxf(size.y * 0.08, 1.4), size.z * 0.82)
+			_add_side_box(building_root, "WingNorth", size, "north", 0.0, 0.0, wing_size, accent)
+			_add_side_box(building_root, "WingSouth", size, "south", 0.0, 0.0, wing_size, accent)
+			_add_roof_box(building_root, "RoofFrame", size, Vector2.ZERO, roof_frame_size, roof)
 		"podium_tower":
-			_add_local_box(building_root, "Podium", Vector3(0.0, -size.y * 0.34, 0.0), Vector3(size.x * 1.9, maxf(size.y * 0.24, 5.0), size.z * 1.9), accent)
-			_add_local_box(building_root, "Cap", Vector3(0.0, size.y * 0.4, 0.0), Vector3(size.x * 0.5, maxf(size.y * 0.1, 1.6), size.z * 0.5), roof)
+			var podium_size := Vector3(size.x * 1.9, maxf(size.y * 0.24, 5.0), size.z * 1.9)
+			var cap_size := Vector3(size.x * 0.5, maxf(size.y * 0.1, 1.6), size.z * 0.5)
+			_add_ground_box(building_root, "Podium", size, Vector2.ZERO, podium_size, accent)
+			_add_roof_box(building_root, "Cap", size, Vector2.ZERO, cap_size, roof)
 		"step_midrise":
-			_add_local_box(building_root, "SetbackA", Vector3(0.0, size.y * 0.2, 0.0), Vector3(size.x * 0.78, maxf(size.y * 0.2, 2.0), size.z * 0.78), accent)
-			_add_local_box(building_root, "SetbackB", Vector3(0.0, size.y * 0.38, 0.0), Vector3(size.x * 0.56, maxf(size.y * 0.14, 1.6), size.z * 0.56), roof)
+			var setback_a_size := Vector3(size.x * 0.78, maxf(size.y * 0.2, 2.0), size.z * 0.78)
+			var setback_b_size := Vector3(size.x * 0.56, maxf(size.y * 0.14, 1.6), size.z * 0.56)
+			_add_roof_box(building_root, "SetbackA", size, Vector2.ZERO, setback_a_size, accent)
+			_add_roof_stack_box(building_root, "SetbackB", size, Vector2.ZERO, setback_a_size.y - BUILDING_ORNAMENT_OVERLAP_M, setback_b_size, roof)
 		"midrise_bar":
-			_add_local_box(building_root, "RoofUnitA", Vector3(-size.x * 0.18, size.y * 0.36, 0.0), Vector3(size.x * 0.22, maxf(size.y * 0.12, 1.4), size.z * 0.24), roof)
-			_add_local_box(building_root, "RoofUnitB", Vector3(size.x * 0.18, size.y * 0.36, 0.0), Vector3(size.x * 0.22, maxf(size.y * 0.12, 1.4), size.z * 0.24), accent)
+			var roof_unit_size := Vector3(size.x * 0.22, maxf(size.y * 0.12, 1.4), size.z * 0.24)
+			_add_roof_box(building_root, "RoofUnitA", size, Vector2(-size.x * 0.18, 0.0), roof_unit_size, roof)
+			_add_roof_box(building_root, "RoofUnitB", size, Vector2(size.x * 0.18, 0.0), roof_unit_size, accent)
 		"industrial":
-			_add_local_box(building_root, "SawToothA", Vector3(-size.x * 0.18, size.y * 0.28, 0.0), Vector3(size.x * 0.24, maxf(size.y * 0.18, 1.8), size.z * 0.88), roof)
-			_add_local_box(building_root, "SawToothB", Vector3(size.x * 0.18, size.y * 0.2, 0.0), Vector3(size.x * 0.24, maxf(size.y * 0.14, 1.6), size.z * 0.88), accent)
+			var sawtooth_a_size := Vector3(size.x * 0.24, maxf(size.y * 0.18, 1.8), size.z * 0.88)
+			var sawtooth_b_size := Vector3(size.x * 0.24, maxf(size.y * 0.14, 1.6), size.z * 0.88)
+			_add_roof_box(building_root, "SawToothA", size, Vector2(-size.x * 0.18, 0.0), sawtooth_a_size, roof)
+			_add_roof_box(building_root, "SawToothB", size, Vector2(size.x * 0.18, 0.0), sawtooth_b_size, accent)
 	return building_root
 
 func _build_static_box(node_name: String, center: Vector3, size: Vector3, color: Color, yaw_rad: float = 0.0, collision_size: Vector3 = Vector3.ZERO) -> StaticBody3D:
@@ -381,6 +394,60 @@ func _add_local_box(parent: Node3D, node_name: String, local_center: Vector3, si
 	material.roughness = 1.0
 	mesh_instance.material_override = material
 	parent.add_child(mesh_instance)
+
+func _add_roof_box(parent: Node3D, node_name: String, base_size: Vector3, roof_offset_xz: Vector2, size: Vector3, color: Color) -> void:
+	_add_local_box(
+		parent,
+		node_name,
+		Vector3(
+			roof_offset_xz.x,
+			base_size.y * 0.5 + size.y * 0.5 - BUILDING_ORNAMENT_OVERLAP_M,
+			roof_offset_xz.y
+		),
+		size,
+		color
+	)
+
+func _add_roof_stack_box(parent: Node3D, node_name: String, base_size: Vector3, roof_offset_xz: Vector2, stack_height_m: float, size: Vector3, color: Color) -> void:
+	_add_local_box(
+		parent,
+		node_name,
+		Vector3(
+			roof_offset_xz.x,
+			base_size.y * 0.5 + stack_height_m + size.y * 0.5 - BUILDING_ORNAMENT_OVERLAP_M,
+			roof_offset_xz.y
+		),
+		size,
+		color
+	)
+
+func _add_ground_box(parent: Node3D, node_name: String, base_size: Vector3, ground_offset_xz: Vector2, size: Vector3, color: Color) -> void:
+	_add_local_box(
+		parent,
+		node_name,
+		Vector3(
+			ground_offset_xz.x,
+			-base_size.y * 0.5 + size.y * 0.5 - BUILDING_ORNAMENT_OVERLAP_M,
+			ground_offset_xz.y
+		),
+		size,
+		color
+	)
+
+func _add_side_box(parent: Node3D, node_name: String, base_size: Vector3, side: String, lateral_offset_m: float, vertical_offset_m: float, size: Vector3, color: Color) -> void:
+	var local_center := Vector3.ZERO
+	match side:
+		"west":
+			local_center = Vector3(-base_size.x * 0.5 - size.x * 0.5 + BUILDING_ORNAMENT_OVERLAP_M, vertical_offset_m, lateral_offset_m)
+		"east":
+			local_center = Vector3(base_size.x * 0.5 + size.x * 0.5 - BUILDING_ORNAMENT_OVERLAP_M, vertical_offset_m, lateral_offset_m)
+		"north":
+			local_center = Vector3(lateral_offset_m, vertical_offset_m, -base_size.z * 0.5 - size.z * 0.5 + BUILDING_ORNAMENT_OVERLAP_M)
+		"south":
+			local_center = Vector3(lateral_offset_m, vertical_offset_m, base_size.z * 0.5 + size.z * 0.5 - BUILDING_ORNAMENT_OVERLAP_M)
+		_:
+			local_center = Vector3(lateral_offset_m, vertical_offset_m, 0.0)
+	_add_local_box(parent, node_name, local_center, size, color)
 
 func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 	var ground_body := StaticBody3D.new()

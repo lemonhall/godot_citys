@@ -16,6 +16,9 @@ const HEALTH_BAR_WORLD_OFFSET := Vector3(0.0, 2.85, 0.0)
 @export var dodge_trigger_radius_m := 1.8
 @export var floor_snap_length_m := 1.4
 @export var max_health := 3.0
+@export var corpse_cleanup_delay_sec := 15.0
+@export var corpse_body_rest_height_m := 0.58
+@export var corpse_body_roll_deg := 90.0
 @export var orbit_radius_m := 9.5
 @export var orbit_activation_radius_m := 13.5
 @export var orbit_break_radius_m := 16.5
@@ -54,6 +57,8 @@ var _camouflage_remaining_sec := 0.0
 var _camouflage_alpha := 1.0
 var _body: MeshInstance3D = null
 var _body_material: StandardMaterial3D = null
+var _body_standing_position := Vector3.ZERO
+var _body_standing_rotation := Vector3.ZERO
 var _health_bar_root: Node3D = null
 var _health_bar_fill_anchor: Node3D = null
 var _health_bar_fill_material: StandardMaterial3D = null
@@ -63,10 +68,12 @@ var _pressure_dash_count := 0
 var _pressure_last_dash_offset := Vector3.ZERO
 var _pressure_zigzag_sign := 1
 var _pressure_sign_history: Array[int] = []
+var _combat_active := true
 
 func _ready() -> void:
 	add_to_group("city_enemy")
 	_health = max_health
+	_combat_active = true
 	_pressure_energy = pressure_dash_energy_max
 	_ensure_collision()
 	_ensure_visual()
@@ -112,8 +119,16 @@ func get_health_state() -> Dictionary:
 		"max": maxf(max_health, 0.0),
 		"ratio": get_health_ratio(),
 		"alive": _health > 0.0,
+		"combat_active": _combat_active,
+		"state": "combat" if _combat_active else "corpse",
 		"visible": _health_bar_root != null and _health_bar_root.visible,
 	}
+
+func is_combat_active() -> bool:
+	return _combat_active
+
+func set_corpse_cleanup_delay_sec(duration_sec: float) -> void:
+	corpse_cleanup_delay_sec = maxf(duration_sec, 0.0)
 
 func get_pressure_state() -> Dictionary:
 	return {
@@ -128,10 +143,12 @@ func get_pressure_state() -> Dictionary:
 	}
 
 func apply_projectile_hit(projectile_damage: float, _hit_position: Vector3, _impulse: Vector3) -> void:
+	if not _combat_active:
+		return
 	_health = maxf(_health - projectile_damage, 0.0)
 	_update_health_feedback()
 	if _health <= 0.0:
-		queue_free()
+		_enter_corpse_state()
 
 func _physics_process(delta: float) -> void:
 	floor_snap_length = floor_snap_length_m
@@ -467,6 +484,8 @@ func _ensure_visual() -> void:
 		_body = get_node_or_null("Body") as MeshInstance3D
 		if _body != null:
 			_body_material = _body.material_override as StandardMaterial3D
+			_body_standing_position = _body.position
+			_body_standing_rotation = _body.rotation
 		return
 	var body := MeshInstance3D.new()
 	body.name = "Body"
@@ -483,6 +502,8 @@ func _ensure_visual() -> void:
 	add_child(body)
 	_body = body
 	_body_material = material
+	_body_standing_position = _body.position
+	_body_standing_rotation = _body.rotation
 
 func _ensure_health_bar() -> void:
 	if get_node_or_null("HealthBar") != null:
@@ -561,6 +582,54 @@ func _build_health_bar_mesh(width: float, height: float, depth: float) -> BoxMes
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(width, height, depth)
 	return mesh
+
+func _enter_corpse_state() -> void:
+	if not _combat_active:
+		return
+	_combat_active = false
+	_health = 0.0
+	remove_from_group("city_enemy")
+	velocity = Vector3.ZERO
+	set_physics_process(false)
+	collision_layer = 0
+	collision_mask = 0
+	var collision_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if collision_shape != null:
+		collision_shape.set_deferred("disabled", true)
+	_camouflage_remaining_sec = 0.0
+	_update_health_feedback()
+	_apply_corpse_pose()
+	_update_corpse_visual_state()
+	_schedule_corpse_cleanup()
+
+func _apply_corpse_pose() -> void:
+	if _body == null or not is_instance_valid(_body):
+		return
+	_body.position = Vector3(_body_standing_position.x, corpse_body_rest_height_m, _body_standing_position.z)
+	_body.rotation = Vector3(
+		_body_standing_rotation.x,
+		_body_standing_rotation.y,
+		deg_to_rad(corpse_body_roll_deg)
+	)
+
+func _update_corpse_visual_state() -> void:
+	if _body_material == null:
+		return
+	_body_material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+	_body_material.albedo_color = Color(0.298039, 0.180392, 0.180392, 1.0)
+	_body_material.emission_enabled = true
+	_body_material.emission = Color(0.470588, 0.109804, 0.109804, 1.0)
+	_body_material.emission_energy_multiplier = 0.18
+
+func _schedule_corpse_cleanup() -> void:
+	if get_tree() == null:
+		queue_free()
+		return
+	if corpse_cleanup_delay_sec <= 0.0:
+		queue_free()
+		return
+	var cleanup_timer := get_tree().create_timer(corpse_cleanup_delay_sec)
+	cleanup_timer.timeout.connect(queue_free, CONNECT_ONE_SHOT)
 
 func _update_health_bar_transform() -> void:
 	if _health_bar_root == null or not is_instance_valid(_health_bar_root):

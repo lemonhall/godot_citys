@@ -215,7 +215,18 @@ func spawn_trauma_enemy_at_world_position(world_position: Vector3) -> CharacterB
 	return enemy
 
 func get_active_enemy_count() -> int:
-	return 0 if _enemy_root == null else _enemy_root.get_child_count()
+	if _enemy_root == null:
+		return 0
+	var active_count := 0
+	for child in _enemy_root.get_children():
+		if child == null or not is_instance_valid(child):
+			continue
+		if child.has_method("is_combat_active"):
+			if child.is_combat_active():
+				active_count += 1
+			continue
+		active_count += 1
+	return active_count
 
 func get_control_mode() -> String:
 	return _control_mode

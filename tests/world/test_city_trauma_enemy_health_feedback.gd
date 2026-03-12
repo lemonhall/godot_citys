@@ -33,6 +33,11 @@ func _run() -> void:
 		return
 	if not T.require_true(self, enemy.has_method("get_health_state"), "Trauma enemy must expose get_health_state() for combat readability"):
 		return
+	if not T.require_true(self, enemy.has_method("is_combat_active"), "Trauma enemy must expose is_combat_active() so HUD and combat systems can ignore corpses"):
+		return
+	if not T.require_true(self, enemy.has_method("set_corpse_cleanup_delay_sec"), "Trauma enemy must expose set_corpse_cleanup_delay_sec() so tests can shorten the corpse cleanup delay"):
+		return
+	enemy.set_corpse_cleanup_delay_sec(0.2)
 
 	var initial_state: Dictionary = enemy.get_health_state()
 	if not T.require_true(self, bool(initial_state.get("alive", false)), "New trauma enemy must report itself as alive"):
@@ -99,9 +104,27 @@ func _run() -> void:
 	enemy.apply_projectile_hit(8.0, enemy.global_position, Vector3.ZERO)
 	await physics_frame
 
-	if not T.require_true(self, not is_instance_valid(enemy), "Trauma enemy must only disappear after its health reaches zero"):
+	if not T.require_true(self, is_instance_valid(enemy), "Trauma enemy must remain in the scene briefly as a corpse instead of disappearing the instant health reaches zero"):
+		return
+	if not T.require_true(self, not enemy.is_combat_active(), "Defeated trauma enemy corpse must stop counting as an active combatant"):
+		return
+	var defeated_state: Dictionary = enemy.get_health_state()
+	if not T.require_true(self, not bool(defeated_state.get("alive", true)), "Trauma enemy must report itself as dead once health reaches zero"):
+		return
+	if not T.require_true(self, not bool(defeated_state.get("visible", true)), "Trauma enemy health bar must hide once the enemy becomes a corpse"):
+		return
+	var body := enemy.get_node_or_null("Body") as Node3D
+	if not T.require_true(self, body != null, "Trauma enemy corpse verification requires the Body visual node"):
+		return
+	if not T.require_true(self, absf(body.rotation.z) >= 1.4, "Defeated trauma enemies must visually fall over instead of remaining upright"):
+		return
+	if not T.require_true(self, body.position.y <= 0.8, "Defeated trauma enemy body must settle near the ground instead of hovering at standing height"):
 		return
 	if not T.require_true(self, int(world.get_active_enemy_count()) == 0, "Defeated trauma enemies must be removed from the active enemy count"):
+		return
+	await create_timer(0.25).timeout
+	await process_frame
+	if not T.require_true(self, not is_instance_valid(enemy), "Trauma enemy corpse must be cleaned up after the corpse delay expires"):
 		return
 
 	world.queue_free()

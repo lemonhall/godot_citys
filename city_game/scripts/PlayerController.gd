@@ -628,7 +628,7 @@ func _enter_wall_climb(wall_hit: Dictionary) -> void:
 	velocity = Vector3.ZERO
 	suspend_ground_stabilization(8)
 
-func _process_wall_climb(delta: float) -> void:
+func _process_wall_climb(_delta: float) -> void:
 	if _control_enabled and Input.is_key_pressed(KEY_CTRL):
 		request_ground_slam()
 		return

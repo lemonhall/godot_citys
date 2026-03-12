@@ -6,11 +6,24 @@ const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrain
 const QUERY_MARGIN_M := 56.0
 const LOCAL_CELL_SIZE_M := 320.0
 const LOCAL_CELL_MARGIN_M := 96.0
+const ROAD_LAYOUT_CACHE_CAPACITY := 512
+
+static var _chunk_road_layout_cache: Dictionary = {}
+static var _chunk_road_layout_cache_order: Array[String] = []
+static var _chunk_road_layout_cache_mutex: Mutex = Mutex.new()
 
 static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 	var chunk_center: Vector3 = chunk_data.get("chunk_center", Vector3.ZERO)
 	var chunk_size_m := float(chunk_data.get("chunk_size_m", 256.0))
 	var world_seed := int(chunk_data.get("world_seed", chunk_data.get("chunk_seed", 0)))
+	var cache_key := _build_cache_key(chunk_center, chunk_size_m, world_seed)
+	var cached_layout: Dictionary = {}
+	_chunk_road_layout_cache_mutex.lock()
+	if _chunk_road_layout_cache.has(cache_key):
+		cached_layout = _chunk_road_layout_cache[cache_key]
+	_chunk_road_layout_cache_mutex.unlock()
+	if not cached_layout.is_empty():
+		return cached_layout
 	var half_size := chunk_size_m * 0.5
 	var rect := Rect2(
 		Vector2(chunk_center.x - half_size, chunk_center.z - half_size),
@@ -76,7 +89,7 @@ static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 		values.sort()
 		connectors[side] = values
 
-	return {
+	var layout := {
 		"segments": segments,
 		"connectors": connectors,
 		"curved_segment_count": curved_segment_count,
@@ -90,6 +103,24 @@ static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 		"local_fallback_segment_count": local_fallback_segment_count,
 		"signature": _build_signature(connectors, curved_segment_count, segments.size(), non_axis_road_segment_count, bridge_count, template_counts),
 	}
+	_store_cache_entry(cache_key, layout)
+	return layout
+
+static func _build_cache_key(chunk_center: Vector3, chunk_size_m: float, world_seed: int) -> String:
+	return "%d|%.3f|%.3f|%.3f" % [world_seed, chunk_size_m, chunk_center.x, chunk_center.z]
+
+static func _store_cache_entry(cache_key: String, layout: Dictionary) -> void:
+	_chunk_road_layout_cache_mutex.lock()
+	if _chunk_road_layout_cache.has(cache_key):
+		_chunk_road_layout_cache[cache_key] = layout
+		_chunk_road_layout_cache_mutex.unlock()
+		return
+	_chunk_road_layout_cache[cache_key] = layout
+	_chunk_road_layout_cache_order.append(cache_key)
+	while _chunk_road_layout_cache_order.size() > ROAD_LAYOUT_CACHE_CAPACITY:
+		var evicted_key: String = _chunk_road_layout_cache_order.pop_front()
+		_chunk_road_layout_cache.erase(evicted_key)
+	_chunk_road_layout_cache_mutex.unlock()
 
 static func _build_local_cell_roads(expanded_rect: Rect2, chunk_center: Vector3, half_size: float, world_seed: int) -> Array[Dictionary]:
 	var segments: Array[Dictionary] = []

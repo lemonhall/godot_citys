@@ -4,11 +4,14 @@ const TIER_0 := "tier0"
 const TIER_1 := "tier1"
 const TIER_2 := "tier2"
 const TIER_3 := "tier3"
+const LIFE_ALIVE := "alive"
+const LIFE_DEAD := "dead"
 
 var pedestrian_id := ""
 var chunk_id := ""
 var page_id := ""
 var spawn_slot_id := ""
+var road_id := ""
 var lane_ref_id := ""
 var route_signature := ""
 var archetype_id := ""
@@ -32,6 +35,9 @@ var reaction_timer_sec := 0.0
 var reaction_source_position := Vector3.ZERO
 var lateral_offset_m := 0.0
 var lateral_offset_sign := 1.0
+var life_state := LIFE_ALIVE
+var death_cause := ""
+var death_source_position := Vector3.ZERO
 var _queued_step_sec := 0.0
 
 func setup(data: Dictionary) -> void:
@@ -39,6 +45,7 @@ func setup(data: Dictionary) -> void:
 	chunk_id = str(data.get("chunk_id", ""))
 	page_id = str(data.get("page_id", ""))
 	spawn_slot_id = str(data.get("spawn_slot_id", ""))
+	road_id = str(data.get("road_id", ""))
 	lane_ref_id = str(data.get("lane_ref_id", ""))
 	route_signature = str(data.get("route_signature", ""))
 	archetype_id = str(data.get("archetype_id", "resident"))
@@ -63,6 +70,8 @@ func setup(data: Dictionary) -> void:
 
 func step(delta: float) -> void:
 	if delta <= 0.0:
+		return
+	if not is_alive():
 		return
 	if reaction_state == "panic" or reaction_state == "flee":
 		_align_route_direction_away_from_source()
@@ -98,6 +107,8 @@ func set_tier(next_tier: String) -> void:
 	tier = next_tier
 
 func apply_reaction(data: Dictionary) -> void:
+	if not is_alive():
+		return
 	var next_reaction_state := str(data.get("reaction_state", "none"))
 	if next_reaction_state == "none":
 		return
@@ -118,6 +129,8 @@ func clear_reaction() -> void:
 func queue_step(delta: float) -> void:
 	if delta <= 0.0:
 		return
+	if not is_alive():
+		return
 	_queued_step_sec += delta
 
 func consume_queued_step(min_interval_sec: float) -> float:
@@ -135,12 +148,24 @@ func flush_queued_step() -> float:
 func is_reactive() -> bool:
 	return reaction_state != "none" and reaction_timer_sec > 0.0
 
+func is_alive() -> bool:
+	return life_state == LIFE_ALIVE
+
+func mark_dead(cause: String, source_position: Vector3 = Vector3.ZERO) -> void:
+	life_state = LIFE_DEAD
+	death_cause = cause
+	death_source_position = source_position
+	tier = TIER_0
+	_queued_step_sec = 0.0
+	clear_reaction()
+
 func to_snapshot() -> Dictionary:
 	return {
 		"pedestrian_id": pedestrian_id,
 		"chunk_id": chunk_id,
 		"page_id": page_id,
 		"spawn_slot_id": spawn_slot_id,
+		"road_id": road_id,
 		"lane_ref_id": lane_ref_id,
 		"route_signature": route_signature,
 		"archetype_id": archetype_id,
@@ -158,6 +183,9 @@ func to_snapshot() -> Dictionary:
 		"reaction_state": reaction_state,
 		"reaction_priority": reaction_priority,
 		"reaction_timer_sec": reaction_timer_sec,
+		"life_state": life_state,
+		"death_cause": death_cause,
+		"death_source_position": death_source_position,
 	}
 
 func _sample_lane_state(progress: float) -> Dictionary:

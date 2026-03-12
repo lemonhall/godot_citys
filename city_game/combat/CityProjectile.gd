@@ -13,6 +13,7 @@ var _group_name := "city_projectile"
 var _target_group_name := "city_enemy"
 var _tint := Color(0.65098, 0.85098, 1.0, 1.0)
 var _emission_tint := Color(0.360784, 0.713725, 1.0, 1.0)
+var _pedestrian_hit_resolver: Object = null
 
 func _ready() -> void:
 	add_to_group(_group_name)
@@ -26,7 +27,8 @@ func configure(
 	group_name: String = "city_projectile",
 	target_group_name: String = "city_enemy",
 	tint: Color = Color(0.65098, 0.85098, 1.0, 1.0),
-	emission_tint: Color = Color(0.360784, 0.713725, 1.0, 1.0)
+	emission_tint: Color = Color(0.360784, 0.713725, 1.0, 1.0),
+	pedestrian_hit_resolver: Object = null
 ) -> void:
 	position = origin
 	_direction = direction.normalized() if direction.length_squared() > 0.0001 else Vector3.FORWARD
@@ -36,6 +38,7 @@ func configure(
 	_target_group_name = target_group_name
 	_tint = tint
 	_emission_tint = emission_tint
+	_pedestrian_hit_resolver = pedestrian_hit_resolver
 
 func get_direction() -> Vector3:
 	return _direction
@@ -62,6 +65,12 @@ func _physics_process(delta: float) -> void:
 			collider.apply_projectile_hit(damage, hit.get("position", end_position), get_velocity())
 		queue_free()
 		return
+	if _pedestrian_hit_resolver != null and _pedestrian_hit_resolver.has_method("resolve_projectile_hit"):
+		var pedestrian_hit: Dictionary = _pedestrian_hit_resolver.resolve_projectile_hit(start_position, end_position, damage, get_velocity())
+		if not pedestrian_hit.is_empty():
+			global_position = pedestrian_hit.get("hit_position", end_position)
+			queue_free()
+			return
 	global_position = end_position
 	_distance_travelled_m += start_position.distance_to(end_position)
 	if _distance_travelled_m >= max_distance_m:

@@ -61,8 +61,8 @@ func _run() -> void:
 			for _frame_index in range(3):
 				world.update_streaming_for_position(player.global_position)
 				await process_frame
-			pedestrian_snapshot = world.get_pedestrian_runtime_snapshot()
-			peak_tier3_count = maxi(peak_tier3_count, int(pedestrian_snapshot.get("tier3_count", 0)))
+				pedestrian_snapshot = world.get_pedestrian_runtime_snapshot()
+				peak_tier3_count = maxi(peak_tier3_count, int(pedestrian_snapshot.get("tier3_count", 0)))
 
 	if not T.require_true(self, seen_chunk_ids.size() >= 8, "Pedestrian travel flow must cross at least 8 unique chunks"):
 		return

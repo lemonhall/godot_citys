@@ -24,6 +24,8 @@
 - Tier 0-3 的分层 pedestrian representation、simulation LOD 与 render LOD
 - 与现有 chunk streaming 对齐的 spawn / despawn / warm-cache 预算体系
 - 玩家附近极小集合的本地 reactive pedestrian 行为
+- 运行期 pedestrian 贴地与真实 chunk 地表口径一致
+- 玩家暴力触发的 direct-hit / explosion casualty 与周边逃散响应
 - crowd 相关 debug overlay、minimap 调试层与 profiling 指标
 - 面向 `16.67ms/frame` 红线的 crowd lite 默认模式与回归护栏
 
@@ -205,6 +207,50 @@
 - 在 `pedestrian_mode = lite` 且固定 density 预设下，fresh warm traversal 与 first-visit traversal 的 `wall_frame_avg_usec` 都必须 `<= 16667`。
 - 自动化 profiling 输出必须新增 `crowd_update_avg_usec`、`crowd_spawn_avg_usec`、`crowd_render_commit_avg_usec` 与各 tier 计数。
 - 反作弊条款：不得通过 profiling 时临时关闭 pedestrians、把 density 改成 `0` 或仅渲染空壳占位来宣称达标。
+
+### REQ-0002-008 运行期贴地一致性（新增，见 ECN-0009）
+
+**动机**：如果 pedestrian 只在 spawn 时落地正确，但运行期行走仍沿用固定 `y` 或基础噪声地形高度，那么在 roadbed、坡地和局部地形过渡上就会继续出现“被地形吞没 / 浮在地表上方”的产品级穿帮。
+
+**范围**：
+
+- active pedestrian 的 `world_position.y` 必须使用与真实 chunk 地表一致的采样口径，而不是只读基础噪声高度
+- 贴地必须覆盖 spawn、运行期 step、tier 升降级与 chunk 回访后的重建
+- 允许通过 chunk/profile-aware sampler、缓存过的 ground context 或等价机制实现
+
+**非目标**：
+
+- 不做 foot IK
+- 不做室内、楼梯塔或多层步行桥系统
+
+**验收口径**：
+
+- 自动化测试至少断言：active pedestrian 在 spawn 后和运行期移动后，其 `world_position.y` 与对应 runtime ground surface 的误差持续 `<= 0.05m`，并覆盖至少一个坡地 lane 与一个受 roadbed 影响的 lane。
+- 自动化测试至少断言：同一次运行中，位于不同地表高度的 pedestrian 不会继续共享单一固定 `y` 契约。
+- 反作弊条款：不得通过冻结 `y` 更新、施加全局常数偏移或只在测试数据中避开问题 lane 来冒充“贴地一致性已成立”。
+
+### REQ-0002-009 玩家暴力触发的 civilian casualty 与逃散（新增，见 ECN-0009）
+
+**动机**：如果玩家开枪、直接命中或投掷手雷后，街道人群只会做非致命 reaction 而不会结算死亡与周边逃散，那么 crowd 会继续停留在“背景板”层，无法提供可信的城市暴力反馈。
+
+**范围**：
+
+- 玩家 projectile 的 direct hit 必须能杀死被命中的 pedestrian
+- 爆炸必须对 lethal radius 内 pedestrian 结算死亡，对外圈 threat radius 内 pedestrian 触发 `panic / flee`
+- casualty / flee 结算必须继续建立在 budgeted、event-driven crowd runtime 上，而不是把所有 pedestrian 升级为常驻 combat NPC
+
+**非目标**：
+
+- 不做警察 / wanted system
+- 不做 ragdoll、持久尸体物理或 civilian 反击战斗
+
+**验收口径**：
+
+- 自动化测试至少断言：player projectile 的 direct hit 会杀死目标 pedestrian，并使其从 live crowd roster 或 active render set 中移除。
+- 自动化测试至少断言：grenade / explosion 对 lethal radius 内 pedestrian 结算死亡，对 threat radius 内但 lethal radius 外 pedestrian 切换到 `panic` 或 `flee`。
+- 自动化测试至少断言：threat radius 外 pedestrian 保持存活并继续 ambient 行为，不发生全图级 panic。
+- 自动化测试至少断言：重复 fire / explosion 事件后，nearfield / Tier 3 预算仍受控，不出现 count leak。
+- 反作弊条款：不得通过“只播 reaction、不结算死亡”“战斗时直接隐藏全部 pedestrian”或“爆炸半径内无差别全删”来宣称需求完成。
 
 ## Open Questions
 

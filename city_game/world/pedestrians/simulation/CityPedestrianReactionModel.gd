@@ -37,11 +37,12 @@ func notify_projectile_event(origin: Vector3, direction: Vector3, range_m: float
 		"ttl_sec": 0.85,
 	})
 
-func notify_explosion_event(world_position: Vector3, radius_m: float) -> void:
+func notify_explosion_event(world_position: Vector3, radius_m: float, threat_radius_m: float = -1.0) -> void:
 	_events.append({
 		"type": "explosion",
 		"position": world_position,
 		"radius_m": maxf(radius_m, 0.0),
+		"threat_radius_m": threat_radius_m,
 		"ttl_sec": 1.4,
 	})
 
@@ -51,6 +52,8 @@ func update_reactions(active_states: Array, budget_contract: Dictionary, delta: 
 	var reactive_candidates: Array[Dictionary] = []
 	for state_variant in active_states:
 		var state = state_variant
+		if state.has_method("is_alive") and not state.is_alive():
+			continue
 		var command := _build_command_for_state(state, budget_contract, player_speed_mps)
 		if not command.is_empty():
 			state.apply_reaction(command)
@@ -124,7 +127,9 @@ func _build_command_for_state(state, budget_contract: Dictionary, player_speed_m
 					}
 			"explosion":
 				var explosion_center: Vector3 = event.get("position", Vector3.ZERO)
-				var explosion_radius := float(event.get("radius_m", 0.0)) + float(budget_contract.get("explosion_reaction_radius_m", 18.0))
+				var explosion_radius := float(event.get("threat_radius_m", -1.0))
+				if explosion_radius < 0.0:
+					explosion_radius = float(event.get("radius_m", 0.0)) + float(budget_contract.get("explosion_reaction_radius_m", 18.0))
 				if state.world_position.distance_to(explosion_center) <= explosion_radius:
 					candidate = {
 						"reaction_state": REACTION_FLEE,

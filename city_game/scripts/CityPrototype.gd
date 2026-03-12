@@ -417,7 +417,8 @@ func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 		"city_projectile",
 		"city_enemy",
 		Color(0.65098, 0.85098, 1.0, 1.0),
-		Color(0.360784, 0.713725, 1.0, 1.0)
+		Color(0.360784, 0.713725, 1.0, 1.0),
+		chunk_renderer if chunk_renderer != null and chunk_renderer.has_method("resolve_projectile_hit") else null
 	)
 	_projectile_root.add_child(projectile)
 	if chunk_renderer != null and chunk_renderer.has_method("notify_projectile_event"):
@@ -436,9 +437,14 @@ func _spawn_grenade(origin: Vector3, launch_velocity: Vector3) -> Node3D:
 	return grenade
 
 func _on_player_grenade_exploded(world_position: Vector3, radius_m: float) -> void:
-	if chunk_renderer == null or not chunk_renderer.has_method("notify_explosion_event"):
+	if chunk_renderer == null or not chunk_renderer.has_method("resolve_explosion_impact"):
 		return
-	chunk_renderer.notify_explosion_event(world_position, radius_m)
+	chunk_renderer.resolve_explosion_impact(world_position, maxf(radius_m * 0.35, 4.0), radius_m)
+
+func resolve_pedestrian_explosion(world_position: Vector3, lethal_radius_m: float, threat_radius_m: float = -1.0) -> Dictionary:
+	if chunk_renderer == null or not chunk_renderer.has_method("resolve_explosion_impact"):
+		return {}
+	return chunk_renderer.resolve_explosion_impact(world_position, lethal_radius_m, threat_radius_m)
 
 func _connect_enemy_combat(enemy: Node) -> void:
 	if enemy == null or not enemy.has_signal("projectile_fire_requested"):

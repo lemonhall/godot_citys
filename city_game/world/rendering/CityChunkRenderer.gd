@@ -495,6 +495,16 @@ func notify_explosion_event(world_position: Vector3, radius_m: float) -> void:
 		return
 	_pedestrian_tier_controller.notify_explosion_event(world_position, radius_m)
 
+func resolve_projectile_hit(start_position: Vector3, end_position: Vector3, damage: float = 1.0, velocity: Vector3 = Vector3.ZERO) -> Dictionary:
+	if _pedestrian_tier_controller == null or not _pedestrian_tier_controller.has_method("resolve_projectile_hit"):
+		return {}
+	return _pedestrian_tier_controller.resolve_projectile_hit(start_position, end_position, damage, velocity)
+
+func resolve_explosion_impact(world_position: Vector3, lethal_radius_m: float, threat_radius_m: float = -1.0) -> Dictionary:
+	if _pedestrian_tier_controller == null or not _pedestrian_tier_controller.has_method("resolve_explosion_impact"):
+		return {}
+	return _pedestrian_tier_controller.resolve_explosion_impact(world_position, lethal_radius_m, threat_radius_m)
+
 func _build_target_chunk_map(active_chunk_entries: Array) -> Dictionary:
 	var map := {}
 	for entry in active_chunk_entries:

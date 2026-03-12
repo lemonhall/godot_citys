@@ -56,6 +56,49 @@ func notify_projectile_event(origin: Vector3, direction: Vector3, range_m: float
 func notify_explosion_event(world_position: Vector3, radius_m: float) -> void:
 	_reaction_model.notify_explosion_event(world_position, radius_m)
 
+func resolve_projectile_hit(start_position: Vector3, end_position: Vector3, damage: float = 1.0, velocity: Vector3 = Vector3.ZERO) -> Dictionary:
+	var best_hit := {}
+	for state_variant in _pedestrian_streamer.get_active_states():
+		var state: CityPedestrianState = state_variant
+		if not state.is_alive():
+			continue
+		var hit: Dictionary = _projectile_hit_for_state(state, start_position, end_position)
+		if hit.is_empty():
+			continue
+		if best_hit.is_empty() or float(hit.get("travel_t", 1.0)) < float(best_hit.get("travel_t", 1.0)):
+			best_hit = hit
+	if best_hit.is_empty():
+		return {}
+	var hit_state: CityPedestrianState = best_hit.get("state")
+	hit_state.mark_dead("projectile", best_hit.get("hit_position", end_position))
+	return {
+		"pedestrian_id": hit_state.pedestrian_id,
+		"life_state": hit_state.life_state,
+		"damage": damage,
+		"hit_position": best_hit.get("hit_position", end_position),
+		"hit_distance_m": float(best_hit.get("hit_distance_m", start_position.distance_to(end_position))),
+		"velocity": velocity,
+	}
+
+func resolve_explosion_impact(world_position: Vector3, lethal_radius_m: float, threat_radius_m: float = -1.0) -> Dictionary:
+	var resolved_threat_radius_m := threat_radius_m if threat_radius_m >= 0.0 else lethal_radius_m
+	var killed_ids: Array[String] = []
+	for state_variant in _pedestrian_streamer.get_active_states():
+		var state: CityPedestrianState = state_variant
+		if not state.is_alive():
+			continue
+		var distance_m := state.world_position.distance_to(world_position)
+		if distance_m <= lethal_radius_m:
+			state.mark_dead("explosion", world_position)
+			killed_ids.append(state.pedestrian_id)
+	_reaction_model.notify_explosion_event(world_position, lethal_radius_m, resolved_threat_radius_m)
+	return {
+		"killed_count": killed_ids.size(),
+		"killed_ids": killed_ids,
+		"lethal_radius_m": lethal_radius_m,
+		"threat_radius_m": resolved_threat_radius_m,
+	}
+
 func update_active_chunks(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0) -> Dictionary:
 	var update_started_usec := Time.get_ticks_usec()
 	var inferred_player_velocity := Vector3.ZERO
@@ -341,3 +384,24 @@ func _resolve_step_delta_for_state(state: CityPedestrianState) -> float:
 			return state.consume_queued_step(TIER1_UPDATE_INTERVAL_SEC)
 		_:
 			return state.consume_queued_step(TIER0_UPDATE_INTERVAL_SEC)
+
+func _projectile_hit_for_state(state: CityPedestrianState, start_position: Vector3, end_position: Vector3) -> Dictionary:
+	var segment := end_position - start_position
+	var segment_length_squared := segment.length_squared()
+	if segment_length_squared <= 0.0001:
+		return {}
+	var pedestrian_center := state.world_position + Vector3.UP * maxf(state.height_m * 0.5, 0.6)
+	var t := clampf((pedestrian_center - start_position).dot(segment) / segment_length_squared, 0.0, 1.0)
+	var closest_point := start_position + segment * t
+	var horizontal_distance_m := Vector2(pedestrian_center.x - closest_point.x, pedestrian_center.z - closest_point.z).length()
+	var vertical_clearance_m := absf(pedestrian_center.y - closest_point.y)
+	if horizontal_distance_m > maxf(state.radius_m + 0.22, 0.45):
+		return {}
+	if vertical_clearance_m > maxf(state.height_m * 0.65, 1.15):
+		return {}
+	return {
+		"state": state,
+		"travel_t": t,
+		"hit_position": closest_point,
+		"hit_distance_m": start_position.distance_to(closest_point),
+	}

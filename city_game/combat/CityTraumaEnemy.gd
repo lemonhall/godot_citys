@@ -1,7 +1,10 @@
 extends CharacterBody3D
 
+signal projectile_fire_requested(origin: Vector3, direction: Vector3)
+
 const BEHAVIOR_APPROACH := "approach"
 const BEHAVIOR_ORBIT := "orbit"
+const ROLE_ID_ASSAULT := "assault"
 
 @export var chase_speed_mps := 10.5
 @export var orbit_speed_mps := 8.0
@@ -15,6 +18,11 @@ const BEHAVIOR_ORBIT := "orbit"
 @export var orbit_activation_radius_m := 13.5
 @export var orbit_break_radius_m := 16.5
 @export var obstacle_probe_distance_m := 4.0
+@export var ranged_fire_min_distance_m := 9.0
+@export var ranged_fire_max_distance_m := 30.0
+@export var burst_cooldown_sec := 1.6
+@export var burst_interval_sec := 0.11
+@export var burst_shot_count := 3
 
 var _gravity := ProjectSettings.get_setting("physics/3d/default_gravity") as float
 var _target: Node3D = null
@@ -24,6 +32,9 @@ var _dodge_count := 0
 var _last_dodge_offset := Vector3.ZERO
 var _behavior_mode := BEHAVIOR_APPROACH
 var _orbit_direction_sign := 1.0
+var _burst_cooldown_remaining := 0.0
+var _burst_interval_remaining := 0.0
+var _burst_shots_remaining := 0
 
 func _ready() -> void:
 	add_to_group("city_enemy")
@@ -41,6 +52,9 @@ func get_dodge_count() -> int:
 func get_last_dodge_offset() -> Vector3:
 	return _last_dodge_offset
 
+func get_role_id() -> String:
+	return ROLE_ID_ASSAULT
+
 func get_behavior_mode() -> String:
 	return _behavior_mode
 
@@ -56,8 +70,13 @@ func _physics_process(delta: float) -> void:
 	floor_snap_length = floor_snap_length_m
 	if _dodge_cooldown_remaining > 0.0:
 		_dodge_cooldown_remaining = maxf(_dodge_cooldown_remaining - delta, 0.0)
+	if _burst_cooldown_remaining > 0.0:
+		_burst_cooldown_remaining = maxf(_burst_cooldown_remaining - delta, 0.0)
+	if _burst_interval_remaining > 0.0:
+		_burst_interval_remaining = maxf(_burst_interval_remaining - delta, 0.0)
 	_evaluate_incoming_projectiles()
 	_update_behavior_mode()
+	_update_ranged_fire()
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
 	var move_direction := _compute_move_direction()
@@ -153,6 +172,44 @@ func _execute_dodge(projectile_direction: Vector3) -> bool:
 	_behavior_mode = BEHAVIOR_ORBIT
 	return true
 
+func _update_ranged_fire() -> void:
+	if _target == null or not is_instance_valid(_target):
+		return
+	if _burst_shots_remaining > 0:
+		if _burst_interval_remaining > 0.0:
+			return
+		_emit_burst_projectile()
+		_burst_shots_remaining -= 1
+		_burst_interval_remaining = burst_interval_sec
+		if _burst_shots_remaining <= 0:
+			_burst_cooldown_remaining = burst_cooldown_sec
+		return
+	if _burst_cooldown_remaining > 0.0:
+		return
+	var planar_delta := _target.global_position - global_position
+	planar_delta.y = 0.0
+	var distance_to_target := planar_delta.length()
+	if distance_to_target < ranged_fire_min_distance_m or distance_to_target > ranged_fire_max_distance_m:
+		return
+	if not _has_line_of_sight_to_target():
+		return
+	_burst_shots_remaining = burst_shot_count
+	_burst_interval_remaining = 0.0
+	_emit_burst_projectile()
+	_burst_shots_remaining -= 1
+	if _burst_shots_remaining <= 0:
+		_burst_cooldown_remaining = burst_cooldown_sec
+
+func _emit_burst_projectile() -> void:
+	if _target == null or not is_instance_valid(_target):
+		return
+	var muzzle_origin := global_position + Vector3.UP * 1.45
+	var aim_target := _target.global_position + Vector3.UP * 1.1
+	var direction := (aim_target - muzzle_origin).normalized()
+	if direction.length_squared() <= 0.0001:
+		return
+	projectile_fire_requested.emit(muzzle_origin, direction)
+
 func _avoid_obstacles(move_direction: Vector3) -> Vector3:
 	if move_direction.length_squared() <= 0.0001:
 		return Vector3.ZERO
@@ -174,6 +231,21 @@ func _avoid_obstacles(move_direction: Vector3) -> Vector3:
 		var tangent := Vector3(-to_target.z, 0.0, to_target.x) * _orbit_direction_sign
 		return tangent.normalized()
 	return (move_direction + Vector3(-move_direction.z, 0.0, move_direction.x) * _orbit_direction_sign * 0.75).normalized()
+
+func _has_line_of_sight_to_target() -> bool:
+	if _target == null or not is_instance_valid(_target):
+		return false
+	if get_world_3d() == null or get_world_3d().direct_space_state == null:
+		return true
+	var from := global_position + Vector3.UP * 1.45
+	var to := _target.global_position + Vector3.UP * 1.1
+	var query := PhysicsRayQueryParameters3D.create(from, to)
+	query.collide_with_areas = false
+	query.exclude = [get_rid()]
+	if _target is CollisionObject3D:
+		query.exclude.append((_target as CollisionObject3D).get_rid())
+	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+	return hit.is_empty()
 
 func _resolve_surface_position(candidate: Vector3) -> Vector3:
 	if get_world_3d() == null or get_world_3d().direct_space_state == null:

@@ -54,6 +54,7 @@ var _minimap_build_max_usec := 0
 var _minimap_build_last_usec := 0
 var _combat_root: Node3D = null
 var _projectile_root: Node3D = null
+var _enemy_projectile_root: Node3D = null
 var _enemy_root: Node3D = null
 
 func _ready() -> void:
@@ -76,6 +77,8 @@ func _ready() -> void:
 	if player != null and player.has_method("suspend_ground_stabilization"):
 		player.suspend_ground_stabilization(24)
 	_connect_player_combat()
+	if player != null:
+		player.add_to_group("city_player")
 
 	set_control_mode(CONTROL_MODE_PLAYER)
 	update_streaming_for_position(_get_active_anchor_position())
@@ -127,7 +130,11 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 		],
 		"current_chunk_lod=%s" % str(snapshot.get("current_chunk_lod_mode", "")),
 		"visual_variant=%s" % str(snapshot.get("current_chunk_visual_variant_id", "")),
-		"combat=projectiles:%d enemies:%d" % [get_active_projectile_count(), get_active_enemy_count()],
+		"combat=player_projectiles:%d enemy_projectiles:%d enemies:%d" % [
+			get_active_projectile_count(),
+			get_active_enemy_projectile_count(),
+			get_active_enemy_count()
+		],
 		active_speed_text,
 	])
 	hud.set_status("\n".join(lines))
@@ -170,6 +177,9 @@ func fire_player_projectile_toward(target_world_position: Vector3) -> Node3D:
 func get_active_projectile_count() -> int:
 	return 0 if _projectile_root == null else _projectile_root.get_child_count()
 
+func get_active_enemy_projectile_count() -> int:
+	return 0 if _enemy_projectile_root == null else _enemy_projectile_root.get_child_count()
+
 func spawn_trauma_enemy() -> CharacterBody3D:
 	var spawn_position := _resolve_enemy_spawn_world_position(_get_active_anchor_position())
 	return spawn_trauma_enemy_at_world_position(spawn_position)
@@ -179,11 +189,12 @@ func spawn_trauma_enemy_at_world_position(world_position: Vector3) -> CharacterB
 	if _enemy_root == null:
 		return null
 	var enemy := CityTraumaEnemy.new()
-	_enemy_root.add_child(enemy)
 	if enemy.has_method("configure"):
 		enemy.configure(player)
+	_connect_enemy_combat(enemy)
 	var standing_height := enemy.get_standing_height() if enemy.has_method("get_standing_height") else 1.0
 	var grounded_position := _resolve_nearby_enemy_spawn_world_position(world_position, standing_height)
+	_enemy_root.add_child(enemy)
 	enemy.global_position = grounded_position
 	return enemy
 
@@ -246,6 +257,12 @@ func _ensure_combat_roots() -> void:
 			_projectile_root = Node3D.new()
 			_projectile_root.name = "Projectiles"
 			_combat_root.add_child(_projectile_root)
+	if _enemy_projectile_root == null:
+		_enemy_projectile_root = _combat_root.get_node_or_null("EnemyProjectiles") as Node3D
+		if _enemy_projectile_root == null:
+			_enemy_projectile_root = Node3D.new()
+			_enemy_projectile_root.name = "EnemyProjectiles"
+			_combat_root.add_child(_enemy_projectile_root)
 	if _enemy_root == null:
 		_enemy_root = _combat_root.get_node_or_null("Enemies") as Node3D
 		if _enemy_root == null:
@@ -268,8 +285,48 @@ func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 	if _projectile_root == null:
 		return null
 	var projectile := CityProjectile.new()
+	projectile.configure(
+		origin,
+		direction,
+		player,
+		1.0,
+		"city_projectile",
+		"city_enemy",
+		Color(0.65098, 0.85098, 1.0, 1.0),
+		Color(0.360784, 0.713725, 1.0, 1.0)
+	)
 	_projectile_root.add_child(projectile)
-	projectile.configure(origin, direction, player, 1.0)
+	return projectile
+
+func _connect_enemy_combat(enemy: Node) -> void:
+	if enemy == null or not enemy.has_signal("projectile_fire_requested"):
+		return
+	var callable := Callable(self, "_on_enemy_projectile_fire_requested")
+	if not enemy.projectile_fire_requested.is_connected(callable):
+		enemy.projectile_fire_requested.connect(callable)
+
+func _on_enemy_projectile_fire_requested(origin: Vector3, direction: Vector3) -> void:
+	_spawn_enemy_projectile(origin, direction)
+
+func _spawn_enemy_projectile(origin: Vector3, direction: Vector3) -> Node3D:
+	_ensure_combat_roots()
+	if _enemy_projectile_root == null:
+		return null
+	var projectile := CityProjectile.new()
+	projectile.speed_mps = 120.0
+	projectile.max_distance_m = 240.0
+	projectile.max_lifetime_sec = 2.4
+	projectile.configure(
+		origin,
+		direction,
+		null,
+		1.0,
+		"city_enemy_projectile",
+		"city_player",
+		Color(1.0, 0.403922, 0.360784, 1.0),
+		Color(1.0, 0.25098, 0.188235, 1.0)
+	)
+	_enemy_projectile_root.add_child(projectile)
 	return projectile
 
 func update_streaming_for_position(world_position: Vector3) -> Array:

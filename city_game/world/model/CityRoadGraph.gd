@@ -5,6 +5,7 @@ const SPATIAL_CELL_SIZE_M := 512.0
 var nodes: Array[Dictionary] = []
 var edges: Array[Dictionary] = []
 var _nodes_by_id: Dictionary = {}
+var _edges_by_id: Dictionary = {}
 var _growth_stats: Dictionary = {}
 var _intersections: Array[Dictionary] = []
 var _edge_indices_by_cell: Dictionary = {}
@@ -24,6 +25,12 @@ func add_edge(edge_data: Dictionary) -> void:
 	if not stored.has("bounds"):
 		stored["bounds"] = _build_bounds(stored.get("points", []))
 	edges.append(stored)
+	var road_id := str(stored.get("road_id", stored.get("edge_id", "")))
+	if road_id != "":
+		_edges_by_id[road_id] = stored
+	var edge_id := str(stored.get("edge_id", ""))
+	if edge_id != "":
+		_edges_by_id[edge_id] = stored
 	_register_edge_in_spatial_index(edges.size() - 1, stored.get("bounds", Rect2()))
 
 func to_cache_payload() -> Dictionary:
@@ -38,6 +45,7 @@ func load_from_cache_payload(payload: Dictionary) -> void:
 	nodes.clear()
 	edges.clear()
 	_nodes_by_id.clear()
+	_edges_by_id.clear()
 	_growth_stats.clear()
 	_intersections.clear()
 	_edge_indices_by_cell.clear()
@@ -60,6 +68,11 @@ func get_node_by_id(district_id: String) -> Dictionary:
 	if not _nodes_by_id.has(district_id):
 		return {}
 	return (_nodes_by_id[district_id] as Dictionary).duplicate(true)
+
+func get_edge_by_id(edge_id: String) -> Dictionary:
+	if not _edges_by_id.has(edge_id):
+		return {}
+	return (_edges_by_id[edge_id] as Dictionary).duplicate(true)
 
 func get_edges_intersecting_rect(rect: Rect2, allowed_classes: Array = []) -> Array[Dictionary]:
 	var results: Array[Dictionary] = []

@@ -1,11 +1,13 @@
 extends RefCounted
 
 const CityPedestrianConfig := preload("res://city_game/world/pedestrians/model/CityPedestrianConfig.gd")
+const CityPedestrianLaneGraphBuilder := preload("res://city_game/world/pedestrians/generation/CityPedestrianLaneGraphBuilder.gd")
 const CityPedestrianProfile := preload("res://city_game/world/pedestrians/model/CityPedestrianProfile.gd")
 const CityPedestrianQuery := preload("res://city_game/world/pedestrians/model/CityPedestrianQuery.gd")
 
 func build(config, district_graph, road_graph):
 	var pedestrian_config = CityPedestrianConfig.new()
+	var lane_graph = CityPedestrianLaneGraphBuilder.new().build(config, road_graph)
 	var district_profiles_by_id: Dictionary = {}
 
 	for district_entry in district_graph.districts:
@@ -14,7 +16,7 @@ func build(config, district_graph, road_graph):
 		district_profiles_by_id[profile.district_id] = profile.to_dictionary()
 
 	var query = CityPedestrianQuery.new()
-	query.setup(config, pedestrian_config, road_graph, district_profiles_by_id)
+	query.setup(config, pedestrian_config, road_graph, lane_graph, district_profiles_by_id)
 	return query
 
 func _build_profile_for_district(config, pedestrian_config: CityPedestrianConfig, district_data: Dictionary) -> CityPedestrianProfile:

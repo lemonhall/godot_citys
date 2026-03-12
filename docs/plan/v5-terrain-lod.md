@@ -61,3 +61,14 @@
 
 - terrain LOD 如果只降几何不处理道路覆盖，远近景可能再次出现“地面连续、道路断开”的错位。
 - 如果 mid/far 分辨率切太狠，轮廓虽然连续但坡度与高架引道会变假。
+
+## Result
+
+- `CityTerrainMeshBuilder.gd` 已支持从 shared terrain page binding 派生 near / mid / far 三档网格数组。
+- `CityChunkScene.gd` 已把 terrain mesh / collision 的 LOD 切换接到 near / mid / far，并为重复切换增加 no-op short-circuit，避免每帧重复 apply。
+- `CityChunkRenderer.gd` 已把 terrain runtime page hit 接入同步快路径，并将 terrain async 调度限制为 single-flight，降低后台 CPU 争抢。
+- fresh 验证：
+  - `test_city_terrain_lod_contract.gd` PASS
+  - `test_city_terrain_road_overlay_continuity.gd` PASS
+  - `test_city_terrain_lod_noop.gd` PASS
+  - `test_city_runtime_performance_profile.gd` PASS，关键证据：`wall_frame_avg_usec = 10587`、`update_streaming_avg_usec = 8918`

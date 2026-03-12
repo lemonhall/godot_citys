@@ -2,6 +2,9 @@ extends RefCounted
 
 const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
 const CityTerrainGridTemplate := preload("res://city_game/world/rendering/CityTerrainGridTemplate.gd")
+const LOD_NEAR := "near"
+const LOD_MID := "mid"
+const LOD_FAR := "far"
 
 var _template_catalog := CityTerrainGridTemplate.new()
 
@@ -17,6 +20,23 @@ func build_profiled_terrain_arrays(chunk_size_m: float, chunk_data: Dictionary, 
 		return existing_mesh_result.duplicate(true)
 	var sample_binding := _resolve_sample_binding(chunk_size_m, chunk_data, profile, grid_steps)
 	return build_profiled_terrain_arrays_from_binding(chunk_size_m, grid_steps, sample_binding)
+
+func build_profiled_terrain_lod_arrays(chunk_size_m: float, chunk_data: Dictionary, profile: Dictionary, source_grid_steps: int, lod_grid_steps_by_mode: Dictionary) -> Dictionary:
+	var existing_lod_results: Dictionary = chunk_data.get("terrain_lod_mesh_results", {})
+	if not existing_lod_results.is_empty():
+		return existing_lod_results.duplicate(true)
+	var sample_binding := _resolve_sample_binding(chunk_size_m, chunk_data, profile, source_grid_steps)
+	return build_profiled_terrain_lod_arrays_from_binding(chunk_size_m, source_grid_steps, sample_binding, lod_grid_steps_by_mode)
+
+func build_profiled_terrain_lod_arrays_from_binding(chunk_size_m: float, source_grid_steps: int, sample_binding: Dictionary, lod_grid_steps_by_mode: Dictionary) -> Dictionary:
+	var results := {}
+	for lod_mode in lod_grid_steps_by_mode.keys():
+		var target_grid_steps := int(lod_grid_steps_by_mode[lod_mode])
+		var target_binding := sample_binding if target_grid_steps == source_grid_steps else _downsample_sample_binding(sample_binding, source_grid_steps, target_grid_steps)
+		var arrays_result := build_profiled_terrain_arrays_from_binding(chunk_size_m, target_grid_steps, target_binding)
+		arrays_result["grid_steps"] = target_grid_steps
+		results[str(lod_mode)] = arrays_result
+	return results
 
 func build_profiled_terrain_arrays_from_binding(chunk_size_m: float, grid_steps: int, sample_binding: Dictionary) -> Dictionary:
 	var template: Dictionary = _template_catalog.get_template(chunk_size_m, grid_steps)
@@ -55,12 +75,50 @@ func build_profiled_terrain_arrays_from_binding(chunk_size_m: float, grid_steps:
 		"sample_stats": sample_stats,
 		"page_contract": (sample_binding.get("page_contract", {}) as Dictionary).duplicate(true),
 		"runtime_hit": bool(sample_binding.get("runtime_hit", false)),
+		"grid_steps": grid_steps,
 	}
 
 func commit_terrain_mesh(arrays_result: Dictionary) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays_result.get("arrays", []))
 	return mesh
+
+func _downsample_sample_binding(source_binding: Dictionary, source_grid_steps: int, target_grid_steps: int) -> Dictionary:
+	var source_heights: PackedFloat32Array = source_binding.get("heights", PackedFloat32Array())
+	if target_grid_steps <= 0 or source_grid_steps <= 0 or target_grid_steps >= source_grid_steps:
+		return source_binding.duplicate(true)
+	var factor := int(source_grid_steps / target_grid_steps)
+	if factor <= 0 or factor * target_grid_steps != source_grid_steps:
+		return source_binding.duplicate(true)
+	var source_row_stride := source_grid_steps + 1
+	var target_row_stride := target_grid_steps + 1
+	var target_heights := PackedFloat32Array()
+	target_heights.resize(target_row_stride * target_row_stride)
+	var write_index := 0
+	for x_index in range(target_row_stride):
+		for z_index in range(target_row_stride):
+			var source_index := (x_index * factor) * source_row_stride + (z_index * factor)
+			target_heights[write_index] = source_heights[source_index]
+			write_index += 1
+	var target_normals := _build_normals(target_heights, target_row_stride, float(source_binding.get("chunk_size_m", 256.0)))
+	return {
+		"heights": target_heights,
+		"normals": target_normals,
+		"runtime_hit": bool(source_binding.get("runtime_hit", false)),
+		"page_contract": (source_binding.get("page_contract", {}) as Dictionary).duplicate(true),
+		"runtime_key": str(source_binding.get("runtime_key", "")),
+		"chunk_size_m": float(source_binding.get("chunk_size_m", 256.0)),
+		"sample_stats": {
+			"current_vertex_sample_count": target_heights.size(),
+			"unique_vertex_sample_count": target_heights.size(),
+			"duplicate_sample_count": 0,
+			"raw_terrain_current_usec": 0,
+			"shaped_current_usec": 0,
+			"shaped_unique_usec": 0,
+			"duplication_ratio": 1.0,
+			"template_cache_key": "%s_lod%d" % [str(source_binding.get("runtime_key", "")), target_grid_steps],
+		},
+	}
 
 func _resolve_sample_binding(chunk_size_m: float, chunk_data: Dictionary, profile: Dictionary, grid_steps: int) -> Dictionary:
 	var existing_binding: Dictionary = chunk_data.get("terrain_page_binding", {})
@@ -71,6 +129,7 @@ func _resolve_sample_binding(chunk_size_m: float, chunk_data: Dictionary, profil
 			"normals": existing_binding.get("normals", PackedVector3Array()),
 			"runtime_hit": bool(existing_binding.get("runtime_hit", false)),
 			"page_contract": (existing_binding.get("page_contract", {}) as Dictionary).duplicate(true),
+			"chunk_size_m": chunk_size_m,
 			"sample_stats": {
 				"current_vertex_sample_count": existing_heights.size(),
 				"unique_vertex_sample_count": existing_heights.size(),
@@ -92,6 +151,8 @@ func _resolve_sample_binding(chunk_size_m: float, chunk_data: Dictionary, profil
 			"normals": page_binding.get("normals", PackedVector3Array()),
 			"runtime_hit": bool(page_binding.get("runtime_hit", false)),
 			"page_contract": (page_binding.get("page_contract", {}) as Dictionary).duplicate(true),
+			"runtime_key": str(page_binding.get("runtime_key", "")),
+			"chunk_size_m": chunk_size_m,
 			"sample_stats": {
 				"current_vertex_sample_count": heights.size(),
 				"unique_vertex_sample_count": heights.size(),
@@ -119,6 +180,7 @@ func _resolve_sample_binding(chunk_size_m: float, chunk_data: Dictionary, profil
 		"normals": _build_normals(heights, row_stride, chunk_size_m),
 		"runtime_hit": false,
 		"page_contract": {},
+		"chunk_size_m": chunk_size_m,
 		"sample_stats": {
 			"current_vertex_sample_count": local_points.size(),
 			"unique_vertex_sample_count": local_points.size(),

@@ -96,7 +96,7 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 	if not hud.has_method("set_status"):
 		return
 
-	var snapshot: Dictionary = snapshot_override.duplicate(true) if not snapshot_override.is_empty() else get_streaming_snapshot()
+	var snapshot: Dictionary = snapshot_override.duplicate(true) if not snapshot_override.is_empty() else _build_hud_snapshot()
 	var world_summary := str(_world_data.get("summary", "World data unavailable"))
 	var active_speed_text := ""
 	if player != null and player.has_method("get_walk_speed_mps") and player.has_method("get_sprint_speed_mps"):
@@ -115,7 +115,7 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 			str(snapshot.get("current_chunk_id", "")),
 			int(snapshot.get("active_chunk_count", 0))
 		],
-		"multimesh_instance_total=%d" % int(snapshot.get("multimesh_instance_total", 0)),
+		"current_chunk_lod=%s" % str(snapshot.get("current_chunk_lod_mode", "")),
 		"visual_variant=%s" % str(snapshot.get("current_chunk_visual_variant_id", "")),
 		active_speed_text,
 	])
@@ -171,6 +171,19 @@ func get_streaming_snapshot() -> Dictionary:
 		snapshot["current_chunk_visual_variant_id"] = str(current_chunk_stats.get("visual_variant_id", ""))
 	return snapshot
 
+func _build_hud_snapshot() -> Dictionary:
+	if _chunk_streamer == null:
+		return {}
+	var snapshot: Dictionary = _chunk_streamer.get_streaming_snapshot()
+	snapshot["control_mode"] = _control_mode
+	snapshot["tracked_position"] = _vector3_to_dict(player.global_position if player != null else Vector3.ZERO)
+	var current_chunk_id := str(snapshot.get("current_chunk_id", ""))
+	if current_chunk_id != "" and chunk_renderer != null and chunk_renderer.has_method("get_chunk_scene_stats"):
+		var current_chunk_stats: Dictionary = chunk_renderer.get_chunk_scene_stats(current_chunk_id)
+		snapshot["current_chunk_lod_mode"] = str(current_chunk_stats.get("lod_mode", ""))
+		snapshot["current_chunk_visual_variant_id"] = str(current_chunk_stats.get("visual_variant_id", ""))
+	return snapshot
+
 func update_streaming_for_position(world_position: Vector3) -> Array:
 	var started_usec := Time.get_ticks_usec()
 	if _chunk_streamer == null:
@@ -178,11 +191,13 @@ func update_streaming_for_position(world_position: Vector3) -> Array:
 	var events: Array = _chunk_streamer.update_for_world_position(world_position)
 	if chunk_renderer != null and chunk_renderer.has_method("sync_streaming"):
 		chunk_renderer.sync_streaming(_chunk_streamer.get_active_chunk_entries(), world_position)
-	var snapshot: Dictionary = get_streaming_snapshot()
-	if debug_overlay != null and debug_overlay.has_method("set_snapshot"):
-		debug_overlay.set_snapshot(snapshot)
-		debug_overlay.visible = false
-	_refresh_hud_status(snapshot)
+	var hud_snapshot := _build_hud_snapshot()
+	if debug_overlay != null:
+		var debug_expanded := debug_overlay.has_method("is_expanded") and bool(debug_overlay.call("is_expanded"))
+		debug_overlay.visible = debug_expanded
+		if debug_expanded and debug_overlay.has_method("set_snapshot"):
+			debug_overlay.set_snapshot(get_streaming_snapshot())
+	_refresh_hud_status(hud_snapshot)
 	_record_update_streaming_sample(Time.get_ticks_usec() - started_usec)
 	return events
 
@@ -456,16 +471,16 @@ func _vector3_to_dict(value: Vector3) -> Dictionary:
 func _build_minimap_cache_key(center_world_position: Vector3, world_radius_m: float) -> String:
 	var center_step := maxf(MINIMAP_POSITION_REFRESH_M, 1.0)
 	return "|".join([
-		"center:%d:%d" % [int(round(center_world_position.x / center_step)), int(round(center_world_position.z / center_step))],
+		"center:%d:%d" % [int(floor(center_world_position.x / center_step)), int(floor(center_world_position.z / center_step))],
 		"radius:%d" % int(round(world_radius_m)),
 	])
 
 func _get_minimap_center_world_position(anchor_world_position: Vector3) -> Vector3:
 	var center_step := maxf(MINIMAP_POSITION_REFRESH_M, 1.0)
 	return Vector3(
-		float(int(round(anchor_world_position.x / center_step))) * center_step,
+		float(int(floor(anchor_world_position.x / center_step))) * center_step,
 		anchor_world_position.y,
-		float(int(round(anchor_world_position.z / center_step))) * center_step
+		float(int(floor(anchor_world_position.z / center_step))) * center_step
 	)
 
 func _build_current_minimap_route_overlay(center_world_position: Vector3, world_radius_m: float) -> Dictionary:

@@ -18,6 +18,8 @@ const SURFACE_DETAIL_COARSE := "coarse"
 const NEAR_THRESHOLD_M := 880.0
 const MID_THRESHOLD_M := 1600.0
 const TERRAIN_GRID_STEPS := 12
+const TERRAIN_GRID_STEPS_MID := 6
+const TERRAIN_GRID_STEPS_FAR := 3
 
 var _chunk_data: Dictionary = {}
 var _profile: Dictionary = {}
@@ -26,17 +28,26 @@ var _current_lod_mode := LOD_NEAR
 var _current_surface_detail_mode := SURFACE_DETAIL_FULL
 var _surface_page_contract: Dictionary = {}
 var _terrain_page_contract: Dictionary = {}
+var _terrain_mesh_results_by_lod: Dictionary = {}
 var _building_collision_shapes: Array[CollisionShape3D] = []
 var _building_collisions_enabled := true
+var _terrain_mesh_apply_count := 0
+var _terrain_collision_apply_count := 0
 
 func setup(chunk_data: Dictionary) -> void:
 	var surface_page_provider = chunk_data.get("surface_page_provider")
 	var surface_page_binding: Dictionary = chunk_data.get("surface_page_binding", {})
+	var terrain_page_provider = chunk_data.get("terrain_page_provider")
+	var terrain_page_binding: Dictionary = chunk_data.get("terrain_page_binding", {})
 	_chunk_data = chunk_data.duplicate(true)
 	if surface_page_provider != null:
 		_chunk_data["surface_page_provider"] = surface_page_provider
 	if not surface_page_binding.is_empty():
 		_chunk_data["surface_page_binding"] = surface_page_binding
+	if terrain_page_provider != null:
+		_chunk_data["terrain_page_provider"] = terrain_page_provider
+	if not terrain_page_binding.is_empty():
+		_chunk_data["terrain_page_binding"] = terrain_page_binding
 	_profile = (chunk_data.get("prepared_profile", {}) as Dictionary).duplicate(true)
 	if _profile.is_empty():
 		_profile = CityChunkProfileBuilder.build_profile(_chunk_data)
@@ -49,9 +60,13 @@ func setup(chunk_data: Dictionary) -> void:
 func set_lod_mode(mode: String) -> void:
 	var normalized_mode := _normalize_lod_mode(mode)
 	var target_surface_detail_mode := _resolve_surface_detail_mode_for_lod(normalized_mode)
+	if normalized_mode == _current_lod_mode and target_surface_detail_mode == _current_surface_detail_mode:
+		return
 	if target_surface_detail_mode != _current_surface_detail_mode:
 		_apply_ground_surface_detail_mode(target_surface_detail_mode)
 	_current_lod_mode = normalized_mode
+	_apply_terrain_lod_mode(normalized_mode)
+	_apply_terrain_collision_mode(normalized_mode)
 	var near_group := get_node_or_null("NearGroup") as Node3D
 	var mid_proxy := get_node_or_null("MidProxy") as Node3D
 	var far_proxy := get_node_or_null("FarProxy") as Node3D
@@ -85,6 +100,31 @@ func get_surface_page_contract() -> Dictionary:
 
 func get_terrain_page_contract() -> Dictionary:
 	return _terrain_page_contract.duplicate(true)
+
+func get_terrain_lod_contract() -> Dictionary:
+	_ensure_all_terrain_lod_mesh_results()
+	var modes := {}
+	for lod_mode in _terrain_mesh_results_by_lod.keys():
+		var mesh_result: Dictionary = _terrain_mesh_results_by_lod[lod_mode]
+		var sample_stats: Dictionary = mesh_result.get("sample_stats", {})
+		modes[str(lod_mode)] = {
+			"grid_steps": int(mesh_result.get("grid_steps", 0)),
+			"vertex_count": int(sample_stats.get("current_vertex_sample_count", 0)),
+		}
+	var current_result: Dictionary = _terrain_mesh_results_by_lod.get(_current_lod_mode, {})
+	var current_sample_stats: Dictionary = current_result.get("sample_stats", {})
+	return {
+		"current_mode": _current_lod_mode,
+		"current_grid_steps": int(current_result.get("grid_steps", 0)),
+		"current_vertex_count": int(current_sample_stats.get("current_vertex_sample_count", 0)),
+		"modes": modes,
+	}
+
+func get_terrain_lod_debug_stats() -> Dictionary:
+	return {
+		"mesh_apply_count": _terrain_mesh_apply_count,
+		"collision_apply_count": _terrain_collision_apply_count,
+	}
 
 func get_visual_variant_id() -> String:
 	return str(_profile.get("variant_id", ""))
@@ -155,6 +195,7 @@ func get_min_prop_road_clearance_m() -> float:
 
 func get_renderer_stats() -> Dictionary:
 	var prop_multimesh := get_prop_multimesh()
+	var terrain_lod_contract := get_terrain_lod_contract()
 	return {
 		"chunk_id": str(_chunk_data.get("chunk_id", "")),
 		"lod_mode": _current_lod_mode,
@@ -178,6 +219,9 @@ func get_renderer_stats() -> Dictionary:
 		"building_count": get_building_count(),
 		"surface_page_key": _surface_page_contract.get("page_key", Vector2i.ZERO),
 		"terrain_page_key": _terrain_page_contract.get("page_key", Vector2i.ZERO),
+		"terrain_current_grid_steps": int(terrain_lod_contract.get("current_grid_steps", 0)),
+		"terrain_current_vertex_count": int(terrain_lod_contract.get("current_vertex_count", 0)),
+		"terrain_lod_contract": terrain_lod_contract,
 	}
 
 func _rebuild() -> void:
@@ -186,6 +230,8 @@ func _rebuild() -> void:
 		remove_child(child)
 		child.free()
 	_building_collision_shapes.clear()
+	_terrain_mesh_apply_count = 0
+	_terrain_collision_apply_count = 0
 
 	var chunk_size_m := float(_chunk_data.get("chunk_size_m", 256.0))
 	var setup_profile := {
@@ -348,7 +394,11 @@ func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 	collision_shape.name = "CollisionShape3D"
 	var collision_started_usec := Time.get_ticks_usec()
 	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(terrain_mesh.get_faces())
+	var collision_mesh_result: Dictionary = _terrain_mesh_results_by_lod.get(LOD_NEAR, terrain_build_result)
+	var collision_mesh := collision_mesh_result.get("mesh") as ArrayMesh
+	if collision_mesh == null:
+		collision_mesh = terrain_mesh
+	shape.set_faces(collision_mesh.get_faces())
 	var collision_usec := Time.get_ticks_usec() - collision_started_usec
 	collision_shape.shape = shape
 	ground_body.add_child(collision_shape)
@@ -464,18 +514,27 @@ func _normalize_lod_mode(mode: String) -> String:
 
 func _build_terrain_mesh(chunk_size_m: float) -> Dictionary:
 	var terrain_mesh_builder = CityTerrainMeshBuilder.new()
-	var terrain_build_result: Dictionary
-	var prebuilt_terrain_result: Dictionary = _chunk_data.get("terrain_mesh_result", {})
-	if not prebuilt_terrain_result.is_empty():
-		terrain_build_result = prebuilt_terrain_result.duplicate(true)
-		terrain_build_result["mesh"] = terrain_mesh_builder.commit_terrain_mesh(terrain_build_result)
+	_terrain_mesh_results_by_lod = {}
+	var prebuilt_lod_results: Dictionary = _chunk_data.get("terrain_lod_mesh_results", {})
+	if not prebuilt_lod_results.is_empty():
+		for lod_mode in prebuilt_lod_results.keys():
+			var terrain_result: Dictionary = (prebuilt_lod_results[lod_mode] as Dictionary).duplicate(true)
+			terrain_result["mesh"] = terrain_mesh_builder.commit_terrain_mesh(terrain_result)
+			_terrain_mesh_results_by_lod[str(lod_mode)] = terrain_result
 	else:
-		terrain_build_result = terrain_mesh_builder.build_profiled_terrain_mesh(
+		var terrain_lod_results := terrain_mesh_builder.build_profiled_terrain_lod_arrays(
 			chunk_size_m,
 			_chunk_data,
 			_profile,
-			TERRAIN_GRID_STEPS
+			TERRAIN_GRID_STEPS,
+			_terrain_lod_grid_steps_by_mode()
 		)
+		for lod_mode in terrain_lod_results.keys():
+			var terrain_result: Dictionary = (terrain_lod_results[lod_mode] as Dictionary).duplicate(true)
+			terrain_result["mesh"] = terrain_mesh_builder.commit_terrain_mesh(terrain_result)
+			_terrain_mesh_results_by_lod[str(lod_mode)] = terrain_result
+	_ensure_all_terrain_lod_mesh_results()
+	var terrain_build_result: Dictionary = _terrain_mesh_results_by_lod.get(_current_lod_mode, _terrain_mesh_results_by_lod.get(LOD_NEAR, {}))
 	var sample_stats: Dictionary = terrain_build_result.get("sample_stats", {})
 	_terrain_page_contract = (terrain_build_result.get("page_contract", {}) as Dictionary).duplicate(true)
 	return {
@@ -485,6 +544,79 @@ func _build_terrain_mesh(chunk_size_m: float) -> Dictionary:
 		"duplication_ratio": float(sample_stats.get("duplication_ratio", 0.0)),
 		"runtime_page_hit": bool(terrain_build_result.get("runtime_hit", false)),
 	}
+
+func _apply_terrain_lod_mode(mode: String) -> void:
+	_ensure_terrain_mesh_result(mode)
+	var mesh_instance := get_node_or_null("GroundBody/MeshInstance3D") as MeshInstance3D
+	if mesh_instance == null:
+		return
+	var terrain_mesh_result: Dictionary = _terrain_mesh_results_by_lod.get(mode, _terrain_mesh_results_by_lod.get(LOD_NEAR, {}))
+	var terrain_mesh := terrain_mesh_result.get("mesh") as ArrayMesh
+	if terrain_mesh != null:
+		if mesh_instance.mesh == terrain_mesh:
+			return
+		mesh_instance.mesh = terrain_mesh
+		_terrain_mesh_apply_count += 1
+
+func _apply_terrain_collision_mode(mode: String) -> void:
+	if mode != LOD_NEAR:
+		return
+	var collision_shape := get_node_or_null("GroundBody/CollisionShape3D") as CollisionShape3D
+	if collision_shape == null:
+		return
+	_ensure_terrain_mesh_result(LOD_NEAR)
+	var terrain_mesh_result: Dictionary = _terrain_mesh_results_by_lod.get(LOD_NEAR, {})
+	var terrain_mesh := terrain_mesh_result.get("mesh") as ArrayMesh
+	if terrain_mesh == null:
+		return
+	var shape := collision_shape.shape as ConcavePolygonShape3D
+	if shape == null:
+		shape = ConcavePolygonShape3D.new()
+	shape.set_faces(terrain_mesh.get_faces())
+	collision_shape.shape = shape
+	_terrain_collision_apply_count += 1
+
+func _terrain_lod_grid_steps_by_mode() -> Dictionary:
+	return {
+		LOD_NEAR: TERRAIN_GRID_STEPS,
+		LOD_MID: TERRAIN_GRID_STEPS_MID,
+		LOD_FAR: TERRAIN_GRID_STEPS_FAR,
+	}
+
+func _ensure_all_terrain_lod_mesh_results() -> void:
+	for lod_mode in _terrain_lod_grid_steps_by_mode().keys():
+		_ensure_terrain_mesh_result(str(lod_mode))
+
+func _ensure_terrain_mesh_result(mode: String) -> void:
+	var normalized_mode := _normalize_lod_mode(mode)
+	if _terrain_mesh_results_by_lod.has(normalized_mode):
+		return
+	var terrain_page_binding: Dictionary = _chunk_data.get("terrain_page_binding", {})
+	if terrain_page_binding.is_empty():
+		return
+	var chunk_size_m := float(_chunk_data.get("chunk_size_m", 256.0))
+	var terrain_mesh_builder := CityTerrainMeshBuilder.new()
+	var source_grid_steps := int(terrain_page_binding.get("grid_steps", TERRAIN_GRID_STEPS))
+	var target_grid_steps := int(_terrain_lod_grid_steps_by_mode().get(normalized_mode, TERRAIN_GRID_STEPS))
+	var terrain_result: Dictionary
+	if target_grid_steps == source_grid_steps:
+		terrain_result = terrain_mesh_builder.build_profiled_terrain_arrays_from_binding(
+			chunk_size_m,
+			target_grid_steps,
+			terrain_page_binding
+		)
+	else:
+		var reduced_results := terrain_mesh_builder.build_profiled_terrain_lod_arrays_from_binding(
+			chunk_size_m,
+			source_grid_steps,
+			terrain_page_binding,
+			{normalized_mode: target_grid_steps}
+		)
+		terrain_result = (reduced_results.get(normalized_mode, {}) as Dictionary).duplicate(true)
+	if terrain_result.is_empty():
+		return
+	terrain_result["mesh"] = terrain_mesh_builder.commit_terrain_mesh(terrain_result)
+	_terrain_mesh_results_by_lod[normalized_mode] = terrain_result
 
 func _set_building_collisions_enabled(enabled: bool) -> void:
 	_building_collisions_enabled = enabled

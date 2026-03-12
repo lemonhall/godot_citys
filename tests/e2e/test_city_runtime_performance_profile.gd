@@ -72,6 +72,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(profile.get("streaming_mount_setup_avg_usec", 0)) <= 16000, "M3 runtime profile must keep mount setup average at or below 16000 usec"):
 		return
+	if not T.require_true(self, int(profile.get("wall_frame_avg_usec", 0)) <= 16667, "Warm traversal must keep average wall-frame time at or below the 16.67ms redline"):
+		return
 
 	world.queue_free()
 	T.pass_and_quit(self)

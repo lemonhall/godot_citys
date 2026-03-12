@@ -11,6 +11,8 @@ const PREPARE_BUDGET_PER_TICK := 1
 const MOUNT_BUDGET_PER_TICK := 1
 const RETIRE_BUDGET_PER_TICK := 1
 const MAX_POOLED_CHUNKS := 8
+const SURFACE_ASYNC_CONCURRENCY_LIMIT := 1
+const TERRAIN_ASYNC_CONCURRENCY_LIMIT := 1
 
 var _config
 var _world_data: Dictionary = {}
@@ -21,7 +23,9 @@ var _prepared_payloads: Dictionary = {}
 var _pending_prepare: Dictionary = {}
 var _surface_waiting_payloads: Dictionary = {}
 var _pending_surface_jobs: Dictionary = {}
+var _queued_surface_jobs: Array[Dictionary] = []
 var _pending_terrain_jobs: Dictionary = {}
+var _queued_terrain_jobs: Array[Dictionary] = []
 var _pending_mount_ids: Array[String] = []
 var _pending_retire_ids: Array[String] = []
 var _scene_pool: Array[Node3D] = []
@@ -77,7 +81,9 @@ func setup(config, world_data: Dictionary) -> void:
 	_pending_prepare.clear()
 	_surface_waiting_payloads.clear()
 	_pending_surface_jobs.clear()
+	_queued_surface_jobs.clear()
 	_pending_terrain_jobs.clear()
+	_queued_terrain_jobs.clear()
 	_pending_mount_ids.clear()
 	_pending_retire_ids.clear()
 	_last_prepare_usec = 0
@@ -119,7 +125,9 @@ func _notification(what: int) -> void:
 	_pending_prepare.clear()
 	_surface_waiting_payloads.clear()
 	_pending_surface_jobs.clear()
+	_queued_surface_jobs.clear()
 	_pending_terrain_jobs.clear()
+	_queued_terrain_jobs.clear()
 	_pending_mount_ids.clear()
 	_pending_retire_ids.clear()
 	_last_queue_process_frame = -1
@@ -173,6 +181,22 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> vo
 		if target_chunk_ids.has(pending_chunk_id):
 			continue
 		_pending_mount_ids.remove_at(pending_index)
+	for queued_surface_index in range(_queued_surface_jobs.size() - 1, -1, -1):
+		var queued_surface_job: Dictionary = _queued_surface_jobs[queued_surface_index]
+		var surface_waiters: Dictionary = queued_surface_job.get("waiter_headers", {})
+		var keep_waiter := false
+		for waiter_chunk_id in surface_waiters.keys():
+			if target_chunk_ids.has(str(waiter_chunk_id)):
+				keep_waiter = true
+				break
+		if keep_waiter:
+			continue
+		_queued_surface_jobs.remove_at(queued_surface_index)
+	for queued_index in range(_queued_terrain_jobs.size() - 1, -1, -1):
+		var queued_job: Dictionary = _queued_terrain_jobs[queued_index]
+		if target_chunk_ids.has(str(queued_job.get("chunk_id", ""))):
+			continue
+		_queued_terrain_jobs.remove_at(queued_index)
 
 	_prune_surface_job_waiters(target_chunk_ids)
 	_prune_terrain_job_waiters(target_chunk_ids)
@@ -199,7 +223,11 @@ func get_streaming_budget_stats() -> Dictionary:
 		"retire_budget_per_tick": RETIRE_BUDGET_PER_TICK,
 		"pending_prepare_count": _pending_prepare.size(),
 		"pending_surface_async_count": _pending_surface_jobs.size(),
+		"queued_surface_async_count": _queued_surface_jobs.size(),
+		"surface_async_concurrency_limit": SURFACE_ASYNC_CONCURRENCY_LIMIT,
 		"pending_terrain_async_count": _pending_terrain_jobs.size(),
+		"queued_terrain_async_count": _queued_terrain_jobs.size(),
+		"terrain_async_concurrency_limit": TERRAIN_ASYNC_CONCURRENCY_LIMIT,
 		"pending_mount_count": _pending_mount_ids.size(),
 		"pending_retire_count": _pending_retire_ids.size(),
 		"last_prepare_count": _last_prepare_count,
@@ -334,7 +362,9 @@ func _queue_retire(chunk_id: String) -> void:
 func _process_streaming_queues() -> void:
 	_process_retire_budget()
 	_collect_completed_terrain_jobs()
+	_dispatch_queued_terrain_jobs()
 	_collect_completed_surface_jobs()
+	_dispatch_queued_surface_jobs()
 	_process_mount_budget()
 	_process_prepare_budget()
 
@@ -370,7 +400,17 @@ func _process_prepare_budget() -> void:
 		var terrain_page_header: Dictionary = _terrain_page_provider.build_chunk_page_header(payload, int(CityChunkScene.TERRAIN_GRID_STEPS))
 		payload["terrain_page_header"] = terrain_page_header
 		_surface_waiting_payloads[chunk_id] = payload
-		_queue_terrain_job(chunk_id, payload, terrain_page_header, int(CityChunkScene.TERRAIN_GRID_STEPS))
+		var terrain_runtime_key := str(terrain_page_header.get("runtime_key", ""))
+		if _terrain_page_provider.has_runtime_bundle(terrain_runtime_key):
+			var terrain_runtime_bundle := _terrain_page_provider.get_runtime_bundle(terrain_runtime_key)
+			var terrain_page_binding := CityTerrainPageProvider.build_chunk_binding_from_bundle(terrain_page_header, terrain_runtime_bundle, true)
+			payload["terrain_page_binding"] = terrain_page_binding
+			payload["terrain_lod_mesh_results"] = {
+				str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR)): _build_terrain_mesh_result_for_payload(payload, terrain_page_binding),
+			}
+			_surface_waiting_payloads[chunk_id] = payload
+		else:
+			_queue_terrain_job(chunk_id, payload, terrain_page_header, int(CityChunkScene.TERRAIN_GRID_STEPS), _terrain_lod_grid_steps_by_mode())
 		payload = (_surface_waiting_payloads.get(chunk_id, payload) as Dictionary).duplicate(true)
 		var detail_mode := _resolve_surface_detail_mode_for_lod(str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR)))
 		var page_header: Dictionary = _surface_page_provider.build_chunk_page_header(payload, detail_mode)
@@ -550,14 +590,14 @@ func _try_enqueue_waiting_payload(chunk_id: String) -> void:
 		return
 	var payload: Dictionary = _surface_waiting_payloads[chunk_id]
 	var surface_binding: Dictionary = payload.get("surface_page_binding", {})
-	var terrain_mesh_result: Dictionary = payload.get("terrain_mesh_result", {})
-	if surface_binding.is_empty() or terrain_mesh_result.is_empty():
+	var terrain_lod_mesh_results: Dictionary = payload.get("terrain_lod_mesh_results", {})
+	if surface_binding.is_empty() or terrain_lod_mesh_results.is_empty():
 		_surface_waiting_payloads[chunk_id] = payload
 		return
 	_surface_waiting_payloads.erase(chunk_id)
 	_enqueue_ready_payload(chunk_id, payload)
 
-func _queue_terrain_job(chunk_id: String, payload: Dictionary, page_header: Dictionary, grid_steps: int) -> void:
+func _queue_terrain_job(chunk_id: String, payload: Dictionary, page_header: Dictionary, grid_steps: int, lod_grid_steps_by_mode: Dictionary) -> void:
 	if _pending_terrain_jobs.has(chunk_id):
 		return
 	var runtime_key := str(page_header.get("runtime_key", ""))
@@ -570,11 +610,22 @@ func _queue_terrain_job(chunk_id: String, payload: Dictionary, page_header: Dict
 		"chunk_id": chunk_id,
 		"chunk_size_m": float(payload.get("chunk_size_m", 256.0)),
 		"grid_steps": grid_steps,
+		"lod_grid_steps_by_mode": lod_grid_steps_by_mode.duplicate(true),
+		"initial_lod_mode": str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR)),
 		"page_header": page_header.duplicate(true),
 		"page_request": _terrain_page_provider.build_page_request(payload, grid_steps, page_header),
 		"existing_runtime_bundle": existing_runtime_bundle,
 		"runtime_hit": runtime_hit,
 	}
+	if _pending_terrain_jobs.size() >= TERRAIN_ASYNC_CONCURRENCY_LIMIT:
+		_queued_terrain_jobs.append({
+			"chunk_id": chunk_id,
+			"job_request": job_request,
+		})
+		return
+	_dispatch_terrain_job_request(chunk_id, job_request, runtime_key)
+
+func _dispatch_terrain_job_request(chunk_id: String, job_request: Dictionary, runtime_key: String) -> void:
 	var thread := Thread.new()
 	var dispatch_started_usec := Time.get_ticks_usec()
 	var start_error := thread.start(Callable(self, "_prepare_terrain_request_async").bind(job_request))
@@ -588,6 +639,19 @@ func _queue_terrain_job(chunk_id: String, payload: Dictionary, page_header: Dict
 		"runtime_key": runtime_key,
 	}
 
+func _dispatch_queued_terrain_jobs() -> void:
+	var dispatch_index := 0
+	while _pending_terrain_jobs.size() < TERRAIN_ASYNC_CONCURRENCY_LIMIT and dispatch_index < _queued_terrain_jobs.size():
+		var queued_job: Dictionary = _queued_terrain_jobs[dispatch_index]
+		dispatch_index += 1
+		var chunk_id := str(queued_job.get("chunk_id", ""))
+		if chunk_id == "" or not _surface_waiting_payloads.has(chunk_id):
+			continue
+		var job_request: Dictionary = queued_job.get("job_request", {})
+		_dispatch_terrain_job_request(chunk_id, job_request, str((job_request.get("page_header", {}) as Dictionary).get("runtime_key", "")))
+	if dispatch_index > 0:
+		_queued_terrain_jobs = _queued_terrain_jobs.slice(dispatch_index)
+
 func _queue_surface_job(chunk_id: String, payload: Dictionary, page_header: Dictionary, detail_mode: String) -> void:
 	var runtime_key := str(page_header.get("runtime_key", ""))
 	if _pending_surface_jobs.has(runtime_key):
@@ -597,8 +661,30 @@ func _queue_surface_job(chunk_id: String, payload: Dictionary, page_header: Dict
 		existing_job["waiter_headers"] = waiter_headers
 		_pending_surface_jobs[runtime_key] = existing_job
 		return
+	for queued_index in range(_queued_surface_jobs.size()):
+		var queued_job: Dictionary = _queued_surface_jobs[queued_index]
+		if str(queued_job.get("runtime_key", "")) != runtime_key:
+			continue
+		var queued_waiters: Dictionary = queued_job.get("waiter_headers", {})
+		queued_waiters[chunk_id] = page_header.duplicate(true)
+		queued_job["waiter_headers"] = queued_waiters
+		_queued_surface_jobs[queued_index] = queued_job
+		return
 
 	var page_request := _surface_page_provider.build_page_request(payload, detail_mode, page_header)
+	var waiter_headers := {
+		chunk_id: page_header.duplicate(true),
+	}
+	if _pending_surface_jobs.size() >= SURFACE_ASYNC_CONCURRENCY_LIMIT:
+		_queued_surface_jobs.append({
+			"runtime_key": runtime_key,
+			"page_request": page_request,
+			"waiter_headers": waiter_headers,
+		})
+		return
+	_dispatch_surface_job_request(runtime_key, page_request, waiter_headers)
+
+func _dispatch_surface_job_request(runtime_key: String, page_request: Dictionary, waiter_headers: Dictionary) -> void:
 	var thread := Thread.new()
 	var dispatch_started_usec := Time.get_ticks_usec()
 	var start_error := thread.start(Callable(self, "_prepare_surface_request_async").bind(page_request.get("surface_request", {})))
@@ -609,17 +695,41 @@ func _queue_surface_job(chunk_id: String, payload: Dictionary, page_header: Dict
 		_record_surface_async_complete_sample(int(surface_stats.get("prepare_total_usec", surface_stats.get("total_usec", 0))))
 		var runtime_bundle := _surface_page_provider.store_runtime_bundle(runtime_key, surface_data)
 		_record_surface_commit_sample(int(runtime_bundle.get("commit_usec", 0)))
-		payload["surface_page_binding"] = _surface_page_provider.build_chunk_binding(page_header, runtime_bundle, false)
-		_surface_waiting_payloads[chunk_id] = payload
-		_try_enqueue_waiting_payload(chunk_id)
+		for waiter_chunk_id in waiter_headers.keys():
+			var chunk_id := str(waiter_chunk_id)
+			if not _surface_waiting_payloads.has(chunk_id):
+				continue
+			var payload: Dictionary = _surface_waiting_payloads[chunk_id]
+			payload["surface_page_binding"] = _surface_page_provider.build_chunk_binding(waiter_headers[waiter_chunk_id], runtime_bundle, false)
+			_surface_waiting_payloads[chunk_id] = payload
+			_try_enqueue_waiting_payload(chunk_id)
 		return
 
 	_pending_surface_jobs[runtime_key] = {
 		"thread": thread,
-		"waiter_headers": {
-			chunk_id: page_header.duplicate(true),
-		},
+		"waiter_headers": waiter_headers,
 	}
+
+func _dispatch_queued_surface_jobs() -> void:
+	var dispatch_index := 0
+	while _pending_surface_jobs.size() < SURFACE_ASYNC_CONCURRENCY_LIMIT and dispatch_index < _queued_surface_jobs.size():
+		var queued_job: Dictionary = _queued_surface_jobs[dispatch_index]
+		dispatch_index += 1
+		var waiter_headers: Dictionary = queued_job.get("waiter_headers", {})
+		var has_live_waiter := false
+		for waiter_chunk_id in waiter_headers.keys():
+			if _surface_waiting_payloads.has(str(waiter_chunk_id)):
+				has_live_waiter = true
+				break
+		if not has_live_waiter:
+			continue
+		_dispatch_surface_job_request(
+			str(queued_job.get("runtime_key", "")),
+			queued_job.get("page_request", {}),
+			waiter_headers
+		)
+	if dispatch_index > 0:
+		_queued_surface_jobs = _queued_surface_jobs.slice(dispatch_index)
 
 func _collect_completed_terrain_jobs() -> void:
 	var chunk_ids: Array[String] = []
@@ -699,7 +809,7 @@ func _apply_completed_terrain_job(thread_result: Dictionary) -> void:
 		return
 	var payload: Dictionary = _surface_waiting_payloads[chunk_id]
 	payload["terrain_page_binding"] = (thread_result.get("terrain_page_binding", {}) as Dictionary).duplicate(true)
-	payload["terrain_mesh_result"] = (thread_result.get("terrain_mesh_result", {}) as Dictionary).duplicate(true)
+	payload["terrain_lod_mesh_results"] = (thread_result.get("terrain_lod_mesh_results", {}) as Dictionary).duplicate(true)
 	_surface_waiting_payloads[chunk_id] = payload
 	_try_enqueue_waiting_payload(chunk_id)
 
@@ -715,17 +825,61 @@ func _prepare_terrain_request_async(job_request: Dictionary) -> Dictionary:
 		runtime_bundle = CityTerrainPageProvider.prepare_page_bundle(job_request.get("page_request", {}))
 		runtime_hit = false
 	var terrain_page_binding := CityTerrainPageProvider.build_chunk_binding_from_bundle(page_header, runtime_bundle, runtime_hit)
-	var terrain_mesh_result := CityTerrainMeshBuilder.new().build_profiled_terrain_arrays_from_binding(
-		float(job_request.get("chunk_size_m", 256.0)),
-		int(job_request.get("grid_steps", CityChunkScene.TERRAIN_GRID_STEPS)),
-		terrain_page_binding
-	)
+	var initial_lod_mode := str(job_request.get("initial_lod_mode", CityChunkScene.LOD_NEAR))
+	var lod_grid_steps_by_mode: Dictionary = job_request.get("lod_grid_steps_by_mode", _terrain_lod_grid_steps_by_mode())
+	var source_grid_steps := int(job_request.get("grid_steps", CityChunkScene.TERRAIN_GRID_STEPS))
+	var terrain_grid_steps := int(lod_grid_steps_by_mode.get(initial_lod_mode, source_grid_steps))
+	var terrain_mesh_builder := CityTerrainMeshBuilder.new()
+	var terrain_mesh_result: Dictionary
+	if terrain_grid_steps == source_grid_steps:
+		terrain_mesh_result = terrain_mesh_builder.build_profiled_terrain_arrays_from_binding(
+			float(job_request.get("chunk_size_m", 256.0)),
+			terrain_grid_steps,
+			terrain_page_binding
+		)
+	else:
+		var reduced_results := terrain_mesh_builder.build_profiled_terrain_lod_arrays_from_binding(
+			float(job_request.get("chunk_size_m", 256.0)),
+			source_grid_steps,
+			terrain_page_binding,
+			{initial_lod_mode: terrain_grid_steps}
+		)
+		terrain_mesh_result = (reduced_results.get(initial_lod_mode, {}) as Dictionary).duplicate(true)
 	return {
 		"chunk_id": str(job_request.get("chunk_id", "")),
 		"runtime_key": str(page_header.get("runtime_key", "")),
 		"runtime_hit": runtime_hit,
 		"runtime_bundle": runtime_bundle,
 		"terrain_page_binding": terrain_page_binding,
-		"terrain_mesh_result": terrain_mesh_result,
+		"terrain_lod_mesh_results": {
+			initial_lod_mode: terrain_mesh_result,
+		},
 		"prepare_usec": Time.get_ticks_usec() - started_usec,
 	}
+
+func _terrain_lod_grid_steps_by_mode() -> Dictionary:
+	return {
+		CityChunkScene.LOD_NEAR: int(CityChunkScene.TERRAIN_GRID_STEPS),
+		CityChunkScene.LOD_MID: int(CityChunkScene.TERRAIN_GRID_STEPS_MID),
+		CityChunkScene.LOD_FAR: int(CityChunkScene.TERRAIN_GRID_STEPS_FAR),
+	}
+
+func _build_terrain_mesh_result_for_payload(payload: Dictionary, terrain_page_binding: Dictionary) -> Dictionary:
+	var initial_lod_mode := str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR))
+	var lod_grid_steps_by_mode := _terrain_lod_grid_steps_by_mode()
+	var source_grid_steps := int(terrain_page_binding.get("grid_steps", CityChunkScene.TERRAIN_GRID_STEPS))
+	var terrain_grid_steps := int(lod_grid_steps_by_mode.get(initial_lod_mode, source_grid_steps))
+	var terrain_mesh_builder := CityTerrainMeshBuilder.new()
+	if terrain_grid_steps == source_grid_steps:
+		return terrain_mesh_builder.build_profiled_terrain_arrays_from_binding(
+			float(payload.get("chunk_size_m", 256.0)),
+			terrain_grid_steps,
+			terrain_page_binding
+		)
+	var reduced_results := terrain_mesh_builder.build_profiled_terrain_lod_arrays_from_binding(
+		float(payload.get("chunk_size_m", 256.0)),
+		source_grid_steps,
+		terrain_page_binding,
+		{initial_lod_mode: terrain_grid_steps}
+	)
+	return (reduced_results.get(initial_lod_mode, {}) as Dictionary).duplicate(true)

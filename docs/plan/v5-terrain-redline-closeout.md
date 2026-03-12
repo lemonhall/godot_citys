@@ -59,3 +59,22 @@
 
 - first-visit 红线比 warm traversal 更难，若 page cache、async 和 LOD 的收益没有真正叠加，最后很可能在 M5 暴露。
 - 如果只看毫秒数不看连续性，terrain 改造可能重新把道路/地形关系打坏。
+
+## Result
+
+- fresh warm profile：
+  - `test_city_runtime_performance_profile.gd` PASS
+  - `wall_frame_avg_usec = 10587`
+  - `update_streaming_avg_usec = 8918`
+  - `streaming_mount_setup_avg_usec = 4192`
+- fresh first-visit profile：
+  - `test_city_first_visit_performance_profile.gd` PASS
+  - `wall_frame_avg_usec = 15065`
+  - `update_streaming_avg_usec = 14131`
+  - `streaming_mount_setup_avg_usec = 6071`
+- fresh continuity / guardrail：
+  - `test_city_surface_page_tile_seam_continuity.gd` PASS
+  - `test_city_terrain_road_overlay_continuity.gd` PASS
+  - `test_city_surface_async_concurrency_guard.gd` PASS
+  - `test_city_terrain_async_concurrency_guard.gd` PASS
+- 结论：v5 已在 shared terrain page + async + terrain LOD 的组合下，同时守住 warm / first-visit 两条 `16.67ms/frame` 红线，并保持道路覆盖与 terrain seam 的连续性。

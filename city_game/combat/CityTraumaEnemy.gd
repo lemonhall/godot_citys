@@ -26,6 +26,16 @@ const ROLE_ID_ASSAULT := "assault"
 @export var camouflage_duration_sec := 0.42
 @export var camouflage_min_alpha := 0.18
 @export var camouflage_flicker_hz := 18.0
+@export var pressure_dash_activation_radius_m := 9999.0
+@export var pressure_dash_min_distance_m := 6.4
+@export var pressure_dash_forward_m := 4.4
+@export var pressure_dash_lateral_m := 5.9
+@export var pressure_dash_interval_sec := 0.5
+@export var pressure_dash_energy_max := 6.0
+@export var pressure_dash_energy_cost := 1.0
+@export var pressure_dash_energy_recharge_per_sec := 0.18
+@export var pressure_zigzag_move_bias := 0.8
+@export var pressure_chase_speed_mps := 16.0
 
 var _gravity := ProjectSettings.get_setting("physics/3d/default_gravity") as float
 var _target: Node3D = null
@@ -45,10 +55,17 @@ var _body_material: StandardMaterial3D = null
 var _health_bar_root: Node3D = null
 var _health_bar_fill_anchor: Node3D = null
 var _health_bar_fill_material: StandardMaterial3D = null
+var _pressure_energy := 0.0
+var _pressure_dash_interval_remaining := 0.0
+var _pressure_dash_count := 0
+var _pressure_last_dash_offset := Vector3.ZERO
+var _pressure_zigzag_sign := 1
+var _pressure_sign_history: Array[int] = []
 
 func _ready() -> void:
 	add_to_group("city_enemy")
 	_health = max_health
+	_pressure_energy = pressure_dash_energy_max
 	_ensure_collision()
 	_ensure_visual()
 	_ensure_health_bar()
@@ -95,6 +112,18 @@ func get_health_state() -> Dictionary:
 		"visible": _health_bar_root != null and _health_bar_root.visible,
 	}
 
+func get_pressure_state() -> Dictionary:
+	return {
+		"energy": _pressure_energy,
+		"energy_max": pressure_dash_energy_max,
+		"energy_ratio": _get_pressure_energy_ratio(),
+		"dash_count": _pressure_dash_count,
+		"last_dash_offset": _pressure_last_dash_offset,
+		"next_sign": _pressure_zigzag_sign,
+		"sign_history": _pressure_sign_history.duplicate(),
+		"can_dash": _can_execute_pressure_dash(),
+	}
+
 func apply_projectile_hit(projectile_damage: float, _hit_position: Vector3, _impulse: Vector3) -> void:
 	_health = maxf(_health - projectile_damage, 0.0)
 	_update_health_feedback()
@@ -109,16 +138,20 @@ func _physics_process(delta: float) -> void:
 		_burst_cooldown_remaining = maxf(_burst_cooldown_remaining - delta, 0.0)
 	if _burst_interval_remaining > 0.0:
 		_burst_interval_remaining = maxf(_burst_interval_remaining - delta, 0.0)
+	if _pressure_dash_interval_remaining > 0.0:
+		_pressure_dash_interval_remaining = maxf(_pressure_dash_interval_remaining - delta, 0.0)
 	if _camouflage_remaining_sec > 0.0:
 		_camouflage_remaining_sec = maxf(_camouflage_remaining_sec - delta, 0.0)
+	_recharge_pressure_energy(delta)
 	_evaluate_incoming_projectiles()
 	_update_behavior_mode()
+	_try_execute_pressure_dash()
 	_update_ranged_fire()
 	_update_visual_state()
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
 	var move_direction := _compute_move_direction()
-	var move_speed := orbit_speed_mps if _behavior_mode == BEHAVIOR_ORBIT else chase_speed_mps
+	var move_speed := orbit_speed_mps if _behavior_mode == BEHAVIOR_ORBIT else _resolve_pressure_move_speed()
 	velocity.x = move_direction.x * move_speed
 	velocity.z = move_direction.z * move_speed
 	if velocity.y <= 0.0:
@@ -135,11 +168,12 @@ func _update_behavior_mode() -> void:
 	var planar_delta := _target.global_position - global_position
 	planar_delta.y = 0.0
 	var distance_to_target := planar_delta.length()
+	var preserve_pressure := _should_preserve_pressure_mode(distance_to_target)
 	if _behavior_mode == BEHAVIOR_ORBIT:
-		if distance_to_target >= orbit_break_radius_m:
+		if distance_to_target >= orbit_break_radius_m or preserve_pressure:
 			_behavior_mode = BEHAVIOR_APPROACH
 	else:
-		if distance_to_target <= orbit_activation_radius_m:
+		if distance_to_target <= orbit_activation_radius_m and not preserve_pressure:
 			_behavior_mode = BEHAVIOR_ORBIT
 
 func _compute_move_direction() -> Vector3:
@@ -156,6 +190,10 @@ func _compute_move_direction() -> Vector3:
 		var radial_correction := clampf((distance_to_target - orbit_radius_m) / maxf(orbit_radius_m, 0.001), -0.85, 0.85)
 		var orbit_direction := (tangent * 1.35 + to_target * radial_correction).normalized()
 		return _avoid_obstacles(orbit_direction)
+	if _is_pressure_window(distance_to_target):
+		var zigzag_tangent := Vector3(-to_target.z, 0.0, to_target.x) * float(_pressure_zigzag_sign)
+		var pressure_direction := (to_target * 1.18 + zigzag_tangent * pressure_zigzag_move_bias).normalized()
+		return _avoid_obstacles(pressure_direction)
 	return _avoid_obstacles(to_target)
 
 func _evaluate_incoming_projectiles() -> void:
@@ -208,6 +246,55 @@ func _execute_dodge(projectile_direction: Vector3) -> bool:
 	_dodge_count += 1
 	_dodge_cooldown_remaining = dodge_cooldown_sec
 	_behavior_mode = BEHAVIOR_ORBIT
+	_activate_camouflage()
+	return true
+
+func _try_execute_pressure_dash() -> bool:
+	if not _can_execute_pressure_dash():
+		return false
+	if _target == null or not is_instance_valid(_target):
+		return false
+	var planar_delta := _target.global_position - global_position
+	planar_delta.y = 0.0
+	var distance_to_target := planar_delta.length()
+	if not _is_pressure_window(distance_to_target):
+		return false
+	if distance_to_target <= 0.001:
+		return false
+	if not _has_line_of_sight_to_target():
+		return false
+	return _execute_pressure_dash(planar_delta / distance_to_target, distance_to_target)
+
+func _execute_pressure_dash(to_target: Vector3, distance_to_target: float) -> bool:
+	var tangent := Vector3(-to_target.z, 0.0, to_target.x).normalized()
+	if tangent.length_squared() <= 0.0001:
+		return false
+	var current_position := global_position
+	var candidate_signs := [_pressure_zigzag_sign, -_pressure_zigzag_sign]
+	var best_position := current_position
+	var best_sign := _pressure_zigzag_sign
+	for sign_value in candidate_signs:
+		var forward_step := minf(pressure_dash_forward_m, maxf(distance_to_target - pressure_dash_min_distance_m, 1.85))
+		var candidate := current_position + to_target * forward_step + tangent * pressure_dash_lateral_m * float(sign_value)
+		candidate = _resolve_surface_position(candidate)
+		var candidate_delta := _target.global_position - candidate
+		candidate_delta.y = 0.0
+		var candidate_distance := candidate_delta.length()
+		if candidate_distance < pressure_dash_min_distance_m - 0.35:
+			continue
+		best_position = candidate
+		best_sign = sign_value
+		break
+	if best_position.distance_to(current_position) <= 1.0:
+		return false
+	global_position = best_position
+	velocity = Vector3.ZERO
+	_pressure_last_dash_offset = best_position - current_position
+	_pressure_dash_count += 1
+	_pressure_energy = maxf(_pressure_energy - pressure_dash_energy_cost, 0.0)
+	_pressure_dash_interval_remaining = pressure_dash_interval_sec
+	_record_pressure_sign(best_sign)
+	_pressure_zigzag_sign = -best_sign
 	_activate_camouflage()
 	return true
 
@@ -328,7 +415,7 @@ func _face_target() -> void:
 	look_at(look_target, Vector3.UP, true)
 
 func _activate_camouflage() -> void:
-	_camouflage_remaining_sec = camouflage_duration_sec
+	_camouflage_remaining_sec = maxf(_camouflage_remaining_sec, camouflage_duration_sec)
 	_update_visual_state()
 
 func _update_visual_state() -> void:
@@ -455,3 +542,40 @@ func _build_health_bar_mesh(width: float, height: float, depth: float) -> BoxMes
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(width, height, depth)
 	return mesh
+
+func _recharge_pressure_energy(delta: float) -> void:
+	if pressure_dash_energy_max <= 0.0:
+		_pressure_energy = 0.0
+		return
+	_pressure_energy = minf(pressure_dash_energy_max, _pressure_energy + pressure_dash_energy_recharge_per_sec * delta)
+
+func _is_pressure_window(distance_to_target: float) -> bool:
+	return distance_to_target >= pressure_dash_min_distance_m and distance_to_target <= pressure_dash_activation_radius_m
+
+func _can_execute_pressure_dash() -> bool:
+	if _pressure_dash_interval_remaining > 0.0:
+		return false
+	return _pressure_energy >= pressure_dash_energy_cost and pressure_dash_energy_cost > 0.0
+
+func _get_pressure_energy_ratio() -> float:
+	if pressure_dash_energy_max <= 0.0:
+		return 0.0
+	return clampf(_pressure_energy / pressure_dash_energy_max, 0.0, 1.0)
+
+func _record_pressure_sign(sign_value: int) -> void:
+	_pressure_sign_history.append(sign_value)
+	if _pressure_sign_history.size() > 6:
+		_pressure_sign_history.pop_front()
+
+func _should_preserve_pressure_mode(distance_to_target: float) -> bool:
+	return _pressure_energy >= pressure_dash_energy_cost and distance_to_target > orbit_activation_radius_m
+
+func _resolve_pressure_move_speed() -> float:
+	if _target == null or not is_instance_valid(_target):
+		return chase_speed_mps
+	var planar_delta := _target.global_position - global_position
+	planar_delta.y = 0.0
+	var distance_to_target := planar_delta.length()
+	if _is_pressure_window(distance_to_target):
+		return pressure_chase_speed_mps
+	return chase_speed_mps

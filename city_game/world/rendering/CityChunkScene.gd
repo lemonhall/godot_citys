@@ -4,6 +4,7 @@ const CityChunkMultimeshBuilder := preload("res://city_game/world/rendering/City
 const CityChunkHlodBuilder := preload("res://city_game/world/rendering/CityChunkHlodBuilder.gd")
 const CityChunkOccluderBuilder := preload("res://city_game/world/rendering/CityChunkOccluderBuilder.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
+const CityPedestrianCrowdRenderer := preload("res://city_game/world/pedestrians/rendering/CityPedestrianCrowdRenderer.gd")
 const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTerrainMeshBuilder.gd")
 const CityRoadMeshBuilder := preload("res://city_game/world/rendering/CityRoadMeshBuilder.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
@@ -34,6 +35,7 @@ var _building_collision_shapes: Array[CollisionShape3D] = []
 var _building_collisions_enabled := true
 var _terrain_mesh_apply_count := 0
 var _terrain_collision_apply_count := 0
+var _pedestrian_crowd: Node3D = null
 
 func setup(chunk_data: Dictionary) -> void:
 	var surface_page_provider = chunk_data.get("surface_page_provider")
@@ -197,6 +199,7 @@ func get_min_prop_road_clearance_m() -> float:
 func get_renderer_stats() -> Dictionary:
 	var prop_multimesh := get_prop_multimesh()
 	var terrain_lod_contract := get_terrain_lod_contract()
+	var pedestrian_crowd_stats := get_pedestrian_crowd_stats()
 	return {
 		"chunk_id": str(_chunk_data.get("chunk_id", "")),
 		"lod_mode": _current_lod_mode,
@@ -223,7 +226,30 @@ func get_renderer_stats() -> Dictionary:
 		"terrain_current_grid_steps": int(terrain_lod_contract.get("current_grid_steps", 0)),
 		"terrain_current_vertex_count": int(terrain_lod_contract.get("current_vertex_count", 0)),
 		"terrain_lod_contract": terrain_lod_contract,
+		"pedestrian_tier1_count": int(pedestrian_crowd_stats.get("tier1_count", 0)),
+		"pedestrian_tier2_count": int(pedestrian_crowd_stats.get("tier2_count", 0)),
+		"pedestrian_multimesh_instance_count": int(pedestrian_crowd_stats.get("tier1_instance_count", 0)),
 	}
+
+func get_pedestrian_batch() -> MultiMeshInstance3D:
+	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("get_batch"):
+		return null
+	return _pedestrian_crowd.get_batch()
+
+func get_pedestrian_crowd_stats() -> Dictionary:
+	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("get_crowd_stats"):
+		return {
+			"tier0_count": 0,
+			"tier1_count": 0,
+			"tier2_count": 0,
+			"tier1_instance_count": 0,
+		}
+	return (_pedestrian_crowd.get_crowd_stats() as Dictionary).duplicate(true)
+
+func apply_pedestrian_chunk_snapshot(snapshot: Dictionary) -> void:
+	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("apply_chunk_snapshot"):
+		return
+	_pedestrian_crowd.apply_chunk_snapshot(snapshot)
 
 func _rebuild() -> void:
 	var rebuild_started_usec := Time.get_ticks_usec()
@@ -233,6 +259,7 @@ func _rebuild() -> void:
 	_building_collision_shapes.clear()
 	_terrain_mesh_apply_count = 0
 	_terrain_collision_apply_count = 0
+	_pedestrian_crowd = null
 
 	var chunk_size_m := float(_chunk_data.get("chunk_size_m", 256.0))
 	var setup_profile := {
@@ -290,6 +317,15 @@ func _rebuild() -> void:
 	phase_started_usec = Time.get_ticks_usec()
 	props.add_child(CityChunkMultimeshBuilder.build_street_lamps(_profile))
 	setup_profile["props_usec"] = Time.get_ticks_usec() - phase_started_usec
+
+	phase_started_usec = Time.get_ticks_usec()
+	_pedestrian_crowd = CityPedestrianCrowdRenderer.new()
+	_pedestrian_crowd.name = "PedestrianCrowd"
+	_pedestrian_crowd.setup(_chunk_data)
+	add_child(_pedestrian_crowd)
+	if _chunk_data.has("pedestrian_chunk_snapshot"):
+		_pedestrian_crowd.apply_chunk_snapshot(_chunk_data.get("pedestrian_chunk_snapshot", {}))
+	setup_profile["pedestrians_usec"] = Time.get_ticks_usec() - phase_started_usec
 
 	phase_started_usec = Time.get_ticks_usec()
 	add_child(CityChunkHlodBuilder.build_mid_proxy(_profile))

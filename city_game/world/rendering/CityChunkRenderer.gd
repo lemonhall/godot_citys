@@ -6,6 +6,7 @@ const CityRoadSurfacePageProvider := preload("res://city_game/world/rendering/Ci
 const CityTerrainPageProvider := preload("res://city_game/world/rendering/CityTerrainPageProvider.gd")
 const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTerrainMeshBuilder.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
+const CityPedestrianTierController := preload("res://city_game/world/pedestrians/simulation/CityPedestrianTierController.gd")
 
 const PREPARE_BUDGET_PER_TICK := 1
 const MOUNT_BUDGET_PER_TICK := 1
@@ -30,6 +31,7 @@ var _pending_mount_ids: Array[String] = []
 var _pending_retire_ids: Array[String] = []
 var _scene_pool: Array[Node3D] = []
 var _last_player_position := Vector3.ZERO
+var _last_active_chunk_entries: Array[Dictionary] = []
 var _last_prepare_usec := 0
 var _last_mount_usec := 0
 var _last_retire_usec := 0
@@ -69,6 +71,7 @@ var _terrain_commit_sample_count := 0
 var _terrain_commit_total_usec := 0
 var _terrain_commit_max_usec := 0
 var _terrain_commit_last_usec := 0
+var _pedestrian_tier_controller = null
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
@@ -86,6 +89,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_queued_terrain_jobs.clear()
 	_pending_mount_ids.clear()
 	_pending_retire_ids.clear()
+	_last_active_chunk_entries.clear()
 	_last_prepare_usec = 0
 	_last_mount_usec = 0
 	_last_retire_usec = 0
@@ -93,12 +97,17 @@ func setup(config, world_data: Dictionary) -> void:
 	_last_mount_count = 0
 	_last_retire_count = 0
 	_last_queue_process_frame = -1
+	_pedestrian_tier_controller = null
+	if _world_data.has("pedestrian_query"):
+		_pedestrian_tier_controller = CityPedestrianTierController.new()
+		_pedestrian_tier_controller.setup(_config, _world_data)
 	reset_streaming_profile_stats()
 	set_process(true)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_process_streaming_queues_once_per_frame()
 	_update_lod_states(_last_player_position)
+	_update_pedestrian_crowd(_last_player_position, delta)
 
 func _notification(what: int) -> void:
 	if what != NOTIFICATION_PREDELETE:
@@ -130,14 +139,19 @@ func _notification(what: int) -> void:
 	_queued_terrain_jobs.clear()
 	_pending_mount_ids.clear()
 	_pending_retire_ids.clear()
+	_last_active_chunk_entries.clear()
 	_last_queue_process_frame = -1
 	_surface_page_provider.clear()
 	_terrain_page_provider.clear()
+	_pedestrian_tier_controller = null
 
 func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> void:
 	if _config == null:
 		return
 	_last_player_position = player_position
+	_last_active_chunk_entries.clear()
+	for entry_variant in active_chunk_entries:
+		_last_active_chunk_entries.append((entry_variant as Dictionary).duplicate(true))
 
 	var target_chunk_entries := _build_target_chunk_map(active_chunk_entries)
 	var target_chunk_ids: Dictionary = {}
@@ -202,6 +216,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> vo
 	_prune_terrain_job_waiters(target_chunk_ids)
 	_process_streaming_queues_once_per_frame()
 	_update_lod_states(player_position)
+	_update_pedestrian_crowd(player_position, 0.0)
 
 func get_chunk_ids() -> Array[String]:
 	var ids: Array[String] = []
@@ -325,6 +340,9 @@ func get_renderer_stats() -> Dictionary:
 		"far": 0,
 	}
 	var multimesh_instance_total := 0
+	var pedestrian_multimesh_instance_total := 0
+	var pedestrian_tier1_total := 0
+	var pedestrian_tier2_total := 0
 	for chunk_id in get_chunk_ids():
 		var chunk_scene = _chunk_scenes[chunk_id]
 		var chunk_stats: Dictionary = chunk_scene.get_renderer_stats()
@@ -332,9 +350,22 @@ func get_renderer_stats() -> Dictionary:
 		if lod_mode_counts.has(lod_mode):
 			lod_mode_counts[lod_mode] += 1
 		multimesh_instance_total += int(chunk_stats.get("multimesh_instance_count", 0))
+		pedestrian_multimesh_instance_total += int(chunk_stats.get("pedestrian_multimesh_instance_count", 0))
+		pedestrian_tier1_total += int(chunk_stats.get("pedestrian_tier1_count", 0))
+		pedestrian_tier2_total += int(chunk_stats.get("pedestrian_tier2_count", 0))
+	var pedestrian_budget_contract := {}
+	var pedestrian_global_snapshot := {}
+	if _pedestrian_tier_controller != null:
+		pedestrian_budget_contract = _pedestrian_tier_controller.get_budget_contract()
+		pedestrian_global_snapshot = _pedestrian_tier_controller.get_global_snapshot()
 	var stats := {
 		"active_rendered_chunk_count": get_chunk_scene_count(),
 		"multimesh_instance_total": multimesh_instance_total,
+		"pedestrian_multimesh_instance_total": pedestrian_multimesh_instance_total,
+		"pedestrian_tier1_total": pedestrian_tier1_total,
+		"pedestrian_tier2_total": pedestrian_tier2_total,
+		"pedestrian_active_state_count": int(pedestrian_global_snapshot.get("active_state_count", 0)),
+		"pedestrian_budget_contract": pedestrian_budget_contract.duplicate(true),
 		"lod_mode_counts": lod_mode_counts,
 	}
 	stats.merge(get_streaming_budget_stats(), true)
@@ -445,6 +476,8 @@ func _process_mount_budget() -> void:
 		var chunk_scene := _take_pooled_scene()
 		var setup_started_usec := Time.get_ticks_usec()
 		chunk_scene.setup(payload)
+		if _pedestrian_tier_controller != null and chunk_scene.has_method("apply_pedestrian_chunk_snapshot"):
+			chunk_scene.apply_pedestrian_chunk_snapshot(_pedestrian_tier_controller.get_chunk_snapshot(chunk_id))
 		_record_mount_setup_sample(Time.get_ticks_usec() - setup_started_usec)
 		var setup_profile: Dictionary = chunk_scene.get_setup_profile()
 		_record_terrain_commit_sample(int(setup_profile.get("ground_mesh_usec", 0)))
@@ -485,6 +518,15 @@ func _update_lod_states(player_position: Vector3) -> void:
 		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
 		chunk_scene.update_lod_for_distance(player_position.distance_to(chunk_scene.position))
 
+func _update_pedestrian_crowd(player_position: Vector3, delta: float) -> void:
+	if _pedestrian_tier_controller == null:
+		return
+	_pedestrian_tier_controller.update_active_chunks(_last_active_chunk_entries, player_position, delta)
+	for chunk_id in get_chunk_ids():
+		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
+		if chunk_scene.has_method("apply_pedestrian_chunk_snapshot"):
+			chunk_scene.apply_pedestrian_chunk_snapshot(_pedestrian_tier_controller.get_chunk_snapshot(chunk_id))
+
 func _distance_to_entry(player_position: Vector3, entry: Dictionary) -> float:
 	var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)
 	var chunk_center := _chunk_center_from_key(chunk_key)
@@ -501,14 +543,16 @@ func _resolve_initial_lod_mode(payload: Dictionary) -> String:
 
 func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 	var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)
+	var chunk_id := str(entry.get("chunk_id", ""))
 	return {
-		"chunk_id": str(entry.get("chunk_id", "")),
+		"chunk_id": chunk_id,
 		"chunk_key": chunk_key,
 		"chunk_center": _chunk_center_from_key(chunk_key),
 		"chunk_size_m": float(_config.chunk_size_m),
 		"chunk_seed": _config.derive_seed("render_chunk", chunk_key),
 		"world_seed": int(_config.base_seed),
 		"road_graph": _world_data.get("road_graph"),
+		"pedestrian_chunk_snapshot": {} if _pedestrian_tier_controller == null else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id),
 	}
 
 func _chunk_center_from_key(chunk_key: Vector2i) -> Vector3:

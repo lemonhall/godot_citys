@@ -7,7 +7,6 @@
 ## PRD Trace
 
 - REQ-0002-003
-- REQ-0002-004
 
 ## Scope
 
@@ -39,8 +38,9 @@
 - Create: `city_game/world/pedestrians/rendering/CityPedestrianCrowdRenderer.gd`
 - Create: `city_game/world/pedestrians/simulation/CityPedestrianState.gd`
 - Create: `city_game/world/pedestrians/simulation/CityPedestrianTierController.gd`
-- Modify: `city_game/world/streaming/CityChunkStreamer.gd`
-- Modify: `city_game/scripts/CityPrototype.gd`
+- Modify: `city_game/world/rendering/CityChunkRenderer.gd`
+- Modify: `city_game/world/rendering/CityChunkScene.gd`
+- Modify: `tests/world/test_city_chunk_renderer.gd`
 - Create: `tests/world/test_city_pedestrian_lod_contract.gd`
 - Create: `tests/world/test_city_pedestrian_batch_rendering.gd`
 - Create: `tests/world/test_city_pedestrian_identity_continuity.gd`
@@ -69,3 +69,24 @@
 - 如果 Tier 1 没有 batch 化，scene tree 和 transform 更新很快会成为新的热点。
 - 如果 tier continuity 缺稳定 ID，玩家接近时会感到“远处的人被换掉了”，体验会和此前建筑轮廓问题类似。
 - 如果 archetype 变化只做颜色随机而没有体量、姿态和相位差异，重复感仍会很强。
+
+## Result
+
+- `tests/world/test_city_pedestrian_lod_contract.gd` PASS
+  - `preset = lite`
+  - `tier1_budget = 768`
+  - `tier2_budget = 96`
+- `tests/world/test_city_pedestrian_batch_rendering.gd` PASS
+  - Tier 1 通过 `MultiMeshInstance3D` 输出 batched crowd
+  - `CityChunkRenderer.get_renderer_stats()` 已暴露 `pedestrian_tier1_total`、`pedestrian_tier2_total` 与 `pedestrian_multimesh_instance_total`
+- `tests/world/test_city_pedestrian_identity_continuity.gd` PASS
+  - 同一 pedestrian 在 Tier 1 -> Tier 2 -> Tier 1 升降级前后保持 `pedestrian_id`、`route_signature`、`archetype_signature`
+- 回归：
+  - `tests/world/test_city_pedestrian_world_model.gd` PASS
+  - `tests/world/test_city_pedestrian_density_profile.gd` PASS
+  - `tests/world/test_city_pedestrian_lane_graph.gd` PASS
+  - `tests/world/test_city_pedestrian_lane_graph_continuity.gd` PASS
+  - `tests/world/test_city_pedestrian_spawn_grounding.gd` PASS
+  - `tests/world/test_city_world_model.gd` PASS
+  - `tests/world/test_city_world_generator.gd` PASS
+  - `tests/world/test_city_chunk_renderer.gd` PASS

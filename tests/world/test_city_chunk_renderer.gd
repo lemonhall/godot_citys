@@ -35,6 +35,12 @@ func _run() -> void:
 	renderer.setup(config, world_data)
 	renderer.sync_streaming(streamer.get_active_chunk_entries(), Vector3.ZERO)
 
+	var guard := 0
+	while renderer.get_chunk_scene_count() < 1 and guard < 8:
+		await process_frame
+		renderer.sync_streaming(streamer.get_active_chunk_entries(), Vector3.ZERO)
+		guard += 1
+
 	if not T.require_true(self, renderer.get_chunk_scene_count() > 0, "Chunk renderer must create visible chunk scenes"):
 		return
 	var first_chunk_id: String = str(renderer.get_chunk_ids()[0])

@@ -4,11 +4,11 @@ signal exploded(world_position: Vector3, radius_m: float)
 
 @export var max_lifetime_sec := 2.4
 @export var gravity_mps2 := 24.0
-@export var explosion_radius_m := 8.0
-@export var explosion_damage := 5.0
-@export var explosion_effect_duration_sec := 0.42
-@export var explosion_camera_shake_duration_sec := 0.32
-@export var explosion_camera_shake_amplitude_m := 0.22
+@export var explosion_radius_m := 12.0
+@export var explosion_damage := 8.0
+@export var explosion_effect_duration_sec := 0.56
+@export var explosion_camera_shake_duration_sec := 0.44
+@export var explosion_camera_shake_amplitude_m := 0.42
 
 var _velocity := Vector3.ZERO
 var _owner_node: Node = null
@@ -107,7 +107,7 @@ func _trigger_camera_shake() -> void:
 	var distance_to_player := 0.0
 	if _player_target is Node3D:
 		distance_to_player = (_player_target as Node3D).global_position.distance_to(global_position)
-	var falloff := clampf(1.0 - distance_to_player / 24.0, 0.25, 1.0)
+	var falloff := clampf(1.0 - distance_to_player / 28.0, 0.7, 1.0)
 	_player_target.trigger_camera_shake(
 		explosion_camera_shake_duration_sec,
 		explosion_camera_shake_amplitude_m * falloff

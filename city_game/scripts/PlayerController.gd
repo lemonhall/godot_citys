@@ -26,8 +26,11 @@ const WEAPON_MODE_GRENADE := "grenade"
 @export var primary_fire_forward_offset_m := 0.72
 @export var aim_trace_distance_m := 240.0
 @export var grenade_hold_offset := Vector3(0.52, 1.18, -0.62)
-@export var grenade_throw_speed_mps := 24.0
-@export var grenade_throw_upward_boost_mps := 6.4
+@export var grenade_throw_speed_mps := 34.0
+@export var grenade_throw_upward_boost_mps := 8.6
+@export var grenade_gravity_mps2 := 24.0
+@export var grenade_preview_step_sec := 0.08
+@export var grenade_preview_max_steps := 12
 @export var ads_camera_local_position := Vector3(0.58, 2.05, 4.2)
 @export var ads_camera_fov := 42.0
 @export var ads_transition_speed := 8.0
@@ -60,6 +63,7 @@ var _weapon_mode := WEAPON_MODE_RIFLE
 var _primary_fire_cooldown_remaining := 0.0
 var _primary_fire_active := false
 var _aim_down_sights_active := false
+var _grenade_hold_requested := false
 var _grenade_ready_active := false
 var _ads_blend := 0.0
 var _default_camera_local_position := Vector3.ZERO
@@ -70,6 +74,14 @@ var _wall_climb_normal := Vector3.ZERO
 var _wall_climb_contact_point := Vector3.ZERO
 var _traversal_fx_root: Node3D = null
 var _grenade_hold_visual: MeshInstance3D = null
+var _grenade_preview_root: Node3D = null
+var _grenade_preview_ring: MeshInstance3D = null
+var _grenade_preview_dots: Array[MeshInstance3D] = []
+var _grenade_preview_state := {
+	"visible": false,
+	"landing_point": Vector3.ZERO,
+	"sample_count": 0,
+}
 var _active_shockwaves: Array[Dictionary] = []
 var _camera_shake_remaining_sec := 0.0
 var _camera_shake_total_duration_sec := 0.0
@@ -86,8 +98,8 @@ func _ready() -> void:
 		_default_camera_fov = camera.fov
 	_rng.seed = 1337
 	_ensure_traversal_fx_root()
-	_ensure_grenade_hold_visual()
 	_update_grenade_hold_visual()
+	_update_grenade_preview()
 	floor_snap_length = _current_floor_snap_length()
 	if DisplayServer.get_name() != "headless":
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
@@ -99,6 +111,7 @@ func _process(delta: float) -> void:
 		request_primary_fire()
 	_update_ads_camera(delta)
 	_update_traversal_fx(delta)
+	_update_grenade_preview()
 	if _collision_resume_process_frames <= 0:
 		return
 	_collision_resume_process_frames -= 1
@@ -221,6 +234,7 @@ func get_weapon_mode() -> String:
 func get_weapon_state() -> Dictionary:
 	return {
 		"mode": _weapon_mode,
+		"grenade_hold_requested": _grenade_hold_requested,
 		"grenade_ready": _grenade_ready_active,
 		"aim_down_sights_active": _aim_down_sights_active,
 	}
@@ -292,11 +306,16 @@ func is_aim_down_sights_active() -> bool:
 	return _aim_down_sights_active
 
 func set_grenade_ready_active(active: bool) -> void:
-	_grenade_ready_active = active and _control_enabled and _weapon_mode == WEAPON_MODE_GRENADE
+	_grenade_hold_requested = active and _control_enabled and _weapon_mode == WEAPON_MODE_GRENADE
+	_grenade_ready_active = _grenade_hold_requested
 	_update_grenade_hold_visual()
+	_update_grenade_preview()
 
 func is_grenade_ready_active() -> bool:
 	return _grenade_ready_active
+
+func get_grenade_preview_state() -> Dictionary:
+	return _grenade_preview_state.duplicate(true)
 
 func get_camera_fov_state() -> Dictionary:
 	return {
@@ -326,7 +345,10 @@ func request_grenade_throw() -> bool:
 		return false
 	_grenade_ready_active = false
 	_update_grenade_hold_visual()
+	_update_grenade_preview()
 	grenade_throw_requested.emit()
+	if _grenade_hold_requested:
+		call_deferred("_restore_grenade_ready_from_hold")
 	return true
 
 func request_wall_climb() -> bool:
@@ -385,13 +407,8 @@ func get_grenade_launch_velocity() -> Vector3:
 	var direction := (aim_target - spawn_origin).normalized()
 	if direction.length_squared() <= 0.0001:
 		direction = (-global_transform.basis.z).normalized()
-	var planar_direction := Vector3(direction.x, 0.0, direction.z)
-	if planar_direction.length_squared() <= 0.0001:
-		planar_direction = Vector3(-global_transform.basis.z.x, 0.0, -global_transform.basis.z.z).normalized()
-	if planar_direction.length_squared() <= 0.0001:
-		planar_direction = Vector3.FORWARD
-	var launch_velocity := planar_direction.normalized() * grenade_throw_speed_mps
-	launch_velocity.y = maxf(direction.y * grenade_throw_speed_mps * 0.45 + grenade_throw_upward_boost_mps, grenade_throw_upward_boost_mps)
+	var launch_velocity := direction * grenade_throw_speed_mps
+	launch_velocity.y = maxf(launch_velocity.y + grenade_throw_upward_boost_mps, 4.8)
 	return launch_velocity
 
 func get_aim_target_world_position() -> Vector3:
@@ -419,6 +436,17 @@ func trigger_camera_shake(duration_sec: float, amplitude_m: float) -> void:
 	_camera_shake_total_duration_sec = maxf(duration_sec, 0.0)
 	_camera_shake_remaining_sec = maxf(_camera_shake_remaining_sec, _camera_shake_total_duration_sec)
 	_camera_shake_amplitude_m = maxf(_camera_shake_amplitude_m, amplitude_m)
+
+func _restore_grenade_ready_from_hold() -> void:
+	if not _control_enabled:
+		return
+	if _weapon_mode != WEAPON_MODE_GRENADE:
+		return
+	if not _grenade_hold_requested:
+		return
+	_grenade_ready_active = true
+	_update_grenade_hold_visual()
+	_update_grenade_preview()
 
 func _read_move_input() -> Vector2:
 	var horizontal := 0.0
@@ -633,16 +661,140 @@ func _ensure_grenade_hold_visual() -> void:
 	add_child(mesh_instance)
 	_grenade_hold_visual = mesh_instance
 
+func _ensure_grenade_preview_visual() -> void:
+	if get_node_or_null("GrenadePreview") != null:
+		_grenade_preview_root = get_node_or_null("GrenadePreview") as Node3D
+	if _grenade_preview_root == null:
+		_grenade_preview_root = Node3D.new()
+		_grenade_preview_root.name = "GrenadePreview"
+		_grenade_preview_root.top_level = true
+		add_child(_grenade_preview_root)
+	if _grenade_preview_ring == null or not is_instance_valid(_grenade_preview_ring):
+		_grenade_preview_ring = _grenade_preview_root.get_node_or_null("LandingRing") as MeshInstance3D
+	if _grenade_preview_ring == null:
+		_grenade_preview_ring = MeshInstance3D.new()
+		_grenade_preview_ring.name = "LandingRing"
+		var ring_mesh := CylinderMesh.new()
+		ring_mesh.top_radius = 0.62
+		ring_mesh.bottom_radius = 0.62
+		ring_mesh.height = 0.06
+		ring_mesh.radial_segments = 24
+		_grenade_preview_ring.mesh = ring_mesh
+		var ring_material := StandardMaterial3D.new()
+		ring_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		ring_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		ring_material.albedo_color = Color(0.694118, 0.980392, 0.658824, 0.52)
+		ring_material.emission_enabled = true
+		ring_material.emission = Color(0.352941, 1.0, 0.568627, 1.0)
+		ring_material.emission_energy_multiplier = 0.85
+		_grenade_preview_ring.material_override = ring_material
+		_grenade_preview_ring.visible = false
+		_grenade_preview_root.add_child(_grenade_preview_ring)
+	if _grenade_preview_dots.is_empty():
+		for index in range(grenade_preview_max_steps):
+			var dot := MeshInstance3D.new()
+			dot.name = "PreviewDot%d" % index
+			var dot_mesh := SphereMesh.new()
+			dot_mesh.radius = 0.075
+			dot_mesh.height = 0.15
+			dot.mesh = dot_mesh
+			var dot_material := StandardMaterial3D.new()
+			dot_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			dot_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			dot_material.albedo_color = Color(0.854902, 1.0, 0.886275, 0.42)
+			dot_material.emission_enabled = true
+			dot_material.emission = Color(0.564706, 1.0, 0.780392, 1.0)
+			dot_material.emission_energy_multiplier = 0.38
+			dot.material_override = dot_material
+			dot.visible = false
+			_grenade_preview_root.add_child(dot)
+			_grenade_preview_dots.append(dot)
+
 func _update_grenade_hold_visual() -> void:
+	var should_show := _weapon_mode == WEAPON_MODE_GRENADE and _grenade_ready_active and _control_enabled
+	if should_show and (_grenade_hold_visual == null or not is_instance_valid(_grenade_hold_visual)):
+		_ensure_grenade_hold_visual()
 	if _grenade_hold_visual == null or not is_instance_valid(_grenade_hold_visual):
 		return
-	_grenade_hold_visual.visible = _weapon_mode == WEAPON_MODE_GRENADE and _grenade_ready_active and _control_enabled
+	_grenade_hold_visual.visible = should_show
+
+func _update_grenade_preview() -> void:
+	var preview_visible := _weapon_mode == WEAPON_MODE_GRENADE and _grenade_ready_active and _control_enabled
+	if not preview_visible:
+		if not bool(_grenade_preview_state.get("visible", false)):
+			return
+		_hide_grenade_preview_visual()
+		_grenade_preview_state = {
+			"visible": false,
+			"landing_point": Vector3.ZERO,
+			"sample_count": 0,
+		}
+		return
+	_ensure_grenade_preview_visual()
+	if _grenade_preview_root == null:
+		return
+	var preview_state := _build_grenade_preview_state()
+	var preview_points: Array = preview_state.get("points", [])
+	var landing_point: Vector3 = preview_state.get("landing_point", Vector3.ZERO)
+	for dot_index in range(_grenade_preview_dots.size()):
+		var dot := _grenade_preview_dots[dot_index]
+		if dot == null or not is_instance_valid(dot):
+			continue
+		if dot_index < preview_points.size():
+			dot.global_position = preview_points[dot_index]
+			dot.visible = true
+		else:
+			dot.visible = false
+	if _grenade_preview_ring != null and is_instance_valid(_grenade_preview_ring):
+		_grenade_preview_ring.global_position = landing_point + Vector3.UP * 0.04
+		_grenade_preview_ring.visible = preview_points.size() > 0
+	_grenade_preview_state = {
+		"visible": preview_points.size() > 0,
+		"landing_point": landing_point,
+		"sample_count": preview_points.size(),
+	}
+
+func _hide_grenade_preview_visual() -> void:
+	for dot in _grenade_preview_dots:
+		if dot != null and is_instance_valid(dot):
+			dot.visible = false
+	if _grenade_preview_ring != null and is_instance_valid(_grenade_preview_ring):
+		_grenade_preview_ring.visible = false
+
+func _build_grenade_preview_state() -> Dictionary:
+	var points: Array[Vector3] = []
+	var current_position := get_grenade_spawn_transform().origin
+	var current_velocity := get_grenade_launch_velocity()
+	var landing_point := current_position
+	var space_state := get_world_3d().direct_space_state if get_world_3d() != null else null
+	for _step_index in range(grenade_preview_max_steps):
+		var next_velocity := current_velocity + Vector3.DOWN * grenade_gravity_mps2 * grenade_preview_step_sec
+		var next_position := current_position + (current_velocity + next_velocity) * 0.5 * grenade_preview_step_sec
+		if space_state != null:
+			var query := PhysicsRayQueryParameters3D.create(current_position, next_position)
+			query.collide_with_areas = false
+			query.exclude = [get_rid()]
+			var hit: Dictionary = space_state.intersect_ray(query)
+			if not hit.is_empty():
+				landing_point = hit.get("position", next_position)
+				points.append(landing_point)
+				break
+		landing_point = next_position
+		points.append(next_position)
+		current_position = next_position
+		current_velocity = next_velocity
+	return {
+		"points": points,
+		"landing_point": landing_point,
+	}
 
 func _clear_transient_weapon_state() -> void:
 	_primary_fire_active = false
 	_aim_down_sights_active = false
+	_grenade_hold_requested = false
 	_grenade_ready_active = false
 	_update_grenade_hold_visual()
+	_update_grenade_preview()
 
 func _trigger_ground_slam_impact(impact_speed: float) -> void:
 	_slam_impact_count += 1

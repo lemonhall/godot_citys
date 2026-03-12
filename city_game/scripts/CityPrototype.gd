@@ -479,8 +479,9 @@ func _build_crosshair_state() -> Dictionary:
 	var screen_position := viewport_size * 0.5
 	if camera != null:
 		screen_position = camera.unproject_position(world_target)
+	var weapon_mode: String = player.get_weapon_mode() if player.has_method("get_weapon_mode") else "rifle"
 	return {
-		"visible": true,
+		"visible": weapon_mode != "grenade",
 		"screen_position": screen_position,
 		"viewport_size": viewport_size,
 		"world_target": world_target,

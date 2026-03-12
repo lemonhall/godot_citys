@@ -8,6 +8,8 @@ const CityChunkNavRuntime := preload("res://city_game/world/navigation/CityChunk
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
 const CityMinimapProjector := preload("res://city_game/world/map/CityMinimapProjector.gd")
+const CityProjectile := preload("res://city_game/combat/CityProjectile.gd")
+const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
 
 const CONTROL_MODE_PLAYER := "player"
 const CONTROL_MODE_INSPECTION := "inspection"
@@ -50,9 +52,13 @@ var _minimap_request_count := 0
 var _minimap_build_total_usec := 0
 var _minimap_build_max_usec := 0
 var _minimap_build_last_usec := 0
+var _combat_root: Node3D = null
+var _projectile_root: Node3D = null
+var _enemy_root: Node3D = null
 
 func _ready() -> void:
 	_configure_environment()
+	_ensure_combat_roots()
 	_world_config = CityWorldConfig.new()
 	var world_generator := CityWorldGenerator.new()
 	var generation_started_usec := Time.get_ticks_usec()
@@ -69,6 +75,7 @@ func _ready() -> void:
 	_align_player_to_streamed_ground()
 	if player != null and player.has_method("suspend_ground_stabilization"):
 		player.suspend_ground_stabilization(24)
+	_connect_player_combat()
 
 	set_control_mode(CONTROL_MODE_PLAYER)
 	update_streaming_for_position(_get_active_anchor_position())
@@ -88,6 +95,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		var key_event := event as InputEventKey
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_C:
 			set_control_mode(CONTROL_MODE_INSPECTION if _control_mode == CONTROL_MODE_PLAYER else CONTROL_MODE_PLAYER)
+		elif key_event.pressed and not key_event.echo and (key_event.keycode == KEY_KP_DIVIDE or key_event.physical_keycode == KEY_KP_DIVIDE):
+			spawn_trauma_enemy()
 
 func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 	var refresh_started_usec := Time.get_ticks_usec()
@@ -107,6 +116,7 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 		"Shift sprint  Space jump",
 		"Mouse rotates player camera  Esc releases cursor",
 		"Press C to toggle normal / inspection speed",
+		"Left click fires  Numpad / spawns trauma squad enemy",
 		"control_mode=%s" % _control_mode,
 		"tracked_position=%s" % str(_vector3_to_dict(player.global_position if player != null else Vector3.ZERO)),
 		generated_city.get_city_summary(),
@@ -117,6 +127,7 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 		],
 		"current_chunk_lod=%s" % str(snapshot.get("current_chunk_lod_mode", "")),
 		"visual_variant=%s" % str(snapshot.get("current_chunk_visual_variant_id", "")),
+		"combat=projectiles:%d enemies:%d" % [get_active_projectile_count(), get_active_enemy_count()],
 		active_speed_text,
 	])
 	hud.set_status("\n".join(lines))
@@ -140,6 +151,44 @@ func get_chunk_renderer():
 
 func get_navigation_runtime():
 	return _navigation_runtime
+
+func fire_player_projectile() -> Node3D:
+	if player == null or not player.has_method("get_projectile_spawn_transform") or not player.has_method("get_projectile_direction"):
+		return null
+	var spawn_transform: Transform3D = player.get_projectile_spawn_transform()
+	return _spawn_projectile(spawn_transform.origin, player.get_projectile_direction())
+
+func fire_player_projectile_toward(target_world_position: Vector3) -> Node3D:
+	if player == null or not player.has_method("get_projectile_spawn_transform"):
+		return null
+	var spawn_transform: Transform3D = player.get_projectile_spawn_transform()
+	var direction := (target_world_position - spawn_transform.origin).normalized()
+	if direction.length_squared() <= 0.0001:
+		direction = player.get_projectile_direction() if player.has_method("get_projectile_direction") else -spawn_transform.basis.z
+	return _spawn_projectile(spawn_transform.origin, direction)
+
+func get_active_projectile_count() -> int:
+	return 0 if _projectile_root == null else _projectile_root.get_child_count()
+
+func spawn_trauma_enemy() -> CharacterBody3D:
+	var spawn_position := _resolve_enemy_spawn_world_position(_get_active_anchor_position())
+	return spawn_trauma_enemy_at_world_position(spawn_position)
+
+func spawn_trauma_enemy_at_world_position(world_position: Vector3) -> CharacterBody3D:
+	_ensure_combat_roots()
+	if _enemy_root == null:
+		return null
+	var enemy := CityTraumaEnemy.new()
+	_enemy_root.add_child(enemy)
+	if enemy.has_method("configure"):
+		enemy.configure(player)
+	var standing_height := enemy.get_standing_height() if enemy.has_method("get_standing_height") else 1.0
+	var grounded_position := _resolve_nearby_enemy_spawn_world_position(world_position, standing_height)
+	enemy.global_position = grounded_position
+	return enemy
+
+func get_active_enemy_count() -> int:
+	return 0 if _enemy_root == null else _enemy_root.get_child_count()
 
 func get_control_mode() -> String:
 	return _control_mode
@@ -183,6 +232,45 @@ func _build_hud_snapshot() -> Dictionary:
 		snapshot["current_chunk_lod_mode"] = str(current_chunk_stats.get("lod_mode", ""))
 		snapshot["current_chunk_visual_variant_id"] = str(current_chunk_stats.get("visual_variant_id", ""))
 	return snapshot
+
+func _ensure_combat_roots() -> void:
+	if _combat_root == null:
+		_combat_root = get_node_or_null("CombatRoot") as Node3D
+		if _combat_root == null:
+			_combat_root = Node3D.new()
+			_combat_root.name = "CombatRoot"
+			add_child(_combat_root)
+	if _projectile_root == null:
+		_projectile_root = _combat_root.get_node_or_null("Projectiles") as Node3D
+		if _projectile_root == null:
+			_projectile_root = Node3D.new()
+			_projectile_root.name = "Projectiles"
+			_combat_root.add_child(_projectile_root)
+	if _enemy_root == null:
+		_enemy_root = _combat_root.get_node_or_null("Enemies") as Node3D
+		if _enemy_root == null:
+			_enemy_root = Node3D.new()
+			_enemy_root.name = "Enemies"
+			_combat_root.add_child(_enemy_root)
+
+func _connect_player_combat() -> void:
+	if player == null or not player.has_signal("primary_fire_requested"):
+		return
+	var callable := Callable(self, "_on_player_primary_fire_requested")
+	if not player.primary_fire_requested.is_connected(callable):
+		player.primary_fire_requested.connect(callable)
+
+func _on_player_primary_fire_requested() -> void:
+	fire_player_projectile()
+
+func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
+	_ensure_combat_roots()
+	if _projectile_root == null:
+		return null
+	var projectile := CityProjectile.new()
+	_projectile_root.add_child(projectile)
+	projectile.configure(origin, direction, player, 1.0)
+	return projectile
 
 func update_streaming_for_position(world_position: Vector3) -> Array:
 	var started_usec := Time.get_ticks_usec()
@@ -355,6 +443,97 @@ func _align_player_to_streamed_ground() -> void:
 		player.teleport_to_world_position(target_position)
 	else:
 		player.global_position = target_position
+
+func _resolve_enemy_spawn_world_position(anchor_world_position: Vector3) -> Vector3:
+	var forward := -player.global_transform.basis.z if player != null else Vector3.FORWARD
+	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		forward = Vector3.FORWARD
+	forward = forward.normalized()
+	var right := player.global_transform.basis.x if player != null else Vector3.RIGHT
+	right.y = 0.0
+	if right.length_squared() <= 0.0001:
+		right = Vector3.RIGHT
+	right = right.normalized()
+	var best_position := _resolve_surface_world_position(anchor_world_position + forward * 40.0, 1.3)
+	var best_score := -INF
+	var directions: Array[Vector3] = [
+		forward,
+		(forward + right).normalized(),
+		(forward - right).normalized(),
+		right,
+		-right,
+		-forward,
+	]
+	for radius in [32.0, 38.0, 44.0, 50.0]:
+		for direction in directions:
+			if direction.length_squared() <= 0.0001:
+				continue
+			var candidate := _resolve_surface_world_position(anchor_world_position + direction * radius, 1.3)
+			var score := _score_combat_spawn_world_position(candidate)
+			if _has_clear_line_of_sight(anchor_world_position + Vector3.UP * 1.4, candidate + Vector3.UP * 1.1):
+				score += 32.0
+			if score > best_score:
+				best_score = score
+				best_position = candidate
+	return best_position
+
+func _score_combat_spawn_world_position(world_position: Vector3) -> float:
+	var chunk_payload := _build_chunk_payload_for_world_position(world_position)
+	var profile := CityChunkProfileBuilder.build_profile(chunk_payload)
+	var chunk_center: Vector3 = chunk_payload.get("chunk_center", Vector3.ZERO)
+	var local_point := Vector2(world_position.x - chunk_center.x, world_position.z - chunk_center.z)
+	var road_clearance := _distance_to_profile_roads(local_point, profile)
+	var building_clearance := _distance_to_profile_buildings(local_point, profile)
+	var score := minf(road_clearance, 24.0) + minf(building_clearance, 24.0)
+	var distance_to_anchor := world_position.distance_to(_get_active_anchor_position())
+	score -= absf(distance_to_anchor - 40.0) * 0.35
+	return score
+
+func _resolve_surface_world_position(world_position: Vector3, standing_height: float) -> Vector3:
+	var chunk_payload := _build_chunk_payload_for_world_position(world_position)
+	var profile := CityChunkProfileBuilder.build_profile(chunk_payload)
+	var chunk_center: Vector3 = chunk_payload.get("chunk_center", Vector3.ZERO)
+	var local_point := Vector2(world_position.x - chunk_center.x, world_position.z - chunk_center.z)
+	return Vector3(
+		world_position.x,
+		CityChunkGroundSampler.sample_height(local_point, chunk_payload, profile) + standing_height,
+		world_position.z
+	)
+
+func _resolve_nearby_enemy_spawn_world_position(world_position: Vector3, standing_height: float) -> Vector3:
+	var best_position := _resolve_surface_world_position(world_position, standing_height)
+	var best_score := _score_combat_spawn_world_position(best_position)
+	var offsets: Array[Vector2] = [
+		Vector2.ZERO,
+		Vector2(6.0, 0.0),
+		Vector2(-6.0, 0.0),
+		Vector2(0.0, 6.0),
+		Vector2(0.0, -6.0),
+		Vector2(4.5, 4.5),
+		Vector2(-4.5, 4.5),
+		Vector2(4.5, -4.5),
+		Vector2(-4.5, -4.5),
+	]
+	for offset in offsets:
+		var candidate_world := Vector3(world_position.x + offset.x, world_position.y, world_position.z + offset.y)
+		var candidate := _resolve_surface_world_position(candidate_world, standing_height)
+		var score := _score_combat_spawn_world_position(candidate) - candidate.distance_to(world_position) * 0.2
+		if _has_clear_line_of_sight(candidate + Vector3.UP * 1.1, _get_active_anchor_position() + Vector3.UP * 1.4):
+			score += 16.0
+		if score > best_score:
+			best_score = score
+			best_position = candidate
+	return best_position
+
+func _has_clear_line_of_sight(from_world_position: Vector3, to_world_position: Vector3) -> bool:
+	if get_world_3d() == null or get_world_3d().direct_space_state == null:
+		return true
+	var query := PhysicsRayQueryParameters3D.create(from_world_position, to_world_position)
+	query.collide_with_areas = false
+	query.exclude = [player.get_rid()] if player != null else []
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	return hit.is_empty()
 
 func _snap_player_to_active_surface() -> bool:
 	if player == null or get_world_3d() == null:

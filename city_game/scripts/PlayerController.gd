@@ -1,5 +1,7 @@
 extends CharacterBody3D
 
+signal primary_fire_requested
+
 @export var walk_speed := 8.0
 @export var sprint_speed := 13.0
 @export var inspection_walk_speed := 96.0
@@ -10,8 +12,13 @@ extends CharacterBody3D
 @export var max_pitch_deg := 35.0
 @export var player_floor_snap_length := 0.9
 @export var inspection_floor_snap_length := 1.8
+@export var primary_fire_cooldown_sec := 0.12
+@export var primary_fire_shoulder_offset := Vector3(0.46, 1.22, -0.18)
+@export var primary_fire_forward_offset_m := 0.72
+@export var aim_trace_distance_m := 240.0
 
 @onready var camera_rig: Node3D = $CameraRig
+@onready var camera: Camera3D = $CameraRig/Camera3D
 
 var _gravity := ProjectSettings.get_setting("physics/3d/default_gravity") as float
 var _pitch := deg_to_rad(-18.0)
@@ -19,6 +26,8 @@ var _control_enabled := true
 var _speed_profile := "player"
 var _stabilization_suspend_frames := 0
 var _collision_resume_process_frames := 0
+var _primary_fire_cooldown_remaining := 0.0
+var _primary_fire_active := false
 
 func _ready() -> void:
 	camera_rig.rotation.x = _pitch
@@ -26,7 +35,11 @@ func _ready() -> void:
 	if DisplayServer.get_name() != "headless":
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if _primary_fire_cooldown_remaining > 0.0:
+		_primary_fire_cooldown_remaining = maxf(_primary_fire_cooldown_remaining - delta, 0.0)
+	if _primary_fire_active and _control_enabled:
+		request_primary_fire()
 	if _collision_resume_process_frames <= 0:
 		return
 	_collision_resume_process_frames -= 1
@@ -46,6 +59,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		camera_rig.rotation.x = _pitch
 	elif event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
+		if button.button_index == MOUSE_BUTTON_LEFT:
+			set_primary_fire_active(button.pressed)
 		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	elif event.is_action_pressed("ui_cancel"):
@@ -93,6 +108,7 @@ func _physics_process(delta: float) -> void:
 func set_control_enabled(enabled: bool) -> void:
 	_control_enabled = enabled
 	if not enabled:
+		_primary_fire_active = false
 		velocity.x = 0.0
 		velocity.z = 0.0
 
@@ -124,6 +140,51 @@ func get_floor_snap_config() -> Dictionary:
 		"player": player_floor_snap_length,
 		"inspection": inspection_floor_snap_length,
 	}
+
+func set_primary_fire_active(active: bool) -> void:
+	_primary_fire_active = active and _control_enabled
+	if _primary_fire_active:
+		request_primary_fire()
+
+func request_primary_fire() -> bool:
+	if not _control_enabled:
+		return false
+	if _primary_fire_cooldown_remaining > 0.0:
+		return false
+	_primary_fire_cooldown_remaining = primary_fire_cooldown_sec
+	primary_fire_requested.emit()
+	return true
+
+func get_projectile_spawn_transform() -> Transform3D:
+	var basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
+	var right := global_transform.basis.x.normalized()
+	var up := Vector3.UP
+	var player_forward := (-global_transform.basis.z).normalized()
+	var origin := global_position
+	origin += right * primary_fire_shoulder_offset.x
+	origin += up * primary_fire_shoulder_offset.y
+	origin += player_forward * (primary_fire_forward_offset_m + primary_fire_shoulder_offset.z)
+	return Transform3D(basis, origin)
+
+func get_projectile_direction() -> Vector3:
+	var spawn_origin := get_projectile_spawn_transform().origin
+	var aim_target := _resolve_aim_target_world_position()
+	return (aim_target - spawn_origin).normalized()
+
+func _resolve_aim_target_world_position() -> Vector3:
+	var basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
+	var origin := camera.global_position if camera != null else global_position + Vector3.UP * 1.4
+	var forward := (-basis.z).normalized()
+	var fallback_target := origin + forward * aim_trace_distance_m
+	if get_world_3d() == null or get_world_3d().direct_space_state == null:
+		return fallback_target
+	var query := PhysicsRayQueryParameters3D.create(origin, fallback_target)
+	query.collide_with_areas = false
+	query.exclude = [get_rid()]
+	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return fallback_target
+	return hit.get("position", fallback_target)
 
 func suspend_ground_stabilization(frame_count: int) -> void:
 	_stabilization_suspend_frames = maxi(_stabilization_suspend_frames, frame_count)

@@ -11,6 +11,7 @@ var _crosshair_state: Dictionary = {
 	"screen_position": Vector2.ZERO,
 	"viewport_size": Vector2.ZERO,
 	"world_target": Vector3.ZERO,
+	"aim_down_sights_active": false,
 }
 
 func _ready() -> void:

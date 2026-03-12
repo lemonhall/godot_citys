@@ -16,6 +16,10 @@ signal primary_fire_requested
 @export var primary_fire_shoulder_offset := Vector3(0.46, 1.22, -0.18)
 @export var primary_fire_forward_offset_m := 0.72
 @export var aim_trace_distance_m := 240.0
+@export var ads_camera_local_position := Vector3(0.58, 2.05, 4.2)
+@export var ads_camera_fov := 42.0
+@export var ads_transition_speed := 8.0
+@export var ads_mouse_sensitivity_scale := 0.72
 
 @onready var camera_rig: Node3D = $CameraRig
 @onready var camera: Camera3D = $CameraRig/Camera3D
@@ -28,9 +32,16 @@ var _stabilization_suspend_frames := 0
 var _collision_resume_process_frames := 0
 var _primary_fire_cooldown_remaining := 0.0
 var _primary_fire_active := false
+var _aim_down_sights_active := false
+var _ads_blend := 0.0
+var _default_camera_local_position := Vector3.ZERO
+var _default_camera_fov := 65.0
 
 func _ready() -> void:
 	camera_rig.rotation.x = _pitch
+	if camera != null:
+		_default_camera_local_position = camera.position
+		_default_camera_fov = camera.fov
 	floor_snap_length = _current_floor_snap_length()
 	if DisplayServer.get_name() != "headless":
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
@@ -40,6 +51,7 @@ func _process(delta: float) -> void:
 		_primary_fire_cooldown_remaining = maxf(_primary_fire_cooldown_remaining - delta, 0.0)
 	if _primary_fire_active and _control_enabled:
 		request_primary_fire()
+	_update_ads_camera(delta)
 	if _collision_resume_process_frames <= 0:
 		return
 	_collision_resume_process_frames -= 1
@@ -54,14 +66,19 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var motion := event as InputEventMouseMotion
-		rotate_y(-motion.relative.x * mouse_sensitivity)
-		_pitch = clamp(_pitch - motion.relative.y * mouse_sensitivity, deg_to_rad(min_pitch_deg), deg_to_rad(max_pitch_deg))
+		var sensitivity := mouse_sensitivity * _current_ads_mouse_sensitivity_scale()
+		rotate_y(-motion.relative.x * sensitivity)
+		_pitch = clamp(_pitch - motion.relative.y * sensitivity, deg_to_rad(min_pitch_deg), deg_to_rad(max_pitch_deg))
 		camera_rig.rotation.x = _pitch
 	elif event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
 		if button.button_index == MOUSE_BUTTON_LEFT:
 			set_primary_fire_active(button.pressed)
+		elif button.button_index == MOUSE_BUTTON_RIGHT:
+			set_aim_down_sights_active(button.pressed)
 		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+		elif button.pressed and button.button_index == MOUSE_BUTTON_RIGHT:
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	elif event.is_action_pressed("ui_cancel"):
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -109,6 +126,7 @@ func set_control_enabled(enabled: bool) -> void:
 	_control_enabled = enabled
 	if not enabled:
 		_primary_fire_active = false
+		_aim_down_sights_active = false
 		velocity.x = 0.0
 		velocity.z = 0.0
 
@@ -145,6 +163,20 @@ func set_primary_fire_active(active: bool) -> void:
 	_primary_fire_active = active and _control_enabled
 	if _primary_fire_active:
 		request_primary_fire()
+
+func set_aim_down_sights_active(active: bool) -> void:
+	_aim_down_sights_active = active and _control_enabled
+
+func is_aim_down_sights_active() -> bool:
+	return _aim_down_sights_active
+
+func get_camera_fov_state() -> Dictionary:
+	return {
+		"default": _default_camera_fov,
+		"ads": ads_camera_fov,
+		"current": camera.fov if camera != null else _default_camera_fov,
+		"blend": _ads_blend,
+	}
 
 func request_primary_fire() -> bool:
 	if not _control_enabled:
@@ -288,3 +320,14 @@ func _set_primary_collision_enabled(enabled: bool) -> void:
 	if collision_shape == null:
 		return
 	collision_shape.disabled = not enabled
+
+func _update_ads_camera(delta: float) -> void:
+	if camera == null:
+		return
+	var target_blend := 1.0 if _aim_down_sights_active and _control_enabled else 0.0
+	_ads_blend = move_toward(_ads_blend, target_blend, delta * ads_transition_speed)
+	camera.position = _default_camera_local_position.lerp(ads_camera_local_position, _ads_blend)
+	camera.fov = lerpf(_default_camera_fov, ads_camera_fov, _ads_blend)
+
+func _current_ads_mouse_sensitivity_scale() -> float:
+	return ads_mouse_sensitivity_scale if _aim_down_sights_active else 1.0

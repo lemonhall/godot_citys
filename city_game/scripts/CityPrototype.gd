@@ -119,7 +119,7 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 		"Shift sprint  Space jump",
 		"Mouse rotates player camera  Esc releases cursor",
 		"Press C to toggle normal / inspection speed",
-		"Left click fires  Numpad / spawns trauma squad enemy",
+		"Left click fires  Right click ADS  Numpad / spawns trauma squad enemy",
 		"control_mode=%s" % _control_mode,
 		"tracked_position=%s" % str(_vector3_to_dict(player.global_position if player != null else Vector3.ZERO)),
 		generated_city.get_city_summary(),
@@ -435,6 +435,7 @@ func _build_crosshair_state() -> Dictionary:
 			"screen_position": viewport_size * 0.5,
 			"viewport_size": viewport_size,
 			"world_target": Vector3.ZERO,
+			"aim_down_sights_active": false,
 		}
 	var camera := player.get_node_or_null("CameraRig/Camera3D") as Camera3D
 	var world_target: Vector3 = player.get_aim_target_world_position()
@@ -446,6 +447,7 @@ func _build_crosshair_state() -> Dictionary:
 		"screen_position": screen_position,
 		"viewport_size": viewport_size,
 		"world_target": world_target,
+		"aim_down_sights_active": player.is_aim_down_sights_active() if player.has_method("is_aim_down_sights_active") else false,
 	}
 
 func reset_performance_profile() -> void:

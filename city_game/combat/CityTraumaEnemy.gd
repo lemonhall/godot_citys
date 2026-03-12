@@ -42,13 +42,18 @@ var _camouflage_remaining_sec := 0.0
 var _camouflage_alpha := 1.0
 var _body: MeshInstance3D = null
 var _body_material: StandardMaterial3D = null
+var _health_bar_root: Node3D = null
+var _health_bar_fill_anchor: Node3D = null
+var _health_bar_fill_material: StandardMaterial3D = null
 
 func _ready() -> void:
 	add_to_group("city_enemy")
 	_health = max_health
 	_ensure_collision()
 	_ensure_visual()
+	_ensure_health_bar()
 	floor_snap_length = floor_snap_length_m
+	_update_health_feedback()
 	_update_visual_state()
 
 func configure(target: Node3D) -> void:
@@ -76,8 +81,23 @@ func get_camouflage_state() -> Dictionary:
 		"time_remaining_sec": _camouflage_remaining_sec,
 	}
 
+func get_health_ratio() -> float:
+	if max_health <= 0.0:
+		return 0.0
+	return clampf(_health / maxf(max_health, 0.001), 0.0, 1.0)
+
+func get_health_state() -> Dictionary:
+	return {
+		"current": maxf(_health, 0.0),
+		"max": maxf(max_health, 0.0),
+		"ratio": get_health_ratio(),
+		"alive": _health > 0.0,
+		"visible": _health_bar_root != null and _health_bar_root.visible,
+	}
+
 func apply_projectile_hit(projectile_damage: float, _hit_position: Vector3, _impulse: Vector3) -> void:
-	_health -= projectile_damage
+	_health = maxf(_health - projectile_damage, 0.0)
+	_update_health_feedback()
 	if _health <= 0.0:
 		queue_free()
 
@@ -372,3 +392,66 @@ func _ensure_visual() -> void:
 	add_child(body)
 	_body = body
 	_body_material = material
+
+func _ensure_health_bar() -> void:
+	if get_node_or_null("HealthBar") != null:
+		_health_bar_root = get_node_or_null("HealthBar") as Node3D
+		var existing_fill_anchor := _health_bar_root.get_node_or_null("FillAnchor") as Node3D if _health_bar_root != null else null
+		_health_bar_fill_anchor = existing_fill_anchor
+		if existing_fill_anchor != null:
+			var existing_fill := existing_fill_anchor.get_node_or_null("Fill") as MeshInstance3D
+			if existing_fill != null:
+				_health_bar_fill_material = existing_fill.material_override as StandardMaterial3D
+		return
+
+	var health_bar_root := Node3D.new()
+	health_bar_root.name = "HealthBar"
+	health_bar_root.position = Vector3(0.0, 2.85, 0.0)
+
+	var back := MeshInstance3D.new()
+	back.name = "Back"
+	back.mesh = _build_health_bar_mesh(1.28, 0.11, 0.045)
+	var back_material := StandardMaterial3D.new()
+	back_material.albedo_color = Color(0.08, 0.09, 0.11, 0.88)
+	back_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	back.material_override = back_material
+	health_bar_root.add_child(back)
+
+	var fill_anchor := Node3D.new()
+	fill_anchor.name = "FillAnchor"
+	fill_anchor.position = Vector3(-0.6, 0.0, 0.0)
+
+	var fill := MeshInstance3D.new()
+	fill.name = "Fill"
+	fill.position = Vector3(0.54, 0.0, 0.0)
+	fill.mesh = _build_health_bar_mesh(1.08, 0.06, 0.032)
+	var fill_material := StandardMaterial3D.new()
+	fill_material.albedo_color = Color(0.941176, 0.235294, 0.235294, 1.0)
+	fill_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fill.material_override = fill_material
+	fill_anchor.add_child(fill)
+	health_bar_root.add_child(fill_anchor)
+	add_child(health_bar_root)
+
+	_health_bar_root = health_bar_root
+	_health_bar_fill_anchor = fill_anchor
+	_health_bar_fill_material = fill_material
+
+func _update_health_feedback() -> void:
+	if _health_bar_root == null or _health_bar_fill_anchor == null:
+		return
+	var health_ratio := get_health_ratio()
+	_health_bar_root.visible = _health > 0.0
+	_health_bar_fill_anchor.scale.x = maxf(health_ratio, 0.001)
+	if _health_bar_fill_material != null:
+		_health_bar_fill_material.albedo_color = Color(
+			lerpf(0.941176, 0.239216, 1.0 - health_ratio),
+			lerpf(0.235294, 0.803922, health_ratio),
+			lerpf(0.235294, 0.309804, health_ratio),
+			1.0
+		)
+
+func _build_health_bar_mesh(width: float, height: float, depth: float) -> BoxMesh:
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(width, height, depth)
+	return mesh

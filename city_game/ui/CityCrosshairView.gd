@@ -5,6 +5,7 @@ var _state: Dictionary = {
 	"screen_position": Vector2.ZERO,
 	"viewport_size": Vector2.ZERO,
 	"world_target": Vector3.ZERO,
+	"aim_down_sights_active": false,
 }
 
 func _ready() -> void:
@@ -27,8 +28,9 @@ func _draw() -> void:
 	if not bool(_state.get("visible", false)):
 		return
 	var center: Vector2 = _state.get("screen_position", size * 0.5)
-	var outer_radius := 9.0
-	var gap_radius := 3.0
+	var ads_active := bool(_state.get("aim_down_sights_active", false))
+	var outer_radius := 6.5 if ads_active else 9.0
+	var gap_radius := 1.75 if ads_active else 3.0
 	var color := Color(0.92, 0.97, 1.0, 0.95)
 	var shadow := Color(0.02, 0.04, 0.05, 0.65)
 	draw_arc(center, outer_radius + 1.0, 0.0, TAU, 32, shadow, 2.0, true)

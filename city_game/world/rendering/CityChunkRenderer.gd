@@ -71,10 +71,23 @@ var _terrain_commit_sample_count := 0
 var _terrain_commit_total_usec := 0
 var _terrain_commit_max_usec := 0
 var _terrain_commit_last_usec := 0
+var _crowd_update_sample_count := 0
+var _crowd_update_total_usec := 0
+var _crowd_update_max_usec := 0
+var _crowd_update_last_usec := 0
+var _crowd_spawn_sample_count := 0
+var _crowd_spawn_total_usec := 0
+var _crowd_spawn_max_usec := 0
+var _crowd_spawn_last_usec := 0
+var _crowd_render_commit_sample_count := 0
+var _crowd_render_commit_total_usec := 0
+var _crowd_render_commit_max_usec := 0
+var _crowd_render_commit_last_usec := 0
 var _pedestrian_tier_controller = null
 var _last_pedestrian_player_position := Vector3.ZERO
 var _last_pedestrian_player_velocity := Vector3.ZERO
 var _has_pedestrian_player_context := false
+var _pedestrian_visibility_enabled := true
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
@@ -104,6 +117,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_last_pedestrian_player_position = Vector3.ZERO
 	_last_pedestrian_player_velocity = Vector3.ZERO
 	_has_pedestrian_player_context = false
+	_pedestrian_visibility_enabled = true
 	if _world_data.has("pedestrian_query"):
 		_pedestrian_tier_controller = CityPedestrianTierController.new()
 		_pedestrian_tier_controller.setup(_config, _world_data)
@@ -113,7 +127,6 @@ func setup(config, world_data: Dictionary) -> void:
 func _process(delta: float) -> void:
 	_process_streaming_queues_once_per_frame()
 	_update_lod_states(_last_player_position)
-	_update_pedestrian_crowd(_last_player_position, delta)
 
 func _notification(what: int) -> void:
 	if what != NOTIFICATION_PREDELETE:
@@ -154,7 +167,7 @@ func _notification(what: int) -> void:
 	_last_pedestrian_player_velocity = Vector3.ZERO
 	_has_pedestrian_player_context = false
 
-func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> void:
+func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0) -> void:
 	if _config == null:
 		return
 	_last_player_position = player_position
@@ -225,7 +238,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3) -> vo
 	_prune_terrain_job_waiters(target_chunk_ids)
 	_process_streaming_queues_once_per_frame()
 	_update_lod_states(player_position)
-	_update_pedestrian_crowd(player_position, 0.0)
+	_update_pedestrian_crowd(player_position, delta)
 
 func get_chunk_ids() -> Array[String]:
 	var ids: Array[String] = []
@@ -306,6 +319,21 @@ func get_streaming_profile_stats() -> Dictionary:
 		"terrain_commit_avg_usec": _average_usec(_terrain_commit_total_usec, _terrain_commit_sample_count),
 		"terrain_commit_max_usec": _terrain_commit_max_usec,
 		"terrain_commit_last_usec": _terrain_commit_last_usec,
+		"crowd_update_sample_count": _crowd_update_sample_count,
+		"crowd_update_total_usec": _crowd_update_total_usec,
+		"crowd_update_avg_usec": _average_usec(_crowd_update_total_usec, _crowd_update_sample_count),
+		"crowd_update_max_usec": _crowd_update_max_usec,
+		"crowd_update_last_usec": _crowd_update_last_usec,
+		"crowd_spawn_sample_count": _crowd_spawn_sample_count,
+		"crowd_spawn_total_usec": _crowd_spawn_total_usec,
+		"crowd_spawn_avg_usec": _average_usec(_crowd_spawn_total_usec, _crowd_spawn_sample_count),
+		"crowd_spawn_max_usec": _crowd_spawn_max_usec,
+		"crowd_spawn_last_usec": _crowd_spawn_last_usec,
+		"crowd_render_commit_sample_count": _crowd_render_commit_sample_count,
+		"crowd_render_commit_total_usec": _crowd_render_commit_total_usec,
+		"crowd_render_commit_avg_usec": _average_usec(_crowd_render_commit_total_usec, _crowd_render_commit_sample_count),
+		"crowd_render_commit_max_usec": _crowd_render_commit_max_usec,
+		"crowd_render_commit_last_usec": _crowd_render_commit_last_usec,
 	}
 
 func reset_streaming_profile_stats() -> void:
@@ -341,6 +369,18 @@ func reset_streaming_profile_stats() -> void:
 	_terrain_commit_total_usec = 0
 	_terrain_commit_max_usec = 0
 	_terrain_commit_last_usec = 0
+	_crowd_update_sample_count = 0
+	_crowd_update_total_usec = 0
+	_crowd_update_max_usec = 0
+	_crowd_update_last_usec = 0
+	_crowd_spawn_sample_count = 0
+	_crowd_spawn_total_usec = 0
+	_crowd_spawn_max_usec = 0
+	_crowd_spawn_last_usec = 0
+	_crowd_render_commit_sample_count = 0
+	_crowd_render_commit_total_usec = 0
+	_crowd_render_commit_max_usec = 0
+	_crowd_render_commit_last_usec = 0
 
 func get_renderer_stats() -> Dictionary:
 	var lod_mode_counts := {
@@ -350,17 +390,19 @@ func get_renderer_stats() -> Dictionary:
 	}
 	var multimesh_instance_total := 0
 	var pedestrian_multimesh_instance_total := 0
+	var pedestrian_tier0_total := 0
 	var pedestrian_tier1_total := 0
 	var pedestrian_tier2_total := 0
 	var pedestrian_tier3_total := 0
 	for chunk_id in get_chunk_ids():
 		var chunk_scene = _chunk_scenes[chunk_id]
-		var chunk_stats: Dictionary = chunk_scene.get_renderer_stats()
+		var chunk_stats: Dictionary = chunk_scene.get_runtime_renderer_stats() if chunk_scene.has_method("get_runtime_renderer_stats") else chunk_scene.get_renderer_stats()
 		var lod_mode := str(chunk_stats.get("lod_mode", ""))
 		if lod_mode_counts.has(lod_mode):
 			lod_mode_counts[lod_mode] += 1
 		multimesh_instance_total += int(chunk_stats.get("multimesh_instance_count", 0))
 		pedestrian_multimesh_instance_total += int(chunk_stats.get("pedestrian_multimesh_instance_count", 0))
+		pedestrian_tier0_total += int(chunk_stats.get("pedestrian_tier0_count", 0))
 		pedestrian_tier1_total += int(chunk_stats.get("pedestrian_tier1_count", 0))
 		pedestrian_tier2_total += int(chunk_stats.get("pedestrian_tier2_count", 0))
 		pedestrian_tier3_total += int(chunk_stats.get("pedestrian_tier3_count", 0))
@@ -369,16 +411,19 @@ func get_renderer_stats() -> Dictionary:
 	var pedestrian_runtime_snapshot := {}
 	if _pedestrian_tier_controller != null:
 		pedestrian_budget_contract = _pedestrian_tier_controller.get_budget_contract()
-		pedestrian_global_snapshot = _pedestrian_tier_controller.get_global_snapshot()
-		pedestrian_runtime_snapshot = _pedestrian_tier_controller.get_runtime_snapshot()
+		pedestrian_global_snapshot = _pedestrian_tier_controller.get_global_summary()
+		pedestrian_runtime_snapshot = _pedestrian_tier_controller.get_runtime_summary()
 	var stats := {
 		"active_rendered_chunk_count": get_chunk_scene_count(),
 		"multimesh_instance_total": multimesh_instance_total,
 		"pedestrian_multimesh_instance_total": pedestrian_multimesh_instance_total,
-		"pedestrian_tier1_total": pedestrian_tier1_total,
-		"pedestrian_tier2_total": pedestrian_tier2_total,
-		"pedestrian_tier3_total": pedestrian_tier3_total,
+		"pedestrian_tier0_total": int(pedestrian_global_snapshot.get("tier0_count", pedestrian_tier0_total)),
+		"pedestrian_tier1_total": int(pedestrian_global_snapshot.get("tier1_count", pedestrian_tier1_total)),
+		"pedestrian_tier2_total": int(pedestrian_global_snapshot.get("tier2_count", pedestrian_tier2_total)),
+		"pedestrian_tier3_total": int(pedestrian_global_snapshot.get("tier3_count", pedestrian_tier3_total)),
 		"pedestrian_active_state_count": int(pedestrian_global_snapshot.get("active_state_count", 0)),
+		"pedestrian_mode": str(pedestrian_budget_contract.get("preset", "lite")),
+		"pedestrian_visible": _pedestrian_visibility_enabled,
 		"pedestrian_budget_contract": pedestrian_budget_contract.duplicate(true),
 		"pedestrian_page_cache_hit_count": int(pedestrian_runtime_snapshot.get("page_cache_hit_count", 0)),
 		"pedestrian_page_cache_miss_count": int(pedestrian_runtime_snapshot.get("page_cache_miss_count", 0)),
@@ -392,12 +437,53 @@ func get_renderer_stats() -> Dictionary:
 func get_chunk_scene_stats(chunk_id: String) -> Dictionary:
 	if not _chunk_scenes.has(chunk_id):
 		return {}
-	return (_chunk_scenes[chunk_id] as Node).get_renderer_stats()
+	var chunk_scene: Node = _chunk_scenes[chunk_id]
+	if chunk_scene.has_method("get_runtime_renderer_stats"):
+		return chunk_scene.get_runtime_renderer_stats()
+	return chunk_scene.get_renderer_stats()
 
 func get_pedestrian_runtime_snapshot() -> Dictionary:
 	if _pedestrian_tier_controller == null or not _pedestrian_tier_controller.has_method("get_runtime_snapshot"):
 		return {}
-	return _pedestrian_tier_controller.get_runtime_snapshot()
+	var runtime_snapshot: Dictionary = _pedestrian_tier_controller.get_runtime_snapshot()
+	runtime_snapshot["pedestrian_visible"] = _pedestrian_visibility_enabled
+	return runtime_snapshot
+
+func get_pedestrian_runtime_summary() -> Dictionary:
+	var runtime_summary := {
+		"pedestrian_mode": "lite",
+		"pedestrian_visible": _pedestrian_visibility_enabled,
+		"ped_tier0_count": 0,
+		"ped_tier1_count": 0,
+		"ped_tier2_count": 0,
+		"ped_tier3_count": 0,
+		"ped_page_cache_hit_count": 0,
+		"ped_page_cache_miss_count": 0,
+		"ped_duplicate_page_load_count": 0,
+	}
+	if _pedestrian_tier_controller == null:
+		return runtime_summary
+	var budget_contract: Dictionary = _pedestrian_tier_controller.get_budget_contract()
+	var pedestrian_runtime_summary: Dictionary = _pedestrian_tier_controller.get_runtime_summary()
+	runtime_summary["pedestrian_mode"] = str(budget_contract.get("preset", "lite"))
+	runtime_summary["ped_tier0_count"] = int(pedestrian_runtime_summary.get("tier0_count", 0))
+	runtime_summary["ped_tier1_count"] = int(pedestrian_runtime_summary.get("tier1_count", 0))
+	runtime_summary["ped_tier2_count"] = int(pedestrian_runtime_summary.get("tier2_count", 0))
+	runtime_summary["ped_tier3_count"] = int(pedestrian_runtime_summary.get("tier3_count", 0))
+	runtime_summary["ped_page_cache_hit_count"] = int(pedestrian_runtime_summary.get("page_cache_hit_count", 0))
+	runtime_summary["ped_page_cache_miss_count"] = int(pedestrian_runtime_summary.get("page_cache_miss_count", 0))
+	runtime_summary["ped_duplicate_page_load_count"] = int(pedestrian_runtime_summary.get("duplicate_page_load_count", 0))
+	return runtime_summary
+
+func set_pedestrians_visible(visible: bool) -> void:
+	_pedestrian_visibility_enabled = visible
+	for chunk_id in get_chunk_ids():
+		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
+		if chunk_scene.has_method("set_pedestrian_visibility"):
+			chunk_scene.set_pedestrian_visibility(visible)
+
+func are_pedestrians_visible() -> bool:
+	return _pedestrian_visibility_enabled
 
 func notify_projectile_event(origin: Vector3, direction: Vector3, range_m: float = 36.0) -> void:
 	if _pedestrian_tier_controller == null or not _pedestrian_tier_controller.has_method("notify_projectile_event"):
@@ -509,7 +595,10 @@ func _process_mount_budget() -> void:
 		var setup_started_usec := Time.get_ticks_usec()
 		chunk_scene.setup(payload)
 		if _pedestrian_tier_controller != null and chunk_scene.has_method("apply_pedestrian_chunk_snapshot"):
-			chunk_scene.apply_pedestrian_chunk_snapshot(_pedestrian_tier_controller.get_chunk_snapshot(chunk_id))
+			var chunk_snapshot: Dictionary = _pedestrian_tier_controller.get_chunk_snapshot_ref(chunk_id) if _pedestrian_tier_controller.has_method("get_chunk_snapshot_ref") else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id)
+			chunk_scene.apply_pedestrian_chunk_snapshot(chunk_snapshot)
+		if chunk_scene.has_method("set_pedestrian_visibility"):
+			chunk_scene.set_pedestrian_visibility(_pedestrian_visibility_enabled)
 		_record_mount_setup_sample(Time.get_ticks_usec() - setup_started_usec)
 		var setup_profile: Dictionary = chunk_scene.get_setup_profile()
 		_record_terrain_commit_sample(int(setup_profile.get("ground_mesh_usec", 0)))
@@ -562,11 +651,19 @@ func _update_pedestrian_crowd(player_position: Vector3, delta: float) -> void:
 	_last_pedestrian_player_position = player_position
 	_last_pedestrian_player_velocity = player_velocity
 	_has_pedestrian_player_context = true
-	_pedestrian_tier_controller.update_active_chunks(_last_active_chunk_entries, player_position, delta)
+	var crowd_snapshot: Dictionary = _pedestrian_tier_controller.update_active_chunks(_last_active_chunk_entries, player_position, delta)
+	var crowd_profile_stats: Dictionary = crowd_snapshot.get("profile_stats", {})
+	_record_crowd_spawn_sample(int(crowd_profile_stats.get("crowd_spawn_usec", 0)))
+	_record_crowd_update_sample(int(crowd_profile_stats.get("crowd_update_usec", 0)))
+	var render_commit_started_usec := Time.get_ticks_usec()
 	for chunk_id in get_chunk_ids():
 		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
 		if chunk_scene.has_method("apply_pedestrian_chunk_snapshot"):
-			chunk_scene.apply_pedestrian_chunk_snapshot(_pedestrian_tier_controller.get_chunk_snapshot(chunk_id))
+			var chunk_snapshot: Dictionary = _pedestrian_tier_controller.get_chunk_snapshot_ref(chunk_id) if _pedestrian_tier_controller.has_method("get_chunk_snapshot_ref") else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id)
+			chunk_scene.apply_pedestrian_chunk_snapshot(chunk_snapshot)
+		if chunk_scene.has_method("set_pedestrian_visibility"):
+			chunk_scene.set_pedestrian_visibility(_pedestrian_visibility_enabled)
+	_record_crowd_render_commit_sample(Time.get_ticks_usec() - render_commit_started_usec)
 
 func _distance_to_entry(player_position: Vector3, entry: Dictionary) -> float:
 	var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)
@@ -593,7 +690,7 @@ func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 		"chunk_seed": _config.derive_seed("render_chunk", chunk_key),
 		"world_seed": int(_config.base_seed),
 		"road_graph": _world_data.get("road_graph"),
-		"pedestrian_chunk_snapshot": {} if _pedestrian_tier_controller == null else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id),
+		"pedestrian_chunk_snapshot": {},
 	}
 
 func _chunk_center_from_key(chunk_key: Vector2i) -> Vector3:
@@ -656,6 +753,30 @@ func _record_terrain_commit_sample(duration_usec: int) -> void:
 	_terrain_commit_total_usec += duration_usec
 	_terrain_commit_max_usec = maxi(_terrain_commit_max_usec, duration_usec)
 	_terrain_commit_last_usec = duration_usec
+
+func _record_crowd_update_sample(duration_usec: int) -> void:
+	if duration_usec < 0:
+		return
+	_crowd_update_sample_count += 1
+	_crowd_update_total_usec += duration_usec
+	_crowd_update_max_usec = maxi(_crowd_update_max_usec, duration_usec)
+	_crowd_update_last_usec = duration_usec
+
+func _record_crowd_spawn_sample(duration_usec: int) -> void:
+	if duration_usec < 0:
+		return
+	_crowd_spawn_sample_count += 1
+	_crowd_spawn_total_usec += duration_usec
+	_crowd_spawn_max_usec = maxi(_crowd_spawn_max_usec, duration_usec)
+	_crowd_spawn_last_usec = duration_usec
+
+func _record_crowd_render_commit_sample(duration_usec: int) -> void:
+	if duration_usec < 0:
+		return
+	_crowd_render_commit_sample_count += 1
+	_crowd_render_commit_total_usec += duration_usec
+	_crowd_render_commit_max_usec = maxi(_crowd_render_commit_max_usec, duration_usec)
+	_crowd_render_commit_last_usec = duration_usec
 
 func _average_usec(total_usec: int, sample_count: int) -> int:
 	if sample_count <= 0:

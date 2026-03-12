@@ -1,15 +1,19 @@
 extends RefCounted
 
+static var _street_lamp_mesh: BoxMesh = null
+static var _street_lamp_material_cache: Dictionary = {}
+
 static func build_street_lamps(profile: Dictionary = {}) -> MultiMeshInstance3D:
 	var instance := MultiMeshInstance3D.new()
 	instance.name = "StreetLamps"
 
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(0.28, 5.0, 0.28)
+	if _street_lamp_mesh == null:
+		_street_lamp_mesh = BoxMesh.new()
+		_street_lamp_mesh.size = Vector3(0.28, 5.0, 0.28)
 
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
-	multimesh.mesh = mesh
+	multimesh.mesh = _street_lamp_mesh
 
 	var placements := _collect_lamp_positions(profile.get("road_segments", []), profile.get("buildings", []))
 	if placements.is_empty():
@@ -25,12 +29,20 @@ static func build_street_lamps(profile: Dictionary = {}) -> MultiMeshInstance3D:
 	instance.multimesh = multimesh
 	var palette: Dictionary = profile.get("palette", {})
 	if palette.has("accent"):
-		var material := StandardMaterial3D.new()
-		material.albedo_color = palette["accent"]
-		material.roughness = 0.92
+		var material := _get_street_lamp_material(palette["accent"])
 		instance.material_override = material
 	instance.set_meta("min_road_clearance_m", _measure_min_road_clearance(placements, profile.get("road_segments", [])))
 	return instance
+
+static func _get_street_lamp_material(accent_color: Color) -> StandardMaterial3D:
+	var key := "%.4f|%.4f|%.4f|%.4f" % [accent_color.r, accent_color.g, accent_color.b, accent_color.a]
+	if _street_lamp_material_cache.has(key):
+		return _street_lamp_material_cache[key]
+	var material := StandardMaterial3D.new()
+	material.albedo_color = accent_color
+	material.roughness = 0.92
+	_street_lamp_material_cache[key] = material
+	return material
 
 static func _collect_lamp_positions(road_segments: Array, buildings: Array) -> Array[Transform3D]:
 	var placements: Array[Transform3D] = []

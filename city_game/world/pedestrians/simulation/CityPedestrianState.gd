@@ -32,6 +32,7 @@ var reaction_timer_sec := 0.0
 var reaction_source_position := Vector3.ZERO
 var lateral_offset_m := 0.0
 var lateral_offset_sign := 1.0
+var _queued_step_sec := 0.0
 
 func setup(data: Dictionary) -> void:
 	pedestrian_id = str(data.get("pedestrian_id", ""))
@@ -113,6 +114,23 @@ func clear_reaction() -> void:
 	reaction_priority = 0
 	reaction_timer_sec = 0.0
 	reaction_source_position = world_position
+
+func queue_step(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	_queued_step_sec += delta
+
+func consume_queued_step(min_interval_sec: float) -> float:
+	if _queued_step_sec < min_interval_sec:
+		return 0.0
+	var queued_delta := _queued_step_sec
+	_queued_step_sec = 0.0
+	return queued_delta
+
+func flush_queued_step() -> float:
+	var queued_delta := _queued_step_sec
+	_queued_step_sec = 0.0
+	return queued_delta
 
 func is_reactive() -> bool:
 	return reaction_state != "none" and reaction_timer_sec > 0.0

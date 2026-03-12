@@ -14,7 +14,7 @@ const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
 
 const CONTROL_MODE_PLAYER := "player"
 const CONTROL_MODE_INSPECTION := "inspection"
-const MINIMAP_POSITION_REFRESH_M := 64.0
+const MINIMAP_POSITION_REFRESH_M := 256.0
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -58,6 +58,9 @@ var _projectile_root: Node3D = null
 var _grenade_root: Node3D = null
 var _enemy_projectile_root: Node3D = null
 var _enemy_root: Node3D = null
+var _pedestrians_visible := true
+var _fps_overlay_visible := false
+var _last_fps_sample := 0.0
 
 func _ready() -> void:
 	_configure_environment()
@@ -73,6 +76,8 @@ func _ready() -> void:
 	_minimap_projector = CityMinimapProjector.new(_world_config, _world_data)
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
+		if chunk_renderer.has_method("set_pedestrians_visible"):
+			chunk_renderer.set_pedestrians_visible(_pedestrians_visible)
 	if debug_overlay != null:
 		debug_overlay.visible = false
 	_align_player_to_streamed_ground()
@@ -84,71 +89,99 @@ func _ready() -> void:
 
 	set_control_mode(CONTROL_MODE_PLAYER)
 	update_streaming_for_position(_get_active_anchor_position())
+	if hud != null and hud.has_method("set_fps_overlay_visible"):
+		hud.set_fps_overlay_visible(_fps_overlay_visible)
 	_refresh_hud_status()
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if player == null:
 		return
 	var frame_started_usec := Time.get_ticks_usec()
-	update_streaming_for_position(player.global_position)
-	_record_frame_step_sample(Time.get_ticks_usec() - frame_started_usec)
+	update_streaming_for_position(player.global_position, delta)
+	var frame_duration_usec := Time.get_ticks_usec() - frame_started_usec
+	_record_frame_step_sample(frame_duration_usec)
+	if delta > 0.0:
+		_last_fps_sample = 1.0 / delta
+	elif frame_duration_usec > 0:
+		_last_fps_sample = 1000000.0 / float(frame_duration_usec)
+	if hud != null and hud.has_method("set_fps_overlay_sample"):
+		hud.set_fps_overlay_sample(_last_fps_sample)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if DisplayServer.get_name() == "headless":
-		return
 	if event is InputEventKey:
 		var key_event := event as InputEventKey
-		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_C:
-			set_control_mode(CONTROL_MODE_INSPECTION if _control_mode == CONTROL_MODE_PLAYER else CONTROL_MODE_PLAYER)
-		elif key_event.pressed and not key_event.echo and (key_event.keycode == KEY_KP_DIVIDE or key_event.physical_keycode == KEY_KP_DIVIDE):
-			spawn_trauma_enemy()
+		if key_event.pressed and not key_event.echo and handle_debug_keypress(key_event.keycode, key_event.physical_keycode):
+			return
+	if DisplayServer.get_name() == "headless":
+		return
+
+func handle_debug_keypress(keycode: int, physical_keycode: int = 0) -> bool:
+	if keycode == KEY_C:
+		set_control_mode(CONTROL_MODE_INSPECTION if _control_mode == CONTROL_MODE_PLAYER else CONTROL_MODE_PLAYER)
+		return true
+	if keycode == KEY_KP_MULTIPLY or physical_keycode == KEY_KP_MULTIPLY:
+		toggle_pedestrians_visible()
+		return true
+	if keycode == KEY_KP_SUBTRACT or physical_keycode == KEY_KP_SUBTRACT:
+		toggle_fps_overlay()
+		return true
+	if keycode == KEY_KP_DIVIDE or physical_keycode == KEY_KP_DIVIDE:
+		spawn_trauma_enemy()
+		return true
+	return false
 
 func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 	var refresh_started_usec := Time.get_ticks_usec()
 	if not generated_city.has_method("get_city_summary"):
 		return
-	if not hud.has_method("set_status"):
+	if hud == null:
 		return
+	var hud_debug_expanded := hud.has_method("is_debug_expanded") and bool(hud.is_debug_expanded())
 
-	var snapshot: Dictionary = snapshot_override.duplicate(true) if not snapshot_override.is_empty() else _build_hud_snapshot()
-	var world_summary := str(_world_data.get("summary", "World data unavailable"))
-	var active_speed_text := ""
-	if player != null and player.has_method("get_walk_speed_mps") and player.has_method("get_sprint_speed_mps"):
-		active_speed_text = "move_speed=%.1f / %.1f m/s" % [float(player.get_walk_speed_mps()), float(player.get_sprint_speed_mps())]
-	var lines := PackedStringArray([
-		"City sandbox skeleton",
-		"WASD / arrows move",
-		"Shift sprint  Space jump",
-		"Mouse rotates player camera  Esc releases cursor",
-		"Press C to toggle normal / inspection speed",
-		"1 rifle  2 grenade  Left click fires / throws  Right click ADS / hold grenade",
-		"Numpad / spawns trauma squad enemy",
-		"control_mode=%s" % _control_mode,
-		"tracked_position=%s" % str(_vector3_to_dict(player.global_position if player != null else Vector3.ZERO)),
-		generated_city.get_city_summary(),
-		world_summary,
-		"current_chunk_id=%s | active_chunk_count=%d" % [
-			str(snapshot.get("current_chunk_id", "")),
-			int(snapshot.get("active_chunk_count", 0))
-		],
-		"current_chunk_lod=%s" % str(snapshot.get("current_chunk_lod_mode", "")),
-		"visual_variant=%s" % str(snapshot.get("current_chunk_visual_variant_id", "")),
-		"combat=player_projectiles:%d grenades:%d enemy_projectiles:%d enemies:%d" % [
-			get_active_projectile_count(),
-			get_active_grenade_count(),
-			get_active_enemy_projectile_count(),
-			get_active_enemy_count()
-		],
-		_weapon_status_text(),
-		active_speed_text,
-	])
-	hud.set_status("\n".join(lines))
-	if hud.has_method("set_debug_text") and debug_overlay != null and debug_overlay.has_method("get_debug_text"):
+	var snapshot: Dictionary = snapshot_override.duplicate(false) if not snapshot_override.is_empty() else _build_hud_snapshot(not hud_debug_expanded)
+	if hud_debug_expanded and hud.has_method("set_status"):
+		var world_summary := str(_world_data.get("summary", "World data unavailable"))
+		var active_speed_text := ""
+		if player != null and player.has_method("get_walk_speed_mps") and player.has_method("get_sprint_speed_mps"):
+			active_speed_text = "move_speed=%.1f / %.1f m/s" % [float(player.get_walk_speed_mps()), float(player.get_sprint_speed_mps())]
+		var lines := PackedStringArray([
+			"City sandbox skeleton",
+			"WASD / arrows move",
+			"Shift sprint  Space jump",
+			"Mouse rotates player camera  Esc releases cursor",
+			"Press C to toggle normal / inspection speed",
+			"1 rifle  2 grenade  Left click fires / throws  Right click ADS / hold grenade",
+			"Numpad / spawns trauma squad enemy",
+			"Numpad * toggles pedestrians  Numpad - toggles FPS overlay",
+			"control_mode=%s" % _control_mode,
+			"pedestrian_visible=%s fps_overlay_visible=%s" % [str(are_pedestrians_visible()), str(_fps_overlay_visible)],
+			"tracked_position=%s" % str(_vector3_to_dict(player.global_position if player != null else Vector3.ZERO)),
+			generated_city.get_city_summary(),
+			world_summary,
+			"current_chunk_id=%s | active_chunk_count=%d" % [
+				str(snapshot.get("current_chunk_id", "")),
+				int(snapshot.get("active_chunk_count", 0))
+			],
+			"current_chunk_lod=%s" % str(snapshot.get("current_chunk_lod_mode", "")),
+			"visual_variant=%s" % str(snapshot.get("current_chunk_visual_variant_id", "")),
+			"combat=player_projectiles:%d grenades:%d enemy_projectiles:%d enemies:%d" % [
+				get_active_projectile_count(),
+				get_active_grenade_count(),
+				get_active_enemy_projectile_count(),
+				get_active_enemy_count()
+			],
+			_weapon_status_text(),
+			active_speed_text,
+		])
+		hud.set_status("\n".join(lines))
+	if hud_debug_expanded and hud.has_method("set_debug_text") and debug_overlay != null and debug_overlay.has_method("get_debug_text"):
 		hud.set_debug_text(debug_overlay.get_debug_text())
 	if hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
 	if hud.has_method("set_crosshair_state"):
 		hud.set_crosshair_state(_build_crosshair_state())
+	if hud.has_method("set_fps_overlay_visible"):
+		hud.set_fps_overlay_visible(_fps_overlay_visible)
 	_record_hud_refresh_sample(Time.get_ticks_usec() - refresh_started_usec)
 
 func get_world_config():
@@ -247,6 +280,34 @@ func set_control_mode(mode: String) -> void:
 	_set_camera_current(player.get_node_or_null("CameraRig/Camera3D"), true)
 	_refresh_hud_status()
 
+func set_pedestrians_visible(visible: bool) -> void:
+	_pedestrians_visible = visible
+	if chunk_renderer != null and chunk_renderer.has_method("set_pedestrians_visible"):
+		chunk_renderer.set_pedestrians_visible(visible)
+	_refresh_hud_status()
+
+func toggle_pedestrians_visible() -> void:
+	set_pedestrians_visible(not _pedestrians_visible)
+
+func are_pedestrians_visible() -> bool:
+	if chunk_renderer != null and chunk_renderer.has_method("are_pedestrians_visible"):
+		return bool(chunk_renderer.are_pedestrians_visible())
+	return _pedestrians_visible
+
+func set_fps_overlay_visible(visible: bool) -> void:
+	_fps_overlay_visible = visible
+	if hud != null and hud.has_method("set_fps_overlay_visible"):
+		hud.set_fps_overlay_visible(visible)
+	if hud != null and hud.has_method("set_fps_overlay_sample"):
+		hud.set_fps_overlay_sample(_last_fps_sample)
+	_refresh_hud_status()
+
+func toggle_fps_overlay() -> void:
+	set_fps_overlay_visible(not _fps_overlay_visible)
+
+func is_fps_overlay_visible() -> bool:
+	return _fps_overlay_visible
+
 func get_streaming_snapshot() -> Dictionary:
 	if _chunk_streamer == null:
 		return {}
@@ -255,6 +316,16 @@ func get_streaming_snapshot() -> Dictionary:
 		snapshot.merge(chunk_renderer.get_renderer_stats(), true)
 	snapshot["control_mode"] = _control_mode
 	snapshot["tracked_position"] = _vector3_to_dict(player.global_position if player != null else Vector3.ZERO)
+	snapshot["pedestrian_visible"] = are_pedestrians_visible()
+	snapshot["fps_overlay_visible"] = _fps_overlay_visible
+	snapshot["pedestrian_mode"] = str(snapshot.get("pedestrian_mode", (snapshot.get("pedestrian_budget_contract", {}) as Dictionary).get("preset", "lite")))
+	snapshot["ped_tier0_count"] = int(snapshot.get("pedestrian_tier0_total", snapshot.get("ped_tier0_count", 0)))
+	snapshot["ped_tier1_count"] = int(snapshot.get("pedestrian_tier1_total", snapshot.get("ped_tier1_count", 0)))
+	snapshot["ped_tier2_count"] = int(snapshot.get("pedestrian_tier2_total", snapshot.get("ped_tier2_count", 0)))
+	snapshot["ped_tier3_count"] = int(snapshot.get("pedestrian_tier3_total", snapshot.get("ped_tier3_count", 0)))
+	snapshot["ped_page_cache_hit_count"] = int(snapshot.get("pedestrian_page_cache_hit_count", 0))
+	snapshot["ped_page_cache_miss_count"] = int(snapshot.get("pedestrian_page_cache_miss_count", 0))
+	snapshot["ped_duplicate_page_load_count"] = int(snapshot.get("pedestrian_duplicate_page_load_count", 0))
 	var current_chunk_id := str(snapshot.get("current_chunk_id", ""))
 	if current_chunk_id != "" and chunk_renderer != null and chunk_renderer.has_method("get_chunk_scene_stats"):
 		var current_chunk_stats: Dictionary = chunk_renderer.get_chunk_scene_stats(current_chunk_id)
@@ -263,17 +334,24 @@ func get_streaming_snapshot() -> Dictionary:
 		snapshot["current_chunk_visual_variant_id"] = str(current_chunk_stats.get("visual_variant_id", ""))
 	return snapshot
 
-func _build_hud_snapshot() -> Dictionary:
-	if _chunk_streamer == null:
-		return {}
-	var snapshot: Dictionary = _chunk_streamer.get_streaming_snapshot()
+func _build_hud_snapshot(collapsed: bool = false) -> Dictionary:
+	if not collapsed:
+		return get_streaming_snapshot()
+	var snapshot: Dictionary = _chunk_streamer.get_streaming_snapshot() if _chunk_streamer != null else {}
 	snapshot["control_mode"] = _control_mode
 	snapshot["tracked_position"] = _vector3_to_dict(player.global_position if player != null else Vector3.ZERO)
-	var current_chunk_id := str(snapshot.get("current_chunk_id", ""))
-	if current_chunk_id != "" and chunk_renderer != null and chunk_renderer.has_method("get_chunk_scene_stats"):
-		var current_chunk_stats: Dictionary = chunk_renderer.get_chunk_scene_stats(current_chunk_id)
-		snapshot["current_chunk_lod_mode"] = str(current_chunk_stats.get("lod_mode", ""))
-		snapshot["current_chunk_visual_variant_id"] = str(current_chunk_stats.get("visual_variant_id", ""))
+	snapshot["pedestrian_visible"] = are_pedestrians_visible()
+	snapshot["fps_overlay_visible"] = _fps_overlay_visible
+	if chunk_renderer != null:
+		if chunk_renderer.has_method("get_streaming_budget_stats"):
+			snapshot.merge(chunk_renderer.get_streaming_budget_stats(), true)
+		if chunk_renderer.has_method("get_streaming_profile_stats"):
+			var streaming_profile: Dictionary = chunk_renderer.get_streaming_profile_stats()
+			snapshot["crowd_update_avg_usec"] = int(streaming_profile.get("crowd_update_avg_usec", 0))
+			snapshot["crowd_spawn_avg_usec"] = int(streaming_profile.get("crowd_spawn_avg_usec", 0))
+			snapshot["crowd_render_commit_avg_usec"] = int(streaming_profile.get("crowd_render_commit_avg_usec", 0))
+		if chunk_renderer.has_method("get_pedestrian_runtime_summary"):
+			snapshot.merge(chunk_renderer.get_pedestrian_runtime_summary(), true)
 	return snapshot
 
 func _ensure_combat_roots() -> void:
@@ -393,19 +471,20 @@ func _spawn_enemy_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 	_enemy_projectile_root.add_child(projectile)
 	return projectile
 
-func update_streaming_for_position(world_position: Vector3) -> Array:
+func update_streaming_for_position(world_position: Vector3, delta: float = 0.0) -> Array:
 	var started_usec := Time.get_ticks_usec()
 	if _chunk_streamer == null:
 		return []
 	var events: Array = _chunk_streamer.update_for_world_position(world_position)
 	if chunk_renderer != null and chunk_renderer.has_method("sync_streaming"):
-		chunk_renderer.sync_streaming(_chunk_streamer.get_active_chunk_entries(), world_position)
-	var hud_snapshot := _build_hud_snapshot()
+		chunk_renderer.sync_streaming(_chunk_streamer.get_active_chunk_entries(), world_position, delta)
+	var hud_debug_expanded := hud != null and hud.has_method("is_debug_expanded") and bool(hud.is_debug_expanded())
+	var debug_expanded := debug_overlay != null and debug_overlay.has_method("is_expanded") and bool(debug_overlay.is_expanded())
+	var hud_snapshot := _build_hud_snapshot(not hud_debug_expanded and not debug_expanded)
 	if debug_overlay != null:
-		var debug_expanded := debug_overlay.has_method("is_expanded") and bool(debug_overlay.call("is_expanded"))
+		if debug_overlay.has_method("set_snapshot"):
+			debug_overlay.set_snapshot(hud_snapshot)
 		debug_overlay.visible = debug_expanded
-		if debug_expanded and debug_overlay.has_method("set_snapshot"):
-			debug_overlay.set_snapshot(get_streaming_snapshot())
 	_refresh_hud_status(hud_snapshot)
 	_record_update_streaming_sample(Time.get_ticks_usec() - started_usec)
 	return events
@@ -443,12 +522,14 @@ func build_minimap_snapshot() -> Dictionary:
 	var center_world_position := _get_minimap_center_world_position(_get_active_anchor_position())
 	var player_world_position := player.global_position if player != null else Vector3.ZERO
 	var player_heading := player.rotation.y if player != null else 0.0
+	var crowd_debug_enabled := _is_minimap_crowd_debug_enabled()
 	var cache_key := _build_minimap_cache_key(center_world_position, 1600.0)
 	if cache_key == _minimap_cache_key and not _minimap_snapshot_cache.is_empty():
 		_minimap_cache_hits += 1
 		var cached_snapshot := _minimap_snapshot_cache.duplicate(false)
 		cached_snapshot["player_marker"] = _minimap_projector.build_player_marker(center_world_position, player_world_position, player_heading, 1600.0)
 		cached_snapshot["route_overlay"] = _build_current_minimap_route_overlay(center_world_position, 1600.0)
+		cached_snapshot["crowd_debug_layer"] = _minimap_projector.build_pedestrian_debug_layer(center_world_position, 1600.0, crowd_debug_enabled)
 		return cached_snapshot
 
 	_minimap_cache_misses += 1
@@ -456,10 +537,11 @@ func build_minimap_snapshot() -> Dictionary:
 	var minimap_started_usec := Time.get_ticks_usec()
 	var snapshot: Dictionary = _minimap_projector.build_road_snapshot(center_world_position, 1600.0)
 	_minimap_cache_key = cache_key
-	_minimap_snapshot_cache = snapshot.duplicate(true)
+	_minimap_snapshot_cache = snapshot.duplicate(false)
 	_record_minimap_build_sample(Time.get_ticks_usec() - minimap_started_usec)
 	snapshot["player_marker"] = _minimap_projector.build_player_marker(center_world_position, player_world_position, player_heading, 1600.0)
 	snapshot["route_overlay"] = _build_current_minimap_route_overlay(center_world_position, 1600.0)
+	snapshot["crowd_debug_layer"] = _minimap_projector.build_pedestrian_debug_layer(center_world_position, 1600.0, crowd_debug_enabled)
 	return snapshot
 
 func build_minimap_route_overlay(start_position: Vector3, goal_position: Vector3) -> Dictionary:
@@ -547,8 +629,11 @@ func reset_performance_profile() -> void:
 
 func get_performance_profile() -> Dictionary:
 	var streaming_profile: Dictionary = {}
+	var renderer_stats: Dictionary = {}
 	if chunk_renderer != null and chunk_renderer.has_method("get_streaming_profile_stats"):
 		streaming_profile = chunk_renderer.get_streaming_profile_stats()
+	if chunk_renderer != null and chunk_renderer.has_method("get_renderer_stats"):
+		renderer_stats = chunk_renderer.get_renderer_stats()
 	return {
 		"world_generation_usec": _world_generation_usec,
 		"world_generation_profile": _world_generation_profile.duplicate(true),
@@ -568,6 +653,23 @@ func get_performance_profile() -> Dictionary:
 		"minimap_cache_hits": _minimap_cache_hits,
 		"minimap_cache_misses": _minimap_cache_misses,
 		"minimap_rebuild_count": _minimap_rebuild_count,
+		"pedestrian_mode": str(renderer_stats.get("pedestrian_mode", "lite")),
+		"crowd_update_max_usec": int(streaming_profile.get("crowd_update_max_usec", 0)),
+		"crowd_update_avg_usec": int(streaming_profile.get("crowd_update_avg_usec", 0)),
+		"crowd_update_sample_count": int(streaming_profile.get("crowd_update_sample_count", 0)),
+		"crowd_spawn_max_usec": int(streaming_profile.get("crowd_spawn_max_usec", 0)),
+		"crowd_spawn_avg_usec": int(streaming_profile.get("crowd_spawn_avg_usec", 0)),
+		"crowd_spawn_sample_count": int(streaming_profile.get("crowd_spawn_sample_count", 0)),
+		"crowd_render_commit_max_usec": int(streaming_profile.get("crowd_render_commit_max_usec", 0)),
+		"crowd_render_commit_avg_usec": int(streaming_profile.get("crowd_render_commit_avg_usec", 0)),
+		"crowd_render_commit_sample_count": int(streaming_profile.get("crowd_render_commit_sample_count", 0)),
+		"ped_tier0_count": int(renderer_stats.get("pedestrian_tier0_total", 0)),
+		"ped_tier1_count": int(renderer_stats.get("pedestrian_tier1_total", 0)),
+		"ped_tier2_count": int(renderer_stats.get("pedestrian_tier2_total", 0)),
+		"ped_tier3_count": int(renderer_stats.get("pedestrian_tier3_total", 0)),
+		"ped_page_cache_hit_count": int(renderer_stats.get("pedestrian_page_cache_hit_count", 0)),
+		"ped_page_cache_miss_count": int(renderer_stats.get("pedestrian_page_cache_miss_count", 0)),
+		"ped_duplicate_page_load_count": int(renderer_stats.get("pedestrian_duplicate_page_load_count", 0)),
 		"streaming_prepare_profile_max_usec": int(streaming_profile.get("prepare_profile_max_usec", 0)),
 		"streaming_prepare_profile_avg_usec": int(streaming_profile.get("prepare_profile_avg_usec", 0)),
 		"streaming_prepare_profile_sample_count": int(streaming_profile.get("prepare_profile_sample_count", 0)),
@@ -826,6 +928,9 @@ func _build_current_minimap_route_overlay(center_world_position: Vector3, world_
 	if _minimap_projector == null or _minimap_route_world_positions.is_empty():
 		return {}
 	return _minimap_projector.build_route_overlay_from_world_positions(center_world_position, _minimap_route_world_positions, world_radius_m)
+
+func _is_minimap_crowd_debug_enabled() -> bool:
+	return hud != null and hud.has_method("is_debug_expanded") and bool(hud.is_debug_expanded())
 
 func _invalidate_minimap_cache() -> void:
 	_minimap_cache_key = ""

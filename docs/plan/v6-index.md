@@ -16,7 +16,7 @@ research 入口：[2026-03-12-open-world-pedestrian-crowd-performance-research.m
 | M2 Sidewalk / Crossing Lane Graph | 从 `road_graph` / `block` 派生 pedestrian lane graph，并保证 spawn grounding 与跨 chunk 连续 | sidewalk / crossing lane 拓扑连续；spawn anchors 不长在机动车路面上 | `tests/world/test_city_pedestrian_lane_graph.gd`、`tests/world/test_city_pedestrian_spawn_grounding.gd`、`tests/world/test_city_pedestrian_lane_graph_continuity.gd` | done |
 | M3 Ambient Crowd Tiering | Tier 0-2 表示、`MultiMesh` 中远景、近景 lightweight agents、identity continuity | Tier 1 batched representation 成立；tier 切换保留 `pedestrian_id`；Tier 1/2 数量不超预算 | `tests/world/test_city_pedestrian_lod_contract.gd`、`tests/world/test_city_pedestrian_batch_rendering.gd`、`tests/world/test_city_pedestrian_identity_continuity.gd` | done |
 | M4 Streaming Budget + Reactive Nearfield | promotion / demotion / despawn、near-player reaction、局部避让与 travel 稳定性 | `8` chunk travel 无 count leak；Tier 3 `<= 24`；玩家靠近/开火/爆炸可触发近场反应 | `tests/world/test_city_pedestrian_streaming_budget.gd`、`tests/world/test_city_pedestrian_page_cache.gd`、`tests/world/test_city_pedestrian_reactive_behavior.gd`、`tests/world/test_city_pedestrian_projectile_reaction.gd`、`tests/e2e/test_city_pedestrian_travel_flow.gd` | done |
-| M5 红线收口与观测护栏 | crowd profile 拆项、overlay / minimap debug layer、全局 crowd/FPS 调试开关、fresh warm/first-visit profiling | `pedestrian_mode = lite` 下 warm / first-visit 都守住 `16.67ms/frame`；crowd 指标可观测；`小键盘 *` / `小键盘 -` 调试开关成立 | `tests/e2e/test_city_pedestrian_performance_profile.gd`、`tests/world/test_city_pedestrian_debug_overlay.gd`、`tests/world/test_city_fps_overlay_toggle.gd`、`tests/world/test_city_minimap_pedestrian_debug_layer.gd` | todo |
+| M5 红线收口与观测护栏 | crowd profile 拆项、overlay / minimap debug layer、全局 crowd/FPS 调试开关、fresh warm/first-visit profiling | `pedestrian_mode = lite` 下 warm / first-visit 都守住 `16.67ms/frame`；crowd 指标可观测；`小键盘 *` / `小键盘 -` 调试开关成立 | `tests/e2e/test_city_pedestrian_performance_profile.gd`、`tests/world/test_city_pedestrian_debug_overlay.gd`、`tests/world/test_city_fps_overlay_toggle.gd`、`tests/world/test_city_minimap_pedestrian_debug_layer.gd` | done |
 
 ## 计划索引
 
@@ -35,8 +35,8 @@ research 入口：[2026-03-12-open-world-pedestrian-crowd-performance-research.m
 | REQ-0002-003 | `v6-pedestrian-ambient-tiering.md` | `tests/world/test_city_pedestrian_lod_contract.gd`、`tests/world/test_city_pedestrian_batch_rendering.gd`、`tests/world/test_city_pedestrian_identity_continuity.gd` | `--script res://tests/world/test_city_pedestrian_lod_contract.gd` | 2026-03-12 本地 headless `PASS`，已验证 Tier 0-2、Tier 1 `MultiMesh` 合批、近景 lightweight agents 与 identity continuity | done |
 | REQ-0002-004 | `v6-pedestrian-streaming-and-reactivity.md` | `tests/world/test_city_pedestrian_streaming_budget.gd`、`tests/world/test_city_pedestrian_page_cache.gd` | `--script res://tests/e2e/test_city_pedestrian_travel_flow.gd` | 2026-03-12 本地 headless `PASS`，已验证 `8` chunk travel 无 count leak、page cache 命中有效、duplicate page load 保持为 `0` | done |
 | REQ-0002-005 | `v6-pedestrian-streaming-and-reactivity.md` | `tests/world/test_city_pedestrian_reactive_behavior.gd`、`tests/world/test_city_pedestrian_projectile_reaction.gd` | `--script res://tests/e2e/test_city_pedestrian_travel_flow.gd` | 2026-03-12 本地 headless `PASS`，已验证玩家靠近、开火、子弹近掠与爆炸都可触发 Tier 3 reactive nearfield，且 Tier 3 持续 `<= 24` | done |
-| REQ-0002-006 | `v6-pedestrian-redline-guard.md` | `tests/world/test_city_pedestrian_debug_overlay.gd`、`tests/world/test_city_minimap_pedestrian_debug_layer.gd` | `--script res://tests/e2e/test_city_pedestrian_performance_profile.gd` | 待实现 | todo |
-| REQ-0002-007 | `v6-pedestrian-redline-guard.md` | `tests/world/test_city_streaming_frame_guard.gd`、`tests/world/test_city_pedestrian_profile_stats.gd` | `--script res://tests/e2e/test_city_pedestrian_performance_profile.gd` | 待实现 | todo |
+| REQ-0002-006 | `v6-pedestrian-redline-guard.md` | `tests/world/test_city_pedestrian_debug_overlay.gd`、`tests/world/test_city_minimap_pedestrian_debug_layer.gd`、`tests/world/test_city_fps_overlay_toggle.gd` | `--script res://tests/e2e/test_city_pedestrian_performance_profile.gd` | 2026-03-12 本地 headless fresh `PASS`；overlay 默认折叠、minimap crowd debug layer 与 lane/density 同源、`小键盘 * / -` 调试开关成立；isolated pedestrian profile：warm `wall_frame_avg_usec = 15345`、first-visit `wall_frame_avg_usec = 14782` | done |
+| REQ-0002-007 | `v6-pedestrian-redline-guard.md` | `tests/world/test_city_streaming_frame_guard.gd`、`tests/world/test_city_pedestrian_profile_stats.gd` | `--script res://tests/e2e/test_city_pedestrian_performance_profile.gd`、`--script res://tests/e2e/test_city_runtime_performance_profile.gd` | 2026-03-12 本地 headless fresh `PASS`；crowd update/spawn/render commit 拆项已落盘，isolated pedestrian profile：warm `15345`、first-visit `14782`，isolated runtime profile：warm `12272`，均守住 `16.67ms/frame` 红线 | done |
 
 ## ECN 索引
 
@@ -44,6 +44,7 @@ research 入口：[2026-03-12-open-world-pedestrian-crowd-performance-research.m
 
 ## 差异列表
 
-- `v6` 的 pedestrian world model、lane graph、ambient tiering 与 streaming/reactive nearfield 已经打通，但还没有 fresh profiling 证明 `pedestrian_mode = lite` 在 warm / first-visit 下持续守住 `16.67ms/frame`。
-- 当前仍缺 crowd profile 拆项、crowd minimap debug layer、全局 crowd/FPS 调试开关与对应回归测试，M5 需要把“能跑”收口到“可观测且守红线”。
+- `v6` 已在 `pedestrian_mode = lite` 下完成 fresh isolated 红线验收：`test_city_pedestrian_performance_profile.gd` warm `wall_frame_avg_usec = 15345`、first-visit `wall_frame_avg_usec = 14782`；`test_city_runtime_performance_profile.gd` warm `wall_frame_avg_usec = 12272`。
+- M5 已把 crowd profile 拆项、overlay / minimap debug layer、`小键盘 *` 行人显隐与 `小键盘 -` FPS overlay 调试开关全部接入自动化回归。
+- 当前默认折叠态不会再每帧支付 full HUD/debug snapshot rebuild；profiling 命令也必须继续保持 isolated 单独执行，避免 wall-clock 被串跑噪声污染。
 - 现阶段仍禁止把 reactive nearfield 扩展成全城高成本 agent；后续任何 pedestrian 新功能都必须继续服从预算、流式加载连续性和运行期性能。

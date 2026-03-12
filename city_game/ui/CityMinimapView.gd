@@ -3,7 +3,7 @@ extends Control
 var _snapshot: Dictionary = {}
 
 func set_snapshot(snapshot: Dictionary) -> void:
-	_snapshot = snapshot.duplicate(true)
+	_snapshot = snapshot.duplicate(false)
 	queue_redraw()
 
 func get_snapshot() -> Dictionary:
@@ -27,6 +27,10 @@ func _draw() -> void:
 		_draw_marker(route_overlay.get("start_marker", {}).get("position", Vector2.ZERO), Color(0.25, 0.9, 0.4, 1.0), 4.0)
 		_draw_marker(route_overlay.get("goal_marker", {}).get("position", Vector2.ZERO), Color(1.0, 0.35, 0.35, 1.0), 4.0)
 
+	var crowd_debug_layer: Dictionary = _snapshot.get("crowd_debug_layer", {})
+	if bool(crowd_debug_layer.get("visible", false)):
+		_draw_crowd_debug_layer(crowd_debug_layer)
+
 	var player_marker: Dictionary = _snapshot.get("player_marker", {})
 	var player_position: Vector2 = player_marker.get("position", Vector2(map_size * 0.5, map_size * 0.5))
 	_draw_player_marker(player_position, float(player_marker.get("heading_rad", 0.0)))
@@ -46,3 +50,16 @@ func _draw_marker(marker_position: Vector2, color: Color, radius: float) -> void
 func _draw_player_marker(marker_position: Vector2, heading_rad: float) -> void:
 	var points := build_player_marker_polygon(marker_position, heading_rad)
 	draw_colored_polygon(points, Color(0.3, 0.88, 1.0, 1.0))
+
+func _draw_crowd_debug_layer(layer: Dictionary) -> void:
+	for polyline_variant in layer.get("sidewalk_polylines", []):
+		var sidewalk_points: PackedVector2Array = polyline_variant
+		if sidewalk_points.size() >= 2:
+			draw_polyline(sidewalk_points, Color(0.36, 0.95, 0.88, 0.8), 1.5, true)
+	for polyline_variant in layer.get("crossing_polylines", []):
+		var crossing_points: PackedVector2Array = polyline_variant
+		if crossing_points.size() >= 2:
+			draw_polyline(crossing_points, Color(1.0, 0.7, 0.28, 0.85), 2.0, true)
+	for marker_variant in layer.get("spawn_markers", []):
+		var marker: Dictionary = marker_variant
+		_draw_marker(marker.get("position", Vector2.ZERO), Color(1.0, 0.48, 0.48, 0.92), 2.4)

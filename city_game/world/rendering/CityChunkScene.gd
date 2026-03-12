@@ -23,6 +23,10 @@ const TERRAIN_GRID_STEPS_MID := 6
 const TERRAIN_GRID_STEPS_FAR := 3
 const BUILDING_ORNAMENT_OVERLAP_M := 0.08
 
+static var _shared_box_shape_cache: Dictionary = {}
+static var _shared_box_mesh_cache: Dictionary = {}
+static var _shared_box_material_cache: Dictionary = {}
+
 var _chunk_data: Dictionary = {}
 var _profile: Dictionary = {}
 var _setup_profile: Dictionary = {}
@@ -36,6 +40,7 @@ var _building_collisions_enabled := true
 var _terrain_mesh_apply_count := 0
 var _terrain_collision_apply_count := 0
 var _pedestrian_crowd: Node3D = null
+var _pedestrians_visible := true
 
 func setup(chunk_data: Dictionary) -> void:
 	var surface_page_provider = chunk_data.get("surface_page_provider")
@@ -232,6 +237,20 @@ func get_renderer_stats() -> Dictionary:
 		"pedestrian_multimesh_instance_count": int(pedestrian_crowd_stats.get("tier1_instance_count", 0)),
 	}
 
+func get_runtime_renderer_stats() -> Dictionary:
+	var prop_multimesh := get_prop_multimesh()
+	var pedestrian_crowd_stats := get_pedestrian_crowd_stats()
+	return {
+		"chunk_id": str(_chunk_data.get("chunk_id", "")),
+		"lod_mode": _current_lod_mode,
+		"visual_variant_id": get_visual_variant_id(),
+		"multimesh_instance_count": prop_multimesh.multimesh.instance_count if prop_multimesh != null and prop_multimesh.multimesh != null else 0,
+		"pedestrian_tier1_count": int(pedestrian_crowd_stats.get("tier1_count", 0)),
+		"pedestrian_tier2_count": int(pedestrian_crowd_stats.get("tier2_count", 0)),
+		"pedestrian_tier3_count": int(pedestrian_crowd_stats.get("tier3_count", 0)),
+		"pedestrian_multimesh_instance_count": int(pedestrian_crowd_stats.get("tier1_instance_count", 0)),
+	}
+
 func get_pedestrian_batch() -> MultiMeshInstance3D:
 	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("get_batch"):
 		return null
@@ -245,13 +264,24 @@ func get_pedestrian_crowd_stats() -> Dictionary:
 			"tier2_count": 0,
 			"tier3_count": 0,
 			"tier1_instance_count": 0,
+			"visible": _pedestrians_visible,
 		}
-	return (_pedestrian_crowd.get_crowd_stats() as Dictionary).duplicate(true)
+	var crowd_stats: Dictionary = (_pedestrian_crowd.get_crowd_stats() as Dictionary).duplicate(true)
+	crowd_stats["visible"] = _pedestrians_visible
+	return crowd_stats
 
 func apply_pedestrian_chunk_snapshot(snapshot: Dictionary) -> void:
 	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("apply_chunk_snapshot"):
 		return
 	_pedestrian_crowd.apply_chunk_snapshot(snapshot)
+
+func set_pedestrian_visibility(visible: bool) -> void:
+	_pedestrians_visible = visible
+	if _pedestrian_crowd != null:
+		_pedestrian_crowd.visible = visible
+
+func are_pedestrians_visible() -> bool:
+	return _pedestrians_visible
 
 func _rebuild() -> void:
 	var rebuild_started_usec := Time.get_ticks_usec()
@@ -327,6 +357,7 @@ func _rebuild() -> void:
 	add_child(_pedestrian_crowd)
 	if _chunk_data.has("pedestrian_chunk_snapshot"):
 		_pedestrian_crowd.apply_chunk_snapshot(_chunk_data.get("pedestrian_chunk_snapshot", {}))
+	set_pedestrian_visibility(_pedestrians_visible)
 	setup_profile["pedestrians_usec"] = Time.get_ticks_usec() - phase_started_usec
 
 	phase_started_usec = Time.get_ticks_usec()
@@ -402,20 +433,16 @@ func _build_static_box(node_name: String, center: Vector3, size: Vector3, color:
 	body.rotation.y = yaw_rad
 
 	var collision_shape := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = collision_size if collision_size != Vector3.ZERO else size
+	var shape := _get_shared_box_shape(collision_size if collision_size != Vector3.ZERO else size)
 	collision_shape.shape = shape
 	body.add_child(collision_shape)
 	_building_collision_shapes.append(collision_shape)
 
 	var mesh_instance := MeshInstance3D.new()
 	mesh_instance.name = "MeshInstance3D"
-	var mesh := BoxMesh.new()
-	mesh.size = size
+	var mesh := _get_shared_box_mesh(size)
 	mesh_instance.mesh = mesh
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 1.0
+	var material := _get_shared_box_material(color)
 	mesh_instance.material_override = material
 	body.add_child(mesh_instance)
 	return body
@@ -424,14 +451,45 @@ func _add_local_box(parent: Node3D, node_name: String, local_center: Vector3, si
 	var mesh_instance := MeshInstance3D.new()
 	mesh_instance.name = node_name
 	mesh_instance.position = local_center
+	var mesh := _get_shared_box_mesh(size)
+	mesh_instance.mesh = mesh
+	var material := _get_shared_box_material(color)
+	mesh_instance.material_override = material
+	parent.add_child(mesh_instance)
+
+func _get_shared_box_shape(size: Vector3) -> BoxShape3D:
+	var key := _vector3_cache_key(size)
+	if _shared_box_shape_cache.has(key):
+		return _shared_box_shape_cache[key]
+	var shape := BoxShape3D.new()
+	shape.size = size
+	_shared_box_shape_cache[key] = shape
+	return shape
+
+func _get_shared_box_mesh(size: Vector3) -> BoxMesh:
+	var key := _vector3_cache_key(size)
+	if _shared_box_mesh_cache.has(key):
+		return _shared_box_mesh_cache[key]
 	var mesh := BoxMesh.new()
 	mesh.size = size
-	mesh_instance.mesh = mesh
+	_shared_box_mesh_cache[key] = mesh
+	return mesh
+
+func _get_shared_box_material(color: Color) -> StandardMaterial3D:
+	var key := _color_cache_key(color)
+	if _shared_box_material_cache.has(key):
+		return _shared_box_material_cache[key]
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
 	material.roughness = 1.0
-	mesh_instance.material_override = material
-	parent.add_child(mesh_instance)
+	_shared_box_material_cache[key] = material
+	return material
+
+func _vector3_cache_key(value: Vector3) -> String:
+	return "%.3f|%.3f|%.3f" % [value.x, value.y, value.z]
+
+func _color_cache_key(value: Color) -> String:
+	return "%.4f|%.4f|%.4f|%.4f" % [value.r, value.g, value.b, value.a]
 
 func _add_roof_box(parent: Node3D, node_name: String, base_size: Vector3, roof_offset_xz: Vector2, size: Vector3, color: Color) -> void:
 	_add_local_box(

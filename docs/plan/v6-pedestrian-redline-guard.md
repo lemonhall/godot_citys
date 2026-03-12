@@ -76,3 +76,50 @@
 - 如果 minimap crowd layer 走的是另一套简化随机数据，后续 debug 和真实世界状态会重新断链。
 - 如果没有 first-visit 基线，系统很容易在 warm 状态“看起来没事”，但玩家第一次到新区域时卡顿失控。
 - 如果 crowd 可见性开关只是“暂停更新但仍继续渲染”或 FPS 开关位置漂移，就会让调试手感继续很差。
+
+## Result
+
+- fresh isolated pedestrian profile：
+  - `tests/e2e/test_city_pedestrian_performance_profile.gd` PASS
+  - warm `wall_frame_avg_usec = 15345`
+  - warm `update_streaming_avg_usec = 13640`
+  - warm `crowd_update_avg_usec = 1201`
+  - warm `crowd_spawn_avg_usec = 527`
+  - warm `crowd_render_commit_avg_usec = 427`
+  - warm `ped_tier1_count = 14`
+  - first-visit `wall_frame_avg_usec = 14782`
+  - first-visit `update_streaming_avg_usec = 13626`
+  - first-visit `crowd_update_avg_usec = 1731`
+  - first-visit `crowd_spawn_avg_usec = 804`
+  - first-visit `crowd_render_commit_avg_usec = 368`
+  - first-visit `ped_tier1_count = 36`
+  - first-visit `ped_page_cache_hit_count = 9`
+  - first-visit `ped_page_cache_miss_count = 56`
+  - `pedestrian_mode = lite`
+  - `ped_duplicate_page_load_count = 0`
+- fresh isolated runtime baseline：
+  - `tests/e2e/test_city_runtime_performance_profile.gd` PASS
+  - `wall_frame_avg_usec = 12272`
+  - `update_streaming_avg_usec = 10685`
+  - `crowd_update_avg_usec = 986`
+  - `crowd_spawn_avg_usec = 400`
+  - `crowd_render_commit_avg_usec = 270`
+- fresh guardrail / UI / debug：
+  - `tests/world/test_city_pedestrian_debug_overlay.gd` PASS
+  - `tests/world/test_city_fps_overlay_toggle.gd` PASS
+  - `tests/world/test_city_minimap_pedestrian_debug_layer.gd` PASS
+  - `tests/world/test_city_pedestrian_profile_stats.gd` PASS
+  - `tests/world/test_city_streaming_frame_guard.gd` PASS
+  - `tests/world/test_city_pedestrian_lod_contract.gd` PASS
+  - `tests/world/test_city_pedestrian_streaming_budget.gd` PASS
+  - `tests/world/test_city_pedestrian_batch_rendering.gd` PASS
+  - `tests/world/test_city_pedestrian_identity_continuity.gd` PASS
+  - `tests/world/test_city_pedestrian_reactive_behavior.gd` PASS
+  - `tests/world/test_city_pedestrian_projectile_reaction.gd` PASS
+  - `tests/e2e/test_city_pedestrian_travel_flow.gd` PASS
+- 本轮修正口径：
+  - minimap snapshot copy 链继续收敛为 shallow handoff，避免 HUD / view 之间重复深拷贝。
+  - 默认折叠态的 `DebugOverlay` / HUD 不再每帧做 full snapshot 文本重建，只保留测试和调试需要的最小字段。
+  - `CityPedestrianTierController.update_active_chunks()` 不再为了 page/cache 计数内部调用会深拷贝 tier state arrays 的 `get_runtime_snapshot()`。
+  - `tests/world/test_city_pedestrian_batch_rendering.gd` 的等待窗口按 budgeted mount pipeline 放宽，避免把“可见 batch 尚未挂载”误判成 renderer 回退。
+  - profiling 命令必须 isolated 单独执行；把多个 Godot 测试串在一条命令里会污染 wall-clock，不能作为红线验收证据。

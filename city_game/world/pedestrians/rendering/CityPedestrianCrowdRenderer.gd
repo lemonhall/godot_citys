@@ -150,7 +150,7 @@ func _normalize_snapshot(snapshot: Dictionary) -> Dictionary:
 		"tier1_count": int(snapshot.get("tier1_count", 0)),
 		"tier2_count": int(snapshot.get("tier2_count", 0)),
 		"tier3_count": int(snapshot.get("tier3_count", 0)),
-		"tier1_states": (snapshot.get("tier1_states", []) as Array).duplicate(true),
-		"tier2_states": (snapshot.get("tier2_states", []) as Array).duplicate(true),
-		"tier3_states": (snapshot.get("tier3_states", []) as Array).duplicate(true),
+		"tier1_states": snapshot.get("tier1_states", []),
+		"tier2_states": snapshot.get("tier2_states", []),
+		"tier3_states": snapshot.get("tier3_states", []),
 	}

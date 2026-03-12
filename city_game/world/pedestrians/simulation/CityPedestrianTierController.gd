@@ -5,6 +5,9 @@ const CityPedestrianStreamer := preload("res://city_game/world/pedestrians/strea
 const CityPedestrianState := preload("res://city_game/world/pedestrians/simulation/CityPedestrianState.gd")
 const CityPedestrianReactionModel := preload("res://city_game/world/pedestrians/simulation/CityPedestrianReactionModel.gd")
 
+const TIER1_UPDATE_INTERVAL_SEC := 0.12
+const TIER0_UPDATE_INTERVAL_SEC := 0.35
+
 var _config = null
 var _budget := CityPedestrianBudget.new()
 var _pedestrian_streamer := CityPedestrianStreamer.new()
@@ -15,6 +18,10 @@ var _chunk_snapshots: Dictionary = {}
 var _last_player_position := Vector3.ZERO
 var _last_player_velocity := Vector3.ZERO
 var _has_player_context := false
+var _last_profile_stats := {
+	"crowd_spawn_usec": 0,
+	"crowd_update_usec": 0,
+}
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
@@ -29,6 +36,10 @@ func setup(config, world_data: Dictionary) -> void:
 	_last_player_position = Vector3.ZERO
 	_last_player_velocity = Vector3.ZERO
 	_has_player_context = false
+	_last_profile_stats = {
+		"crowd_spawn_usec": 0,
+		"crowd_update_usec": 0,
+	}
 
 func get_budget_contract() -> Dictionary:
 	return _budget_contract.duplicate(true)
@@ -46,6 +57,7 @@ func notify_explosion_event(world_position: Vector3, radius_m: float) -> void:
 	_reaction_model.notify_explosion_event(world_position, radius_m)
 
 func update_active_chunks(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0) -> Dictionary:
+	var update_started_usec := Time.get_ticks_usec()
 	var inferred_player_velocity := Vector3.ZERO
 	if _has_player_context and player_position == _last_player_position:
 		inferred_player_velocity = _last_player_velocity
@@ -56,13 +68,19 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	var active_chunk_ids: Array[String] = []
 	for entry_variant in active_chunk_entries:
 		active_chunk_ids.append(str((entry_variant as Dictionary).get("chunk_id", "")))
+	var spawn_started_usec := Time.get_ticks_usec()
 	var streaming_snapshot: Dictionary = _pedestrian_streamer.sync_active_chunks(active_chunk_entries)
+	var crowd_spawn_usec := Time.get_ticks_usec() - spawn_started_usec
 	var active_states: Array = _pedestrian_streamer.get_active_states()
 
 	if delta > 0.0:
 		for state_variant in active_states:
 			var state: CityPedestrianState = state_variant
-			state.step(delta)
+			state.queue_step(delta)
+			var step_delta := _resolve_step_delta_for_state(state)
+			if step_delta <= 0.0:
+				continue
+			state.step(step_delta)
 			_pedestrian_streamer.ground_state(state)
 
 	var reactive_candidates := _reaction_model.update_reactions(active_states, _budget_contract, delta)
@@ -85,6 +103,18 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	var tier3_count := 0
 	var remaining_tier2_budget: int = maxi(nearfield_budget - tier3_ids.size(), 0)
 	remaining_tier2_budget = mini(remaining_tier2_budget, tier2_budget)
+	_chunk_snapshots.clear()
+	for chunk_id in active_chunk_ids:
+		_chunk_snapshots[chunk_id] = {
+			"chunk_id": chunk_id,
+			"tier0_count": 0,
+			"tier1_count": 0,
+			"tier2_count": 0,
+			"tier3_count": 0,
+			"tier1_states": [],
+			"tier2_states": [],
+			"tier3_states": [],
+		}
 
 	for ranking_variant in distance_rankings:
 		var ranking: Dictionary = ranking_variant
@@ -92,55 +122,57 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 		var state: CityPedestrianState = _pedestrian_streamer.get_state(pedestrian_id)
 		if state == null:
 			continue
+		if not _chunk_snapshots.has(state.chunk_id):
+			_chunk_snapshots[state.chunk_id] = {
+				"chunk_id": state.chunk_id,
+				"tier0_count": 0,
+				"tier1_count": 0,
+				"tier2_count": 0,
+				"tier3_count": 0,
+				"tier1_states": [],
+				"tier2_states": [],
+				"tier3_states": [],
+			}
+		var chunk_snapshot: Dictionary = _chunk_snapshots[state.chunk_id]
 		var distance_m := float(ranking.get("distance_m", 0.0))
 		if tier3_ids.has(pedestrian_id):
 			state.set_tier(CityPedestrianState.TIER_3)
-			tier3_states.append(state.to_snapshot())
+			var tier3_snapshot := state.to_snapshot()
+			tier3_states.append(tier3_snapshot)
+			var chunk_tier3_states: Array = chunk_snapshot.get("tier3_states", [])
+			chunk_tier3_states.append(tier3_snapshot)
+			chunk_snapshot["tier3_states"] = chunk_tier3_states
 			tier3_count += 1
+			chunk_snapshot["tier3_count"] = int(chunk_snapshot.get("tier3_count", 0)) + 1
+			_chunk_snapshots[state.chunk_id] = chunk_snapshot
 			continue
 		if state.is_reactive():
 			state.clear_reaction()
 		if distance_m <= tier2_radius_m and tier2_count < remaining_tier2_budget:
 			state.set_tier(CityPedestrianState.TIER_2)
-			tier2_states.append(state.to_snapshot())
+			var tier2_snapshot := state.to_snapshot()
+			tier2_states.append(tier2_snapshot)
+			var chunk_tier2_states: Array = chunk_snapshot.get("tier2_states", [])
+			chunk_tier2_states.append(tier2_snapshot)
+			chunk_snapshot["tier2_states"] = chunk_tier2_states
 			tier2_count += 1
+			chunk_snapshot["tier2_count"] = int(chunk_snapshot.get("tier2_count", 0)) + 1
 		elif tier1_count < tier1_budget:
 			state.set_tier(CityPedestrianState.TIER_1)
-			tier1_states.append(state.to_snapshot())
+			var tier1_snapshot := state.to_snapshot()
+			tier1_states.append(tier1_snapshot)
+			var chunk_tier1_states: Array = chunk_snapshot.get("tier1_states", [])
+			chunk_tier1_states.append(tier1_snapshot)
+			chunk_snapshot["tier1_states"] = chunk_tier1_states
 			tier1_count += 1
+			chunk_snapshot["tier1_count"] = int(chunk_snapshot.get("tier1_count", 0)) + 1
 		else:
 			state.set_tier(CityPedestrianState.TIER_0)
 			tier0_count += 1
+			chunk_snapshot["tier0_count"] = int(chunk_snapshot.get("tier0_count", 0)) + 1
+		_chunk_snapshots[state.chunk_id] = chunk_snapshot
 
-	_chunk_snapshots.clear()
-	for chunk_id in active_chunk_ids:
-		var chunk_tier1_states: Array[Dictionary] = []
-		var chunk_tier2_states: Array[Dictionary] = []
-		var chunk_tier3_states: Array[Dictionary] = []
-		var chunk_tier0_count := 0
-		for state_variant in _pedestrian_streamer.get_states_for_chunk(chunk_id):
-			var state: CityPedestrianState = state_variant
-			match state.tier:
-				CityPedestrianState.TIER_1:
-					chunk_tier1_states.append(state.to_snapshot())
-				CityPedestrianState.TIER_2:
-					chunk_tier2_states.append(state.to_snapshot())
-				CityPedestrianState.TIER_3:
-					chunk_tier3_states.append(state.to_snapshot())
-				_:
-					chunk_tier0_count += 1
-		_chunk_snapshots[chunk_id] = {
-			"chunk_id": chunk_id,
-			"tier0_count": chunk_tier0_count,
-			"tier1_count": chunk_tier1_states.size(),
-			"tier2_count": chunk_tier2_states.size(),
-			"tier3_count": chunk_tier3_states.size(),
-			"tier1_states": chunk_tier1_states,
-			"tier2_states": chunk_tier2_states,
-			"tier3_states": chunk_tier3_states,
-		}
-
-	var runtime_snapshot: Dictionary = get_runtime_snapshot()
+	var runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_snapshot()
 	_global_snapshot = {
 		"preset": str(_budget_contract.get("preset", "lite")),
 		"active_chunk_count": active_chunk_ids.size(),
@@ -164,10 +196,38 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 		"duplicate_page_load_count": int(runtime_snapshot.get("duplicate_page_load_count", 0)),
 		"reactive_event_count": _reaction_model.get_event_count(),
 	}
-	return _global_snapshot.duplicate(true)
+	_last_profile_stats = {
+		"crowd_spawn_usec": crowd_spawn_usec,
+		"crowd_update_usec": Time.get_ticks_usec() - update_started_usec,
+	}
+	_global_snapshot["profile_stats"] = _last_profile_stats.duplicate(true)
+	return get_global_summary()
 
 func get_global_snapshot() -> Dictionary:
 	return _global_snapshot.duplicate(true)
+
+func get_global_summary() -> Dictionary:
+	return {
+		"preset": str(_global_snapshot.get("preset", "lite")),
+		"active_chunk_count": int(_global_snapshot.get("active_chunk_count", 0)),
+		"active_page_count": int(_global_snapshot.get("active_page_count", 0)),
+		"active_state_count": int(_global_snapshot.get("active_state_count", 0)),
+		"tier0_count": int(_global_snapshot.get("tier0_count", 0)),
+		"tier1_count": int(_global_snapshot.get("tier1_count", 0)),
+		"tier2_count": int(_global_snapshot.get("tier2_count", 0)),
+		"tier3_count": int(_global_snapshot.get("tier3_count", 0)),
+		"tier1_budget": int(_global_snapshot.get("tier1_budget", 0)),
+		"tier2_budget": int(_global_snapshot.get("tier2_budget", 0)),
+		"tier3_budget": int(_global_snapshot.get("tier3_budget", 0)),
+		"nearfield_budget": int(_global_snapshot.get("nearfield_budget", 0)),
+		"tier2_radius_m": float(_global_snapshot.get("tier2_radius_m", 0.0)),
+		"tier3_radius_m": float(_global_snapshot.get("tier3_radius_m", 0.0)),
+		"page_cache_hit_count": int(_global_snapshot.get("page_cache_hit_count", 0)),
+		"page_cache_miss_count": int(_global_snapshot.get("page_cache_miss_count", 0)),
+		"duplicate_page_load_count": int(_global_snapshot.get("duplicate_page_load_count", 0)),
+		"reactive_event_count": int(_global_snapshot.get("reactive_event_count", 0)),
+		"profile_stats": (_global_snapshot.get("profile_stats", {}) as Dictionary).duplicate(true),
+	}
 
 func get_chunk_snapshot(chunk_id: String) -> Dictionary:
 	if not _chunk_snapshots.has(chunk_id):
@@ -182,6 +242,20 @@ func get_chunk_snapshot(chunk_id: String) -> Dictionary:
 			"tier3_states": [],
 		}
 	return (_chunk_snapshots[chunk_id] as Dictionary).duplicate(true)
+
+func get_chunk_snapshot_ref(chunk_id: String) -> Dictionary:
+	if not _chunk_snapshots.has(chunk_id):
+		return {
+			"chunk_id": chunk_id,
+			"tier0_count": 0,
+			"tier1_count": 0,
+			"tier2_count": 0,
+			"tier3_count": 0,
+			"tier1_states": [],
+			"tier2_states": [],
+			"tier3_states": [],
+		}
+	return _chunk_snapshots[chunk_id]
 
 func get_state_snapshot(pedestrian_id: String) -> Dictionary:
 	return _pedestrian_streamer.get_state_snapshot(pedestrian_id)
@@ -198,7 +272,29 @@ func get_runtime_snapshot() -> Dictionary:
 	runtime_snapshot["nearfield_budget"] = int(_budget_contract.get("nearfield_budget", 96))
 	runtime_snapshot["tier3_budget"] = int(_budget_contract.get("tier3_budget", 24))
 	runtime_snapshot["reactive_event_count"] = _reaction_model.get_event_count()
+	runtime_snapshot["profile_stats"] = _last_profile_stats.duplicate(true)
 	return runtime_snapshot
+
+func get_runtime_summary() -> Dictionary:
+	var runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_snapshot()
+	return {
+		"active_page_count": int(runtime_snapshot.get("active_page_count", 0)),
+		"cached_page_count": int(runtime_snapshot.get("cached_page_count", 0)),
+		"resident_state_count": int(runtime_snapshot.get("resident_state_count", 0)),
+		"page_cache_hit_count": int(runtime_snapshot.get("page_cache_hit_count", 0)),
+		"page_cache_miss_count": int(runtime_snapshot.get("page_cache_miss_count", 0)),
+		"page_generation_count": int(runtime_snapshot.get("page_generation_count", 0)),
+		"duplicate_page_load_count": int(runtime_snapshot.get("duplicate_page_load_count", 0)),
+		"page_eviction_count": int(runtime_snapshot.get("page_eviction_count", 0)),
+		"tier0_count": int(_global_snapshot.get("tier0_count", 0)),
+		"tier1_count": int(_global_snapshot.get("tier1_count", 0)),
+		"tier2_count": int(_global_snapshot.get("tier2_count", 0)),
+		"tier3_count": int(_global_snapshot.get("tier3_count", 0)),
+		"nearfield_budget": int(_budget_contract.get("nearfield_budget", 96)),
+		"tier3_budget": int(_budget_contract.get("tier3_budget", 24)),
+		"reactive_event_count": _reaction_model.get_event_count(),
+		"profile_stats": _last_profile_stats.duplicate(true),
+	}
 
 func _build_distance_rankings(active_states: Array, player_position: Vector3) -> Array[Dictionary]:
 	var rankings: Array[Dictionary] = []
@@ -236,3 +332,12 @@ func _select_tier3_ids(reactive_candidates: Array) -> Dictionary:
 			continue
 		tier3_ids[str(candidate.get("pedestrian_id", ""))] = true
 	return tier3_ids
+
+func _resolve_step_delta_for_state(state: CityPedestrianState) -> float:
+	match state.tier:
+		CityPedestrianState.TIER_3, CityPedestrianState.TIER_2:
+			return state.flush_queued_step()
+		CityPedestrianState.TIER_1:
+			return state.consume_queued_step(TIER1_UPDATE_INTERVAL_SEC)
+		_:
+			return state.consume_queued_step(TIER0_UPDATE_INTERVAL_SEC)

@@ -26,11 +26,14 @@ const WEAPON_MODE_GRENADE := "grenade"
 @export var primary_fire_forward_offset_m := 0.72
 @export var aim_trace_distance_m := 240.0
 @export var grenade_hold_offset := Vector3(0.52, 1.18, -0.62)
-@export var grenade_throw_speed_mps := 34.0
-@export var grenade_throw_upward_boost_mps := 8.6
 @export var grenade_gravity_mps2 := 24.0
+@export var grenade_min_throw_distance_m := 2.0
+@export var grenade_max_throw_distance_m := 83.0
+@export var grenade_min_flight_time_sec := 0.26
+@export var grenade_max_flight_time_sec := 2.1
+@export var grenade_throw_range_curve := 1.25
 @export var grenade_preview_step_sec := 0.08
-@export var grenade_preview_max_steps := 12
+@export var grenade_preview_max_steps := 30
 @export var ads_camera_local_position := Vector3(0.58, 2.05, 4.2)
 @export var ads_camera_fov := 42.0
 @export var ads_transition_speed := 8.0
@@ -403,13 +406,59 @@ func get_grenade_spawn_transform() -> Transform3D:
 
 func get_grenade_launch_velocity() -> Vector3:
 	var spawn_origin := get_grenade_spawn_transform().origin
-	var aim_target := _resolve_aim_target_world_position()
-	var direction := (aim_target - spawn_origin).normalized()
-	if direction.length_squared() <= 0.0001:
-		direction = (-global_transform.basis.z).normalized()
-	var launch_velocity := direction * grenade_throw_speed_mps
-	launch_velocity.y = maxf(launch_velocity.y + grenade_throw_upward_boost_mps, 4.8)
+	var horizontal_direction := _get_grenade_horizontal_direction()
+	var range_factor := _get_grenade_throw_range_factor()
+	var target_distance_m := lerpf(grenade_min_throw_distance_m, grenade_max_throw_distance_m, range_factor)
+	var target_surface_position := _resolve_grenade_surface_target(spawn_origin, horizontal_direction, target_distance_m)
+	var planar_delta := Vector3(target_surface_position.x - spawn_origin.x, 0.0, target_surface_position.z - spawn_origin.z)
+	var planar_distance_m := maxf(planar_delta.length(), 0.001)
+	var flight_time_sec := lerpf(grenade_min_flight_time_sec, grenade_max_flight_time_sec, range_factor)
+	flight_time_sec = maxf(flight_time_sec, 0.12)
+	var horizontal_speed_mps := planar_distance_m / flight_time_sec
+	var vertical_delta_m := target_surface_position.y - spawn_origin.y
+	var vertical_speed_mps := (vertical_delta_m + 0.5 * grenade_gravity_mps2 * flight_time_sec * flight_time_sec) / flight_time_sec
+	var launch_velocity := horizontal_direction * horizontal_speed_mps
+	launch_velocity.y = vertical_speed_mps
 	return launch_velocity
+
+func _get_grenade_throw_range_factor() -> float:
+	var pitch_radians := camera_rig.rotation.x if camera_rig != null else _pitch
+	var pitch_span := deg_to_rad(max_pitch_deg) - deg_to_rad(min_pitch_deg)
+	if absf(pitch_span) <= 0.0001:
+		return 1.0
+	var normalized := (pitch_radians - deg_to_rad(min_pitch_deg)) / pitch_span
+	normalized = clampf(normalized, 0.0, 1.0)
+	return pow(normalized, grenade_throw_range_curve)
+
+func _get_grenade_horizontal_direction() -> Vector3:
+	var aim_basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
+	var forward := (-aim_basis.z).normalized()
+	var horizontal_direction := Vector3(forward.x, 0.0, forward.z)
+	if horizontal_direction.length_squared() <= 0.0001:
+		horizontal_direction = Vector3(-global_transform.basis.z.x, 0.0, -global_transform.basis.z.z)
+	if horizontal_direction.length_squared() <= 0.0001:
+		horizontal_direction = Vector3.FORWARD
+	return horizontal_direction.normalized()
+
+func _resolve_grenade_surface_target(spawn_origin: Vector3, horizontal_direction: Vector3, target_distance_m: float) -> Vector3:
+	var probe_position := spawn_origin + horizontal_direction * target_distance_m
+	var fallback_position := Vector3(
+		probe_position.x,
+		global_position.y - _estimate_standing_height(),
+		probe_position.z
+	)
+	if get_world_3d() == null or get_world_3d().direct_space_state == null:
+		return fallback_position
+	var query := PhysicsRayQueryParameters3D.create(
+		probe_position + Vector3.UP * 48.0,
+		probe_position + Vector3.DOWN * 96.0
+	)
+	query.collide_with_areas = false
+	query.exclude = [get_rid()]
+	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return fallback_position
+	return hit.get("position", fallback_position)
 
 func get_aim_target_world_position() -> Vector3:
 	return _resolve_aim_target_world_position()
@@ -675,9 +724,9 @@ func _ensure_grenade_preview_visual() -> void:
 		_grenade_preview_ring = MeshInstance3D.new()
 		_grenade_preview_ring.name = "LandingRing"
 		var ring_mesh := CylinderMesh.new()
-		ring_mesh.top_radius = 0.62
-		ring_mesh.bottom_radius = 0.62
-		ring_mesh.height = 0.06
+		ring_mesh.top_radius = 1.6
+		ring_mesh.bottom_radius = 1.6
+		ring_mesh.height = 0.08
 		ring_mesh.radial_segments = 24
 		_grenade_preview_ring.mesh = ring_mesh
 		var ring_material := StandardMaterial3D.new()

@@ -42,6 +42,8 @@ func _run() -> void:
 	var camera_rig := player.get_node_or_null("CameraRig") as Node3D
 	if not T.require_true(self, camera_rig != null, "Grenade combat contract requires CameraRig for trajectory preview verification"):
 		return
+	if not T.require_true(self, player.has_method("get_grenade_launch_velocity"), "Grenade combat contract requires grenade launch velocity for arc verification"):
+		return
 
 	player.set_aim_down_sights_active(true)
 	for _frame in range(12):
@@ -75,12 +77,32 @@ func _run() -> void:
 	if not T.require_true(self, int(preview_state.get("sample_count", 0)) >= 4, "Grenade preview must expose multiple trajectory samples instead of a single fixed landing point"):
 		return
 
+	camera_rig.rotation.x = deg_to_rad(-60.0)
+	await process_frame
+	preview_state = player.get_grenade_preview_state()
 	var initial_landing_point: Vector3 = preview_state.get("landing_point", Vector3.ZERO)
-	camera_rig.rotation.x = deg_to_rad(14.0)
+	var player_world_position: Vector3 = player.global_position
+	var initial_planar_range := Vector2(initial_landing_point.x - player_world_position.x, initial_landing_point.z - player_world_position.z).length()
+	var low_arc_velocity: Vector3 = player.get_grenade_launch_velocity()
+	if not T.require_true(self, initial_planar_range <= 7.0, "Looking down in grenade mode must allow a short toss within roughly 2m-7m instead of always previewing a distant throw"):
+		return
+	camera_rig.rotation.x = deg_to_rad(30.0)
 	await process_frame
 	var raised_preview_state: Dictionary = player.get_grenade_preview_state()
 	var raised_landing_point: Vector3 = raised_preview_state.get("landing_point", Vector3.ZERO)
+	var high_arc_velocity: Vector3 = player.get_grenade_launch_velocity()
 	if not T.require_true(self, raised_landing_point.distance_to(initial_landing_point) >= 2.0, "Raising the camera must shift the predicted grenade landing point instead of keeping a fixed throw distance"):
+		return
+	var raised_planar_range := Vector2(raised_landing_point.x - player_world_position.x, raised_landing_point.z - player_world_position.z).length()
+	if not T.require_true(self, raised_planar_range >= 68.0 and raised_planar_range <= 82.0, "Raising the camera must cap the grenade long-throw preview around the new 83m ceiling instead of staying too short or overshooting back toward 100m"):
+		return
+	if not T.require_true(self, high_arc_velocity.y >= low_arc_velocity.y + 3.0, "A high-angle grenade throw must use a visibly higher lob instead of almost the same flat trajectory"):
+		return
+	var landing_ring := player.get_node_or_null("GrenadePreview/LandingRing") as MeshInstance3D
+	if not T.require_true(self, landing_ring != null, "Grenade preview must keep a visible landing ring node"):
+		return
+	var ring_mesh := landing_ring.mesh as CylinderMesh
+	if not T.require_true(self, ring_mesh != null and ring_mesh.top_radius >= 1.4, "Landing ring must be roughly 2-3x larger so the player can read the destination without it being hidden by the body"):
 		return
 
 	player.rotate_y(deg_to_rad(30.0))

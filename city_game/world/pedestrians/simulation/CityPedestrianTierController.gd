@@ -6,11 +6,13 @@ const CityPedestrianState := preload("res://city_game/world/pedestrians/simulati
 const CityPedestrianReactionModel := preload("res://city_game/world/pedestrians/simulation/CityPedestrianReactionModel.gd")
 
 const TIER1_UPDATE_INTERVAL_SEC := 0.12
+const TIER1_STEP_BUCKET_COUNT := 8
 const TIER0_UPDATE_INTERVAL_SEC := 0.35
 const ASSIGNMENT_REBUILD_INTERVAL_SEC := 0.12
 const PLAYER_CONTEXT_TELEPORT_DISTANCE_M := 32.0
 const PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M := 0.01
 const PLAYER_ASSIGNMENT_REBUILD_SPEED_DELTA_MPS := 0.1
+const FARFIELD_ASSIGNMENT_REBUILD_DISTANCE_M := 48.0
 
 var _config = null
 var _budget := CityPedestrianBudget.new()
@@ -26,7 +28,11 @@ var _last_assignment_player_context: Dictionary = {}
 var _assignment_rebuild_elapsed_sec := 0.0
 var _has_assignment_cache := false
 var _force_assignment_rebuild := true
-var _tier1_step_accumulator_sec := 0.0
+var _tier1_step_bucket_accumulator_sec := 0.0
+var _tier1_step_bucket_interval_sec := TIER1_UPDATE_INTERVAL_SEC
+var _tier1_step_bucket_count := 1
+var _tier1_step_bucket_cursor := 0
+var _tier1_step_buckets: Array = []
 var _tier0_step_accumulator_sec := 0.0
 var _tier0_state_refs: Array[CityPedestrianState] = []
 var _tier1_state_refs: Array[CityPedestrianState] = []
@@ -63,7 +69,11 @@ func setup(config, world_data: Dictionary) -> void:
 	_assignment_rebuild_elapsed_sec = 0.0
 	_has_assignment_cache = false
 	_force_assignment_rebuild = true
-	_tier1_step_accumulator_sec = 0.0
+	_tier1_step_bucket_accumulator_sec = 0.0
+	_tier1_step_bucket_interval_sec = TIER1_UPDATE_INTERVAL_SEC
+	_tier1_step_bucket_count = 1
+	_tier1_step_bucket_cursor = 0
+	_tier1_step_buckets.clear()
 	_tier0_step_accumulator_sec = 0.0
 	_tier0_state_refs.clear()
 	_tier1_state_refs.clear()
@@ -308,6 +318,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			tier0_count += 1
 			chunk_snapshot["tier0_count"] = int(chunk_snapshot.get("tier0_count", 0)) + 1
 		next_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
+	_rebuild_tier1_step_buckets()
 	_chunk_render_snapshots = next_chunk_render_snapshots
 	var crowd_snapshot_rebuild_usec := _duration_or_zero(snapshot_rebuild_started_usec, active_states.size())
 
@@ -458,10 +469,8 @@ func _step_active_states(active_states: Array, delta: float) -> int:
 	stepped_state_count += _step_state_refs(_tier3_state_refs, delta)
 	stepped_state_count += _step_state_refs(_tier2_state_refs, delta)
 
-	_tier1_step_accumulator_sec += delta
-	if _tier1_step_accumulator_sec >= TIER1_UPDATE_INTERVAL_SEC:
-		stepped_state_count += _step_state_refs(_tier1_state_refs, _tier1_step_accumulator_sec)
-		_tier1_step_accumulator_sec = 0.0
+	_tier1_step_bucket_accumulator_sec += delta
+	stepped_state_count += _step_tier1_state_buckets()
 
 	_tier0_step_accumulator_sec += delta
 	if _tier0_step_accumulator_sec >= TIER0_UPDATE_INTERVAL_SEC:
@@ -469,6 +478,46 @@ func _step_active_states(active_states: Array, delta: float) -> int:
 		_tier0_step_accumulator_sec = 0.0
 
 	return _duration_or_zero(step_started_usec, stepped_state_count)
+
+func _step_tier1_state_buckets() -> int:
+	if _tier1_state_refs.is_empty():
+		_tier1_step_bucket_accumulator_sec = 0.0
+		_tier1_step_bucket_cursor = 0
+		return 0
+	if _tier1_step_bucket_count <= 0 or _tier1_step_buckets.is_empty():
+		_rebuild_tier1_step_buckets()
+	var stepped_state_count := 0
+	while _tier1_step_bucket_accumulator_sec >= _tier1_step_bucket_interval_sec:
+		_tier1_step_bucket_accumulator_sec -= _tier1_step_bucket_interval_sec
+		if _tier1_step_bucket_cursor >= _tier1_step_bucket_count:
+			_tier1_step_bucket_cursor = 0
+		var bucket: Array = _tier1_step_buckets[_tier1_step_bucket_cursor]
+		if not bucket.is_empty():
+			stepped_state_count += _step_state_refs(bucket, TIER1_UPDATE_INTERVAL_SEC)
+		_tier1_step_bucket_cursor = (_tier1_step_bucket_cursor + 1) % _tier1_step_bucket_count
+	return stepped_state_count
+
+func _rebuild_tier1_step_buckets() -> void:
+	_tier1_step_buckets.clear()
+	if _tier1_state_refs.is_empty():
+		_tier1_step_bucket_count = 1
+		_tier1_step_bucket_interval_sec = TIER1_UPDATE_INTERVAL_SEC
+		_tier1_step_bucket_cursor = 0
+		_tier1_step_bucket_accumulator_sec = 0.0
+		return
+	_tier1_step_bucket_count = mini(TIER1_STEP_BUCKET_COUNT, _tier1_state_refs.size())
+	_tier1_step_bucket_interval_sec = TIER1_UPDATE_INTERVAL_SEC / float(_tier1_step_bucket_count)
+	if _tier1_step_bucket_interval_sec <= 0.0:
+		_tier1_step_bucket_interval_sec = TIER1_UPDATE_INTERVAL_SEC
+	_tier1_step_bucket_cursor = posmod(_tier1_step_bucket_cursor, _tier1_step_bucket_count)
+	_tier1_step_bucket_accumulator_sec = clampf(_tier1_step_bucket_accumulator_sec, 0.0, _tier1_step_bucket_interval_sec)
+	for _bucket_index in range(_tier1_step_bucket_count):
+		_tier1_step_buckets.append([])
+	for state_index in range(_tier1_state_refs.size()):
+		var bucket_index := state_index % _tier1_step_bucket_count
+		var bucket: Array = _tier1_step_buckets[bucket_index]
+		bucket.append(_tier1_state_refs[state_index])
+		_tier1_step_buckets[bucket_index] = bucket
 
 func _step_all_active_states(active_states: Array, delta: float) -> int:
 	var step_started_usec := Time.get_ticks_usec()
@@ -487,7 +536,7 @@ func _step_all_active_states(active_states: Array, delta: float) -> int:
 		stepped_state_count += 1
 	return _duration_or_zero(step_started_usec, stepped_state_count)
 
-func _step_state_refs(states: Array[CityPedestrianState], step_delta: float) -> int:
+func _step_state_refs(states: Array, step_delta: float) -> int:
 	if step_delta <= 0.0 or states.is_empty():
 		return 0
 	var stepped_state_count := 0
@@ -519,6 +568,8 @@ func _should_rebuild_assignments(active_chunk_ids: Array[String], player_positio
 		return true
 	if not _string_arrays_equal(_last_assignment_chunk_ids, active_chunk_ids):
 		return true
+	if _can_reuse_farfield_assignments(player_position):
+		return false
 	if player_position.distance_to(_last_assignment_player_position) > PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M:
 		return true
 	if player_velocity.distance_to(_last_assignment_player_velocity) > PLAYER_ASSIGNMENT_REBUILD_SPEED_DELTA_MPS:
@@ -534,6 +585,15 @@ func _string_arrays_equal(lhs: Array[String], rhs: Array[String]) -> bool:
 		if lhs[item_index] != rhs[item_index]:
 			return false
 	return true
+
+func _can_reuse_farfield_assignments(player_position: Vector3) -> bool:
+	if _last_player_context != _last_assignment_player_context:
+		return false
+	if int(_global_snapshot.get("tier2_count", 0)) > 0 or int(_global_snapshot.get("tier3_count", 0)) > 0:
+		return false
+	if player_position.distance_to(_last_assignment_player_position) >= FARFIELD_ASSIGNMENT_REBUILD_DISTANCE_M:
+		return false
+	return _assignment_rebuild_elapsed_sec < ASSIGNMENT_REBUILD_INTERVAL_SEC
 
 func _update_runtime_snapshot(
 	active_chunk_count: int,

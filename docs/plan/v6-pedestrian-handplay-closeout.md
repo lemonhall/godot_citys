@@ -40,7 +40,7 @@
 
 ## Latest Status
 
-- 2026-03-13 当前功能链已验证通过：
+- 2026-03-13 `M9` 的 hand-play 功能链历史上已经验证通过：
   - `tests/world/test_city_pedestrian_visual_height_calibration.gd`
   - `tests/world/test_city_pedestrian_runtime_visual_height_live_models.gd`
   - `tests/world/test_city_pedestrian_sustained_fire_reaction.gd`
@@ -50,10 +50,15 @@
   - `tests/e2e/test_city_pedestrian_live_burst_fire_stability.gd`
   - `tests/e2e/test_city_pedestrian_character_visual_presence.gd`
   - `tests/e2e/test_city_pedestrian_live_combat_chain.gd`
-- 2026-03-13 当前 profiling 仍为阻塞：
-  - `tests/e2e/test_city_pedestrian_performance_profile.gd` FAIL，warm `wall_frame_avg_usec = 32259`，`crowd_update_avg_usec = 17412`
-  - `tests/e2e/test_city_runtime_performance_profile.gd` FAIL，warm `wall_frame_avg_usec = 35807`，`crowd_update_avg_usec = 20200`
-- 结论：`M9` 的 hand-play 功能收口已明显推进，但在重新压回 `16.67ms/frame` 红线之前，不能标记为完成。
+- 2026-03-13 当前 main 工作区已经为了止血回退 density 参数：
+  - `city_game/world/pedestrians/model/CityPedestrianConfig.gd` 当前回退为 `max_spawn_slots_per_chunk = 20`
+  - `city_game/world/pedestrians/model/CityPedestrianConfig.gd` 当前回退为 `get_spawn_slots_for_edge() -> 0/1/2/3`
+  - `city_game/world/pedestrians/model/CityPedestrianQuery.gd` 当前回退为 `lane_slot_budget = floor(lane_length / 90.0)`
+- 2026-03-13 当前 fresh 真实状态已经变成 split state：
+  - `tests/world/test_city_pedestrian_density_order_of_magnitude.gd` `FAIL`，warm `tier1_count = 54`
+  - `tests/e2e/test_city_pedestrian_performance_profile.gd` `PASS`，warm `wall_frame_avg_usec = 12989`
+  - `tests/e2e/test_city_runtime_performance_profile.gd` `PASS`，warm `wall_frame_avg_usec = 15699`
+- 结论：`M9` 不再是当前的主执行面。它保留“手玩功能链曾经成立”的历史证据，但“高密度 + 红线 + hand-play fidelity 同配置同时成立”的最终收口，已经通过 `ECN-0013` 升级为 `M10`（runtime 恢复）和 `M11`（新 runtime 上的近景 fidelity 重回归）。
 
 ## Files
 

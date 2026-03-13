@@ -11,6 +11,7 @@
 - `PRD-0001` 已完成大城市基础设施与 `v2-v5` 的世界、路网、路面与地形性能底盘。
 - `PRD-0001` 明确把“行人社会模拟和群体行为”列为 v2 非目标，因此街道人群需要一个新的 PRD 口径，而不是硬塞进旧范围。
 - 研究结论见 [`2026-03-12-open-world-pedestrian-crowd-performance-research.md`](../research/2026-03-12-open-world-pedestrian-crowd-performance-research.md)。
+- 高密度 crowd 架构恢复专项研究见 [`2026-03-13-high-density-pedestrian-crowd-architecture-research.md`](../research/2026-03-13-high-density-pedestrian-crowd-architecture-research.md)。
 - 当前项目级纪律已将 `60 FPS = 16.67ms/frame` 定义为硬红线，任何新功能不得以“以后再优化”为由突破这条红线。
 
 ## Scope
@@ -120,6 +121,7 @@
 - 默认 `lite` 预设下，运行时 Tier 1 可见实例总数不得超过 `768`，Tier 2 不得超过 `96`，Tier 3 不得超过 `24`。
 - 自动化测试至少断言：同一 pedestrian 在 tier 升降级前后的 `pedestrian_id`、route signature 和 archetype signature 一致。
 - 自动化测试至少断言：Tier 1 使用 `MultiMesh` 或等价 batched representation，而不是把每个行人单独实例化为节点树。
+- [已由 ECN-0013 补充] 自动化测试至少断言：Tier 1 的 batched representation 具备 page-local 或 chunk-local 的可复用实例槽位合同，稳定帧下不得继续把整个 active crowd window 的 Tier 1 render state 全量重写一遍。
 - 反作弊条款：不得通过把 density 直接设为 `0` 来宣称 tier 切换与性能达标。
 
 ### REQ-0002-004 Streaming-aware spawn / despawn 与预算约束
@@ -143,6 +145,7 @@
 - 任意时刻高成本 Tier 2 + Tier 3 的总量不得突破配置上限。
 - 玩家跨越至少 `8` 个 chunk 的自动化 travel 测试中，不允许出现 crowd count leak、重复加载同一 pedestrian page 或明显的 spawn storm。
 - 自动化测试至少断言：回访已访问区域时，crowd query / lane page 存在 cache hit 或等价复用证据。
+- [已由 ECN-0013 补充] 自动化测试至少断言：page runtime / chunk snapshot 在无结构变化时保持可复用，不允许继续依赖“每帧清空后重建全部 active chunk crowd snapshot”这一类全量式运行时模式。
 - 反作弊条款：不得通过“离开一个 chunk 就把全部 ped 清零、回到原地再全部重掷”来伪造 streaming。
 
 ### REQ-0002-005 玩家附近的有限 reactive pedestrian 行为
@@ -187,6 +190,7 @@
 **验收口径**：
 
 - 自动化测试或脚本输出中必须能读取 `ped_tier0_count`、`ped_tier1_count`、`ped_tier2_count`、`ped_tier3_count`、`crowd_update_avg_usec` 和至少一个 crowd page/cache 指标。
+- [已由 ECN-0013 补充] 自动化测试或脚本输出中还必须能读取 `crowd_active_state_count`、`crowd_step_usec`、`crowd_reaction_usec`、`crowd_rank_usec`、`crowd_snapshot_rebuild_usec`、`crowd_chunk_commit_usec`、`crowd_tier1_transform_writes` 或等价 breakdown 字段，用于证明 crowd 热点已经从全量 rebuild 路径中被拆开。
 - 自动化测试至少断言：按下 `小键盘 *` 后，行人可见性会在“全部显示 / 全部隐藏”之间切换，再次按下可恢复。
 - 自动化测试至少断言：按下 `小键盘 -` 后，右上角 FPS 文本会显示/隐藏；FPS `< 30` 为红色，`30-50` 为黄色，`> 50` 为绿色。
 - 自动化测试至少断言：minimap crowd debug layer 使用与 3D crowd 同源的 lane / density 数据，而不是另一份独立随机示意图。
@@ -212,6 +216,8 @@
 
 - 在 `pedestrian_mode = lite` 且固定 density 预设下，fresh warm traversal 与 first-visit traversal 的 `wall_frame_avg_usec` 都必须 `<= 16667`。
 - 自动化 profiling 输出必须新增 `crowd_update_avg_usec`、`crowd_spawn_avg_usec`、`crowd_render_commit_avg_usec` 与各 tier 计数。
+- [已由 ECN-0013 补充] 自动化 profiling 输出必须能把 crowd update 再拆到至少 `step / reaction / rank / snapshot rebuild / chunk commit / tier1 transform writes` 级别，用于证明红线恢复来自运行时结构改造，而不是巧合。
+- [已由 ECN-0013 补充] 对 `REQ-0002-016` 的 warm `540` / first-visit `600` 数量级 uplift，必须与本条红线在同一工作区、同一默认 `lite` 配置下同时成立；不得接受“density 绿但 profile 红”或“profile 绿但 density 红”的分裂状态。
 - 反作弊条款：不得通过 profiling 时临时关闭 pedestrians、把 density 改成 `0` 或仅渲染空壳占位来宣称达标。
 
 ### REQ-0002-008 运行期贴地一致性（新增，见 ECN-0009）
@@ -435,7 +441,8 @@
 - 自动化测试至少断言：达到上述 `10x` 量级 uplift 后，district / road class 的密度排序仍保持 `core > mixed > residential > industrial > periphery` 与 `arterial > secondary > collector > local > expressway_elevated`。
 - 自动化测试至少断言：M9 仍然不通过继续抬高 `tier2_budget` / `tier3_budget` 作为主要解法；除非另开 ECN，否则其 hard cap 继续维持当前口径。
 - fresh isolated `tests/e2e/test_city_pedestrian_performance_profile.gd` 与 `tests/e2e/test_city_runtime_performance_profile.gd` 必须继续 `PASS`，且 `wall_frame_avg_usec <= 16667`。
-- 反作弊条款：不得通过只改测试阈值、只改 debug 路线、把大量 pedestrian 塞进不可见 tier、或临时关闭真实 visual/update 成本来宣称需求完成。
+- [已由 ECN-0013 补充] 如现有 runtime 无法同时承载本条与 `REQ-0002-007`，必须升级 crowd runtime 架构；不得通过把 `max_spawn_slots_per_chunk`、`lane_slot_budget` 或等价密度参数回退到 `54 / 60` 级别的旧基线来伪造“性能恢复”。
+- 反作弊条款：不得通过只改测试阈值、只改 debug 路线、把大量 pedestrian 塞进不可见 tier、临时关闭真实 visual/update 成本，或维持“密度和红线不能同时成立”的双配置分裂状态来宣称需求完成。
 
 ## Open Questions
 

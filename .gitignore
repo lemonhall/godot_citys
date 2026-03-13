@@ -1,7 +1,6 @@
 .godot/
 .import/
 export_presets.cfg
-.worktrees/
 
 refs/*
 *.uid

@@ -7,7 +7,10 @@ const CityPedestrianReactionModel := preload("res://city_game/world/pedestrians/
 
 const TIER1_UPDATE_INTERVAL_SEC := 0.12
 const TIER0_UPDATE_INTERVAL_SEC := 0.35
+const ASSIGNMENT_REBUILD_INTERVAL_SEC := 0.12
 const PLAYER_CONTEXT_TELEPORT_DISTANCE_M := 32.0
+const PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M := 0.01
+const PLAYER_ASSIGNMENT_REBUILD_SPEED_DELTA_MPS := 0.1
 
 var _config = null
 var _budget := CityPedestrianBudget.new()
@@ -16,6 +19,13 @@ var _reaction_model := CityPedestrianReactionModel.new()
 var _budget_contract: Dictionary = {}
 var _global_snapshot: Dictionary = {}
 var _chunk_render_snapshots: Dictionary = {}
+var _last_assignment_chunk_ids: Array[String] = []
+var _last_assignment_player_position := Vector3.ZERO
+var _last_assignment_player_velocity := Vector3.ZERO
+var _last_assignment_player_context: Dictionary = {}
+var _assignment_rebuild_elapsed_sec := 0.0
+var _has_assignment_cache := false
+var _force_assignment_rebuild := true
 var _tier1_state_refs: Array[CityPedestrianState] = []
 var _tier2_state_refs: Array[CityPedestrianState] = []
 var _tier3_state_refs: Array[CityPedestrianState] = []
@@ -43,6 +53,13 @@ func setup(config, world_data: Dictionary) -> void:
 	_reaction_model = CityPedestrianReactionModel.new()
 	_global_snapshot.clear()
 	_chunk_render_snapshots.clear()
+	_last_assignment_chunk_ids.clear()
+	_last_assignment_player_position = Vector3.ZERO
+	_last_assignment_player_velocity = Vector3.ZERO
+	_last_assignment_player_context.clear()
+	_assignment_rebuild_elapsed_sec = 0.0
+	_has_assignment_cache = false
+	_force_assignment_rebuild = true
 	_tier1_state_refs.clear()
 	_tier2_state_refs.clear()
 	_tier3_state_refs.clear()
@@ -72,9 +89,11 @@ func set_player_context(player_position: Vector3, player_velocity: Vector3 = Vec
 
 func notify_projectile_event(origin: Vector3, direction: Vector3, range_m: float = 36.0) -> void:
 	_reaction_model.notify_projectile_event(origin, direction, range_m)
+	_mark_assignment_rebuild_required()
 
 func notify_explosion_event(world_position: Vector3, radius_m: float) -> void:
 	_reaction_model.notify_explosion_event(world_position, radius_m)
+	_mark_assignment_rebuild_required()
 
 func resolve_projectile_hit(start_position: Vector3, end_position: Vector3, damage: float = 1.0, velocity: Vector3 = Vector3.ZERO) -> Dictionary:
 	var best_hit := {}
@@ -96,6 +115,7 @@ func resolve_projectile_hit(start_position: Vector3, end_position: Vector3, dama
 		best_hit.get("hit_position", end_position),
 		float(_budget_contract.get("casualty_witness_radius_m", 18.0))
 	)
+	_mark_assignment_rebuild_required()
 	return {
 		"pedestrian_id": hit_state.pedestrian_id,
 		"chunk_id": hit_state.chunk_id,
@@ -153,6 +173,8 @@ func resolve_explosion_impact(world_position: Vector3, lethal_radius_m: float, t
 		world_position,
 		float(_budget_contract.get("explosion_witness_radius_m", 20.0))
 	)
+	if not death_events.is_empty():
+		_mark_assignment_rebuild_required()
 	return {
 		"killed_count": killed_ids.size(),
 		"killed_ids": killed_ids,
@@ -192,6 +214,26 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			state.step(step_delta)
 			_pedestrian_streamer.ground_state(state)
 		crowd_step_usec = _duration_or_zero(step_started_usec, active_states.size())
+
+	_assignment_rebuild_elapsed_sec += maxf(delta, 0.0)
+	if not _should_rebuild_assignments(active_chunk_ids, player_position, inferred_player_velocity):
+		var reused_runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_snapshot()
+		_update_runtime_snapshot(
+			active_chunk_ids.size(),
+			active_states.size(),
+			int(_global_snapshot.get("tier0_count", 0)),
+			int(_global_snapshot.get("tier1_count", 0)),
+			int(_global_snapshot.get("tier2_count", 0)),
+			int(_global_snapshot.get("tier3_count", 0)),
+			reused_runtime_snapshot,
+			crowd_spawn_usec,
+			crowd_step_usec,
+			0,
+			0,
+			0,
+			update_started_usec
+		)
+		return get_global_summary()
 
 	var reaction_started_usec := Time.get_ticks_usec()
 	var reactive_candidates := _reaction_model.update_reactions(active_states, _budget_contract, delta)
@@ -271,36 +313,28 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	var crowd_snapshot_rebuild_usec := _duration_or_zero(snapshot_rebuild_started_usec, active_states.size())
 
 	var runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_snapshot()
-	_global_snapshot = {
-		"preset": str(_budget_contract.get("preset", "lite")),
-		"active_chunk_count": active_chunk_ids.size(),
-		"active_page_count": int(streaming_snapshot.get("active_page_count", 0)),
-		"active_state_count": active_states.size(),
-		"tier0_count": tier0_count,
-		"tier1_count": tier1_count,
-		"tier2_count": tier2_count,
-		"tier3_count": tier3_count,
-		"tier1_budget": tier1_budget,
-		"tier2_budget": tier2_budget,
-		"tier3_budget": tier3_budget,
-		"nearfield_budget": nearfield_budget,
-		"tier2_radius_m": tier2_radius_m,
-		"tier3_radius_m": float(_budget_contract.get("tier3_radius_m", 30.0)),
-		"page_cache_hit_count": int(runtime_snapshot.get("page_cache_hit_count", 0)),
-		"page_cache_miss_count": int(runtime_snapshot.get("page_cache_miss_count", 0)),
-		"duplicate_page_load_count": int(runtime_snapshot.get("duplicate_page_load_count", 0)),
-		"reactive_event_count": _reaction_model.get_event_count(),
-	}
-	_last_profile_stats = {
-		"crowd_spawn_usec": crowd_spawn_usec,
-		"crowd_update_usec": Time.get_ticks_usec() - update_started_usec,
-		"crowd_active_state_count": active_states.size(),
-		"crowd_step_usec": crowd_step_usec,
-		"crowd_reaction_usec": crowd_reaction_usec,
-		"crowd_rank_usec": crowd_rank_usec,
-		"crowd_snapshot_rebuild_usec": crowd_snapshot_rebuild_usec,
-	}
-	_global_snapshot["profile_stats"] = _last_profile_stats.duplicate(true)
+	_update_runtime_snapshot(
+		active_chunk_ids.size(),
+		active_states.size(),
+		tier0_count,
+		tier1_count,
+		tier2_count,
+		tier3_count,
+		runtime_snapshot,
+		crowd_spawn_usec,
+		crowd_step_usec,
+		crowd_reaction_usec,
+		crowd_rank_usec,
+		crowd_snapshot_rebuild_usec,
+		update_started_usec
+	)
+	_last_assignment_chunk_ids = active_chunk_ids.duplicate()
+	_last_assignment_player_position = player_position
+	_last_assignment_player_velocity = inferred_player_velocity
+	_last_assignment_player_context = _last_player_context.duplicate(true)
+	_assignment_rebuild_elapsed_sec = 0.0
+	_has_assignment_cache = true
+	_force_assignment_rebuild = false
 	return get_global_summary()
 
 func get_global_snapshot() -> Dictionary:
@@ -411,6 +445,80 @@ func _duration_or_zero(started_usec: int, item_count: int) -> int:
 	if item_count <= 0:
 		return 0
 	return maxi(int(Time.get_ticks_usec() - started_usec), 1)
+
+func _mark_assignment_rebuild_required() -> void:
+	_force_assignment_rebuild = true
+
+func _should_rebuild_assignments(active_chunk_ids: Array[String], player_position: Vector3, player_velocity: Vector3) -> bool:
+	if not _has_assignment_cache:
+		return true
+	if _force_assignment_rebuild:
+		return true
+	if _reaction_model.get_event_count() > 0:
+		return true
+	if not _string_arrays_equal(_last_assignment_chunk_ids, active_chunk_ids):
+		return true
+	if player_position.distance_to(_last_assignment_player_position) > PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M:
+		return true
+	if player_velocity.distance_to(_last_assignment_player_velocity) > PLAYER_ASSIGNMENT_REBUILD_SPEED_DELTA_MPS:
+		return true
+	if _last_player_context != _last_assignment_player_context:
+		return true
+	return _assignment_rebuild_elapsed_sec >= ASSIGNMENT_REBUILD_INTERVAL_SEC
+
+func _string_arrays_equal(lhs: Array[String], rhs: Array[String]) -> bool:
+	if lhs.size() != rhs.size():
+		return false
+	for item_index in range(lhs.size()):
+		if lhs[item_index] != rhs[item_index]:
+			return false
+	return true
+
+func _update_runtime_snapshot(
+	active_chunk_count: int,
+	active_state_count: int,
+	tier0_count: int,
+	tier1_count: int,
+	tier2_count: int,
+	tier3_count: int,
+	runtime_snapshot: Dictionary,
+	crowd_spawn_usec: int,
+	crowd_step_usec: int,
+	crowd_reaction_usec: int,
+	crowd_rank_usec: int,
+	crowd_snapshot_rebuild_usec: int,
+	update_started_usec: int
+) -> void:
+	_global_snapshot = {
+		"preset": str(_budget_contract.get("preset", "lite")),
+		"active_chunk_count": active_chunk_count,
+		"active_page_count": int(runtime_snapshot.get("active_page_count", 0)),
+		"active_state_count": active_state_count,
+		"tier0_count": tier0_count,
+		"tier1_count": tier1_count,
+		"tier2_count": tier2_count,
+		"tier3_count": tier3_count,
+		"tier1_budget": int(_budget_contract.get("tier1_budget", 768)),
+		"tier2_budget": int(_budget_contract.get("tier2_budget", 96)),
+		"tier3_budget": int(_budget_contract.get("tier3_budget", 24)),
+		"nearfield_budget": int(_budget_contract.get("nearfield_budget", int(_budget_contract.get("tier2_budget", 96)))),
+		"tier2_radius_m": float(_budget_contract.get("tier2_radius_m", 110.0)),
+		"tier3_radius_m": float(_budget_contract.get("tier3_radius_m", 30.0)),
+		"page_cache_hit_count": int(runtime_snapshot.get("page_cache_hit_count", 0)),
+		"page_cache_miss_count": int(runtime_snapshot.get("page_cache_miss_count", 0)),
+		"duplicate_page_load_count": int(runtime_snapshot.get("duplicate_page_load_count", 0)),
+		"reactive_event_count": _reaction_model.get_event_count(),
+	}
+	_last_profile_stats = {
+		"crowd_spawn_usec": crowd_spawn_usec,
+		"crowd_update_usec": Time.get_ticks_usec() - update_started_usec,
+		"crowd_active_state_count": active_state_count,
+		"crowd_step_usec": crowd_step_usec,
+		"crowd_reaction_usec": crowd_reaction_usec,
+		"crowd_rank_usec": crowd_rank_usec,
+		"crowd_snapshot_rebuild_usec": crowd_snapshot_rebuild_usec,
+	}
+	_global_snapshot["profile_stats"] = _last_profile_stats.duplicate(true)
 
 func _build_full_state_snapshots(states: Array[CityPedestrianState]) -> Array[Dictionary]:
 	var snapshots: Array[Dictionary] = []

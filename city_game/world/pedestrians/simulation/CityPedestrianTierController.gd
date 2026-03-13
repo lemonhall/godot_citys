@@ -26,6 +26,9 @@ var _last_assignment_player_context: Dictionary = {}
 var _assignment_rebuild_elapsed_sec := 0.0
 var _has_assignment_cache := false
 var _force_assignment_rebuild := true
+var _tier1_step_accumulator_sec := 0.0
+var _tier0_step_accumulator_sec := 0.0
+var _tier0_state_refs: Array[CityPedestrianState] = []
 var _tier1_state_refs: Array[CityPedestrianState] = []
 var _tier2_state_refs: Array[CityPedestrianState] = []
 var _tier3_state_refs: Array[CityPedestrianState] = []
@@ -60,6 +63,9 @@ func setup(config, world_data: Dictionary) -> void:
 	_assignment_rebuild_elapsed_sec = 0.0
 	_has_assignment_cache = false
 	_force_assignment_rebuild = true
+	_tier1_step_accumulator_sec = 0.0
+	_tier0_step_accumulator_sec = 0.0
+	_tier0_state_refs.clear()
 	_tier1_state_refs.clear()
 	_tier2_state_refs.clear()
 	_tier3_state_refs.clear()
@@ -204,17 +210,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 
 	var crowd_step_usec := 0
 	if delta > 0.0:
-		var step_started_usec := Time.get_ticks_usec()
-		for state_variant in active_states:
-			var state: CityPedestrianState = state_variant
-			state.queue_step(delta)
-			var step_delta := _resolve_step_delta_for_state(state)
-			if step_delta <= 0.0:
-				continue
-			state.step(step_delta)
-			_pedestrian_streamer.ground_state(state)
-			_mark_chunk_render_dirty(state.chunk_id)
-		crowd_step_usec = _duration_or_zero(step_started_usec, active_states.size())
+		crowd_step_usec = _step_active_states(active_states, delta)
 
 	_assignment_rebuild_elapsed_sec += maxf(delta, 0.0)
 	if not _should_rebuild_assignments(active_chunk_ids, player_position, inferred_player_velocity):
@@ -260,6 +256,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	remaining_tier2_budget = mini(remaining_tier2_budget, tier2_budget)
 	var snapshot_rebuild_started_usec := Time.get_ticks_usec()
 	var next_chunk_render_snapshots: Dictionary = {}
+	_tier0_state_refs.clear()
 	_tier1_state_refs.clear()
 	_tier2_state_refs.clear()
 	_tier3_state_refs.clear()
@@ -307,6 +304,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			chunk_snapshot["tier1_count"] = int(chunk_snapshot.get("tier1_count", 0)) + 1
 		else:
 			state.set_tier(CityPedestrianState.TIER_0)
+			_tier0_state_refs.append(state)
 			tier0_count += 1
 			chunk_snapshot["tier0_count"] = int(chunk_snapshot.get("tier0_count", 0)) + 1
 		next_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
@@ -448,6 +446,59 @@ func _duration_or_zero(started_usec: int, item_count: int) -> int:
 	if item_count <= 0:
 		return 0
 	return maxi(int(Time.get_ticks_usec() - started_usec), 1)
+
+func _step_active_states(active_states: Array, delta: float) -> int:
+	if active_states.is_empty() or delta <= 0.0:
+		return 0
+	if not _has_assignment_cache:
+		return _step_all_active_states(active_states, delta)
+
+	var step_started_usec := Time.get_ticks_usec()
+	var stepped_state_count := 0
+	stepped_state_count += _step_state_refs(_tier3_state_refs, delta)
+	stepped_state_count += _step_state_refs(_tier2_state_refs, delta)
+
+	_tier1_step_accumulator_sec += delta
+	if _tier1_step_accumulator_sec >= TIER1_UPDATE_INTERVAL_SEC:
+		stepped_state_count += _step_state_refs(_tier1_state_refs, _tier1_step_accumulator_sec)
+		_tier1_step_accumulator_sec = 0.0
+
+	_tier0_step_accumulator_sec += delta
+	if _tier0_step_accumulator_sec >= TIER0_UPDATE_INTERVAL_SEC:
+		stepped_state_count += _step_state_refs(_tier0_state_refs, _tier0_step_accumulator_sec)
+		_tier0_step_accumulator_sec = 0.0
+
+	return _duration_or_zero(step_started_usec, stepped_state_count)
+
+func _step_all_active_states(active_states: Array, delta: float) -> int:
+	var step_started_usec := Time.get_ticks_usec()
+	var stepped_state_count := 0
+	for state_variant in active_states:
+		var state: CityPedestrianState = state_variant
+		if state == null or not state.is_alive():
+			continue
+		state.queue_step(delta)
+		var step_delta := _resolve_step_delta_for_state(state)
+		if step_delta <= 0.0:
+			continue
+		state.step(step_delta)
+		_pedestrian_streamer.ground_state(state)
+		_mark_chunk_render_dirty(state.chunk_id)
+		stepped_state_count += 1
+	return _duration_or_zero(step_started_usec, stepped_state_count)
+
+func _step_state_refs(states: Array[CityPedestrianState], step_delta: float) -> int:
+	if step_delta <= 0.0 or states.is_empty():
+		return 0
+	var stepped_state_count := 0
+	for state in states:
+		if state == null or not state.is_alive():
+			continue
+		state.step(step_delta)
+		_pedestrian_streamer.ground_state(state)
+		_mark_chunk_render_dirty(state.chunk_id)
+		stepped_state_count += 1
+	return stepped_state_count
 
 func _mark_assignment_rebuild_required() -> void:
 	_force_assignment_rebuild = true

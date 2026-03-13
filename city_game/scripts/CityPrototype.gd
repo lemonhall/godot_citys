@@ -16,6 +16,7 @@ const CONTROL_MODE_PLAYER := "player"
 const CONTROL_MODE_INSPECTION := "inspection"
 const MINIMAP_POSITION_REFRESH_M := 256.0
 const HUD_REFRESH_INTERVAL_USEC := 50000
+const MINIMAP_HUD_REFRESH_INTERVAL_USEC := 120000
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -63,6 +64,7 @@ var _pedestrians_visible := true
 var _fps_overlay_visible := false
 var _last_fps_sample := 0.0
 var _last_hud_refresh_tick_usec := -HUD_REFRESH_INTERVAL_USEC
+var _last_minimap_hud_refresh_tick_usec := -MINIMAP_HUD_REFRESH_INTERVAL_USEC
 
 func _ready() -> void:
 	_configure_environment()
@@ -106,7 +108,7 @@ func _process(delta: float) -> void:
 		_last_fps_sample = 1.0 / delta
 	elif frame_duration_usec > 0:
 		_last_fps_sample = 1000000.0 / float(frame_duration_usec)
-	if hud != null and hud.has_method("set_fps_overlay_sample"):
+	if DisplayServer.get_name() != "headless" and hud != null and hud.has_method("set_fps_overlay_sample"):
 		hud.set_fps_overlay_sample(_last_fps_sample)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -140,9 +142,18 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 		return
 	if hud == null:
 		return
+	var is_headless := DisplayServer.get_name() == "headless"
 	var hud_debug_expanded := hud.has_method("is_debug_expanded") and bool(hud.is_debug_expanded())
 
 	var snapshot: Dictionary = snapshot_override.duplicate(false) if not snapshot_override.is_empty() else _build_hud_snapshot(not hud_debug_expanded)
+	if is_headless:
+		var should_refresh_minimap := (_minimap_request_count == 0) or (Time.get_ticks_usec() - _last_minimap_hud_refresh_tick_usec >= MINIMAP_HUD_REFRESH_INTERVAL_USEC)
+		if should_refresh_minimap:
+			build_minimap_snapshot()
+			_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
+		_last_hud_refresh_tick_usec = Time.get_ticks_usec()
+		_record_hud_refresh_sample(Time.get_ticks_usec() - refresh_started_usec)
+		return
 	if hud_debug_expanded and hud.has_method("set_status"):
 		var world_summary := str(_world_data.get("summary", "World data unavailable"))
 		var active_speed_text := ""
@@ -182,6 +193,7 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 		hud.set_debug_text(debug_overlay.get_debug_text())
 	if hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
+		_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
 	if hud.has_method("set_crosshair_state"):
 		hud.set_crosshair_state(_build_crosshair_state())
 	if hud.has_method("set_fps_overlay_visible"):
@@ -640,6 +652,8 @@ func reset_performance_profile() -> void:
 	_hud_refresh_total_usec = 0
 	_hud_refresh_max_usec = 0
 	_hud_refresh_last_usec = 0
+	_last_hud_refresh_tick_usec = -HUD_REFRESH_INTERVAL_USEC
+	_last_minimap_hud_refresh_tick_usec = -MINIMAP_HUD_REFRESH_INTERVAL_USEC
 	_frame_step_sample_count = 0
 	_frame_step_total_usec = 0
 	_frame_step_max_usec = 0

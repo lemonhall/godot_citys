@@ -162,6 +162,7 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 	var minimum_dense_target := mini(MAX_BUILDINGS_PER_CHUNK, 12)
 	var archetype_cycle := _build_archetype_cycle(chunk_seed)
 	var compact_cycle := _build_compact_archetype_cycle()
+	var building_rng := RandomNumberGenerator.new()
 	var buildings: Array = []
 	var occupied: Array = []
 	var half_extent := chunk_size_m * 0.5 - 10.0
@@ -171,7 +172,7 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 			break
 		var candidate: Dictionary = candidates[candidate_index]
 		var archetype: Dictionary = archetype_cycle[candidate_index % archetype_cycle.size()]
-		var building := _try_build_building(candidate, archetype, chunk_center, half_extent, world_seed, road_segments, occupied)
+		var building := _try_build_building(candidate, archetype, chunk_center, half_extent, world_seed, occupied, building_rng)
 		if building.is_empty():
 			continue
 		buildings.append(building)
@@ -186,7 +187,7 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 				break
 			var candidate: Dictionary = candidates[candidate_index]
 			var filler_archetype: Dictionary = BUILDING_ARCHETYPES[(candidate_index + 3) % BUILDING_ARCHETYPES.size()]
-			var filler := _try_build_building(candidate, filler_archetype, chunk_center, half_extent, world_seed, road_segments, occupied, 0.82)
+			var filler := _try_build_building(candidate, filler_archetype, chunk_center, half_extent, world_seed, occupied, building_rng, 0.82)
 			if filler.is_empty():
 				continue
 			buildings.append(filler)
@@ -201,7 +202,7 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 				break
 			var candidate: Dictionary = candidates[candidate_index]
 			var compact_archetype: Dictionary = compact_cycle[candidate_index % compact_cycle.size()]
-			var compact := _try_build_building(candidate, compact_archetype, chunk_center, half_extent, world_seed, road_segments, occupied, 0.68)
+			var compact := _try_build_building(candidate, compact_archetype, chunk_center, half_extent, world_seed, occupied, building_rng, 0.68)
 			if compact.is_empty():
 				continue
 			buildings.append(compact)
@@ -222,7 +223,8 @@ static func _build_candidate_slots(chunk_center: Vector3, chunk_size_m: float, c
 				float(z_step) * CANDIDATE_STEP_M + cos(float((slot_seed >> 2) % 4096) * 0.013) * 5.5
 			)
 			center_2d = _clamp_to_chunk(center_2d, half_extent)
-			var clearance := _distance_to_roads(center_2d, road_segments, 8.0)
+			var road_metrics := _nearest_road_metrics(center_2d, road_segments, 8.0)
+			var clearance := float(road_metrics.get("clearance_m", 9999.0))
 			if clearance < 8.0:
 				continue
 			var radial_bias := center_2d.length() / maxf(half_extent, 1.0)
@@ -230,6 +232,7 @@ static func _build_candidate_slots(chunk_center: Vector3, chunk_size_m: float, c
 			candidates.append({
 				"center_2d": center_2d,
 				"clearance": clearance,
+				"road_angle_rad": float(road_metrics.get("angle_rad", 0.0)),
 				"score": score,
 				"seed": slot_seed,
 				"world_center": Vector2(chunk_center.x + center_2d.x, chunk_center.z + center_2d.y),
@@ -239,19 +242,18 @@ static func _build_candidate_slots(chunk_center: Vector3, chunk_size_m: float, c
 	)
 	return candidates
 
-static func _try_build_building(candidate: Dictionary, archetype: Dictionary, chunk_center: Vector3, half_extent: float, world_seed: int, road_segments: Array, occupied: Array, scale_multiplier: float = 1.0) -> Dictionary:
+static func _try_build_building(candidate: Dictionary, archetype: Dictionary, chunk_center: Vector3, half_extent: float, world_seed: int, occupied: Array, building_rng: RandomNumberGenerator, scale_multiplier: float = 1.0) -> Dictionary:
 	var local_seed := int(candidate.get("seed", 0)) ^ int(archetype.get("id", "").hash())
-	var rng := RandomNumberGenerator.new()
-	rng.seed = local_seed
+	building_rng.seed = local_seed
 	var min_size: Vector2 = archetype.get("min_size", Vector2(18.0, 18.0))
 	var max_size: Vector2 = archetype.get("max_size", Vector2(28.0, 28.0))
 	var height_range: Vector2 = archetype.get("height_range", Vector2(18.0, 36.0))
 	var footprint_scale := float(archetype.get("footprint_scale", 1.0))
 	var candidate_clearance := float(candidate.get("clearance", ROAD_CLEARANCE_M + 12.0))
 	var parcel_scale := clampf((candidate_clearance - ROAD_CLEARANCE_M) / 18.0, 0.72, 1.0)
-	var width := snappedf(rng.randf_range(min_size.x, max_size.x) * scale_multiplier * parcel_scale, 2.0)
-	var depth := snappedf(rng.randf_range(min_size.y, max_size.y) * scale_multiplier * parcel_scale, 2.0)
-	var height := snappedf(rng.randf_range(height_range.x, height_range.y) * lerpf(0.92, 1.08, rng.randf()), 2.0)
+	var width := snappedf(building_rng.randf_range(min_size.x, max_size.x) * scale_multiplier * parcel_scale, 2.0)
+	var depth := snappedf(building_rng.randf_range(min_size.y, max_size.y) * scale_multiplier * parcel_scale, 2.0)
+	var height := snappedf(building_rng.randf_range(height_range.x, height_range.y) * lerpf(0.92, 1.08, building_rng.randf()), 2.0)
 	var center_2d: Vector2 = candidate.get("center_2d", Vector2.ZERO)
 	var footprint_radius := sqrt(width * width + depth * depth) * 0.5
 	var visual_width := width * footprint_scale
@@ -270,7 +272,8 @@ static func _try_build_building(candidate: Dictionary, archetype: Dictionary, ch
 		if center_2d.distance_to(other_center) < visual_footprint_radius + other_radius + BUILDING_MARGIN_M:
 			return {}
 
-	var yaw_rad := _resolve_building_yaw(center_2d, road_segments, local_seed, archetype.get("id", "slab"))
+	var road_angle_rad := float(candidate.get("road_angle_rad", 0.0))
+	var yaw_rad := _resolve_building_yaw(road_angle_rad, local_seed, archetype.get("id", "slab"))
 	var world_center: Vector2 = candidate.get("world_center", Vector2(chunk_center.x + center_2d.x, chunk_center.z + center_2d.y))
 	var ground_y := CityTerrainSampler.sample_height(world_center.x, world_center.y, world_seed)
 	var palette: Dictionary = PALETTES[int(posmod(local_seed, PALETTES.size()))]
@@ -282,14 +285,15 @@ static func _try_build_building(candidate: Dictionary, archetype: Dictionary, ch
 		"size": Vector3(width, height, depth),
 		"collision_size": Vector3(maxf(width, visual_width), height, maxf(depth, visual_depth)),
 		"yaw_rad": yaw_rad,
+		"road_angle_rad": road_angle_rad,
 		"footprint_radius_m": footprint_radius,
 		"visual_footprint_radius_m": visual_footprint_radius,
 		"road_clearance_m": road_clearance,
 		"visual_road_clearance_m": visual_road_clearance,
 		"detail_seed": local_seed,
-		"main_color": _tint_color(palette["base"], rng.randf_range(-0.08, 0.08)),
-		"accent_color": _tint_color(palette["accent"], rng.randf_range(-0.06, 0.10)),
-		"roof_color": _tint_color(palette["mid"], rng.randf_range(-0.08, 0.06)),
+		"main_color": _tint_color(palette["base"], building_rng.randf_range(-0.08, 0.08)),
+		"accent_color": _tint_color(palette["accent"], building_rng.randf_range(-0.06, 0.10)),
+		"roof_color": _tint_color(palette["mid"], building_rng.randf_range(-0.08, 0.06)),
 	}
 
 static func _build_archetype_cycle(chunk_seed: int) -> Array:
@@ -313,28 +317,13 @@ static func _build_compact_archetype_cycle() -> Array:
 		(BUILDING_ARCHETYPES[3] as Dictionary).duplicate(true),
 	]
 
-static func _resolve_building_yaw(center_2d: Vector2, road_segments: Array, local_seed: int, archetype_id: String) -> float:
-	var angle := _nearest_road_angle(center_2d, road_segments)
+static func _resolve_building_yaw(road_angle_rad: float, local_seed: int, archetype_id: String) -> float:
+	var angle := road_angle_rad
 	if archetype_id == "needle" or archetype_id == "courtyard":
 		return angle + deg_to_rad(float(local_seed % 18) - 9.0)
 	if archetype_id == "midrise_bar" or archetype_id == "industrial":
 		return angle + PI * 0.5
 	return angle
-
-static func _nearest_road_angle(point: Vector2, road_segments: Array) -> float:
-	var best_distance := INF
-	var best_angle := 0.0
-	for segment in road_segments:
-		var segment_dict: Dictionary = segment
-		var points: Array = segment_dict.get("points", [])
-		for point_index in range(points.size() - 1):
-			var a: Vector3 = points[point_index]
-			var b: Vector3 = points[point_index + 1]
-			var distance := _distance_to_segment(point, Vector2(a.x, a.z), Vector2(b.x, b.z))
-			if distance < best_distance:
-				best_distance = distance
-				best_angle = atan2(b.z - a.z, b.x - a.x)
-	return best_angle
 
 static func _measure_min_building_clearance(buildings: Array) -> float:
 	if buildings.is_empty():
@@ -356,8 +345,9 @@ static func _collect_building_archetypes(buildings: Array) -> Array:
 	archetypes.sort()
 	return archetypes
 
-static func _distance_to_roads(point: Vector2, road_segments: Array, early_exit_clearance: float = -1.0) -> float:
+static func _nearest_road_metrics(point: Vector2, road_segments: Array, early_exit_clearance: float = -1.0) -> Dictionary:
 	var min_distance := INF
+	var best_angle_rad := 0.0
 	for segment in road_segments:
 		var segment_dict: Dictionary = segment
 		var width := float(segment_dict.get("width", 0.0))
@@ -365,15 +355,24 @@ static func _distance_to_roads(point: Vector2, road_segments: Array, early_exit_
 		for point_index in range(points.size() - 1):
 			var a: Vector3 = points[point_index]
 			var b: Vector3 = points[point_index + 1]
-			min_distance = minf(
-				min_distance,
-				_distance_to_segment(point, Vector2(a.x, a.z), Vector2(b.x, b.z)) - width * 0.5
-			)
-			if early_exit_clearance >= 0.0 and min_distance <= early_exit_clearance:
-				return min_distance
+			var distance := _distance_to_segment(point, Vector2(a.x, a.z), Vector2(b.x, b.z)) - width * 0.5
+			if distance < min_distance:
+				min_distance = distance
+				best_angle_rad = atan2(b.z - a.z, b.x - a.x)
+				if early_exit_clearance >= 0.0 and min_distance <= early_exit_clearance:
+					return {
+						"clearance_m": min_distance,
+						"angle_rad": best_angle_rad,
+					}
 	if min_distance == INF:
-		return 9999.0
-	return min_distance
+		return {
+			"clearance_m": 9999.0,
+			"angle_rad": 0.0,
+		}
+	return {
+		"clearance_m": min_distance,
+		"angle_rad": best_angle_rad,
+	}
 
 static func _distance_to_segment(point: Vector2, a: Vector2, b: Vector2) -> float:
 	var segment := b - a

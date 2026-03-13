@@ -85,7 +85,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(profile.get("wall_frame_avg_usec", 0)) <= 16667, "Warm traversal must keep average wall-frame time at or below the 16.67ms redline"):
 		return
-	if not T.require_true(self, int(profile.get("ped_tier1_count", 0)) >= 160, "Warm runtime profile must keep ped_tier1_count at or above the current M10 verified density plateau"):
+	if not T.require_true(self, int(profile.get("ped_tier1_count", 0)) >= 240, "Warm runtime profile must keep ped_tier1_count at or above the M10 vehicle-aware warm runtime target"):
 		return
 
 	world.queue_free()

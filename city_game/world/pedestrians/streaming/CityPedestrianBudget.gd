@@ -21,7 +21,7 @@ func _build_contract(preset: String) -> Dictionary:
 		"tier2_budget": 96,
 		"tier3_budget": 24,
 		"nearfield_budget": 96,
-		"tier2_radius_m": 110.0,
+		"tier2_radius_m": 96.0,
 		"tier3_radius_m": 30.0,
 		"player_near_radius_m": 6.5,
 		"player_personal_space_m": 3.25,

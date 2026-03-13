@@ -148,7 +148,6 @@ func setup(config, world_data: Dictionary) -> void:
 
 func _process(delta: float) -> void:
 	_process_streaming_queues_once_per_frame()
-	_update_lod_states(_last_player_position)
 	_update_global_death_visuals(delta)
 
 func _notification(what: int) -> void:
@@ -876,8 +875,6 @@ func _update_pedestrian_crowd(player_position: Vector3, delta: float) -> void:
 				tier1_transform_writes += int(chunk_scene.apply_pedestrian_chunk_snapshot(chunk_snapshot))
 				chunk_snapshot["dirty"] = false
 				applied_chunk_count += 1
-		if chunk_scene.has_method("set_pedestrian_visibility"):
-			chunk_scene.set_pedestrian_visibility(_pedestrian_visibility_enabled)
 	_crowd_chunk_commit_last_usec = int(Time.get_ticks_usec() - render_commit_started_usec) if applied_chunk_count > 0 else 0
 	_crowd_tier1_transform_writes = tier1_transform_writes
 	_record_crowd_render_commit_sample(_crowd_chunk_commit_last_usec)

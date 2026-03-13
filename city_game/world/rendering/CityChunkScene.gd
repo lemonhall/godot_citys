@@ -316,6 +316,7 @@ func _rebuild() -> void:
 		"ground_usec": 0,
 		"ground_mesh_usec": 0,
 		"ground_collision_usec": 0,
+		"ground_collision_face_count": 0,
 		"ground_material_usec": 0,
 		"ground_mask_textures_usec": 0,
 		"ground_mask_cache_hit": false,
@@ -336,6 +337,7 @@ func _rebuild() -> void:
 	setup_profile["ground_usec"] = Time.get_ticks_usec() - phase_started_usec
 	setup_profile["ground_mesh_usec"] = int(ground_result.get("mesh_usec", 0))
 	setup_profile["ground_collision_usec"] = int(ground_result.get("collision_usec", 0))
+	setup_profile["ground_collision_face_count"] = int(ground_result.get("collision_face_count", 0))
 	setup_profile["ground_material_usec"] = int(ground_result.get("material_usec", 0))
 	setup_profile["ground_mask_textures_usec"] = int(ground_result.get("mask_textures_usec", 0))
 	setup_profile["ground_mask_cache_hit"] = bool(ground_result.get("mask_cache_hit", false))
@@ -574,10 +576,13 @@ func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 	var collision_started_usec := Time.get_ticks_usec()
 	var shape := ConcavePolygonShape3D.new()
 	var collision_mesh_result: Dictionary = _terrain_mesh_results_by_lod.get(LOD_NEAR, terrain_build_result)
-	var collision_mesh := collision_mesh_result.get("mesh") as ArrayMesh
-	if collision_mesh == null:
-		collision_mesh = terrain_mesh
-	shape.set_faces(collision_mesh.get_faces())
+	var collision_faces: PackedVector3Array = collision_mesh_result.get("collision_faces", PackedVector3Array())
+	if collision_faces.is_empty():
+		var collision_mesh := collision_mesh_result.get("mesh") as ArrayMesh
+		if collision_mesh == null:
+			collision_mesh = terrain_mesh
+		collision_faces = collision_mesh.get_faces()
+	shape.set_faces(collision_faces)
 	var collision_usec := Time.get_ticks_usec() - collision_started_usec
 	collision_shape.shape = shape
 	ground_body.add_child(collision_shape)
@@ -594,6 +599,7 @@ func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 		"body": ground_body,
 		"mesh_usec": mesh_usec,
 		"collision_usec": collision_usec,
+		"collision_face_count": int(collision_faces.size() / 3),
 		"material_usec": material_usec,
 		"mask_textures_usec": int(material_result.get("mask_textures_usec", 0)),
 		"mask_cache_hit": bool(material_result.get("mask_cache_hit", false)),
@@ -747,13 +753,16 @@ func _apply_terrain_collision_mode(mode: String) -> void:
 		return
 	_ensure_terrain_mesh_result(LOD_NEAR)
 	var terrain_mesh_result: Dictionary = _terrain_mesh_results_by_lod.get(LOD_NEAR, {})
-	var terrain_mesh := terrain_mesh_result.get("mesh") as ArrayMesh
-	if terrain_mesh == null:
-		return
 	var shape := collision_shape.shape as ConcavePolygonShape3D
 	if shape == null:
 		shape = ConcavePolygonShape3D.new()
-	shape.set_faces(terrain_mesh.get_faces())
+	var collision_faces: PackedVector3Array = terrain_mesh_result.get("collision_faces", PackedVector3Array())
+	if collision_faces.is_empty():
+		var terrain_mesh := terrain_mesh_result.get("mesh") as ArrayMesh
+		if terrain_mesh == null:
+			return
+		collision_faces = terrain_mesh.get_faces()
+	shape.set_faces(collision_faces)
 	collision_shape.shape = shape
 	_terrain_collision_apply_count += 1
 

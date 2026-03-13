@@ -1,5 +1,7 @@
 extends RefCounted
 
+const LOCAL_LANE_SLOT_SPACING_M := 80.0
+
 var _config = null
 var _pedestrian_config = null
 var _road_graph = null
@@ -101,16 +103,15 @@ func _build_spawn_result(chunk_key: Vector2i, district_id: String, district_prof
 		var slot_count := int(_pedestrian_config.get_spawn_slots_for_edge(district_density, road_density))
 		if slot_count <= 0:
 			continue
-		var lane_length := float(lane.get("path_length_m", 0.0))
-		var lane_slot_budget := maxi(1, mini(slot_count, int(ceil(lane_length / 75.0))))
-		road_class_counts[road_class] = int(road_class_counts.get(road_class, 0)) + lane_slot_budget
-		for slot_index in range(lane_slot_budget):
+		var lane_local_length := _measure_lane_length_in_rect(lane.get("points", []), spawn_rect)
+		if lane_local_length <= 0.001:
+			continue
+		var lane_slot_budget := maxi(1, mini(slot_count, int(ceil(lane_local_length / LOCAL_LANE_SLOT_SPACING_M))))
+		var lane_sample_positions := _sample_lane_positions_in_rect(lane.get("points", []), lane_slot_budget, spawn_rect)
+		for slot_index in range(lane_sample_positions.size()):
 			if spawn_slots.size() >= max_spawn_slots:
 				break
-			var ratio := float(slot_index + 1) / float(lane_slot_budget + 1)
-			var world_position := _sample_lane_position(lane.get("points", []), ratio)
-			if not spawn_rect.has_point(Vector2(world_position.x, world_position.z)):
-				continue
+			var world_position: Vector3 = lane_sample_positions[slot_index]
 			var seed_salt := int(lane.get("seed", 0)) + slot_index * 53 + slot_counter * 11
 			spawn_slots.append({
 				"spawn_slot_id": "%s:%s:%02d" % [_config.format_chunk_id(chunk_key), lane_id, slot_index],
@@ -125,6 +126,7 @@ func _build_spawn_result(chunk_key: Vector2i, district_id: String, district_prof
 				"road_clearance_m": float(lane.get("road_clearance_m", 0.0)),
 				"archetype_weights": (district_profile.get("archetype_weights", {}) as Dictionary).duplicate(true),
 			})
+			road_class_counts[road_class] = int(road_class_counts.get(road_class, 0)) + 1
 			slot_counter += 1
 		if spawn_slots.size() >= max_spawn_slots:
 			break
@@ -192,3 +194,107 @@ func _sample_lane_position(points: Array, ratio: float) -> Vector3:
 			return a.lerp(b, clampf(t, 0.0, 1.0))
 		traversed += segment_length
 	return points[points.size() - 1]
+
+func _sample_lane_positions_in_rect(points: Array, slot_budget: int, spawn_rect: Rect2) -> Array[Vector3]:
+	var sampled_positions: Array[Vector3] = []
+	if slot_budget <= 0 or points.is_empty():
+		return sampled_positions
+	var clipped_segments := _collect_clipped_lane_segments_in_rect(points, spawn_rect)
+	if clipped_segments.is_empty():
+		return sampled_positions
+
+	var total_local_length := 0.0
+	for segment_variant in clipped_segments:
+		var segment: Dictionary = segment_variant
+		total_local_length += float(segment.get("length", 0.0))
+	if total_local_length <= 0.001:
+		return sampled_positions
+
+	for sample_index in range(slot_budget):
+		var target_length := total_local_length * float(sample_index + 1) / float(slot_budget + 1)
+		var traversed := 0.0
+		for segment_variant in clipped_segments:
+			var segment: Dictionary = segment_variant
+			var segment_length := float(segment.get("length", 0.0))
+			if segment_length <= 0.001:
+				continue
+			if traversed + segment_length >= target_length:
+				var start: Vector2 = segment.get("start", Vector2.ZERO)
+				var finish: Vector2 = segment.get("finish", Vector2.ZERO)
+				var t := 0.0 if segment_length <= 0.001 else (target_length - traversed) / segment_length
+				var point_2d := start.lerp(finish, clampf(t, 0.0, 1.0))
+				sampled_positions.append(Vector3(point_2d.x, 0.0, point_2d.y))
+				break
+			traversed += segment_length
+	return sampled_positions
+
+func _compute_lane_length(points: Array) -> float:
+	if points.size() <= 1:
+		return 0.0
+	var total_length := 0.0
+	for point_index in range(points.size() - 1):
+		total_length += (points[point_index + 1] as Vector3).distance_to(points[point_index] as Vector3)
+	return total_length
+
+func _measure_lane_length_in_rect(points: Array, rect: Rect2) -> float:
+	var total_length := 0.0
+	for segment_variant in _collect_clipped_lane_segments_in_rect(points, rect):
+		var segment: Dictionary = segment_variant
+		total_length += float(segment.get("length", 0.0))
+	return total_length
+
+func _collect_clipped_lane_segments_in_rect(points: Array, rect: Rect2) -> Array[Dictionary]:
+	var clipped_segments: Array[Dictionary] = []
+	if points.size() <= 1:
+		return clipped_segments
+	for point_index in range(points.size() - 1):
+		var a3: Vector3 = points[point_index]
+		var b3: Vector3 = points[point_index + 1]
+		var clipped_segment := _clip_segment_to_rect(Vector2(a3.x, a3.z), Vector2(b3.x, b3.z), rect)
+		if clipped_segment.size() != 2:
+			continue
+		var start: Vector2 = clipped_segment[0]
+		var finish: Vector2 = clipped_segment[1]
+		var length := start.distance_to(finish)
+		if length <= 0.001:
+			continue
+		clipped_segments.append({
+			"start": start,
+			"finish": finish,
+			"length": length,
+		})
+	return clipped_segments
+
+func _clip_segment_to_rect(start: Vector2, finish: Vector2, rect: Rect2) -> Array[Vector2]:
+	var delta := finish - start
+	var t0 := 0.0
+	var t1 := 1.0
+	var edge_tests := [
+		{"p": -delta.x, "q": start.x - rect.position.x},
+		{"p": delta.x, "q": rect.end.x - start.x},
+		{"p": -delta.y, "q": start.y - rect.position.y},
+		{"p": delta.y, "q": rect.end.y - start.y},
+	]
+	for edge_test_variant in edge_tests:
+		var edge_test: Dictionary = edge_test_variant
+		var p := float(edge_test.get("p", 0.0))
+		var q := float(edge_test.get("q", 0.0))
+		if is_zero_approx(p):
+			if q < 0.0:
+				return []
+			continue
+		var ratio := q / p
+		if p < 0.0:
+			if ratio > t1:
+				return []
+			t0 = maxf(t0, ratio)
+		else:
+			if ratio < t0:
+				return []
+			t1 = minf(t1, ratio)
+	if t1 < t0:
+		return []
+	return [
+		start + delta * t0,
+		start + delta * t1,
+	]

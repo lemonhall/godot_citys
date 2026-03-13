@@ -51,6 +51,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(setup_profile.get("ground_collision_usec", 0)) > 0, "Chunk setup profile must expose ground collision build cost"):
 		return
+	if not T.require_true(self, int(setup_profile.get("ground_collision_face_count", 0)) > 0, "Chunk setup profile must expose cached terrain collision face counts"):
+		return
 	if not T.require_true(self, int(setup_profile.get("ground_material_usec", 0)) > 0, "Chunk setup profile must expose ground material build cost"):
 		return
 	if not T.require_true(self, int(setup_profile.get("ground_mask_textures_usec", 0)) > 0, "Chunk setup profile must expose road mask texture build cost"):

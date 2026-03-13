@@ -11,8 +11,8 @@ const FIRST_VISIT_TARGET_POSITION := Vector3(2048.0, 0.0, 768.0)
 const WARM_STEP_DISTANCE_M := 16.0
 const FIRST_VISIT_STEP_DISTANCE_M := 24.0
 const PROFILE_STEP_COUNT := 48
-const M9_WARM_TIER1_MIN := 540
-const M9_FIRST_VISIT_TIER1_MIN := 600
+const M10_WARM_TIER1_MIN := 300
+const M10_FIRST_VISIT_TIER1_MIN := 300
 
 func _init() -> void:
 	call_deferred("_run")
@@ -22,7 +22,7 @@ func _run() -> void:
 	if warm_snapshot.is_empty():
 		return
 	print("CITY_PEDESTRIAN_DENSITY_WARM %s" % JSON.stringify(warm_snapshot))
-	if not T.require_true(self, int(warm_snapshot.get("tier1_count", 0)) >= M9_WARM_TIER1_MIN, "M9 warm traversal must raise tier1_count to at least %d and make the city feel populated" % M9_WARM_TIER1_MIN):
+	if not T.require_true(self, int(warm_snapshot.get("tier1_count", 0)) >= M10_WARM_TIER1_MIN, "M10 warm traversal must raise tier1_count to at least %d under the vehicle-aware world contract" % M10_WARM_TIER1_MIN):
 		return
 	if not T.require_true(self, int(warm_snapshot.get("duplicate_page_load_count", 0)) == 0, "M9 warm traversal must not introduce duplicate page loads while density scales up"):
 		return
@@ -31,7 +31,7 @@ func _run() -> void:
 	if first_visit_snapshot.is_empty():
 		return
 	print("CITY_PEDESTRIAN_DENSITY_FIRST_VISIT %s" % JSON.stringify(first_visit_snapshot))
-	if not T.require_true(self, int(first_visit_snapshot.get("tier1_count", 0)) >= M9_FIRST_VISIT_TIER1_MIN, "M9 first-visit traversal must raise tier1_count to at least %d and keep first-entered districts alive" % M9_FIRST_VISIT_TIER1_MIN):
+	if not T.require_true(self, int(first_visit_snapshot.get("tier1_count", 0)) >= M10_FIRST_VISIT_TIER1_MIN, "M10 first-visit traversal must raise tier1_count to at least %d under the vehicle-aware world contract" % M10_FIRST_VISIT_TIER1_MIN):
 		return
 	if not T.require_true(self, int(first_visit_snapshot.get("duplicate_page_load_count", 0)) == 0, "M9 first-visit traversal must not introduce duplicate page loads while density scales up"):
 		return

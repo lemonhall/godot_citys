@@ -11,7 +11,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(warm_profile.get("wall_frame_avg_usec", 0)) <= 16667, "Pedestrian warm traversal must keep average wall-frame time at or below the 16.67ms redline"):
 		return
-	if not T.require_true(self, int(warm_profile.get("ped_tier1_count", 0)) >= 160, "Pedestrian warm traversal must keep ped_tier1_count at or above the current M10 verified density plateau"):
+	if not T.require_true(self, int(warm_profile.get("ped_tier1_count", 0)) >= 240, "Pedestrian warm traversal must keep ped_tier1_count at or above the M10 vehicle-aware warm runtime target"):
 		return
 
 	var first_visit_profile := await _run_profile("CITY_PEDESTRIAN_FIRST_VISIT", false, Vector3(2048.0, 0.0, 768.0), 24.0)
@@ -19,7 +19,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(first_visit_profile.get("wall_frame_avg_usec", 0)) <= 16667, "Pedestrian first-visit traversal must keep average wall-frame time at or below the 16.67ms redline"):
 		return
-	if not T.require_true(self, int(first_visit_profile.get("ped_tier1_count", 0)) >= 180, "Pedestrian first-visit traversal must keep ped_tier1_count at or above the current M10 verified density plateau"):
+	if not T.require_true(self, int(first_visit_profile.get("ped_tier1_count", 0)) >= 280, "Pedestrian first-visit traversal must keep ped_tier1_count at or above the M10 vehicle-aware first-visit runtime target"):
 		return
 
 	T.pass_and_quit(self)

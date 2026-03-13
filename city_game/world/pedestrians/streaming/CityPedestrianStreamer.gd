@@ -24,6 +24,8 @@ var _page_generation_count := 0
 var _duplicate_page_load_count := 0
 var _page_eviction_count := 0
 var _ground_contexts_by_chunk_id: Dictionary = {}
+var _active_state_refs: Array[CityPedestrianState] = []
+var _active_state_refs_dirty := true
 
 func setup(config, world_data: Dictionary, budget_contract: Dictionary) -> void:
 	_config = config
@@ -43,18 +45,26 @@ func setup(config, world_data: Dictionary, budget_contract: Dictionary) -> void:
 	_duplicate_page_load_count = 0
 	_page_eviction_count = 0
 	_ground_contexts_by_chunk_id.clear()
+	_active_state_refs.clear()
+	_active_state_refs_dirty = true
 
 func sync_active_chunks(active_chunk_entries: Array) -> Dictionary:
 	_tick += 1
 	var active_chunk_ids: Array[String] = []
+	var active_chunk_id_set: Dictionary = {}
+	var active_state_refs_changed := false
 	for entry_variant in active_chunk_entries:
 		var entry: Dictionary = entry_variant
 		var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)
 		var chunk_id := str(entry.get("chunk_id", ""))
 		active_chunk_ids.append(chunk_id)
+		active_chunk_id_set[chunk_id] = true
+		var page_existed := _pages_by_chunk_id.has(chunk_id)
 		var page := _ensure_page(chunk_key, chunk_id)
 		if not bool(page.get("active", false)) and int(page.get("visit_count", 0)) > 0:
 			_page_cache_hit_count += 1
+		if not page_existed or not bool(page.get("active", false)):
+			active_state_refs_changed = true
 		page["active"] = true
 		page["last_active_tick"] = _tick
 		page["visit_count"] = int(page.get("visit_count", 0)) + 1
@@ -62,13 +72,20 @@ func sync_active_chunks(active_chunk_entries: Array) -> Dictionary:
 
 	for chunk_id_variant in _pages_by_chunk_id.keys():
 		var chunk_id := str(chunk_id_variant)
-		if active_chunk_ids.has(chunk_id):
+		if active_chunk_id_set.has(chunk_id):
 			continue
 		var page: Dictionary = _pages_by_chunk_id[chunk_id]
+		if bool(page.get("active", false)):
+			active_state_refs_changed = true
 		page["active"] = false
 		_pages_by_chunk_id[chunk_id] = page
 
+	var page_evictions_before := _page_eviction_count
 	_prune_inactive_pages()
+	if _page_eviction_count != page_evictions_before:
+		active_state_refs_changed = true
+	if active_state_refs_changed:
+		_rebuild_active_state_refs()
 	_prune_ground_contexts()
 	return {
 		"active_chunk_ids": active_chunk_ids,
@@ -77,17 +94,9 @@ func sync_active_chunks(active_chunk_entries: Array) -> Dictionary:
 	}
 
 func get_active_states() -> Array:
-	var active_states: Array = []
-	for chunk_id_variant in _pages_by_chunk_id.keys():
-		var page: Dictionary = _pages_by_chunk_id[chunk_id_variant]
-		if not bool(page.get("active", false)):
-			continue
-		for pedestrian_id_variant in page.get("state_ids", []):
-			var pedestrian_id := str(pedestrian_id_variant)
-			var state: CityPedestrianState = _states_by_id.get(pedestrian_id)
-			if state != null and state.is_alive():
-				active_states.append(state)
-	return active_states
+	if _active_state_refs_dirty:
+		_rebuild_active_state_refs()
+	return _active_state_refs
 
 func get_state(pedestrian_id: String) -> CityPedestrianState:
 	return _states_by_id.get(pedestrian_id)
@@ -133,9 +142,12 @@ func get_runtime_snapshot() -> Dictionary:
 		"page_build_counts": _page_build_counts.duplicate(true),
 	}
 
+func invalidate_active_state_cache() -> void:
+	_active_state_refs_dirty = true
+
 func _ensure_page(chunk_key: Vector2i, chunk_id: String) -> Dictionary:
 	if _pages_by_chunk_id.has(chunk_id):
-		return (_pages_by_chunk_id[chunk_id] as Dictionary).duplicate(true)
+		return _pages_by_chunk_id[chunk_id]
 
 	var chunk_query: Dictionary = _pedestrian_query.get_pedestrian_query_for_chunk(chunk_key)
 	var page_id := str(chunk_query.get("lane_page_id", "ped_page_%s" % chunk_id))
@@ -162,7 +174,7 @@ func _ensure_page(chunk_key: Vector2i, chunk_id: String) -> Dictionary:
 		"last_active_tick": -1,
 	}
 	_pages_by_chunk_id[chunk_id] = page
-	return page.duplicate(true)
+	return page
 
 func _build_state(chunk_id: String, page_id: String, spawn_slot: Dictionary) -> CityPedestrianState:
 	var descriptor: Dictionary = _archetype_catalog.build_descriptor(spawn_slot)
@@ -223,6 +235,19 @@ func _evict_page(chunk_id: String) -> void:
 	_pages_by_chunk_id.erase(chunk_id)
 	_ground_contexts_by_chunk_id.erase(chunk_id)
 	_page_eviction_count += 1
+
+func _rebuild_active_state_refs() -> void:
+	_active_state_refs.clear()
+	for chunk_id_variant in _pages_by_chunk_id.keys():
+		var page: Dictionary = _pages_by_chunk_id[chunk_id_variant]
+		if not bool(page.get("active", false)):
+			continue
+		for pedestrian_id_variant in page.get("state_ids", []):
+			var pedestrian_id := str(pedestrian_id_variant)
+			var state: CityPedestrianState = _states_by_id.get(pedestrian_id)
+			if state != null and state.is_alive():
+				_active_state_refs.append(state)
+	_active_state_refs_dirty = false
 
 func _count_active_pages() -> int:
 	var count := 0

@@ -57,6 +57,7 @@ func build_profiled_terrain_arrays_from_binding(chunk_size_m: float, grid_steps:
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_INDEX] = indices
+	var collision_faces := _build_collision_faces(vertices, indices)
 	var sample_stats: Dictionary = (sample_binding.get("sample_stats", {}) as Dictionary).duplicate(true)
 	if sample_stats.is_empty():
 		sample_stats = {
@@ -72,6 +73,8 @@ func build_profiled_terrain_arrays_from_binding(chunk_size_m: float, grid_steps:
 
 	return {
 		"arrays": arrays,
+		"collision_faces": collision_faces,
+		"collision_face_count": int(collision_faces.size() / 3),
 		"sample_stats": sample_stats,
 		"page_contract": (sample_binding.get("page_contract", {}) as Dictionary).duplicate(true),
 		"runtime_hit": bool(sample_binding.get("runtime_hit", false)),
@@ -82,6 +85,18 @@ func commit_terrain_mesh(arrays_result: Dictionary) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays_result.get("arrays", []))
 	return mesh
+
+func _build_collision_faces(vertices: PackedVector3Array, indices: PackedInt32Array) -> PackedVector3Array:
+	var faces := PackedVector3Array()
+	if vertices.is_empty():
+		return faces
+	if indices.is_empty():
+		faces = vertices
+		return faces
+	faces.resize(indices.size())
+	for index_position in range(indices.size()):
+		faces[index_position] = vertices[indices[index_position]]
+	return faces
 
 func _downsample_sample_binding(source_binding: Dictionary, source_grid_steps: int, target_grid_steps: int) -> Dictionary:
 	var source_heights: PackedFloat32Array = source_binding.get("heights", PackedFloat32Array())

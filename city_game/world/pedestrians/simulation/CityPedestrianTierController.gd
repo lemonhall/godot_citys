@@ -126,6 +126,7 @@ func resolve_projectile_hit(start_position: Vector3, end_position: Vector3, dama
 		return {}
 	var hit_state: CityPedestrianState = best_hit.get("state")
 	hit_state.mark_dead("projectile", best_hit.get("hit_position", end_position))
+	_pedestrian_streamer.invalidate_active_state_cache()
 	var death_event := _build_death_event_for_state(hit_state, best_hit.get("hit_position", end_position))
 	_reaction_model.notify_casualty_event(
 		best_hit.get("hit_position", end_position),
@@ -184,6 +185,8 @@ func resolve_explosion_impact(world_position: Vector3, lethal_radius_m: float, t
 			state.mark_dead("explosion", world_position)
 			killed_ids.append(state.pedestrian_id)
 			death_events.append(_build_death_event_for_state(state, world_position))
+	if not killed_ids.is_empty():
+		_pedestrian_streamer.invalidate_active_state_cache()
 	_reaction_model.notify_explosion_event(world_position, lethal_radius_m, resolved_threat_radius_m)
 	_reaction_model.notify_casualty_event(
 		world_position,

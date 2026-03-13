@@ -129,9 +129,14 @@ func get_terrain_lod_contract() -> Dictionary:
 	}
 
 func get_terrain_lod_debug_stats() -> Dictionary:
+	var built_mesh_modes: Array[String] = []
+	for lod_mode in _terrain_mesh_results_by_lod.keys():
+		built_mesh_modes.append(str(lod_mode))
+	built_mesh_modes.sort()
 	return {
 		"mesh_apply_count": _terrain_mesh_apply_count,
 		"collision_apply_count": _terrain_collision_apply_count,
+		"built_mesh_modes": built_mesh_modes,
 	}
 
 func get_visual_variant_id() -> String:
@@ -710,7 +715,6 @@ func _build_terrain_mesh(chunk_size_m: float) -> Dictionary:
 			var terrain_result: Dictionary = (terrain_lod_results[lod_mode] as Dictionary).duplicate(true)
 			terrain_result["mesh"] = terrain_mesh_builder.commit_terrain_mesh(terrain_result)
 			_terrain_mesh_results_by_lod[str(lod_mode)] = terrain_result
-	_ensure_all_terrain_lod_mesh_results()
 	var terrain_build_result: Dictionary = _terrain_mesh_results_by_lod.get(_current_lod_mode, _terrain_mesh_results_by_lod.get(LOD_NEAR, {}))
 	var sample_stats: Dictionary = terrain_build_result.get("sample_stats", {})
 	_terrain_page_contract = (terrain_build_result.get("page_contract", {}) as Dictionary).duplicate(true)

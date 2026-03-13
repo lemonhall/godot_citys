@@ -586,6 +586,10 @@ func _process_streaming_queues() -> void:
 	_collect_completed_surface_jobs()
 	_dispatch_queued_surface_jobs()
 	_process_mount_budget()
+	if _last_mount_count > 0:
+		_last_prepare_count = 0
+		_last_prepare_usec = 0
+		return
 	_process_prepare_budget()
 
 func _process_streaming_queues_once_per_frame() -> void:

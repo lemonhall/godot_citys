@@ -1,5 +1,7 @@
 extends MultiMeshInstance3D
 
+var _cached_instance_transforms: Array = []
+
 func _init() -> void:
 	name = "PedestrianBatch"
 	var mesh := BoxMesh.new()
@@ -16,12 +18,24 @@ func _init() -> void:
 func configure_from_states(states: Array, chunk_center: Vector3) -> int:
 	if multimesh == null:
 		return 0
-	multimesh.instance_count = states.size()
+	var instance_count_changed := multimesh.instance_count != states.size()
+	if instance_count_changed:
+		multimesh.instance_count = states.size()
+	var previous_cache_size := _cached_instance_transforms.size()
+	if previous_cache_size < states.size():
+		_cached_instance_transforms.resize(states.size())
 	var transform_write_count := 0
 	for state_index in range(states.size()):
 		var state = states[state_index]
-		multimesh.set_instance_transform(state_index, _build_instance_transform(state, chunk_center))
-		transform_write_count += 1
+		var instance_transform := _build_instance_transform(state, chunk_center)
+		var cached_transform = _cached_instance_transforms[state_index]
+		var requires_write := instance_count_changed or state_index >= previous_cache_size or not _transforms_equal(cached_transform, instance_transform)
+		if requires_write:
+			multimesh.set_instance_transform(state_index, instance_transform)
+			_cached_instance_transforms[state_index] = instance_transform
+			transform_write_count += 1
+	if _cached_instance_transforms.size() > states.size():
+		_cached_instance_transforms.resize(states.size())
 	set_meta("pedestrian_tier1_count", states.size())
 	set_meta("pedestrian_tier1_transform_write_count", transform_write_count)
 	return transform_write_count
@@ -62,3 +76,13 @@ func _state_height_m(state) -> float:
 	if state is Dictionary:
 		return float((state as Dictionary).get("height_m", 1.75))
 	return float(state.height_m) if state != null else 1.75
+
+func _transforms_equal(lhs, rhs) -> bool:
+	if not lhs is Transform3D or not rhs is Transform3D:
+		return false
+	var left: Transform3D = lhs
+	var right: Transform3D = rhs
+	return left.origin.is_equal_approx(right.origin) \
+		and left.basis.x.is_equal_approx(right.basis.x) \
+		and left.basis.y.is_equal_approx(right.basis.y) \
+		and left.basis.z.is_equal_approx(right.basis.z)

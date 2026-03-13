@@ -216,21 +216,25 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	var remaining_tier2_budget: int = maxi(nearfield_budget - tier3_ids.size(), 0)
 	remaining_tier2_budget = mini(remaining_tier2_budget, tier2_budget)
 	var snapshot_rebuild_started_usec := Time.get_ticks_usec()
-	_chunk_render_snapshots.clear()
+	var next_chunk_render_snapshots: Dictionary = {}
 	_tier1_state_refs.clear()
 	_tier2_state_refs.clear()
 	_tier3_state_refs.clear()
 	for chunk_id in active_chunk_ids:
-		_chunk_render_snapshots[chunk_id] = _make_empty_chunk_render_snapshot(chunk_id)
+		var chunk_snapshot: Dictionary = _chunk_render_snapshots.get(chunk_id, _make_empty_chunk_render_snapshot(chunk_id))
+		_reset_chunk_render_snapshot(chunk_snapshot, chunk_id)
+		next_chunk_render_snapshots[chunk_id] = chunk_snapshot
 
 	for state_variant in distance_ranked_states:
 		var state: CityPedestrianState = state_variant
 		if state == null:
 			continue
 		var pedestrian_id := state.pedestrian_id
-		if not _chunk_render_snapshots.has(state.chunk_id):
-			_chunk_render_snapshots[state.chunk_id] = _make_empty_chunk_render_snapshot(state.chunk_id)
-		var chunk_snapshot: Dictionary = _chunk_render_snapshots[state.chunk_id]
+		if not next_chunk_render_snapshots.has(state.chunk_id):
+			var dynamic_chunk_snapshot: Dictionary = _chunk_render_snapshots.get(state.chunk_id, _make_empty_chunk_render_snapshot(state.chunk_id))
+			_reset_chunk_render_snapshot(dynamic_chunk_snapshot, state.chunk_id)
+			next_chunk_render_snapshots[state.chunk_id] = dynamic_chunk_snapshot
+		var chunk_snapshot: Dictionary = next_chunk_render_snapshots[state.chunk_id]
 		var distance_sq := player_position.distance_squared_to(state.world_position)
 		if tier3_ids.has(pedestrian_id):
 			state.set_tier(CityPedestrianState.TIER_3)
@@ -262,7 +266,8 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			state.set_tier(CityPedestrianState.TIER_0)
 			tier0_count += 1
 			chunk_snapshot["tier0_count"] = int(chunk_snapshot.get("tier0_count", 0)) + 1
-		_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
+		next_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
+	_chunk_render_snapshots = next_chunk_render_snapshots
 	var crowd_snapshot_rebuild_usec := _duration_or_zero(snapshot_rebuild_started_usec, active_states.size())
 
 	var runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_snapshot()
@@ -426,6 +431,16 @@ func _make_empty_chunk_render_snapshot(chunk_id: String) -> Dictionary:
 		"tier2_states": [],
 		"tier3_states": [],
 	}
+
+func _reset_chunk_render_snapshot(snapshot: Dictionary, chunk_id: String) -> void:
+	snapshot["chunk_id"] = chunk_id
+	snapshot["tier0_count"] = 0
+	snapshot["tier1_count"] = 0
+	snapshot["tier2_count"] = 0
+	snapshot["tier3_count"] = 0
+	snapshot["tier1_states"] = []
+	snapshot["tier2_states"] = []
+	snapshot["tier3_states"] = []
 
 func _rank_reactive_candidates(reactive_candidates: Array) -> Array[Dictionary]:
 	var ranked: Array[Dictionary] = []

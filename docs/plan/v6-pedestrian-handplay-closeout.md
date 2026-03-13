@@ -60,7 +60,7 @@
   - `tests/world/test_city_pedestrian_density_order_of_magnitude.gd` `FAIL`，warm `tier1_count = 54`
   - `tests/e2e/test_city_pedestrian_performance_profile.gd` `PASS`，warm `wall_frame_avg_usec = 12989`
   - `tests/e2e/test_city_runtime_performance_profile.gd` `PASS`，warm `wall_frame_avg_usec = 15699`
-- 结论：`M9` 不再是当前的主执行面。它保留“手玩功能链曾经成立”的历史证据，但“高密度 + 红线 + hand-play fidelity 同配置同时成立”的最终收口，已经通过 `ECN-0013` 升级为 `M10`（runtime 恢复）和 `M11`（新 runtime 上的近景 fidelity 重回归）。
+- 结论：`M9` 不再是当前的主执行面。它保留“手玩功能链曾经成立”的历史证据，但“高密度 + 红线 + hand-play fidelity 同配置同时成立”的最终收口，现已经由 `ECN-0013` 与 `ECN-0017` 重排为 `M10`（runtime 恢复）、`M11`（full-stack layered runtime）和 `M12`（layered runtime 上的近景 fidelity 重回归）。
 
 ## Files
 

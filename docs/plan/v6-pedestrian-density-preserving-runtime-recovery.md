@@ -25,7 +25,7 @@
 
 不做什么：
 
-- 不在本计划里解决近景真实模型、death visual、inspection、violent reaction 的最终重回归，它们在 `M11`
+- 不在本计划里解决近景真实模型、death visual、inspection、violent reaction 的最终重回归，它们在 `M12`
 - 不靠继续提高 `Tier2 / Tier3` 上限来堆人口
 - 不新增与性能恢复无关的大功能面
 - 不通过保留 profiling 专用低密度配置来伪造过线

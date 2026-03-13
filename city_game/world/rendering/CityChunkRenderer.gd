@@ -863,14 +863,18 @@ func _update_pedestrian_crowd(player_position: Vector3, delta: float) -> void:
 	_crowd_snapshot_rebuild_last_usec = int(crowd_profile_stats.get("crowd_snapshot_rebuild_usec", 0))
 	var render_commit_started_usec := Time.get_ticks_usec()
 	var tier1_transform_writes := 0
+	var applied_chunk_count := 0
 	for chunk_id in get_chunk_ids():
 		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
 		if chunk_scene.has_method("apply_pedestrian_chunk_snapshot"):
 			var chunk_snapshot: Dictionary = _pedestrian_tier_controller.get_chunk_snapshot_ref(chunk_id) if _pedestrian_tier_controller.has_method("get_chunk_snapshot_ref") else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id)
-			tier1_transform_writes += int(chunk_scene.apply_pedestrian_chunk_snapshot(chunk_snapshot))
+			if bool(chunk_snapshot.get("dirty", true)):
+				tier1_transform_writes += int(chunk_scene.apply_pedestrian_chunk_snapshot(chunk_snapshot))
+				chunk_snapshot["dirty"] = false
+				applied_chunk_count += 1
 		if chunk_scene.has_method("set_pedestrian_visibility"):
 			chunk_scene.set_pedestrian_visibility(_pedestrian_visibility_enabled)
-	_crowd_chunk_commit_last_usec = maxi(int(Time.get_ticks_usec() - render_commit_started_usec), 1)
+	_crowd_chunk_commit_last_usec = int(Time.get_ticks_usec() - render_commit_started_usec) if applied_chunk_count > 0 else 0
 	_crowd_tier1_transform_writes = tier1_transform_writes
 	_record_crowd_render_commit_sample(_crowd_chunk_commit_last_usec)
 

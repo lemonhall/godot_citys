@@ -213,6 +213,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 				continue
 			state.step(step_delta)
 			_pedestrian_streamer.ground_state(state)
+			_mark_chunk_render_dirty(state.chunk_id)
 		crowd_step_usec = _duration_or_zero(step_started_usec, active_states.size())
 
 	_assignment_rebuild_elapsed_sec += maxf(delta, 0.0)
@@ -371,6 +372,7 @@ func get_chunk_snapshot(chunk_id: String) -> Dictionary:
 	if not _chunk_render_snapshots.has(chunk_id):
 		return {
 			"chunk_id": chunk_id,
+			"dirty": false,
 			"tier0_count": 0,
 			"tier1_count": 0,
 			"tier2_count": 0,
@@ -385,6 +387,7 @@ func get_chunk_snapshot_ref(chunk_id: String) -> Dictionary:
 	if not _chunk_render_snapshots.has(chunk_id):
 		return {
 			"chunk_id": chunk_id,
+			"dirty": false,
 			"tier0_count": 0,
 			"tier1_count": 0,
 			"tier2_count": 0,
@@ -448,6 +451,13 @@ func _duration_or_zero(started_usec: int, item_count: int) -> int:
 
 func _mark_assignment_rebuild_required() -> void:
 	_force_assignment_rebuild = true
+
+func _mark_chunk_render_dirty(chunk_id: String) -> void:
+	if chunk_id == "" or not _chunk_render_snapshots.has(chunk_id):
+		return
+	var snapshot: Dictionary = _chunk_render_snapshots[chunk_id]
+	snapshot["dirty"] = true
+	_chunk_render_snapshots[chunk_id] = snapshot
 
 func _should_rebuild_assignments(active_chunk_ids: Array[String], player_position: Vector3, player_velocity: Vector3) -> bool:
 	if not _has_assignment_cache:
@@ -531,6 +541,7 @@ func _build_full_state_snapshots(states: Array[CityPedestrianState]) -> Array[Di
 func _make_empty_chunk_render_snapshot(chunk_id: String) -> Dictionary:
 	return {
 		"chunk_id": chunk_id,
+		"dirty": true,
 		"tier0_count": 0,
 		"tier1_count": 0,
 		"tier2_count": 0,
@@ -542,6 +553,7 @@ func _make_empty_chunk_render_snapshot(chunk_id: String) -> Dictionary:
 
 func _reset_chunk_render_snapshot(snapshot: Dictionary, chunk_id: String) -> void:
 	snapshot["chunk_id"] = chunk_id
+	snapshot["dirty"] = true
 	snapshot["tier0_count"] = 0
 	snapshot["tier1_count"] = 0
 	snapshot["tier2_count"] = 0

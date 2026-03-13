@@ -10,10 +10,10 @@ const DEFAULT_DISTRICT_CLASS_DENSITY := {
 
 const DEFAULT_ROAD_CLASS_DENSITY := {
 	"expressway_elevated": 0.0,
-	"arterial": 0.45,
-	"secondary": 0.32,
-	"collector": 0.20,
-	"local": 0.12,
+	"arterial": 0.55,
+	"secondary": 0.40,
+	"collector": 0.26,
+	"local": 0.16,
 }
 
 const DEFAULT_DISTRICT_CLASS_ARCHETYPE_WEIGHTS := {
@@ -60,7 +60,7 @@ var district_class_density: Dictionary = DEFAULT_DISTRICT_CLASS_DENSITY.duplicat
 var road_class_density: Dictionary = DEFAULT_ROAD_CLASS_DENSITY.duplicate(true)
 var district_class_archetype_weights: Dictionary = DEFAULT_DISTRICT_CLASS_ARCHETYPE_WEIGHTS.duplicate(true)
 var default_archetype_weights: Dictionary = DEFAULT_ARCHETYPE_WEIGHTS.duplicate(true)
-var max_spawn_slots_per_chunk := 20
+var max_spawn_slots_per_chunk := 48
 
 func get_density_for_district_class(district_class: String) -> float:
 	return float(district_class_density.get(district_class, 0.0))
@@ -86,13 +86,19 @@ func resolve_density_bucket(density_scalar: float) -> String:
 
 func get_spawn_slots_for_edge(district_density: float, road_density: float) -> int:
 	var combined_density := clampf(district_density * road_density, 0.0, 1.0)
-	if combined_density <= 0.10:
+	if combined_density <= 0.03:
 		return 0
-	if combined_density <= 0.22:
+	if combined_density <= 0.07:
 		return 1
-	if combined_density <= 0.36:
+	if combined_density <= 0.12:
 		return 2
-	return 3
+	if combined_density <= 0.18:
+		return 3
+	if combined_density <= 0.26:
+		return 4
+	if combined_density <= 0.36:
+		return 5
+	return 6
 
 func get_max_spawn_slots_per_chunk() -> int:
 	return max_spawn_slots_per_chunk

@@ -10,7 +10,7 @@ const LETHAL_RADIUS_M := 4.0
 const THREAT_RADIUS_M := 12.0
 const PROJECTILE_WITNESS_RADIUS_M := 18.0
 const EXPLOSION_WITNESS_RADIUS_M := 20.0
-const CALM_MIN_DISTANCE_M := 520.0
+const CALM_MIN_DISTANCE_M := 420.0
 const SEARCH_POSITIONS := [
 	Vector3(-1280.0, 0.0, -1024.0),
 	Vector3(-2048.0, 0.0, 0.0),
@@ -39,7 +39,7 @@ func _init() -> void:
 func _run() -> void:
 	var projectile_runtime := _setup_runtime()
 	var projectile_cluster := _find_projectile_cluster(projectile_runtime)
-	if not T.require_true(self, not projectile_cluster.is_empty(), "Witness flee response test requires a projectile cluster with a victim, two nearby witnesses and a calm outsider beyond 520m"):
+	if not T.require_true(self, not projectile_cluster.is_empty(), "Witness flee response test requires a projectile cluster with a victim, two nearby witnesses and a calm outsider beyond 420m"):
 		return
 
 	var projectile_streamer: CityChunkStreamer = projectile_runtime.get("streamer")
@@ -85,14 +85,14 @@ func _run() -> void:
 		return
 	if not T.require_true(self, ["panic", "flee"].has(str(projectile_witness_b.get("reaction_state", ""))), "Projectile direct-hit casualty must push witness B into panic-or-flee state"):
 		return
-	if not T.require_true(self, not ["panic", "flee"].has(str(projectile_far.get("reaction_state", ""))), "Projectile witness response must keep pedestrians beyond 500m calm"):
+	if not T.require_true(self, not ["panic", "flee"].has(str(projectile_far.get("reaction_state", ""))), "Projectile witness response must keep pedestrians beyond 400m calm"):
 		return
 	if not T.require_true(self, int(projectile_snapshot.get("tier3_count", 0)) <= int(projectile_snapshot.get("tier3_budget", 24)), "Projectile witness response must stay within the Tier 3 hard cap"):
 		return
 
 	var explosion_runtime := _setup_runtime()
 	var explosion_cluster := _find_explosion_cluster(explosion_runtime)
-	if not T.require_true(self, not explosion_cluster.is_empty(), "Witness flee response test requires an explosion cluster with threat-ring, witness-ring and a calm outsider beyond 520m"):
+	if not T.require_true(self, not explosion_cluster.is_empty(), "Witness flee response test requires an explosion cluster with threat-ring, witness-ring and a calm outsider beyond 420m"):
 		return
 
 	var explosion_streamer: CityChunkStreamer = explosion_runtime.get("streamer")
@@ -125,7 +125,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, ["panic", "flee"].has(str(witness_snapshot.get("reaction_state", ""))), "Explosion witness-ring survivor must enter panic-or-flee state even outside the direct threat radius"):
 		return
-	if not T.require_true(self, not ["panic", "flee"].has(str(far_snapshot.get("reaction_state", ""))), "Explosion witness response must keep pedestrians beyond 500m calm"):
+	if not T.require_true(self, not ["panic", "flee"].has(str(far_snapshot.get("reaction_state", ""))), "Explosion witness response must keep pedestrians beyond 400m calm"):
 		return
 	if not T.require_true(self, int(explosion_snapshot.get("tier3_count", 0)) <= int(explosion_snapshot.get("tier3_budget", 24)), "Explosion witness response must stay within the Tier 3 hard cap"):
 		return

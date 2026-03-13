@@ -8,7 +8,7 @@ const CityPedestrianTierController := preload("res://city_game/world/pedestrians
 
 const LETHAL_RADIUS_M := 4.0
 const THREAT_RADIUS_M := 12.0
-const CALM_MIN_DISTANCE_M := 520.0
+const CALM_MIN_DISTANCE_M := 420.0
 const SEARCH_POSITIONS := [
 	Vector3(-1280.0, 0.0, -1024.0),
 	Vector3(-2048.0, 0.0, 0.0),
@@ -38,7 +38,7 @@ func _run() -> void:
 	var cluster_search := _find_explosion_cluster(chunk_streamer, controller)
 	var baseline_snapshot: Dictionary = cluster_search.get("snapshot", {})
 	var cluster: Dictionary = cluster_search.get("cluster", {})
-	if not T.require_true(self, not cluster.is_empty(), "Grenade kill-and-flee test requires a center victim, a threat-ring pedestrian and a calm outsider beyond 520m"):
+	if not T.require_true(self, not cluster.is_empty(), "Grenade kill-and-flee test requires a center victim, a threat-ring pedestrian and a calm outsider beyond 420m"):
 		return
 
 	var center_position: Vector3 = cluster.get("center_position", Vector3.ZERO)
@@ -70,7 +70,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(threat_snapshot.get("life_state", "alive")) == "alive", "Threat-radius survivors must stay alive instead of being incorrectly deleted"):
 		return
-	if not T.require_true(self, not ["panic", "flee"].has(str(far_snapshot.get("reaction_state", ""))), "Pedestrians beyond 500m must stay calm instead of joining a full-map panic cascade"):
+	if not T.require_true(self, not ["panic", "flee"].has(str(far_snapshot.get("reaction_state", ""))), "Pedestrians beyond 400m must stay calm instead of joining a full-map panic cascade"):
 		return
 	if not T.require_true(self, str(far_snapshot.get("life_state", "alive")) == "alive", "Pedestrians outside the threat radius must remain alive"):
 		return

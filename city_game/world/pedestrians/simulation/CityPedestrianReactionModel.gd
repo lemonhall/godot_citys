@@ -5,6 +5,8 @@ const REACTION_YIELD := "yield"
 const REACTION_SIDESTEP := "sidestep"
 const REACTION_PANIC := "panic"
 const REACTION_FLEE := "flee"
+const OUTER_RING_SAMPLE_BUCKETS := 10
+const FLEE_SPEED_MULTIPLIER := 4.0
 
 var _events: Array[Dictionary] = []
 var _player_position := Vector3.ZERO
@@ -131,27 +133,34 @@ func _build_command_for_state(state, budget_contract: Dictionary, player_speed_m
 						"source_position": event.get("origin", state.world_position),
 					}
 			"gunshot":
-				if state.world_position.distance_to(event.get("position", Vector3.ZERO)) <= float(budget_contract.get("gunshot_radius_m", 24.0)):
+				var gunshot_position: Vector3 = event.get("position", Vector3.ZERO)
+				if _passes_violent_witness_gate(
+					state,
+					gunshot_position,
+					float(budget_contract.get("gunshot_radius_m", 24.0)),
+					budget_contract
+				):
 					candidate = _build_escape_command(
 						state,
 						REACTION_PANIC,
 						72,
-						event.get("position", state.world_position),
-						1.8,
+						gunshot_position,
 						budget_contract
 					)
 			"explosion":
 				var explosion_center: Vector3 = event.get("position", Vector3.ZERO)
-				var explosion_radius := float(event.get("threat_radius_m", -1.0))
-				if explosion_radius < 0.0:
-					explosion_radius = float(event.get("radius_m", 0.0)) + float(budget_contract.get("explosion_reaction_radius_m", 18.0))
-				if state.world_position.distance_to(explosion_center) <= explosion_radius:
+				var explosion_outer_radius := float(event.get("threat_radius_m", -1.0))
+				if explosion_outer_radius < 0.0:
+					explosion_outer_radius = maxf(
+						float(event.get("radius_m", 0.0)),
+						float(budget_contract.get("explosion_reaction_radius_m", 18.0))
+					)
+				if _passes_violent_witness_gate(state, explosion_center, explosion_outer_radius, budget_contract):
 					candidate = _build_escape_command(
 						state,
 						REACTION_FLEE,
 						100,
 						explosion_center,
-						2.6,
 						budget_contract
 					)
 			"casualty":
@@ -159,13 +168,12 @@ func _build_command_for_state(state, budget_contract: Dictionary, player_speed_m
 				var casualty_radius := float(event.get("witness_radius_m", -1.0))
 				if casualty_radius < 0.0:
 					casualty_radius = float(budget_contract.get("casualty_witness_radius_m", 18.0))
-				if state.world_position.distance_to(casualty_center) <= casualty_radius:
+				if _passes_violent_witness_gate(state, casualty_center, casualty_radius, budget_contract):
 					candidate = _build_escape_command(
 						state,
 						REACTION_FLEE,
 						96,
 						casualty_center,
-						float(budget_contract.get("casualty_reaction_duration_sec", 2.8)),
 						budget_contract
 					)
 		if candidate.is_empty():
@@ -174,18 +182,48 @@ func _build_command_for_state(state, budget_contract: Dictionary, player_speed_m
 			best_command = candidate
 	return best_command
 
-func _build_escape_command(state, reaction_state: String, priority: int, source_position: Vector3, duration_sec: float, budget_contract: Dictionary) -> Dictionary:
+func _build_escape_command(state, reaction_state: String, priority: int, source_position: Vector3, budget_contract: Dictionary) -> Dictionary:
 	var anchor_position := _player_position if _has_player_context else source_position
 	var escape_direction := _resolve_escape_direction(state, anchor_position, source_position, budget_contract)
-	var flee_distance_m := float(budget_contract.get("flee_min_distance_m", 500.0))
+	var flee_duration_sec := _resolve_flee_duration_sec(state, budget_contract)
+	var flee_distance_m := maxf(state.speed_mps * FLEE_SPEED_MULTIPLIER * flee_duration_sec, 0.1)
 	return {
 		"reaction_state": reaction_state,
 		"priority": priority,
-		"duration_sec": duration_sec,
+		"duration_sec": flee_duration_sec,
+		"flee_duration_sec": flee_duration_sec,
 		"source_position": source_position,
 		"flee_anchor_position": anchor_position,
+		"flee_direction": escape_direction,
 		"flee_target_position": state.world_position + escape_direction * flee_distance_m,
 	}
+
+func _passes_violent_witness_gate(state, source_position: Vector3, outer_radius_m: float, budget_contract: Dictionary) -> bool:
+	var distance_m: float = state.world_position.distance_to(source_position)
+	var core_radius_m := float(budget_contract.get("violent_witness_core_radius_m", 200.0))
+	if distance_m <= core_radius_m:
+		return true
+	if distance_m > outer_radius_m:
+		return false
+	return _is_outer_ring_responder(state, budget_contract)
+
+func _is_outer_ring_responder(state, budget_contract: Dictionary) -> bool:
+	var outer_ratio := clampf(float(budget_contract.get("violent_witness_outer_response_ratio", 1.0)), 0.0, 1.0)
+	if outer_ratio <= 0.0:
+		return false
+	if outer_ratio >= 1.0:
+		return true
+	var response_threshold := clampi(
+		int(round(outer_ratio * float(OUTER_RING_SAMPLE_BUCKETS))),
+		0,
+		OUTER_RING_SAMPLE_BUCKETS
+	)
+	return posmod(int(state.seed_value), OUTER_RING_SAMPLE_BUCKETS) < response_threshold
+
+func _resolve_flee_duration_sec(state, budget_contract: Dictionary) -> float:
+	var min_duration_sec := maxi(int(round(float(budget_contract.get("flee_duration_min_sec", 20.0)))), 1)
+	var max_duration_sec := maxi(int(round(float(budget_contract.get("flee_duration_max_sec", float(min_duration_sec))))), min_duration_sec)
+	return float(min_duration_sec + posmod(int(state.seed_value), (max_duration_sec - min_duration_sec) + 1))
 
 func _resolve_escape_direction(state, anchor_position: Vector3, source_position: Vector3, budget_contract: Dictionary) -> Vector3:
 	var away_vector := Vector3(

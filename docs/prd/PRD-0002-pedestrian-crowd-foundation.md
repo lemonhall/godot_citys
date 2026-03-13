@@ -270,10 +270,14 @@
 
 **范围**：
 
-- player gunfire、direct-hit casualty、grenade / explosion 必须产生 `500m` audible / witness threat event，而不是只影响 direct victim 或 lethal ring
-- 位于 `500m` 半径内、且仍然存活的 pedestrian，即使没有被直接命中或处于 lethal radius 内，也必须能切换到 `panic` 或 `flee`
+- player gunfire、direct-hit casualty、grenade / explosion 必须产生 layered audible / witness threat event，而不是只影响 direct victim 或 lethal ring
+- violent witness response 改为分层半径：
+  - `0m - 200m` 内、仍然存活的 pedestrian 必须 `100%` 切换到 `panic` 或 `flee`
+  - `200m - 400m` 内、仍然存活的 pedestrian 只允许 `40%` 进入 `panic` 或 `flee`
+  - `> 400m` 的 pedestrian 必须保持 ambient
+- 外圈 `40%` witness 选择必须是 deterministic sampling；不得使用 run-to-run 不稳定的真正随机数
 - witness selection / promotion 必须继续服从 `nearfield` / Tier 3 预算约束，可通过事件优先级、lane corridor、chunk-local query 或等价机制选择最相关 witness；不得把半径内所有 pedestrian 升级为常驻高成本 agent
-- flee response 必须在真实运行期可见：进入 `panic / flee` 的 pedestrian 以至少 `4x base speed` 逃散，并且单次逃散位移必须 `>= 500m`
+- flee response 必须在真实运行期可见：进入 `panic / flee` 的 pedestrian 以至少 `4x base speed` 逃散，并以 simulation tick budget 持续 `20s - 35s`
 
 **非目标**：
 
@@ -283,10 +287,11 @@
 
 **验收口径**：
 
-- 自动化测试至少断言：automatic rifle 或等价连续枪击的 gunshot 声本身，就会让 `500m` 内、至少 `2` 名未被直接命中的存活 witness pedestrian 在 `0.5s` 内切换到 `panic` 或 `flee`。
-- 自动化测试至少断言：grenade / explosion 或 casualty 发生后，位于 `500m` witness radius 内的存活 pedestrian 会切换到 `panic` 或 `flee`，而不是只有直接受害者状态改变。
-- 自动化测试至少断言：进入 `panic / flee` 的 pedestrian 以至少 `4x base speed` 逃散，并且不会在跑满 `500m` 前提前停止。
-- 自动化测试至少断言：`>500m` 的 pedestrian 保持 ambient 行为，不发生全图级 panic。
+- 自动化测试至少断言：automatic rifle 或等价连续枪击的 gunshot 声本身，会让 `<= 200m` 的存活 witness 在 `0.5s` 内进入 `panic / flee`。
+- 自动化测试至少断言：位于 `200m - 400m` witness ring 的 pedestrian 中，仅有 deterministic `40%` 进入 `panic / flee`，其余保持 ambient。
+- 自动化测试至少断言：grenade / explosion 或 casualty 发生后，位于 `<= 200m` 的存活 witness 必然切换到 `panic / flee`；位于 `200m - 400m` 的 witness 只按 `40%` deterministic sampling 切换。
+- 自动化测试至少断言：进入 `panic / flee` 的 pedestrian 以至少 `4x base speed` 逃散，并且单次 flee 持续时间必须落在 `20s - 35s` 的 simulation tick budget 内。
+- 自动化测试至少断言：`>400m` 的 pedestrian 保持 ambient 行为，不发生全图级 panic。
 - 自动化测试至少断言：重复 gunfire / explosion 事件后，Tier 3 仍持续 `<= 24`，`nearfield` 总量仍持续受控，不出现 witness count leak。
 - 反作弊条款：不得通过“所有 pedestrian 一起全局切 flee”“只让 direct victim 或 lethal survivor 改状态”“把 witness 直接删掉”或“让 flee 用短倒计时提前结束”来宣称需求完成。
 

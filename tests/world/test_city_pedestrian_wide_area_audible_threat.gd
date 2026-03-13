@@ -6,10 +6,10 @@ const CityWorldGenerator := preload("res://city_game/world/generation/CityWorldG
 const CityChunkStreamer := preload("res://city_game/world/streaming/CityChunkStreamer.gd")
 const CityPedestrianTierController := preload("res://city_game/world/pedestrians/simulation/CityPedestrianTierController.gd")
 
-const REACTION_RADIUS_M := 500.0
-const REACTIVE_MIN_DISTANCE_M := 350.0
-const REACTIVE_MAX_DISTANCE_M := 480.0
-const CALM_MIN_DISTANCE_M := 520.0
+const CORE_RADIUS_M := 200.0
+const REACTIVE_MIN_DISTANCE_M := 220.0
+const REACTIVE_MAX_DISTANCE_M := 380.0
+const CALM_MIN_DISTANCE_M := 420.0
 const ORIGIN_CLEARANCE_M := 24.0
 const SEARCH_POSITIONS := [
 	Vector3(-1280.0, 0.0, -1024.0),
@@ -38,7 +38,7 @@ func _init() -> void:
 func _run() -> void:
 	var projectile_runtime := _setup_runtime()
 	var projectile_cluster := _find_distance_ring(projectile_runtime)
-	if not T.require_true(self, not projectile_cluster.is_empty(), "Wide-area audible threat test requires a gunshot witness between 350m and 480m plus a calm outsider beyond 520m"):
+	if not T.require_true(self, not projectile_cluster.is_empty(), "Wide-area audible threat test requires a gunshot witness between 220m and 380m plus a calm outsider beyond 420m"):
 		return
 
 	var projectile_streamer: CityChunkStreamer = projectile_runtime.get("streamer")
@@ -59,14 +59,14 @@ func _run() -> void:
 		"global_snapshot": projectile_controller.get_global_snapshot(),
 	}))
 
-	if not T.require_true(self, ["panic", "flee"].has(str(projectile_reactive.get("reaction_state", ""))), "Gunshot within 500m must push the far witness into panic-or-flee state even without a hit"):
+	if not T.require_true(self, ["panic", "flee"].has(str(projectile_reactive.get("reaction_state", ""))), "Gunshot inside the sampled 200m-400m ring must still push the selected witness into panic-or-flee state"):
 		return
-	if not T.require_true(self, not ["panic", "flee"].has(str(projectile_far.get("reaction_state", ""))), "Gunshot beyond 500m must keep outsiders calm"):
+	if not T.require_true(self, not ["panic", "flee"].has(str(projectile_far.get("reaction_state", ""))), "Gunshot beyond 400m must keep outsiders calm"):
 		return
 
 	var explosion_runtime := _setup_runtime()
 	var explosion_cluster := _find_distance_ring(explosion_runtime)
-	if not T.require_true(self, not explosion_cluster.is_empty(), "Wide-area audible threat test requires an explosion witness between 350m and 480m plus a calm outsider beyond 520m"):
+	if not T.require_true(self, not explosion_cluster.is_empty(), "Wide-area audible threat test requires an explosion witness between 220m and 380m plus a calm outsider beyond 420m"):
 		return
 
 	var explosion_streamer: CityChunkStreamer = explosion_runtime.get("streamer")
@@ -88,11 +88,11 @@ func _run() -> void:
 		"global_snapshot": explosion_controller.get_global_snapshot(),
 	}))
 
-	if not T.require_true(self, ["panic", "flee"].has(str(explosion_reactive.get("reaction_state", ""))), "Grenade explosion within 500m must push the far witness into panic-or-flee state even without a lethal kill"):
+	if not T.require_true(self, ["panic", "flee"].has(str(explosion_reactive.get("reaction_state", ""))), "Grenade explosion inside the sampled 200m-400m ring must push the selected witness into panic-or-flee state even without a lethal kill"):
 		return
 	if not T.require_true(self, str(explosion_reactive.get("life_state", "alive")) == "alive", "Wide-area explosion witness must stay alive; this test is about audio panic, not casualty"):
 		return
-	if not T.require_true(self, not ["panic", "flee"].has(str(explosion_far.get("reaction_state", ""))), "Grenade explosion beyond 500m must keep outsiders calm"):
+	if not T.require_true(self, not ["panic", "flee"].has(str(explosion_far.get("reaction_state", ""))), "Grenade explosion beyond 400m must keep outsiders calm"):
 		return
 
 	T.pass_and_quit(self)
@@ -129,7 +129,7 @@ func _pick_distance_ring(snapshot: Dictionary, origin_position: Vector3) -> Dict
 	for state_variant in states:
 		var state: Dictionary = state_variant
 		var distance_m := origin_position.distance_to(state.get("world_position", Vector3.ZERO))
-		if reactive_candidate.is_empty() and distance_m >= REACTIVE_MIN_DISTANCE_M and distance_m <= REACTIVE_MAX_DISTANCE_M:
+		if reactive_candidate.is_empty() and distance_m >= REACTIVE_MIN_DISTANCE_M and distance_m <= REACTIVE_MAX_DISTANCE_M and _is_expected_mid_ring_responder(state):
 			reactive_candidate = state
 		elif far_candidate.is_empty() and distance_m >= CALM_MIN_DISTANCE_M:
 			far_candidate = state
@@ -144,6 +144,9 @@ func _pick_distance_ring(snapshot: Dictionary, origin_position: Vector3) -> Dict
 		"far_id": str(far_candidate.get("pedestrian_id", "")),
 		"far_distance_m": origin_position.distance_to(far_candidate.get("world_position", Vector3.ZERO)),
 	}
+
+func _is_expected_mid_ring_responder(state: Dictionary) -> bool:
+	return posmod(int(state.get("seed", 0)), 10) < 4
 
 func _collect_states(snapshot: Dictionary) -> Array:
 	var states: Array = []

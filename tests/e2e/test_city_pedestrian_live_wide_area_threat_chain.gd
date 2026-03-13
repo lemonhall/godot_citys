@@ -2,10 +2,9 @@ extends SceneTree
 
 const T := preload("res://tests/_test_util.gd")
 
-const REACTION_RADIUS_M := 500.0
-const REACTIVE_MIN_DISTANCE_M := 350.0
-const REACTIVE_MAX_DISTANCE_M := 480.0
-const CALM_MIN_DISTANCE_M := 520.0
+const REACTIVE_MIN_DISTANCE_M := 220.0
+const REACTIVE_MAX_DISTANCE_M := 380.0
+const CALM_MIN_DISTANCE_M := 420.0
 const ORIGIN_CLEARANCE_M := 24.0
 const GRENADE_TARGET_OFFSET := Vector3(12.0, 0.0, 0.0)
 const SEARCH_POSITIONS := [
@@ -57,13 +56,13 @@ func _run() -> void:
 		return
 
 	var gunshot_cluster := await _find_distance_ring_in_world(world, player, Vector3.ZERO)
-	if not T.require_true(self, not gunshot_cluster.is_empty(), "Live wide-area threat chain needs a gunshot witness between 350m and 480m plus a calm outsider beyond 520m"):
+	if not T.require_true(self, not gunshot_cluster.is_empty(), "Live wide-area threat chain needs a sampled gunshot witness between 220m and 380m plus a calm outsider beyond 420m"):
 		return
 	var gunshot_result := await _run_live_gunshot_chain(world, player, gunshot_cluster)
 	print("CITY_PEDESTRIAN_LIVE_WIDE_GUNSHOT %s" % JSON.stringify(gunshot_result))
 
 	var grenade_cluster := await _find_distance_ring_in_world(world, player, GRENADE_TARGET_OFFSET)
-	if not T.require_true(self, not grenade_cluster.is_empty(), "Live wide-area threat chain needs a grenade witness between 350m and 480m plus a calm outsider beyond 520m"):
+	if not T.require_true(self, not grenade_cluster.is_empty(), "Live wide-area threat chain needs a sampled grenade witness between 220m and 380m plus a calm outsider beyond 420m"):
 		return
 	var grenade_result := await _run_live_grenade_chain(world, player, grenade_cluster)
 	print("CITY_PEDESTRIAN_LIVE_WIDE_GRENADE %s" % JSON.stringify(grenade_result))
@@ -229,7 +228,7 @@ func _pick_distance_ring(snapshot: Dictionary, player_position: Vector3, event_o
 		if not _is_calm_state(state):
 			continue
 		var distance_m := event_position.distance_to(state.get("world_position", Vector3.ZERO))
-		if reactive_candidate.is_empty() and distance_m >= REACTIVE_MIN_DISTANCE_M and distance_m <= REACTIVE_MAX_DISTANCE_M:
+		if reactive_candidate.is_empty() and distance_m >= REACTIVE_MIN_DISTANCE_M and distance_m <= REACTIVE_MAX_DISTANCE_M and _is_expected_mid_ring_responder(state):
 			reactive_candidate = state
 		elif far_candidate.is_empty() and distance_m >= CALM_MIN_DISTANCE_M:
 			far_candidate = state
@@ -269,6 +268,9 @@ func _nearest_distance_to_states(states: Array, world_position: Vector3) -> floa
 		var state: Dictionary = state_variant
 		best_distance = minf(best_distance, world_position.distance_to(state.get("world_position", Vector3.ZERO)))
 	return best_distance
+
+func _is_expected_mid_ring_responder(state: Dictionary) -> bool:
+	return posmod(int(state.get("seed", 0)), 10) < 4
 
 func _is_calm_state(state: Dictionary) -> bool:
 	return str(state.get("reaction_state", "none")) == "none" and str(state.get("life_state", "alive")) == "alive"

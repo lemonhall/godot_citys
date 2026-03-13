@@ -6,7 +6,7 @@ const GUNSHOT_RADIUS_M := 24.0
 const PLAYER_NEAR_RADIUS_M := 6.5
 const LETHAL_RADIUS_M := 4.0
 const AUDIBLE_GRENADE_RADIUS_M := 20.0
-const CALM_MIN_DISTANCE_M := 520.0
+const CALM_MIN_DISTANCE_M := 420.0
 const GRENADE_THROW_DISTANCE_M := 8.0
 const SEARCH_POSITIONS := [
 	Vector3(-1280.0, 1.1, -1024.0),
@@ -57,13 +57,13 @@ func _run() -> void:
 		return
 
 	var gunshot_cluster := await _find_gunshot_cluster_in_world(world, player)
-	if not T.require_true(self, not gunshot_cluster.is_empty(), "Live audible threat chain needs a real-player gunshot cluster with two nearby witnesses and a calm outsider beyond 520m"):
+	if not T.require_true(self, not gunshot_cluster.is_empty(), "Live audible threat chain needs a real-player gunshot cluster with two nearby witnesses and a calm outsider beyond 420m"):
 		return
 	var gunshot_result := await _run_live_gunshot_chain(world, player, gunshot_cluster)
 	print("CITY_PEDESTRIAN_LIVE_GUNSHOT_CHAIN %s" % JSON.stringify(gunshot_result))
 
 	var grenade_cluster := await _find_grenade_sound_cluster_in_world(world, player)
-	if not T.require_true(self, not grenade_cluster.is_empty(), "Live audible threat chain needs a non-lethal grenade witness cluster with a reactive witness and a calm outsider beyond 520m"):
+	if not T.require_true(self, not grenade_cluster.is_empty(), "Live audible threat chain needs a non-lethal grenade witness cluster with a reactive witness and a calm outsider beyond 420m"):
 		return
 	var grenade_result := await _run_live_grenade_sound_chain(world, player, grenade_cluster)
 	print("CITY_PEDESTRIAN_LIVE_GRENADE_SOUND_CHAIN %s" % JSON.stringify(grenade_result))

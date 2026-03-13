@@ -43,9 +43,12 @@ func _run() -> void:
 
 func _build_budget_contract() -> Dictionary:
 	return {
-		"gunshot_radius_m": 500.0,
+		"violent_witness_core_radius_m": 200.0,
+		"violent_witness_outer_response_ratio": 0.4,
+		"gunshot_radius_m": 400.0,
 		"projectile_reaction_radius_m": 4.5,
-		"flee_min_distance_m": 500.0,
+		"flee_duration_min_sec": 20.0,
+		"flee_duration_max_sec": 35.0,
 		"flee_scatter_angle_deg": 42.0,
 		"player_near_radius_m": 6.5,
 		"player_personal_space_m": 3.25,

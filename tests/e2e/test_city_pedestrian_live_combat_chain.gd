@@ -6,7 +6,7 @@ const LETHAL_RADIUS_M := 4.0
 const THREAT_RADIUS_M := 12.0
 const PROJECTILE_WITNESS_RADIUS_M := 18.0
 const EXPLOSION_WITNESS_RADIUS_M := 20.0
-const CALM_MIN_DISTANCE_M := 520.0
+const CALM_MIN_DISTANCE_M := 420.0
 const SEARCH_POSITIONS := [
 	Vector3(-1280.0, 1.1, -1024.0),
 	Vector3(-2048.0, 1.1, 0.0),
@@ -56,14 +56,14 @@ func _run() -> void:
 		return
 
 	var projectile_cluster := await _find_projectile_cluster_in_world(world, player)
-	if not T.require_true(self, not projectile_cluster.is_empty(), "Live combat chain needs a projectile cluster with two witnesses and one calm outsider beyond 520m"):
+	if not T.require_true(self, not projectile_cluster.is_empty(), "Live combat chain needs a projectile cluster with two witnesses and one calm outsider beyond 420m"):
 		return
 
 	var projectile_result := await _run_live_projectile_chain(world, player, projectile_cluster)
 	print("CITY_PEDESTRIAN_LIVE_PROJECTILE_CHAIN %s" % JSON.stringify(_summarize_projectile_result(projectile_result)))
 
 	var explosion_cluster := await _find_explosion_cluster_in_world(world, player)
-	if not T.require_true(self, not explosion_cluster.is_empty(), "Live combat chain needs an explosion cluster with threat-ring, witness-ring and a calm outsider beyond 520m"):
+	if not T.require_true(self, not explosion_cluster.is_empty(), "Live combat chain needs an explosion cluster with threat-ring, witness-ring and a calm outsider beyond 420m"):
 		return
 
 	var grenade_result := await _run_live_grenade_chain(world, player, explosion_cluster)

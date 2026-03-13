@@ -3,7 +3,7 @@ extends SceneTree
 const T := preload("res://tests/_test_util.gd")
 
 const PROJECTILE_WITNESS_RADIUS_M := 18.0
-const CALM_MIN_DISTANCE_M := 520.0
+const CALM_MIN_DISTANCE_M := 420.0
 const SEARCH_POSITIONS := [
 	Vector3(-2048.0, 1.1, 0.0),
 	Vector3(-2048.0, 1.1, -768.0),
@@ -71,7 +71,7 @@ func _run() -> void:
 
 		if step == 4:
 			var cluster := await _find_projectile_cluster_in_world(world, player)
-			if not T.require_true(self, not cluster.is_empty(), "Pedestrian travel flow requires a visible witness cluster with a calm outsider beyond 520m for mixed travel + combat validation"):
+			if not T.require_true(self, not cluster.is_empty(), "Pedestrian travel flow requires a visible witness cluster with a calm outsider beyond 420m for mixed travel + combat validation"):
 				return
 			var reactive_position: Vector3 = cluster.get("center_position", Vector3.ZERO) + Vector3(-4.0, 0.0, -4.0)
 			player.teleport_to_world_position(reactive_position)
@@ -110,7 +110,7 @@ func _run() -> void:
 				return
 			if not T.require_true(self, ["panic", "flee"].has(str(witness_b.get("reaction_state", ""))), "Travel flow projectile kill must push witness B into panic-or-flee state"):
 				return
-			if not T.require_true(self, not ["panic", "flee"].has(str(far_state.get("reaction_state", ""))), "Travel flow projectile kill must keep pedestrians beyond 500m out of the witness panic response"):
+			if not T.require_true(self, not ["panic", "flee"].has(str(far_state.get("reaction_state", ""))), "Travel flow projectile kill must keep pedestrians beyond 400m out of the witness panic response"):
 				return
 
 	if not T.require_true(self, seen_chunk_ids.size() >= 8, "Pedestrian travel flow must cross at least 8 unique chunks"):

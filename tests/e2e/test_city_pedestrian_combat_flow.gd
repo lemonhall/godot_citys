@@ -6,7 +6,7 @@ const LETHAL_RADIUS_M := 4.0
 const THREAT_RADIUS_M := 12.0
 const PROJECTILE_WITNESS_RADIUS_M := 18.0
 const EXPLOSION_WITNESS_RADIUS_M := 20.0
-const CALM_MIN_DISTANCE_M := 520.0
+const CALM_MIN_DISTANCE_M := 420.0
 const SEARCH_POSITIONS := [
 	Vector3(-1280.0, 1.1, -1024.0),
 	Vector3(-2048.0, 1.1, 0.0),
@@ -55,7 +55,7 @@ func _run() -> void:
 		return
 
 	var projectile_cluster := await _find_projectile_cluster_in_world(world, player)
-	if not T.require_true(self, not projectile_cluster.is_empty(), "Pedestrian combat flow requires a live projectile cluster with two nearby witnesses and a calm outsider beyond 520m"):
+	if not T.require_true(self, not projectile_cluster.is_empty(), "Pedestrian combat flow requires a live projectile cluster with two nearby witnesses and a calm outsider beyond 420m"):
 		return
 
 	var target_id := str(projectile_cluster.get("center_id", ""))
@@ -98,11 +98,11 @@ func _run() -> void:
 		return
 	if not T.require_true(self, ["panic", "flee"].has(str(projectile_witness_b.get("reaction_state", ""))), "Projectile combat flow must push witness B into panic-or-flee state after the direct-hit casualty"):
 		return
-	if not T.require_true(self, not ["panic", "flee"].has(str(projectile_far.get("reaction_state", ""))), "Projectile combat flow must keep pedestrians beyond 500m out of the witness panic response"):
+	if not T.require_true(self, not ["panic", "flee"].has(str(projectile_far.get("reaction_state", ""))), "Projectile combat flow must keep pedestrians beyond 400m out of the witness panic response"):
 		return
 
 	var cluster := await _find_explosion_cluster_in_world(world, player)
-	if not T.require_true(self, not cluster.is_empty(), "Pedestrian combat flow requires a follow-up explosion cluster with threat-ring, witness-ring and a calm outsider beyond 520m"):
+	if not T.require_true(self, not cluster.is_empty(), "Pedestrian combat flow requires a follow-up explosion cluster with threat-ring, witness-ring and a calm outsider beyond 420m"):
 		return
 
 	var center_position: Vector3 = cluster.get("center_position", Vector3.ZERO)
@@ -134,7 +134,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, ["panic", "flee"].has(str(witness_state.get("reaction_state", ""))), "Explosion combat flow must push witness-ring survivors into panic-or-flee state even outside the direct threat radius"):
 		return
-	if not T.require_true(self, not ["panic", "flee"].has(str(far_state.get("reaction_state", ""))), "Explosion combat flow must keep pedestrians beyond 500m out of the panic response"):
+	if not T.require_true(self, not ["panic", "flee"].has(str(far_state.get("reaction_state", ""))), "Explosion combat flow must keep pedestrians beyond 400m out of the panic response"):
 		return
 	if not T.require_true(self, int(final_snapshot.get("tier3_count", 0)) <= 24, "Pedestrian combat flow must keep Tier 3 agents within the hard cap of 24"):
 		return

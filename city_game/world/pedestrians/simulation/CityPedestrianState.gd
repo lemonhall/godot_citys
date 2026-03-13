@@ -6,6 +6,7 @@ const TIER_2 := "tier2"
 const TIER_3 := "tier3"
 const LIFE_ALIVE := "alive"
 const LIFE_DEAD := "dead"
+const FLEE_BUDGET_TICKS_PER_SEC := 60
 
 var pedestrian_id := ""
 var chunk_id := ""
@@ -40,7 +41,10 @@ var death_cause := ""
 var death_source_position := Vector3.ZERO
 var flee_target_position := Vector3.ZERO
 var flee_anchor_position := Vector3.ZERO
+var flee_direction := Vector3.ZERO
 var flee_stop_distance_m := 0.0
+var flee_budget_ticks_remaining := 0
+var flee_budget_tick_remainder_sec := 0.0
 var _has_flee_target := false
 var _parked_after_flee := false
 var _queued_step_sec := 0.0
@@ -136,12 +140,13 @@ func apply_reaction(data: Dictionary) -> void:
 	reaction_priority = next_priority
 	reaction_source_position = next_source_position
 	if reaction_state == "panic" or reaction_state == "flee":
-		_configure_flee_target(data, next_source_position)
+		_configure_flee_motion(data, next_source_position)
 	else:
 		_clear_flee_target()
-	reaction_timer_sec = maxf(reaction_timer_sec, float(data.get("duration_sec", 0.0)))
 	if _has_flee_target:
-		reaction_timer_sec = maxf(reaction_timer_sec, _estimate_flee_duration_sec())
+		reaction_timer_sec = _resolve_flee_budget_seconds()
+	else:
+		reaction_timer_sec = maxf(reaction_timer_sec, float(data.get("duration_sec", 0.0)))
 
 func clear_reaction() -> void:
 	reaction_state = "none"
@@ -267,48 +272,71 @@ func _advance_reaction_timers(delta: float) -> void:
 	if reaction_timer_sec <= 0.0:
 		clear_reaction()
 
-func _configure_flee_target(data: Dictionary, fallback_anchor: Vector3) -> void:
+func _configure_flee_motion(data: Dictionary, fallback_anchor: Vector3) -> void:
 	if not data.has("flee_target_position"):
 		_clear_flee_target()
 		return
 	flee_target_position = data.get("flee_target_position", world_position)
 	flee_anchor_position = data.get("flee_anchor_position", fallback_anchor)
+	flee_direction = data.get("flee_direction", Vector3.ZERO)
+	if flee_direction.length_squared() <= 0.0001:
+		flee_direction = Vector3(
+			flee_target_position.x - world_position.x,
+			0.0,
+			flee_target_position.z - world_position.z
+		)
+	if flee_direction.length_squared() > 0.0001:
+		flee_direction = flee_direction.normalized()
 	flee_stop_distance_m = world_position.distance_to(flee_target_position)
-	_has_flee_target = flee_stop_distance_m > 0.05
+	var flee_duration_sec := maxf(float(data.get("flee_duration_sec", data.get("duration_sec", 0.0))), 0.0)
+	flee_budget_ticks_remaining = maxi(int(round(flee_duration_sec * float(FLEE_BUDGET_TICKS_PER_SEC))), 0)
+	flee_budget_tick_remainder_sec = 0.0
+	_has_flee_target = flee_stop_distance_m > 0.05 and flee_budget_ticks_remaining > 0 and flee_direction.length_squared() > 0.0001
 	if not _has_flee_target:
 		flee_target_position = world_position
 
 func _clear_flee_target() -> void:
 	flee_target_position = Vector3.ZERO
 	flee_anchor_position = Vector3.ZERO
+	flee_direction = Vector3.ZERO
 	flee_stop_distance_m = 0.0
+	flee_budget_ticks_remaining = 0
+	flee_budget_tick_remainder_sec = 0.0
 	_has_flee_target = false
 
-func _estimate_flee_duration_sec() -> float:
-	if not _has_flee_target:
-		return 0.0
-	return (world_position.distance_to(flee_target_position) / _resolve_flee_speed_mps()) + 0.25
-
 func _step_flee(delta: float) -> void:
-	var to_target := Vector3(
-		flee_target_position.x - world_position.x,
-		0.0,
-		flee_target_position.z - world_position.z
-	)
-	var remaining_distance_m := to_target.length()
-	if remaining_distance_m <= 0.05:
+	if flee_budget_ticks_remaining <= 0:
 		_finish_flee()
 		return
-	var travel_distance_m := _resolve_flee_speed_mps() * delta
-	var move_direction := to_target.normalized()
-	var applied_distance_m := minf(travel_distance_m, remaining_distance_m)
-	world_position.x += move_direction.x * applied_distance_m
-	world_position.z += move_direction.z * applied_distance_m
+	var remaining_budget_sec := _resolve_flee_budget_seconds()
+	if remaining_budget_sec <= 0.0:
+		_finish_flee()
+		return
+	var applied_delta := minf(delta, remaining_budget_sec)
+	if applied_delta <= 0.0:
+		_finish_flee()
+		return
+	var move_direction := flee_direction
+	if move_direction.length_squared() <= 0.0001:
+		move_direction = Vector3(
+			flee_target_position.x - world_position.x,
+			0.0,
+			flee_target_position.z - world_position.z
+		)
+		if move_direction.length_squared() <= 0.0001:
+			_finish_flee()
+			return
+		move_direction = move_direction.normalized()
+		flee_direction = move_direction
+	var travel_distance_m := _resolve_flee_speed_mps() * applied_delta
+	world_position.x += move_direction.x * travel_distance_m
+	world_position.z += move_direction.z * travel_distance_m
 	heading = move_direction
-	lateral_offset_m = move_toward(lateral_offset_m, 0.0, delta * 4.0)
-	stride_phase = fposmod(stride_phase + delta * maxf(speed_mps * 0.8, 0.75), 1.0)
-	reaction_timer_sec = maxf((remaining_distance_m - applied_distance_m) / _resolve_flee_speed_mps(), 0.05)
-	if remaining_distance_m <= travel_distance_m + 0.05:
+	lateral_offset_m = move_toward(lateral_offset_m, 0.0, applied_delta * 4.0)
+	stride_phase = fposmod(stride_phase + applied_delta * maxf(speed_mps * 0.8, 0.75), 1.0)
+	_consume_flee_budget(applied_delta)
+	reaction_timer_sec = _resolve_flee_budget_seconds()
+	if flee_budget_ticks_remaining <= 0:
 		world_position.x = flee_target_position.x
 		world_position.z = flee_target_position.z
 		_finish_flee()
@@ -322,6 +350,25 @@ func _finish_flee() -> void:
 	lateral_offset_m = 0.0
 	route_direction = 0.0
 	_parked_after_flee = true
+
+func _consume_flee_budget(delta: float) -> void:
+	if delta <= 0.0 or flee_budget_ticks_remaining <= 0:
+		return
+	var total_budget_sec := flee_budget_tick_remainder_sec + delta
+	var ticks_to_consume := mini(
+		int(floor(total_budget_sec * float(FLEE_BUDGET_TICKS_PER_SEC))),
+		flee_budget_ticks_remaining
+	)
+	if ticks_to_consume <= 0:
+		flee_budget_tick_remainder_sec = total_budget_sec
+		return
+	flee_budget_ticks_remaining -= ticks_to_consume
+	flee_budget_tick_remainder_sec = total_budget_sec - (float(ticks_to_consume) / float(FLEE_BUDGET_TICKS_PER_SEC))
+
+func _resolve_flee_budget_seconds() -> float:
+	if flee_budget_ticks_remaining <= 0:
+		return 0.0
+	return float(flee_budget_ticks_remaining) / float(FLEE_BUDGET_TICKS_PER_SEC)
 
 func _reaction_speed_multiplier() -> float:
 	match reaction_state:

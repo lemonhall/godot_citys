@@ -1,5 +1,7 @@
 # V6 Pedestrian Witness Flee Response
 
+> 历史说明：本页记录的是 `M7` 曾经完成过的 witness flee 方向。自 `ECN-0014` 起，`REQ-0002-010` 的有效验收口径已经改为 `M10` 下的 layered response + flee tick budget；本页不再作为当前收口口径。
+
 ## Goal
 
 把 pedestrian 从“只有 direct victim 死亡或极小 direct-threat ring 生效”的状态，推进到“玩家开枪或手雷爆炸后，`500m` 内的周围 witness 都会形成玩家可感知的四散逃离，并且以 `4x` 速度至少跑满 `500m`，同时系统仍服从 crowd budget”的状态。

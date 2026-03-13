@@ -1,19 +1,19 @@
 extends RefCounted
 
 const DEFAULT_DISTRICT_CLASS_DENSITY := {
-	"core": 0.62,
-	"mixed": 0.48,
-	"residential": 0.34,
-	"industrial": 0.24,
-	"periphery": 0.1,
+	"core": 0.78,
+	"mixed": 0.62,
+	"residential": 0.46,
+	"industrial": 0.30,
+	"periphery": 0.16,
 }
 
 const DEFAULT_ROAD_CLASS_DENSITY := {
 	"expressway_elevated": 0.0,
-	"arterial": 0.3,
-	"secondary": 0.18,
-	"collector": 0.12,
-	"local": 0.07,
+	"arterial": 0.45,
+	"secondary": 0.32,
+	"collector": 0.20,
+	"local": 0.12,
 }
 
 const DEFAULT_DISTRICT_CLASS_ARCHETYPE_WEIGHTS := {
@@ -86,15 +86,13 @@ func resolve_density_bucket(density_scalar: float) -> String:
 
 func get_spawn_slots_for_edge(district_density: float, road_density: float) -> int:
 	var combined_density := clampf(district_density * road_density, 0.0, 1.0)
-	if combined_density <= 0.08:
+	if combined_density <= 0.10:
 		return 0
-	if combined_density <= 0.18:
+	if combined_density <= 0.22:
 		return 1
-	if combined_density <= 0.32:
+	if combined_density <= 0.36:
 		return 2
-	if combined_density <= 0.48:
-		return 3
-	return 4
+	return 3
 
 func get_max_spawn_slots_per_chunk() -> int:
 	return max_spawn_slots_per_chunk

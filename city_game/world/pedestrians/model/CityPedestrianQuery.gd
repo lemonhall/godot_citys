@@ -102,7 +102,7 @@ func _build_spawn_result(chunk_key: Vector2i, district_id: String, district_prof
 		if slot_count <= 0:
 			continue
 		var lane_length := float(lane.get("path_length_m", 0.0))
-		var lane_slot_budget := maxi(1, mini(slot_count, int(floor(lane_length / 70.0))))
+		var lane_slot_budget := maxi(1, mini(slot_count, int(floor(lane_length / 90.0))))
 		road_class_counts[road_class] = int(road_class_counts.get(road_class, 0)) + lane_slot_budget
 		for slot_index in range(lane_slot_budget):
 			if spawn_slots.size() >= max_spawn_slots:

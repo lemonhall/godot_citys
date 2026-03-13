@@ -8,6 +8,19 @@ const CityPedestrianTierController := preload("res://city_game/world/pedestrians
 
 const LETHAL_RADIUS_M := 4.0
 const THREAT_RADIUS_M := 12.0
+const CALM_MIN_DISTANCE_M := 520.0
+const SEARCH_POSITIONS := [
+	Vector3(-1280.0, 0.0, -1024.0),
+	Vector3(-2048.0, 0.0, 0.0),
+	Vector3(-2048.0, 0.0, -768.0),
+	Vector3(-1792.0, 0.0, -768.0),
+	Vector3(-2048.0, 0.0, -512.0),
+	Vector3.ZERO,
+	Vector3(-1200.0, 0.0, 26.0),
+	Vector3(-600.0, 0.0, 26.0),
+	Vector3(768.0, 0.0, 26.0),
+	Vector3(1792.0, 0.0, 512.0),
+]
 
 func _init() -> void:
 	call_deferred("_run")
@@ -22,12 +35,10 @@ func _run() -> void:
 	if not T.require_true(self, controller.has_method("resolve_explosion_impact"), "Tier controller must expose resolve_explosion_impact() for lethal-radius kill and threat-radius flee validation"):
 		return
 
-	var player_origin := Vector3.ZERO
-	chunk_streamer.update_for_world_position(player_origin)
-	controller.update_active_chunks(chunk_streamer.get_active_chunk_entries(), player_origin, 0.25)
-	var baseline_snapshot: Dictionary = controller.get_global_snapshot()
-	var cluster := _pick_explosion_cluster(baseline_snapshot)
-	if not T.require_true(self, not cluster.is_empty(), "Grenade kill-and-flee test requires a center victim, a threat-ring pedestrian and an unaffected bystander"):
+	var cluster_search := _find_explosion_cluster(chunk_streamer, controller)
+	var baseline_snapshot: Dictionary = cluster_search.get("snapshot", {})
+	var cluster: Dictionary = cluster_search.get("cluster", {})
+	if not T.require_true(self, not cluster.is_empty(), "Grenade kill-and-flee test requires a center victim, a threat-ring pedestrian and a calm outsider beyond 520m"):
 		return
 
 	var center_position: Vector3 = cluster.get("center_position", Vector3.ZERO)
@@ -59,7 +70,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(threat_snapshot.get("life_state", "alive")) == "alive", "Threat-radius survivors must stay alive instead of being incorrectly deleted"):
 		return
-	if not T.require_true(self, not ["panic", "flee"].has(str(far_snapshot.get("reaction_state", ""))), "Pedestrians outside the threat radius must not join a full-map panic cascade"):
+	if not T.require_true(self, not ["panic", "flee"].has(str(far_snapshot.get("reaction_state", ""))), "Pedestrians beyond 500m must stay calm instead of joining a full-map panic cascade"):
 		return
 	if not T.require_true(self, str(far_snapshot.get("life_state", "alive")) == "alive", "Pedestrians outside the threat radius must remain alive"):
 		return
@@ -69,6 +80,23 @@ func _run() -> void:
 		return
 
 	T.pass_and_quit(self)
+
+func _find_explosion_cluster(chunk_streamer: CityChunkStreamer, controller: CityPedestrianTierController) -> Dictionary:
+	for search_position_variant in SEARCH_POSITIONS:
+		var search_position: Vector3 = search_position_variant
+		chunk_streamer.update_for_world_position(search_position)
+		controller.update_active_chunks(chunk_streamer.get_active_chunk_entries(), search_position, 0.25)
+		var snapshot: Dictionary = controller.get_global_snapshot()
+		var cluster := _pick_explosion_cluster(snapshot)
+		if not cluster.is_empty():
+			return {
+				"snapshot": snapshot,
+				"cluster": cluster,
+			}
+	return {
+		"snapshot": {},
+		"cluster": {},
+	}
 
 func _pick_explosion_cluster(snapshot: Dictionary) -> Dictionary:
 	var states := _collect_states(snapshot)
@@ -84,7 +112,7 @@ func _pick_explosion_cluster(snapshot: Dictionary) -> Dictionary:
 			var distance_m := center_position.distance_to(other.get("world_position", Vector3.ZERO))
 			if threat_candidate.is_empty() and distance_m > LETHAL_RADIUS_M + 0.75 and distance_m <= THREAT_RADIUS_M - 0.75:
 				threat_candidate = other
-			elif far_candidate.is_empty() and distance_m >= THREAT_RADIUS_M + 3.0:
+			elif far_candidate.is_empty() and distance_m >= CALM_MIN_DISTANCE_M:
 				far_candidate = other
 		if threat_candidate.is_empty() or far_candidate.is_empty():
 			continue

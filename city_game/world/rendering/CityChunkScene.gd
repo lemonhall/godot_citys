@@ -275,7 +275,14 @@ func apply_pedestrian_chunk_snapshot(snapshot: Dictionary) -> void:
 		return
 	_pedestrian_crowd.apply_chunk_snapshot(snapshot)
 
+func spawn_pedestrian_death_visual(event: Dictionary) -> void:
+	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("spawn_pedestrian_death_visual"):
+		return
+	_pedestrian_crowd.spawn_pedestrian_death_visual(event)
+
 func set_pedestrian_visibility(visible: bool) -> void:
+	if _pedestrians_visible == visible:
+		return
 	_pedestrians_visible = visible
 	if _pedestrian_crowd != null:
 		_pedestrian_crowd.visible = visible
@@ -355,8 +362,6 @@ func _rebuild() -> void:
 	_pedestrian_crowd.name = "PedestrianCrowd"
 	_pedestrian_crowd.setup(_chunk_data)
 	add_child(_pedestrian_crowd)
-	if _chunk_data.has("pedestrian_chunk_snapshot"):
-		_pedestrian_crowd.apply_chunk_snapshot(_chunk_data.get("pedestrian_chunk_snapshot", {}))
 	set_pedestrian_visibility(_pedestrians_visible)
 	setup_profile["pedestrians_usec"] = Time.get_ticks_usec() - phase_started_usec
 

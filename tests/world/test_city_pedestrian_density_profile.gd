@@ -64,4 +64,40 @@ func _run() -> void:
 	if not T.require_true(self, snapshot.has("default_archetype_weights"), "profile snapshot must expose default_archetype_weights"):
 		return
 
+	var district_density_snapshot: Dictionary = snapshot.get("district_class_density", {})
+	var expected_district_mins := {
+		"core": 0.78,
+		"mixed": 0.62,
+		"residential": 0.46,
+		"industrial": 0.30,
+		"periphery": 0.16,
+	}
+	for district_class in ["core", "mixed", "residential", "industrial", "periphery"]:
+		if not T.require_true(self, float(district_density_snapshot.get(district_class, 0.0)) >= float(expected_district_mins.get(district_class, 0.0)), "lite district density for %s must meet the M7 uplift floor" % district_class):
+			return
+	var ordered_districts := ["core", "mixed", "residential", "industrial", "periphery"]
+	for district_index in range(ordered_districts.size() - 1):
+		var current_district := str(ordered_districts[district_index])
+		var next_district := str(ordered_districts[district_index + 1])
+		if not T.require_true(self, float(district_density_snapshot.get(current_district, 0.0)) > float(district_density_snapshot.get(next_district, 0.0)), "lite district density must keep %s denser than %s" % [current_district, next_district]):
+			return
+
+	var road_density_snapshot: Dictionary = snapshot.get("road_class_density", {})
+	var expected_road_mins := {
+		"arterial": 0.45,
+		"secondary": 0.32,
+		"collector": 0.20,
+		"local": 0.12,
+		"expressway_elevated": 0.0,
+	}
+	for road_class in ["arterial", "secondary", "collector", "local", "expressway_elevated"]:
+		if not T.require_true(self, float(road_density_snapshot.get(road_class, -1.0)) >= float(expected_road_mins.get(road_class, 0.0)), "lite road density for %s must meet the M7 uplift floor" % road_class):
+			return
+	var ordered_road_classes := ["arterial", "secondary", "collector", "local", "expressway_elevated"]
+	for road_index in range(ordered_road_classes.size() - 1):
+		var current_road_class := str(ordered_road_classes[road_index])
+		var next_road_class := str(ordered_road_classes[road_index + 1])
+		if not T.require_true(self, float(road_density_snapshot.get(current_road_class, 0.0)) > float(road_density_snapshot.get(next_road_class, 0.0)), "lite road density must keep %s denser than %s" % [current_road_class, next_road_class]):
+			return
+
 	T.pass_and_quit(self)

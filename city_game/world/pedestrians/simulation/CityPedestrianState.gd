@@ -38,6 +38,11 @@ var lateral_offset_sign := 1.0
 var life_state := LIFE_ALIVE
 var death_cause := ""
 var death_source_position := Vector3.ZERO
+var flee_target_position := Vector3.ZERO
+var flee_anchor_position := Vector3.ZERO
+var flee_stop_distance_m := 0.0
+var _has_flee_target := false
+var _parked_after_flee := false
 var _queued_step_sec := 0.0
 
 func setup(data: Dictionary) -> void:
@@ -73,7 +78,12 @@ func step(delta: float) -> void:
 		return
 	if not is_alive():
 		return
+	if _parked_after_flee and reaction_state == "none":
+		return
 	if reaction_state == "panic" or reaction_state == "flee":
+		if _has_flee_target:
+			_step_flee(delta)
+			return
 		_align_route_direction_away_from_source()
 	if lane_points.size() < 2:
 		stride_phase = fposmod(stride_phase + delta * 0.9, 1.0)
@@ -115,16 +125,27 @@ func apply_reaction(data: Dictionary) -> void:
 	var next_source_position: Vector3 = data.get("source_position", world_position)
 	if reaction_state != next_reaction_state:
 		lateral_offset_sign = _resolve_lateral_offset_sign(next_source_position)
+	_parked_after_flee = false
+	if is_zero_approx(route_direction):
+		route_direction = 1.0
 	reaction_state = next_reaction_state
 	reaction_priority = int(data.get("priority", reaction_priority))
-	reaction_timer_sec = maxf(reaction_timer_sec, float(data.get("duration_sec", 0.0)))
 	reaction_source_position = next_source_position
+	if reaction_state == "panic" or reaction_state == "flee":
+		_configure_flee_target(data, next_source_position)
+	else:
+		_clear_flee_target()
+	reaction_timer_sec = maxf(reaction_timer_sec, float(data.get("duration_sec", 0.0)))
+	if _has_flee_target:
+		reaction_timer_sec = maxf(reaction_timer_sec, _estimate_flee_duration_sec())
 
 func clear_reaction() -> void:
 	reaction_state = "none"
 	reaction_priority = 0
 	reaction_timer_sec = 0.0
 	reaction_source_position = world_position
+	_clear_flee_target()
+	_parked_after_flee = false
 
 func queue_step(delta: float) -> void:
 	if delta <= 0.0:
@@ -188,6 +209,15 @@ func to_snapshot() -> Dictionary:
 		"death_source_position": death_source_position,
 	}
 
+func to_render_snapshot() -> Dictionary:
+	return {
+		"pedestrian_id": pedestrian_id,
+		"world_position": world_position,
+		"heading": heading,
+		"height_m": height_m,
+		"radius_m": radius_m,
+	}
+
 func _sample_lane_state(progress: float) -> Dictionary:
 	if lane_points.is_empty():
 		return {
@@ -233,6 +263,62 @@ func _advance_reaction_timers(delta: float) -> void:
 	if reaction_timer_sec <= 0.0:
 		clear_reaction()
 
+func _configure_flee_target(data: Dictionary, fallback_anchor: Vector3) -> void:
+	if not data.has("flee_target_position"):
+		_clear_flee_target()
+		return
+	flee_target_position = data.get("flee_target_position", world_position)
+	flee_anchor_position = data.get("flee_anchor_position", fallback_anchor)
+	flee_stop_distance_m = world_position.distance_to(flee_target_position)
+	_has_flee_target = flee_stop_distance_m > 0.05
+	if not _has_flee_target:
+		flee_target_position = world_position
+
+func _clear_flee_target() -> void:
+	flee_target_position = Vector3.ZERO
+	flee_anchor_position = Vector3.ZERO
+	flee_stop_distance_m = 0.0
+	_has_flee_target = false
+
+func _estimate_flee_duration_sec() -> float:
+	if not _has_flee_target:
+		return 0.0
+	return (world_position.distance_to(flee_target_position) / _resolve_flee_speed_mps()) + 0.25
+
+func _step_flee(delta: float) -> void:
+	var to_target := Vector3(
+		flee_target_position.x - world_position.x,
+		0.0,
+		flee_target_position.z - world_position.z
+	)
+	var remaining_distance_m := to_target.length()
+	if remaining_distance_m <= 0.05:
+		_finish_flee()
+		return
+	var travel_distance_m := _resolve_flee_speed_mps() * delta
+	var move_direction := to_target.normalized()
+	var applied_distance_m := minf(travel_distance_m, remaining_distance_m)
+	world_position.x += move_direction.x * applied_distance_m
+	world_position.z += move_direction.z * applied_distance_m
+	heading = move_direction
+	lateral_offset_m = move_toward(lateral_offset_m, 0.0, delta * 4.0)
+	stride_phase = fposmod(stride_phase + delta * maxf(speed_mps * 0.8, 0.75), 1.0)
+	reaction_timer_sec = maxf((remaining_distance_m - applied_distance_m) / _resolve_flee_speed_mps(), 0.05)
+	if remaining_distance_m <= travel_distance_m + 0.05:
+		world_position.x = flee_target_position.x
+		world_position.z = flee_target_position.z
+		_finish_flee()
+
+func _finish_flee() -> void:
+	reaction_state = "none"
+	reaction_priority = 0
+	reaction_timer_sec = 0.0
+	reaction_source_position = world_position
+	_clear_flee_target()
+	lateral_offset_m = 0.0
+	route_direction = 0.0
+	_parked_after_flee = true
+
 func _reaction_speed_multiplier() -> float:
 	match reaction_state:
 		"yield":
@@ -240,9 +326,12 @@ func _reaction_speed_multiplier() -> float:
 		"sidestep":
 			return 0.65
 		"panic", "flee":
-			return 1.85
+			return 4.0
 		_:
 			return 1.0
+
+func _resolve_flee_speed_mps() -> float:
+	return maxf(speed_mps * _reaction_speed_multiplier(), 0.1)
 
 func _target_lateral_offset_m() -> float:
 	match reaction_state:

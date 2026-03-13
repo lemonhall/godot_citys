@@ -26,6 +26,8 @@
 - 玩家附近极小集合的本地 reactive pedestrian 行为
 - 运行期 pedestrian 贴地与真实 chunk 地表口径一致
 - 玩家暴力触发的 direct-hit / explosion casualty 与周边逃散响应
+- 玩家暴力事件引发的 witness-level 局部恐慌扩散与四散逃离
+- 提升 `pedestrian_mode = lite` 下的默认 crowd density，使主街与核心区不再显得过度稀疏
 - crowd 相关 debug overlay、minimap 调试层与 profiling 指标
 - 面向 `16.67ms/frame` 红线的 crowd lite 默认模式与回归护栏
 
@@ -252,9 +254,88 @@
 - 自动化测试至少断言：重复 fire / explosion 事件后，nearfield / Tier 3 预算仍受控，不出现 count leak。
 - 反作弊条款：不得通过“只播 reaction、不结算死亡”“战斗时直接隐藏全部 pedestrian”或“爆炸半径内无差别全删”来宣称需求完成。
 
+### REQ-0002-010 目击暴力后的局部恐慌扩散（新增，见 ECN-0010）
+
+**动机**：即便 direct victim 已经会死亡，如果枪杀、连发枪声或手雷爆炸发生后，周围存活 pedestrian 仍继续按 ambient 状态行走，不形成玩家可感知的四散逃离，那么 crowd 仍然会显得像“只对受害者本身生效”的脚本，而不是可信城市人群。
+
+**范围**：
+
+- player gunfire、direct-hit casualty、grenade / explosion 必须产生 `500m` audible / witness threat event，而不是只影响 direct victim 或 lethal ring
+- 位于 `500m` 半径内、且仍然存活的 pedestrian，即使没有被直接命中或处于 lethal radius 内，也必须能切换到 `panic` 或 `flee`
+- witness selection / promotion 必须继续服从 `nearfield` / Tier 3 预算约束，可通过事件优先级、lane corridor、chunk-local query 或等价机制选择最相关 witness；不得把半径内所有 pedestrian 升级为常驻高成本 agent
+- flee response 必须在真实运行期可见：进入 `panic / flee` 的 pedestrian 以至少 `4x base speed` 逃散，并且单次逃散位移必须 `>= 500m`
+
+**非目标**：
+
+- 不做全图级 rumor / panic propagation
+- 不做警察、wanted、广播链或长期记忆系统
+- 不做 civilian 结伴、呼救、掩体搜索等更复杂战术行为
+
+**验收口径**：
+
+- 自动化测试至少断言：automatic rifle 或等价连续枪击的 gunshot 声本身，就会让 `500m` 内、至少 `2` 名未被直接命中的存活 witness pedestrian 在 `0.5s` 内切换到 `panic` 或 `flee`。
+- 自动化测试至少断言：grenade / explosion 或 casualty 发生后，位于 `500m` witness radius 内的存活 pedestrian 会切换到 `panic` 或 `flee`，而不是只有直接受害者状态改变。
+- 自动化测试至少断言：进入 `panic / flee` 的 pedestrian 以至少 `4x base speed` 逃散，并且不会在跑满 `500m` 前提前停止。
+- 自动化测试至少断言：`>500m` 的 pedestrian 保持 ambient 行为，不发生全图级 panic。
+- 自动化测试至少断言：重复 gunfire / explosion 事件后，Tier 3 仍持续 `<= 24`，`nearfield` 总量仍持续受控，不出现 witness count leak。
+- 反作弊条款：不得通过“所有 pedestrian 一起全局切 flee”“只让 direct victim 或 lethal survivor 改状态”“把 witness 直接删掉”或“让 flee 用短倒计时提前结束”来宣称需求完成。
+
+### REQ-0002-011 Lite 模式下的人流密度抬升（新增，见 ECN-0010）
+
+**动机**：如果 `pedestrian_mode = lite` 虽然守住了性能红线，但街道主观感知仍然过于空旷，那么 crowd 系统就只完成了“能跑”，没有完成“像一座有人活动的城市”。
+
+**范围**：
+
+- 上调默认 `district_class_density` 与 `road_class_density`，优先提升 core / mixed / 主街路段的人流存在感
+- 视需要同步调整 deterministic spawn-slot 分配阈值或等价 lane occupancy 规则，但必须保持 deterministic query 契约
+- density uplift 必须优先吃掉当前远未用满的 Tier 1 headroom，而不是先把 Tier 2 / Tier 3 高成本预算继续抬高
+- uplift 后仍需保留 district / road class 之间的层次差异，不能把全城抹平成同一密度
+
+**非目标**：
+
+- 不做 `full` crowd 模式
+- 不做“所有区域都像 downtown 一样满”的统一饱和填充
+- 不做用重复静止假人、纯 billboard 占位或关闭 continuity 的方式伪造高密度
+
+**验收口径**：
+
+- 自动化测试至少断言：`pedestrian_mode = lite` 默认配置下，`core >= 0.78`、`mixed >= 0.62`、`residential >= 0.46`、`industrial >= 0.30`、`periphery >= 0.16`，且保持 `core > mixed > residential > industrial > periphery`。
+- 自动化测试至少断言：`pedestrian_mode = lite` 默认配置下，`arterial >= 0.45`、`secondary >= 0.32`、`collector >= 0.20`、`local >= 0.12`，且保持 `arterial > secondary > collector > local > expressway_elevated`。
+- 自动化 profiling 至少断言：沿当前固定 warm/first-visit profiling 路线，`ped_tier1_count` 至少达到 warm `>= 24`、first-visit `>= 52`，不得继续回到 M6 的稀疏基线。
+- fresh isolated `tests/e2e/test_city_pedestrian_performance_profile.gd` 与 `tests/e2e/test_city_runtime_performance_profile.gd` 必须继续 `PASS`，且 `wall_frame_avg_usec <= 16667`。
+- 反作弊条款：不得通过提高 Tier 2 / Tier 3 hard cap、复制同一 pedestrian visual、关闭 identity continuity 或把所有 district 强行拉到同一高密度来宣称需求完成。
+
+### REQ-0002-012 近景真实路人模型替换（新增，见 ECN-0011）
+
+**动机**：如果 `Tier2 + Tier3` 的 pedestrian 长期仍是盒子/竖棍占位，那么即便 crowd 行为和预算已经成立，玩家看到的也仍然是“抽象标记在移动”，而不是可信的街头行人。
+
+**范围**：
+
+- 用户提供的 civilian `glb` 必须归档到项目内正式资产目录，并具有稳定、可引用的 manifest
+- manifest 必须为每个模型显式记录逐模型归一化口径，至少包括 `source_height_m` 与 `source_ground_offset_m`，使不同 `glb` 能统一映射到 pedestrian `height_m` / 贴地契约
+- `Tier2 + Tier3` 必须从当前 `BoxMesh` 占位切换到真实 civilian character model
+- ambient locomotion 至少要能播放 `walk` 动画；`panic / flee` 优先播放 `run` 或等价加速 locomotion 动画
+- 已被 projectile / explosion 判定为死亡的近景 pedestrian，如模型自带 `death/dead` clip，必须通过短暂的 death visual 播放该动画，而不是继续保持“命中即消失”的抽象切除
+- `Tier1` 本轮继续保持轻量 batched representation；除非另开 ECN，不在本需求里重写远景 crowd 表示层
+
+**非目标**：
+
+- 不做 `Tier1` 全动画骨骼 crowd
+- 不做完整动画状态机、IK、ragdoll 或复杂 blend tree
+- 不做重新设计 pedestrian archetype 行为层；本需求只负责近景视觉替换
+
+**验收口径**：
+
+- 自动化测试至少断言：civilian model 资产不再散落在仓库根目录，而是统一归档到项目内 pedestrian asset 目录；manifest 覆盖全部导入模型、对应 `walk / run / death` 动画名，以及逐模型 `source_height_m / source_ground_offset_m` 归一化字段。
+- 自动化测试至少断言：`Tier2 + Tier3` 不再创建当前 `BoxMesh` 占位 pedestrian，而是实例化真实 model scene，并可访问 `AnimationPlayer` 或等价动画入口。
+- 自动化测试至少断言：ambient pedestrian 至少播放 `walk` 动画；`panic / flee` 至少播放 `run` 或等价加速 locomotion 动画；已死亡的近景 pedestrian 如存在 `death/dead` clip，则必须播放 transient death visual。
+- 自动化测试至少断言：`Tier1` 继续保持轻量批渲染或等价低成本表示，不因本轮近景视觉替换而升级成高成本骨骼实例海。
+- fresh isolated `tests/e2e/test_city_pedestrian_performance_profile.gd` 与 `tests/e2e/test_city_runtime_performance_profile.gd` 必须继续 `PASS`，且 `wall_frame_avg_usec <= 16667`。
+- 反作弊条款：不得通过“只给单个 demo ped 换模型”“保留盒子但改材质”“只在测试场景手工摆真实模型”或“击杀后直接瞬移删除近景行人”来宣称需求完成。
+
 ## Open Questions
 
-- `v6` 的默认 density 预设最终应按 district class 做多大差异，还需要在 M1 后结合人工试玩与 profiling 微调。
+- `M7` 已把默认 `lite` density uplift 列为正式需求并完成第一轮收口；当前默认 crowd baseline 已不再沿用 M6 的偏稀疏口径，但 district class 之间的最终差异系数仍可继续通过 profiling 与手玩反馈微调。
 - 是否需要在 `v6` 预留“路边等待点 / 斑马线信号相位”字段，目前看建议预留数据槽位，但不把完整信号系统纳入范围。
 
 这些问题当前不阻塞 `v6` 开工，暂不单独开 ECN。

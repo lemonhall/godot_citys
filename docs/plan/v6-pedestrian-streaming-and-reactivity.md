@@ -2,7 +2,7 @@
 
 ## Goal
 
-把 crowd 正式接入现有 chunk streaming 生命周期，并把“只有玩家附近极少数行人才具备较高反应能力”这条边界落成可验证的系统行为。
+把 crowd 正式接入现有 chunk streaming 生命周期，并把“只有玩家附近极少数行人才具备较高保真反应能力”这条边界落成可验证的系统行为；在 `M7` 之后，violent audible witness response 允许扩展到 `500m` 内触发 `panic / flee`，但仍不得演化成全城常驻高成本 AI。
 
 ## PRD Trace
 
@@ -16,7 +16,7 @@
 - 建立 pedestrian page / cache 或等价 streaming state
 - 建立 Tier 2 / Tier 3 的 promotion、demotion、despawn 规则
 - 让玩家靠近、开火、投掷爆炸物或高速掠过时触发有限 reactive behavior
-- 将 reactive behavior 严格限制在近场小半径与小数量集合
+- 将 full-fidelity reactive behavior 严格限制在近场小数量集合；枪声 / 爆炸的 `500m` audible witness response 只能复用现有 budgeted runtime，不能演化成全图级 panic propagation
 
 不做什么：
 
@@ -77,7 +77,7 @@
 ## Result
 
 - 已落地 `CityPedestrianBudget + CityPedestrianStreamer + CityPedestrianReactionModel + CityPedestrianReactiveAgent` 的分层运行时骨架，并由 `CityPedestrianTierController` 统一做 Tier 1/2/3 分配。
-- `nearfield_budget = 96`，`tier3_budget = 24`，其中 Tier 3 只承载玩家近身、子弹近掠、枪声与爆炸触发的 reactive nearfield。
+- `nearfield_budget = 96`，`tier3_budget = 24`，其中 Tier 3 继续只承载玩家近身、子弹近掠与最相关的 nearfield reactive set；`M7` 新增的枪声 / 爆炸 `500m` witness escape 也必须复用这套预算，而不是把半径内所有 pedestrian 升成常驻 agent。
 - `CityPrototype.gd` 已把 projectile / grenade explosion 事件接到 `CityChunkRenderer -> CityPedestrianTierController`，避免 pedestrian 系统直接耦合武器脚本实现细节。
 - `CityPedestrianStreamer.gd` 已提供 page/cache 生命周期，当前以 chunk page 为单位保证 cache hit 与 duplicate page load 可观测。
 - identity continuity 契约在 M4 下仍成立，但“玩家贴近 pedestrian”现在会优先升为 Tier 3 reactive nearfield，而不再沿用 M3 的纯 Tier 2 接近逻辑。

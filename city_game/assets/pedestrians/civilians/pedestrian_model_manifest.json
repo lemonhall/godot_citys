@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "notes": [
+	"Tier2 and Tier3 should source civilian character visuals from this manifest in M8.",
+	"walk_animation is the primary locomotion clip to use for ambient movement.",
+	"run_animation is the preferred locomotion clip for panic or flee states.",
+    "death_animation is the preferred clip for transient casualty visuals."
+  ],
+  "models": [
+	{
+	  "model_id": "animated_woman",
+	  "file": "res://city_game/assets/pedestrians/civilians/animated_woman.glb",
+	  "rig_family": "armature_simple",
+	  "source_height_m": 0.053019,
+	  "source_ground_offset_m": 0.000166,
+	  "idle_animation": "Armature|Idle",
+	  "walk_animation": "Armature|Walking",
+	  "run_animation": "Armature|Running",
+	  "death_animation": "Armature|Death"
+	},
+	{
+	  "model_id": "business_man",
+	  "file": "res://city_game/assets/pedestrians/civilians/business_man.glb",
+	  "rig_family": "character_armature",
+	  "source_height_m": 1.856928,
+	  "source_ground_offset_m": 0.001299,
+	  "idle_animation": "CharacterArmature|Idle",
+	  "walk_animation": "CharacterArmature|Walk",
+	  "run_animation": "CharacterArmature|Run",
+	  "death_animation": "CharacterArmature|Death"
+	},
+	{
+	  "model_id": "hoodie_character",
+	  "file": "res://city_game/assets/pedestrians/civilians/hoodie_character.glb",
+	  "rig_family": "character_armature",
+	  "source_height_m": 1.870363,
+	  "source_ground_offset_m": 0.004176,
+	  "idle_animation": "CharacterArmature|Idle",
+	  "walk_animation": "CharacterArmature|Walk",
+	  "run_animation": "CharacterArmature|Run",
+	  "death_animation": "CharacterArmature|Death"
+	},
+	{
+	  "model_id": "man",
+	  "file": "res://city_game/assets/pedestrians/civilians/man.glb",
+	  "rig_family": "human_armature",
+	  "source_height_m": 4.841252,
+	  "source_ground_offset_m": -0.003359,
+	  "idle_animation": "HumanArmature|Man_Idle",
+	  "walk_animation": "HumanArmature|Man_Walk",
+	  "run_animation": "HumanArmature|Man_Run",
+	  "death_animation": "HumanArmature|Man_Death"
+	},
+	{
+	  "model_id": "suit",
+	  "file": "res://city_game/assets/pedestrians/civilians/suit.glb",
+	  "rig_family": "character_armature",
+	  "source_height_m": 1.845181,
+	  "source_ground_offset_m": 0.001869,
+	  "idle_animation": "CharacterArmature|Idle",
+	  "walk_animation": "CharacterArmature|Walk",
+	  "run_animation": "CharacterArmature|Run",
+	  "death_animation": "CharacterArmature|Death"
+	},
+	{
+	  "model_id": "women_worker",
+	  "file": "res://city_game/assets/pedestrians/civilians/women_worker.glb",
+	  "rig_family": "character_armature",
+	  "source_height_m": 1.860647,
+	  "source_ground_offset_m": 0.001869,
+	  "idle_animation": "CharacterArmature|Idle",
+	  "walk_animation": "CharacterArmature|Walk",
+	  "run_animation": "CharacterArmature|Run",
+	  "death_animation": "CharacterArmature|Death"
+	},
+	{
+	  "model_id": "worker",
+	  "file": "res://city_game/assets/pedestrians/civilians/worker.glb",
+	  "rig_family": "character_armature",
+	  "source_height_m": 1.866431,
+	  "source_ground_offset_m": 0.003673,
+	  "idle_animation": "CharacterArmature|Idle",
+	  "walk_animation": "CharacterArmature|Walk",
+	  "run_animation": "CharacterArmature|Run",
+	  "death_animation": "CharacterArmature|Death"
+	}
+  ]
+}

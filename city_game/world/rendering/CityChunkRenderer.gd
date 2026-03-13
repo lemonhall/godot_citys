@@ -7,6 +7,7 @@ const CityTerrainPageProvider := preload("res://city_game/world/rendering/CityTe
 const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTerrainMeshBuilder.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
 const CityPedestrianTierController := preload("res://city_game/world/pedestrians/simulation/CityPedestrianTierController.gd")
+const CityPedestrianVisualInstance := preload("res://city_game/world/pedestrians/rendering/CityPedestrianVisualInstance.gd")
 
 const PREPARE_BUDGET_PER_TICK := 1
 const MOUNT_BUDGET_PER_TICK := 1
@@ -119,6 +120,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_has_pedestrian_player_context = false
 	_pedestrian_visibility_enabled = true
 	if _world_data.has("pedestrian_query"):
+		CityPedestrianVisualInstance.prewarm_shared_catalog()
 		_pedestrian_tier_controller = CityPedestrianTierController.new()
 		_pedestrian_tier_controller.setup(_config, _world_data)
 	reset_streaming_profile_stats()
@@ -498,12 +500,26 @@ func notify_explosion_event(world_position: Vector3, radius_m: float) -> void:
 func resolve_projectile_hit(start_position: Vector3, end_position: Vector3, damage: float = 1.0, velocity: Vector3 = Vector3.ZERO) -> Dictionary:
 	if _pedestrian_tier_controller == null or not _pedestrian_tier_controller.has_method("resolve_projectile_hit"):
 		return {}
-	return _pedestrian_tier_controller.resolve_projectile_hit(start_position, end_position, damage, velocity)
+	var hit_result: Dictionary = _pedestrian_tier_controller.resolve_projectile_hit(start_position, end_position, damage, velocity)
+	_spawn_pedestrian_death_visuals(hit_result.get("death_events", []))
+	return hit_result
 
 func resolve_explosion_impact(world_position: Vector3, lethal_radius_m: float, threat_radius_m: float = -1.0) -> Dictionary:
 	if _pedestrian_tier_controller == null or not _pedestrian_tier_controller.has_method("resolve_explosion_impact"):
 		return {}
-	return _pedestrian_tier_controller.resolve_explosion_impact(world_position, lethal_radius_m, threat_radius_m)
+	var impact_result: Dictionary = _pedestrian_tier_controller.resolve_explosion_impact(world_position, lethal_radius_m, threat_radius_m)
+	_spawn_pedestrian_death_visuals(impact_result.get("death_events", []))
+	return impact_result
+
+func _spawn_pedestrian_death_visuals(events: Array) -> void:
+	for event_variant in events:
+		var event: Dictionary = event_variant
+		var chunk_id := str(event.get("chunk_id", ""))
+		if chunk_id == "" or not _chunk_scenes.has(chunk_id):
+			continue
+		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
+		if chunk_scene.has_method("spawn_pedestrian_death_visual"):
+			chunk_scene.spawn_pedestrian_death_visual(event)
 
 func _build_target_chunk_map(active_chunk_entries: Array) -> Dictionary:
 	var map := {}

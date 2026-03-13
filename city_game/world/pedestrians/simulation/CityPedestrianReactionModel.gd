@@ -46,6 +46,14 @@ func notify_explosion_event(world_position: Vector3, radius_m: float, threat_rad
 		"ttl_sec": 1.4,
 	})
 
+func notify_casualty_event(world_position: Vector3, witness_radius_m: float = -1.0) -> void:
+	_events.append({
+		"type": "casualty",
+		"position": world_position,
+		"witness_radius_m": witness_radius_m,
+		"ttl_sec": 2.2,
+	})
+
 func update_reactions(active_states: Array, budget_contract: Dictionary, delta: float) -> Array[Dictionary]:
 	_age_events(delta)
 	var player_speed_mps := _player_velocity.length()
@@ -62,7 +70,7 @@ func update_reactions(active_states: Array, budget_contract: Dictionary, delta: 
 				"pedestrian_id": state.pedestrian_id,
 				"reaction_priority": int(state.reaction_priority),
 				"reaction_state": str(state.reaction_state),
-				"distance_m": _player_position.distance_to(state.world_position) if _has_player_context else 0.0,
+				"distance_m": _resolve_reactive_selection_distance(state),
 			})
 	return reactive_candidates
 
@@ -119,29 +127,100 @@ func _build_command_for_state(state, budget_contract: Dictionary, player_speed_m
 					}
 			"gunshot":
 				if state.world_position.distance_to(event.get("position", Vector3.ZERO)) <= float(budget_contract.get("gunshot_radius_m", 24.0)):
-					candidate = {
-						"reaction_state": REACTION_PANIC,
-						"priority": 72,
-						"duration_sec": 1.8,
-						"source_position": event.get("position", state.world_position),
-					}
+					candidate = _build_escape_command(
+						state,
+						REACTION_PANIC,
+						72,
+						event.get("position", state.world_position),
+						1.8,
+						budget_contract
+					)
 			"explosion":
 				var explosion_center: Vector3 = event.get("position", Vector3.ZERO)
 				var explosion_radius := float(event.get("threat_radius_m", -1.0))
 				if explosion_radius < 0.0:
 					explosion_radius = float(event.get("radius_m", 0.0)) + float(budget_contract.get("explosion_reaction_radius_m", 18.0))
 				if state.world_position.distance_to(explosion_center) <= explosion_radius:
-					candidate = {
-						"reaction_state": REACTION_FLEE,
-						"priority": 100,
-						"duration_sec": 2.6,
-						"source_position": explosion_center,
-					}
+					candidate = _build_escape_command(
+						state,
+						REACTION_FLEE,
+						100,
+						explosion_center,
+						2.6,
+						budget_contract
+					)
+			"casualty":
+				var casualty_center: Vector3 = event.get("position", Vector3.ZERO)
+				var casualty_radius := float(event.get("witness_radius_m", -1.0))
+				if casualty_radius < 0.0:
+					casualty_radius = float(budget_contract.get("casualty_witness_radius_m", 18.0))
+				if state.world_position.distance_to(casualty_center) <= casualty_radius:
+					candidate = _build_escape_command(
+						state,
+						REACTION_FLEE,
+						96,
+						casualty_center,
+						float(budget_contract.get("casualty_reaction_duration_sec", 2.8)),
+						budget_contract
+					)
 		if candidate.is_empty():
 			continue
 		if best_command.is_empty() or int(candidate.get("priority", 0)) > int(best_command.get("priority", 0)):
 			best_command = candidate
 	return best_command
+
+func _build_escape_command(state, reaction_state: String, priority: int, source_position: Vector3, duration_sec: float, budget_contract: Dictionary) -> Dictionary:
+	var anchor_position := _player_position if _has_player_context else source_position
+	var escape_direction := _resolve_escape_direction(state, anchor_position, source_position, budget_contract)
+	var flee_distance_m := float(budget_contract.get("flee_min_distance_m", 500.0))
+	return {
+		"reaction_state": reaction_state,
+		"priority": priority,
+		"duration_sec": duration_sec,
+		"source_position": source_position,
+		"flee_anchor_position": anchor_position,
+		"flee_target_position": state.world_position + escape_direction * flee_distance_m,
+	}
+
+func _resolve_escape_direction(state, anchor_position: Vector3, source_position: Vector3, budget_contract: Dictionary) -> Vector3:
+	var away_vector := Vector3(
+		state.world_position.x - anchor_position.x,
+		0.0,
+		state.world_position.z - anchor_position.z
+	)
+	if away_vector.length_squared() <= 0.0001:
+		away_vector = Vector3(
+			state.world_position.x - source_position.x,
+			0.0,
+			state.world_position.z - source_position.z
+		)
+	if away_vector.length_squared() <= 0.0001:
+		away_vector = state.heading if state.heading.length_squared() > 0.0001 else Vector3.FORWARD
+	away_vector = away_vector.normalized()
+	var max_scatter_angle_deg := float(budget_contract.get("flee_scatter_angle_deg", 42.0))
+	var scatter_angles := [
+		-max_scatter_angle_deg,
+		-max_scatter_angle_deg * 0.35,
+		max_scatter_angle_deg * 0.35,
+		max_scatter_angle_deg,
+	]
+	var scatter_index := posmod(int(state.seed_value), scatter_angles.size())
+	var escape_direction := away_vector.rotated(Vector3.UP, deg_to_rad(float(scatter_angles[scatter_index])))
+	escape_direction.y = 0.0
+	if escape_direction.length_squared() <= 0.0001:
+		return away_vector
+	return escape_direction.normalized()
+
+func _resolve_reactive_selection_distance(state) -> float:
+	var player_distance_m: float = INF
+	if _has_player_context:
+		player_distance_m = _player_position.distance_to(state.world_position)
+	var source_distance_m: float = state.world_position.distance_to(state.reaction_source_position)
+	if state.reaction_state == REACTION_PANIC or state.reaction_state == REACTION_FLEE:
+		return minf(player_distance_m, source_distance_m)
+	if _has_player_context:
+		return player_distance_m
+	return source_distance_m
 
 func _distance_to_projectile_path(world_position: Vector3, event: Dictionary) -> float:
 	var origin: Vector3 = event.get("origin", Vector3.ZERO)

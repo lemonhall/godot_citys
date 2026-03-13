@@ -264,16 +264,17 @@ func get_pedestrian_crowd_stats() -> Dictionary:
 			"tier2_count": 0,
 			"tier3_count": 0,
 			"tier1_instance_count": 0,
+			"tier1_transform_write_count": 0,
 			"visible": _pedestrians_visible,
 		}
 	var crowd_stats: Dictionary = (_pedestrian_crowd.get_crowd_stats() as Dictionary).duplicate(true)
 	crowd_stats["visible"] = _pedestrians_visible
 	return crowd_stats
 
-func apply_pedestrian_chunk_snapshot(snapshot: Dictionary) -> void:
+func apply_pedestrian_chunk_snapshot(snapshot: Dictionary) -> int:
 	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("apply_chunk_snapshot"):
-		return
-	_pedestrian_crowd.apply_chunk_snapshot(snapshot)
+		return 0
+	return _pedestrian_crowd.apply_chunk_snapshot(snapshot)
 
 func spawn_pedestrian_death_visual(event: Dictionary) -> void:
 	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("spawn_pedestrian_death_visual"):

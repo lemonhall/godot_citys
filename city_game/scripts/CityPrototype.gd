@@ -15,6 +15,7 @@ const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
 const CONTROL_MODE_PLAYER := "player"
 const CONTROL_MODE_INSPECTION := "inspection"
 const MINIMAP_POSITION_REFRESH_M := 256.0
+const HUD_REFRESH_INTERVAL_USEC := 50000
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -61,6 +62,7 @@ var _enemy_root: Node3D = null
 var _pedestrians_visible := true
 var _fps_overlay_visible := false
 var _last_fps_sample := 0.0
+var _last_hud_refresh_tick_usec := -HUD_REFRESH_INTERVAL_USEC
 
 func _ready() -> void:
 	_configure_environment()
@@ -130,7 +132,9 @@ func handle_debug_keypress(keycode: int, physical_keycode: int = 0) -> bool:
 		return true
 	return false
 
-func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
+func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false) -> void:
+	if not force and not _should_refresh_hud():
+		return
 	var refresh_started_usec := Time.get_ticks_usec()
 	if not generated_city.has_method("get_city_summary"):
 		return
@@ -182,6 +186,7 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}) -> void:
 		hud.set_crosshair_state(_build_crosshair_state())
 	if hud.has_method("set_fps_overlay_visible"):
 		hud.set_fps_overlay_visible(_fps_overlay_visible)
+	_last_hud_refresh_tick_usec = Time.get_ticks_usec()
 	_record_hud_refresh_sample(Time.get_ticks_usec() - refresh_started_usec)
 
 func get_world_config():
@@ -278,13 +283,13 @@ func set_control_mode(mode: String) -> void:
 	if player != null and player.has_method("set_speed_profile"):
 		player.set_speed_profile(mode)
 	_set_camera_current(player.get_node_or_null("CameraRig/Camera3D"), true)
-	_refresh_hud_status()
+	_refresh_hud_status({}, true)
 
 func set_pedestrians_visible(visible: bool) -> void:
 	_pedestrians_visible = visible
 	if chunk_renderer != null and chunk_renderer.has_method("set_pedestrians_visible"):
 		chunk_renderer.set_pedestrians_visible(visible)
-	_refresh_hud_status()
+	_refresh_hud_status({}, true)
 
 func toggle_pedestrians_visible() -> void:
 	set_pedestrians_visible(not _pedestrians_visible)
@@ -300,7 +305,7 @@ func set_fps_overlay_visible(visible: bool) -> void:
 		hud.set_fps_overlay_visible(visible)
 	if hud != null and hud.has_method("set_fps_overlay_sample"):
 		hud.set_fps_overlay_sample(_last_fps_sample)
-	_refresh_hud_status()
+	_refresh_hud_status({}, true)
 
 func toggle_fps_overlay() -> void:
 	set_fps_overlay_visible(not _fps_overlay_visible)
@@ -350,6 +355,13 @@ func _build_hud_snapshot(collapsed: bool = false) -> Dictionary:
 			snapshot["crowd_update_avg_usec"] = int(streaming_profile.get("crowd_update_avg_usec", 0))
 			snapshot["crowd_spawn_avg_usec"] = int(streaming_profile.get("crowd_spawn_avg_usec", 0))
 			snapshot["crowd_render_commit_avg_usec"] = int(streaming_profile.get("crowd_render_commit_avg_usec", 0))
+			snapshot["crowd_active_state_count"] = int(streaming_profile.get("crowd_active_state_count", 0))
+			snapshot["crowd_step_usec"] = int(streaming_profile.get("crowd_step_usec", 0))
+			snapshot["crowd_reaction_usec"] = int(streaming_profile.get("crowd_reaction_usec", 0))
+			snapshot["crowd_rank_usec"] = int(streaming_profile.get("crowd_rank_usec", 0))
+			snapshot["crowd_snapshot_rebuild_usec"] = int(streaming_profile.get("crowd_snapshot_rebuild_usec", 0))
+			snapshot["crowd_chunk_commit_usec"] = int(streaming_profile.get("crowd_chunk_commit_usec", 0))
+			snapshot["crowd_tier1_transform_writes"] = int(streaming_profile.get("crowd_tier1_transform_writes", 0))
 		if chunk_renderer.has_method("get_pedestrian_runtime_summary"):
 			snapshot.merge(chunk_renderer.get_pedestrian_runtime_summary(), true)
 	return snapshot
@@ -491,12 +503,17 @@ func update_streaming_for_position(world_position: Vector3, delta: float = 0.0) 
 		)
 	var hud_debug_expanded := hud != null and hud.has_method("is_debug_expanded") and bool(hud.is_debug_expanded())
 	var debug_expanded := debug_overlay != null and debug_overlay.has_method("is_expanded") and bool(debug_overlay.is_expanded())
-	var hud_snapshot := _build_hud_snapshot(not hud_debug_expanded and not debug_expanded)
+	var should_refresh_hud := _should_refresh_hud()
+	var needs_snapshot := should_refresh_hud or debug_expanded
+	var hud_snapshot := {}
+	if needs_snapshot:
+		hud_snapshot = _build_hud_snapshot(not hud_debug_expanded and not debug_expanded)
 	if debug_overlay != null:
-		if debug_overlay.has_method("set_snapshot"):
+		if needs_snapshot and debug_overlay.has_method("set_snapshot"):
 			debug_overlay.set_snapshot(hud_snapshot)
 		debug_overlay.visible = debug_expanded
-	_refresh_hud_status(hud_snapshot)
+	if should_refresh_hud:
+		_refresh_hud_status(hud_snapshot, true)
 	_record_update_streaming_sample(Time.get_ticks_usec() - started_usec)
 	return events
 
@@ -674,6 +691,13 @@ func get_performance_profile() -> Dictionary:
 		"crowd_render_commit_max_usec": int(streaming_profile.get("crowd_render_commit_max_usec", 0)),
 		"crowd_render_commit_avg_usec": int(streaming_profile.get("crowd_render_commit_avg_usec", 0)),
 		"crowd_render_commit_sample_count": int(streaming_profile.get("crowd_render_commit_sample_count", 0)),
+		"crowd_active_state_count": int(streaming_profile.get("crowd_active_state_count", 0)),
+		"crowd_step_usec": int(streaming_profile.get("crowd_step_usec", 0)),
+		"crowd_reaction_usec": int(streaming_profile.get("crowd_reaction_usec", 0)),
+		"crowd_rank_usec": int(streaming_profile.get("crowd_rank_usec", 0)),
+		"crowd_snapshot_rebuild_usec": int(streaming_profile.get("crowd_snapshot_rebuild_usec", 0)),
+		"crowd_chunk_commit_usec": int(streaming_profile.get("crowd_chunk_commit_usec", 0)),
+		"crowd_tier1_transform_writes": int(streaming_profile.get("crowd_tier1_transform_writes", 0)),
 		"ped_tier0_count": int(renderer_stats.get("pedestrian_tier0_total", 0)),
 		"ped_tier1_count": int(renderer_stats.get("pedestrian_tier1_total", 0)),
 		"ped_tier2_count": int(renderer_stats.get("pedestrian_tier2_total", 0)),
@@ -955,6 +979,10 @@ func _is_minimap_crowd_debug_enabled() -> bool:
 func _invalidate_minimap_cache() -> void:
 	_minimap_cache_key = ""
 	_minimap_snapshot_cache.clear()
+
+func _should_refresh_hud() -> bool:
+	var now_usec := Time.get_ticks_usec()
+	return _last_hud_refresh_tick_usec < 0 or now_usec - _last_hud_refresh_tick_usec >= HUD_REFRESH_INTERVAL_USEC
 
 func _record_update_streaming_sample(duration_usec: int) -> void:
 	_update_streaming_sample_count += 1

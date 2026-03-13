@@ -13,14 +13,18 @@ func _init() -> void:
 	material.roughness = 1.0
 	material_override = material
 
-func configure_from_states(states: Array, chunk_center: Vector3) -> void:
+func configure_from_states(states: Array, chunk_center: Vector3) -> int:
 	if multimesh == null:
-		return
+		return 0
 	multimesh.instance_count = states.size()
+	var transform_write_count := 0
 	for state_index in range(states.size()):
 		var state = states[state_index]
 		multimesh.set_instance_transform(state_index, _build_instance_transform(state, chunk_center))
+		transform_write_count += 1
 	set_meta("pedestrian_tier1_count", states.size())
+	set_meta("pedestrian_tier1_transform_write_count", transform_write_count)
+	return transform_write_count
 
 func _build_instance_transform(state, chunk_center: Vector3) -> Transform3D:
 	var world_position := _state_world_position(state)

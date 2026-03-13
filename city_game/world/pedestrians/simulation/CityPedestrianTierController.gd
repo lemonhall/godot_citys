@@ -26,6 +26,11 @@ var _has_player_context := false
 var _last_profile_stats := {
 	"crowd_spawn_usec": 0,
 	"crowd_update_usec": 0,
+	"crowd_active_state_count": 0,
+	"crowd_step_usec": 0,
+	"crowd_reaction_usec": 0,
+	"crowd_rank_usec": 0,
+	"crowd_snapshot_rebuild_usec": 0,
 }
 
 func setup(config, world_data: Dictionary) -> void:
@@ -48,6 +53,11 @@ func setup(config, world_data: Dictionary) -> void:
 	_last_profile_stats = {
 		"crowd_spawn_usec": 0,
 		"crowd_update_usec": 0,
+		"crowd_active_state_count": 0,
+		"crowd_step_usec": 0,
+		"crowd_reaction_usec": 0,
+		"crowd_rank_usec": 0,
+		"crowd_snapshot_rebuild_usec": 0,
 	}
 
 func get_budget_contract() -> Dictionary:
@@ -170,7 +180,9 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	var crowd_spawn_usec := Time.get_ticks_usec() - spawn_started_usec
 	var active_states: Array = _pedestrian_streamer.get_active_states()
 
+	var crowd_step_usec := 0
 	if delta > 0.0:
+		var step_started_usec := Time.get_ticks_usec()
 		for state_variant in active_states:
 			var state: CityPedestrianState = state_variant
 			state.queue_step(delta)
@@ -179,11 +191,16 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 				continue
 			state.step(step_delta)
 			_pedestrian_streamer.ground_state(state)
+		crowd_step_usec = _duration_or_zero(step_started_usec, active_states.size())
 
+	var reaction_started_usec := Time.get_ticks_usec()
 	var reactive_candidates := _reaction_model.update_reactions(active_states, _budget_contract, delta)
+	var crowd_reaction_usec := _duration_or_zero(reaction_started_usec, active_states.size())
+	var rank_started_usec := Time.get_ticks_usec()
 	var reactive_rankings := _rank_reactive_candidates(reactive_candidates)
 	var tier3_ids: Dictionary = _select_tier3_ids(reactive_rankings)
 	var distance_ranked_states := _build_distance_ranked_states(active_states, player_position)
+	var crowd_rank_usec := _duration_or_zero(rank_started_usec, active_states.size())
 
 	var tier1_budget := int(_budget_contract.get("tier1_budget", 768))
 	var tier2_budget := int(_budget_contract.get("tier2_budget", 96))
@@ -198,6 +215,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	var tier3_count := 0
 	var remaining_tier2_budget: int = maxi(nearfield_budget - tier3_ids.size(), 0)
 	remaining_tier2_budget = mini(remaining_tier2_budget, tier2_budget)
+	var snapshot_rebuild_started_usec := Time.get_ticks_usec()
 	_chunk_render_snapshots.clear()
 	_tier1_state_refs.clear()
 	_tier2_state_refs.clear()
@@ -245,6 +263,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			tier0_count += 1
 			chunk_snapshot["tier0_count"] = int(chunk_snapshot.get("tier0_count", 0)) + 1
 		_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
+	var crowd_snapshot_rebuild_usec := _duration_or_zero(snapshot_rebuild_started_usec, active_states.size())
 
 	var runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_snapshot()
 	_global_snapshot = {
@@ -270,6 +289,11 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	_last_profile_stats = {
 		"crowd_spawn_usec": crowd_spawn_usec,
 		"crowd_update_usec": Time.get_ticks_usec() - update_started_usec,
+		"crowd_active_state_count": active_states.size(),
+		"crowd_step_usec": crowd_step_usec,
+		"crowd_reaction_usec": crowd_reaction_usec,
+		"crowd_rank_usec": crowd_rank_usec,
+		"crowd_snapshot_rebuild_usec": crowd_snapshot_rebuild_usec,
 	}
 	_global_snapshot["profile_stats"] = _last_profile_stats.duplicate(true)
 	return get_global_summary()
@@ -377,6 +401,11 @@ func _build_distance_ranked_states(active_states: Array, player_position: Vector
 		return player_position.distance_squared_to(a.world_position) < player_position.distance_squared_to(b.world_position)
 	)
 	return ranked_states
+
+func _duration_or_zero(started_usec: int, item_count: int) -> int:
+	if item_count <= 0:
+		return 0
+	return maxi(int(Time.get_ticks_usec() - started_usec), 1)
 
 func _build_full_state_snapshots(states: Array[CityPedestrianState]) -> Array[Dictionary]:
 	var snapshots: Array[Dictionary] = []

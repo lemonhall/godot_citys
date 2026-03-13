@@ -70,6 +70,17 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(profile.get("streaming_terrain_commit_sample_count", 0)) > 0, "Performance profile must include terrain commit samples"):
 		return
+	for required_key in [
+		"crowd_active_state_count",
+		"crowd_step_usec",
+		"crowd_reaction_usec",
+		"crowd_rank_usec",
+		"crowd_snapshot_rebuild_usec",
+		"crowd_chunk_commit_usec",
+		"crowd_tier1_transform_writes",
+	]:
+		if not T.require_true(self, profile.has(required_key), "Runtime performance profile must expose %s" % required_key):
+			return
 	if not T.require_true(self, int(profile.get("streaming_mount_setup_avg_usec", 0)) <= 16000, "M3 runtime profile must keep mount setup average at or below 16000 usec"):
 		return
 	if not T.require_true(self, int(profile.get("wall_frame_avg_usec", 0)) <= 16667, "Warm traversal must keep average wall-frame time at or below the 16.67ms redline"):

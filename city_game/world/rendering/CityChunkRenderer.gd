@@ -87,6 +87,13 @@ var _crowd_render_commit_sample_count := 0
 var _crowd_render_commit_total_usec := 0
 var _crowd_render_commit_max_usec := 0
 var _crowd_render_commit_last_usec := 0
+var _crowd_active_state_count := 0
+var _crowd_step_last_usec := 0
+var _crowd_reaction_last_usec := 0
+var _crowd_rank_last_usec := 0
+var _crowd_snapshot_rebuild_last_usec := 0
+var _crowd_chunk_commit_last_usec := 0
+var _crowd_tier1_transform_writes := 0
 var _pedestrian_tier_controller = null
 var _last_pedestrian_player_position := Vector3.ZERO
 var _last_pedestrian_player_velocity := Vector3.ZERO
@@ -299,6 +306,9 @@ func get_streaming_budget_stats() -> Dictionary:
 	}
 
 func get_streaming_profile_stats() -> Dictionary:
+	var crowd_runtime_profile: Dictionary = {}
+	if _pedestrian_tier_controller != null:
+		crowd_runtime_profile = (_pedestrian_tier_controller.get_global_summary().get("profile_stats", {}) as Dictionary).duplicate(true)
 	return {
 		"prepare_profile_sample_count": _prepare_profile_sample_count,
 		"prepare_profile_total_usec": _prepare_profile_total_usec,
@@ -355,6 +365,13 @@ func get_streaming_profile_stats() -> Dictionary:
 		"crowd_render_commit_avg_usec": _average_usec(_crowd_render_commit_total_usec, _crowd_render_commit_sample_count),
 		"crowd_render_commit_max_usec": _crowd_render_commit_max_usec,
 		"crowd_render_commit_last_usec": _crowd_render_commit_last_usec,
+		"crowd_active_state_count": int(crowd_runtime_profile.get("crowd_active_state_count", _crowd_active_state_count)),
+		"crowd_step_usec": int(crowd_runtime_profile.get("crowd_step_usec", _crowd_step_last_usec)),
+		"crowd_reaction_usec": int(crowd_runtime_profile.get("crowd_reaction_usec", _crowd_reaction_last_usec)),
+		"crowd_rank_usec": int(crowd_runtime_profile.get("crowd_rank_usec", _crowd_rank_last_usec)),
+		"crowd_snapshot_rebuild_usec": int(crowd_runtime_profile.get("crowd_snapshot_rebuild_usec", _crowd_snapshot_rebuild_last_usec)),
+		"crowd_chunk_commit_usec": _crowd_chunk_commit_last_usec,
+		"crowd_tier1_transform_writes": _crowd_tier1_transform_writes,
 	}
 
 func reset_streaming_profile_stats() -> void:
@@ -402,6 +419,13 @@ func reset_streaming_profile_stats() -> void:
 	_crowd_render_commit_total_usec = 0
 	_crowd_render_commit_max_usec = 0
 	_crowd_render_commit_last_usec = 0
+	_crowd_active_state_count = 0
+	_crowd_step_last_usec = 0
+	_crowd_reaction_last_usec = 0
+	_crowd_rank_last_usec = 0
+	_crowd_snapshot_rebuild_last_usec = 0
+	_crowd_chunk_commit_last_usec = 0
+	_crowd_tier1_transform_writes = 0
 
 func get_renderer_stats() -> Dictionary:
 	var lod_mode_counts := {
@@ -832,15 +856,23 @@ func _update_pedestrian_crowd(player_position: Vector3, delta: float) -> void:
 	var crowd_profile_stats: Dictionary = crowd_snapshot.get("profile_stats", {})
 	_record_crowd_spawn_sample(int(crowd_profile_stats.get("crowd_spawn_usec", 0)))
 	_record_crowd_update_sample(int(crowd_profile_stats.get("crowd_update_usec", 0)))
+	_crowd_active_state_count = int(crowd_profile_stats.get("crowd_active_state_count", crowd_snapshot.get("active_state_count", 0)))
+	_crowd_step_last_usec = int(crowd_profile_stats.get("crowd_step_usec", 0))
+	_crowd_reaction_last_usec = int(crowd_profile_stats.get("crowd_reaction_usec", 0))
+	_crowd_rank_last_usec = int(crowd_profile_stats.get("crowd_rank_usec", 0))
+	_crowd_snapshot_rebuild_last_usec = int(crowd_profile_stats.get("crowd_snapshot_rebuild_usec", 0))
 	var render_commit_started_usec := Time.get_ticks_usec()
+	var tier1_transform_writes := 0
 	for chunk_id in get_chunk_ids():
 		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
 		if chunk_scene.has_method("apply_pedestrian_chunk_snapshot"):
 			var chunk_snapshot: Dictionary = _pedestrian_tier_controller.get_chunk_snapshot_ref(chunk_id) if _pedestrian_tier_controller.has_method("get_chunk_snapshot_ref") else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id)
-			chunk_scene.apply_pedestrian_chunk_snapshot(chunk_snapshot)
+			tier1_transform_writes += int(chunk_scene.apply_pedestrian_chunk_snapshot(chunk_snapshot))
 		if chunk_scene.has_method("set_pedestrian_visibility"):
 			chunk_scene.set_pedestrian_visibility(_pedestrian_visibility_enabled)
-	_record_crowd_render_commit_sample(Time.get_ticks_usec() - render_commit_started_usec)
+	_crowd_chunk_commit_last_usec = maxi(int(Time.get_ticks_usec() - render_commit_started_usec), 1)
+	_crowd_tier1_transform_writes = tier1_transform_writes
+	_record_crowd_render_commit_sample(_crowd_chunk_commit_last_usec)
 
 func _distance_to_entry(player_position: Vector3, entry: Dictionary) -> float:
 	var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)

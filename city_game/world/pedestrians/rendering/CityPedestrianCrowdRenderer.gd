@@ -14,6 +14,7 @@ var _tier3_root: Node3D = null
 var _tier3_agents: Dictionary = {}
 var _death_root: Node3D = null
 var _death_visuals: Array[Dictionary] = []
+var _last_tier1_transform_write_count := 0
 var _last_snapshot := {
 	"chunk_id": "",
 	"tier0_count": 0,
@@ -32,14 +33,15 @@ func setup(chunk_data: Dictionary) -> void:
 	if not initial_snapshot.is_empty():
 		apply_chunk_snapshot(initial_snapshot)
 
-func apply_chunk_snapshot(snapshot: Dictionary) -> void:
+func apply_chunk_snapshot(snapshot: Dictionary) -> int:
 	_ensure_nodes()
 	var normalized_snapshot := _normalize_snapshot(snapshot)
 	_last_snapshot = normalized_snapshot
 	var tier1_states: Array = normalized_snapshot.get("tier1_states", [])
-	_pedestrian_batch.configure_from_states(tier1_states, _chunk_center)
+	_last_tier1_transform_write_count = _pedestrian_batch.configure_from_states(tier1_states, _chunk_center)
 	_sync_tier2_agents(normalized_snapshot.get("tier2_states", []))
 	_sync_tier3_agents(normalized_snapshot.get("tier3_states", []))
+	return _last_tier1_transform_write_count
 
 func get_batch() -> MultiMeshInstance3D:
 	_ensure_nodes()
@@ -52,6 +54,7 @@ func get_crowd_stats() -> Dictionary:
 		"tier2_count": int(_last_snapshot.get("tier2_count", 0)),
 		"tier3_count": int(_last_snapshot.get("tier3_count", 0)),
 		"tier1_instance_count": _pedestrian_batch.multimesh.instance_count if _pedestrian_batch != null and _pedestrian_batch.multimesh != null else 0,
+		"tier1_transform_write_count": _last_tier1_transform_write_count,
 	}
 
 func spawn_pedestrian_death_visual(event: Dictionary) -> void:

@@ -1,6 +1,7 @@
 extends RefCounted
 
 const MANIFEST_PATH := "res://city_game/assets/pedestrians/civilians/pedestrian_model_manifest.json"
+const MIN_DEATH_VISUAL_DURATION_SEC := 3.0
 
 var _manifest_snapshot: Dictionary = {}
 var _model_entries: Array[Dictionary] = []
@@ -48,6 +49,10 @@ func resolve_cached_animation_player(root_node: Node, entry: Dictionary) -> Anim
 
 func entry_uses_placeholder_box_mesh(entry: Dictionary) -> bool:
 	return bool(_resolve_scene_metadata(entry).get("contains_placeholder_box_mesh", false))
+
+func resolve_death_visual_duration_sec(entry: Dictionary) -> float:
+	var metadata := _resolve_scene_metadata(entry)
+	return maxf(float(metadata.get("death_animation_length_sec", 0.0)), MIN_DEATH_VISUAL_DURATION_SEC)
 
 func resolve_animation_name(entry: Dictionary, state) -> String:
 	var life_state := _state_life_state(state)
@@ -148,6 +153,7 @@ func _resolve_scene_metadata(entry: Dictionary) -> Dictionary:
 	var metadata: Dictionary = {
 		"animation_player_path": _resolve_animation_player_path(model_root),
 		"contains_placeholder_box_mesh": scene_contains_placeholder_box_mesh(model_root),
+		"death_animation_length_sec": _resolve_death_animation_length_sec(model_root, entry),
 	}
 	model_root.free()
 	_scene_metadata_cache[file_path] = metadata
@@ -158,6 +164,16 @@ func _resolve_animation_player_path(root_node: Node) -> NodePath:
 	if animation_player == null:
 		return NodePath("")
 	return root_node.get_path_to(animation_player)
+
+func _resolve_death_animation_length_sec(root_node: Node, entry: Dictionary) -> float:
+	var animation_player := find_animation_player(root_node)
+	if animation_player == null:
+		return 0.0
+	var death_animation := str(entry.get("death_animation", ""))
+	if death_animation == "" or not animation_player.has_animation(death_animation):
+		return 0.0
+	var animation := animation_player.get_animation(death_animation)
+	return 0.0 if animation == null else float(animation.length)
 
 func _first_non_empty(values: Array[String]) -> String:
 	for value in values:

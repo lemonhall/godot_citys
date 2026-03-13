@@ -31,6 +31,7 @@ func _run() -> void:
 		var run_animation := str(model.get("run_animation", ""))
 		var death_animation := str(model.get("death_animation", ""))
 		var source_height_m := float(model.get("source_height_m", 0.0))
+		var visual_target_height_m := float(model.get("visual_target_height_m", 0.0))
 		if not T.require_true(self, walk_animation != "", "Manifest entry %s must declare walk_animation explicitly" % str(model.get("model_id", ""))):
 			return
 		if not T.require_true(self, run_animation != "", "Manifest entry %s must declare run_animation explicitly" % str(model.get("model_id", ""))):
@@ -38,6 +39,8 @@ func _run() -> void:
 		if not T.require_true(self, death_animation != "", "Manifest entry %s must declare death_animation explicitly" % str(model.get("model_id", ""))):
 			return
 		if not T.require_true(self, source_height_m > 0.0, "Manifest entry %s must declare source_height_m for per-model normalization" % str(model.get("model_id", ""))):
+			return
+		if not T.require_true(self, visual_target_height_m > 0.0, "Manifest entry %s must declare visual_target_height_m for player-relative M9 size calibration" % str(model.get("model_id", ""))):
 			return
 		if not T.require_true(self, model.has("source_ground_offset_m"), "Manifest entry %s must declare source_ground_offset_m so scaled models keep feet on ground" % str(model.get("model_id", ""))):
 			return

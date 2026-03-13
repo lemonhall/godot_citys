@@ -280,6 +280,11 @@ func spawn_pedestrian_death_visual(event: Dictionary) -> void:
 		return
 	_pedestrian_crowd.spawn_pedestrian_death_visual(event)
 
+func drain_pedestrian_death_visuals(target_parent: Node3D) -> Array[Dictionary]:
+	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("drain_death_visuals"):
+		return []
+	return _pedestrian_crowd.drain_death_visuals(target_parent)
+
 func set_pedestrian_visibility(visible: bool) -> void:
 	if _pedestrians_visible == visible:
 		return

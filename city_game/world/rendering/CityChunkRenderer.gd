@@ -7,6 +7,7 @@ const CityTerrainPageProvider := preload("res://city_game/world/rendering/CityTe
 const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTerrainMeshBuilder.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
 const CityPedestrianTierController := preload("res://city_game/world/pedestrians/simulation/CityPedestrianTierController.gd")
+const CityPedestrianVisualCatalog := preload("res://city_game/world/pedestrians/rendering/CityPedestrianVisualCatalog.gd")
 const CityPedestrianVisualInstance := preload("res://city_game/world/pedestrians/rendering/CityPedestrianVisualInstance.gd")
 
 const PREPARE_BUDGET_PER_TICK := 1
@@ -15,6 +16,8 @@ const RETIRE_BUDGET_PER_TICK := 1
 const MAX_POOLED_CHUNKS := 8
 const SURFACE_ASYNC_CONCURRENCY_LIMIT := 1
 const TERRAIN_ASYNC_CONCURRENCY_LIMIT := 1
+const PLAYER_CONTEXT_TELEPORT_DISTANCE_M := 32.0
+const DEFAULT_DEATH_VISUAL_DURATION_SEC := 3.0
 
 var _config
 var _world_data: Dictionary = {}
@@ -87,8 +90,13 @@ var _crowd_render_commit_last_usec := 0
 var _pedestrian_tier_controller = null
 var _last_pedestrian_player_position := Vector3.ZERO
 var _last_pedestrian_player_velocity := Vector3.ZERO
+var _last_pedestrian_player_context: Dictionary = {}
 var _has_pedestrian_player_context := false
 var _pedestrian_visibility_enabled := true
+var _global_death_root: Node3D = null
+var _global_death_visuals: Array[Dictionary] = []
+var _chunk_death_visual_records: Dictionary = {}
+var _pedestrian_visual_catalog: CityPedestrianVisualCatalog = null
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
@@ -117,10 +125,15 @@ func setup(config, world_data: Dictionary) -> void:
 	_pedestrian_tier_controller = null
 	_last_pedestrian_player_position = Vector3.ZERO
 	_last_pedestrian_player_velocity = Vector3.ZERO
+	_last_pedestrian_player_context.clear()
 	_has_pedestrian_player_context = false
 	_pedestrian_visibility_enabled = true
+	_clear_global_death_visuals()
+	_chunk_death_visual_records.clear()
+	_pedestrian_visual_catalog = null
 	if _world_data.has("pedestrian_query"):
 		CityPedestrianVisualInstance.prewarm_shared_catalog()
+		_pedestrian_visual_catalog = CityPedestrianVisualCatalog.new()
 		_pedestrian_tier_controller = CityPedestrianTierController.new()
 		_pedestrian_tier_controller.setup(_config, _world_data)
 	reset_streaming_profile_stats()
@@ -129,6 +142,7 @@ func setup(config, world_data: Dictionary) -> void:
 func _process(delta: float) -> void:
 	_process_streaming_queues_once_per_frame()
 	_update_lod_states(_last_player_position)
+	_update_global_death_visuals(delta)
 
 func _notification(what: int) -> void:
 	if what != NOTIFICATION_PREDELETE:
@@ -167,12 +181,17 @@ func _notification(what: int) -> void:
 	_pedestrian_tier_controller = null
 	_last_pedestrian_player_position = Vector3.ZERO
 	_last_pedestrian_player_velocity = Vector3.ZERO
+	_last_pedestrian_player_context.clear()
 	_has_pedestrian_player_context = false
+	_pedestrian_visual_catalog = null
+	_clear_global_death_visuals()
+	_chunk_death_visual_records.clear()
 
-func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0) -> void:
+func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0, player_context: Dictionary = {}) -> void:
 	if _config == null:
 		return
 	_last_player_position = player_position
+	_last_pedestrian_player_context = player_context.duplicate(true)
 	_last_active_chunk_entries.clear()
 	for entry_variant in active_chunk_entries:
 		_last_active_chunk_entries.append((entry_variant as Dictionary).duplicate(true))
@@ -513,13 +532,15 @@ func resolve_explosion_impact(world_position: Vector3, lethal_radius_m: float, t
 
 func _spawn_pedestrian_death_visuals(events: Array) -> void:
 	for event_variant in events:
-		var event: Dictionary = event_variant
+		var event := _normalize_death_event(event_variant)
 		var chunk_id := str(event.get("chunk_id", ""))
-		if chunk_id == "" or not _chunk_scenes.has(chunk_id):
-			continue
-		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
-		if chunk_scene.has_method("spawn_pedestrian_death_visual"):
-			chunk_scene.spawn_pedestrian_death_visual(event)
+		if chunk_id != "" and _chunk_scenes.has(chunk_id):
+			var chunk_scene: Node3D = _chunk_scenes[chunk_id]
+			if chunk_scene.has_method("spawn_pedestrian_death_visual"):
+				chunk_scene.spawn_pedestrian_death_visual(event)
+				_append_chunk_death_visual_record(chunk_id, event)
+				continue
+		_spawn_global_pedestrian_death_visual(event)
 
 func _build_target_chunk_map(active_chunk_entries: Array) -> Dictionary:
 	var map := {}
@@ -645,6 +666,7 @@ func _process_retire_budget() -> void:
 			continue
 		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
 		_chunk_scenes.erase(chunk_id)
+		_migrate_chunk_death_visuals(chunk_scene)
 		remove_child(chunk_scene)
 		chunk_scene.visible = false
 		if _scene_pool.size() < MAX_POOLED_CHUNKS:
@@ -660,6 +682,133 @@ func _take_pooled_scene() -> Node3D:
 		return CityChunkScene.new()
 	return _scene_pool.pop_back()
 
+func _spawn_global_pedestrian_death_visual(event: Dictionary) -> void:
+	_spawn_global_pedestrian_death_visual_with_remaining(event, float(event.get("duration_sec", DEFAULT_DEATH_VISUAL_DURATION_SEC)))
+
+func _spawn_global_pedestrian_death_visual_with_remaining(event: Dictionary, remaining_sec: float) -> void:
+	var death_root := _ensure_global_death_root()
+	var death_visual := CityPedestrianVisualInstance.new()
+	death_visual.name = "%s_dead_global_%d" % [
+		str(event.get("pedestrian_id", "pedestrian")).replace(":", "_"),
+		Time.get_ticks_usec(),
+	]
+	death_root.add_child(death_visual)
+	death_visual.apply_state(_build_global_death_visual_state(event), Vector3.ZERO)
+	_global_death_visuals.append({
+		"node": death_visual,
+		"remaining_sec": remaining_sec,
+	})
+
+func _migrate_chunk_death_visuals(chunk_scene: Node3D) -> void:
+	if chunk_scene == null:
+		return
+	var chunk_id := String(chunk_scene.name)
+	var migrated_records: Array = _chunk_death_visual_records.get(chunk_id, [])
+	_chunk_death_visual_records.erase(chunk_id)
+	for record_variant in migrated_records:
+		var record: Dictionary = record_variant
+		var event: Dictionary = record.get("event", {})
+		if event.is_empty():
+			continue
+		_spawn_global_pedestrian_death_visual_with_remaining(event, float(record.get("remaining_sec", DEFAULT_DEATH_VISUAL_DURATION_SEC)))
+
+func _ensure_global_death_root() -> Node3D:
+	if _global_death_root != null and is_instance_valid(_global_death_root):
+		return _global_death_root
+	_global_death_root = get_node_or_null("PedestrianDeathVisualsGlobal") as Node3D
+	if _global_death_root != null:
+		return _global_death_root
+	_global_death_root = Node3D.new()
+	_global_death_root.name = "PedestrianDeathVisualsGlobal"
+	add_child(_global_death_root)
+	return _global_death_root
+
+func _update_global_death_visuals(delta: float) -> void:
+	_update_chunk_death_visual_records(delta)
+	if delta <= 0.0 or _global_death_visuals.is_empty():
+		return
+	for visual_index in range(_global_death_visuals.size() - 1, -1, -1):
+		var visual_record: Dictionary = _global_death_visuals[visual_index]
+		var remaining_sec := maxf(float(visual_record.get("remaining_sec", 0.0)) - delta, 0.0)
+		var visual_node := visual_record.get("node") as Node3D
+		if remaining_sec <= 0.0:
+			if visual_node != null and is_instance_valid(visual_node):
+				visual_node.queue_free()
+			_global_death_visuals.remove_at(visual_index)
+			continue
+		visual_record["remaining_sec"] = remaining_sec
+		_global_death_visuals[visual_index] = visual_record
+
+func _clear_global_death_visuals() -> void:
+	for visual_record_variant in _global_death_visuals:
+		var visual_record: Dictionary = visual_record_variant
+		var visual_node := visual_record.get("node") as Node3D
+		if visual_node != null and is_instance_valid(visual_node):
+			visual_node.queue_free()
+	_global_death_visuals.clear()
+	_chunk_death_visual_records.clear()
+	if _global_death_root != null and is_instance_valid(_global_death_root):
+		_global_death_root.queue_free()
+	_global_death_root = null
+
+func _append_chunk_death_visual_record(chunk_id: String, event: Dictionary) -> void:
+	var records: Array = _chunk_death_visual_records.get(chunk_id, [])
+	records.append({
+		"event": event.duplicate(true),
+		"remaining_sec": float(event.get("duration_sec", DEFAULT_DEATH_VISUAL_DURATION_SEC)),
+	})
+	_chunk_death_visual_records[chunk_id] = records
+
+func _update_chunk_death_visual_records(delta: float) -> void:
+	if delta <= 0.0 or _chunk_death_visual_records.is_empty():
+		return
+	for chunk_id_variant in _chunk_death_visual_records.keys():
+		var chunk_id := str(chunk_id_variant)
+		var surviving_records: Array[Dictionary] = []
+		for record_variant in _chunk_death_visual_records[chunk_id]:
+			var record: Dictionary = record_variant
+			var remaining_sec := maxf(float(record.get("remaining_sec", 0.0)) - delta, 0.0)
+			if remaining_sec <= 0.0:
+				continue
+			record["remaining_sec"] = remaining_sec
+			surviving_records.append(record)
+		if surviving_records.is_empty():
+			_chunk_death_visual_records.erase(chunk_id)
+			continue
+		_chunk_death_visual_records[chunk_id] = surviving_records
+
+func _build_global_death_visual_state(event: Dictionary) -> Dictionary:
+	return {
+		"pedestrian_id": str(event.get("pedestrian_id", "")),
+		"world_position": event.get("world_position", Vector3.ZERO),
+		"heading": event.get("heading", Vector3.FORWARD),
+		"height_m": float(event.get("height_m", 1.75)),
+		"radius_m": float(event.get("radius_m", 0.28)),
+		"seed": int(event.get("seed", 0)),
+		"archetype_id": str(event.get("archetype_id", "resident")),
+		"archetype_signature": str(event.get("archetype_signature", "resident:v0")),
+		"reaction_state": "none",
+		"life_state": "dead",
+	}
+
+func _normalize_death_event(event_variant) -> Dictionary:
+	var event: Dictionary = (event_variant as Dictionary).duplicate(true)
+	if event.is_empty():
+		return event
+	var duration_sec := float(event.get("duration_sec", 0.0))
+	if duration_sec <= 0.0:
+		duration_sec = _resolve_death_visual_duration_sec(event)
+	event["duration_sec"] = duration_sec
+	return event
+
+func _resolve_death_visual_duration_sec(event: Dictionary) -> float:
+	if _pedestrian_visual_catalog == null:
+		return DEFAULT_DEATH_VISUAL_DURATION_SEC
+	var entry := _pedestrian_visual_catalog.select_entry_for_state(event)
+	if entry.is_empty():
+		return DEFAULT_DEATH_VISUAL_DURATION_SEC
+	return _pedestrian_visual_catalog.resolve_death_visual_duration_sec(entry)
+
 func _update_lod_states(player_position: Vector3) -> void:
 	for chunk_id in get_chunk_ids():
 		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
@@ -670,10 +819,12 @@ func _update_pedestrian_crowd(player_position: Vector3, delta: float) -> void:
 		return
 	var player_velocity := Vector3.ZERO
 	if _has_pedestrian_player_context and delta > 0.0:
-		player_velocity = (player_position - _last_pedestrian_player_position) / delta
+		var player_travel_distance_m := player_position.distance_to(_last_pedestrian_player_position)
+		if player_travel_distance_m <= PLAYER_CONTEXT_TELEPORT_DISTANCE_M:
+			player_velocity = (player_position - _last_pedestrian_player_position) / delta
 	elif _has_pedestrian_player_context:
 		player_velocity = _last_pedestrian_player_velocity
-	_pedestrian_tier_controller.set_player_context(player_position, player_velocity)
+	_pedestrian_tier_controller.set_player_context(player_position, player_velocity, _last_pedestrian_player_context)
 	_last_pedestrian_player_position = player_position
 	_last_pedestrian_player_velocity = player_velocity
 	_has_pedestrian_player_context = true

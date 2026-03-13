@@ -7,6 +7,7 @@ const CityPedestrianReactionModel := preload("res://city_game/world/pedestrians/
 
 const TIER1_UPDATE_INTERVAL_SEC := 0.12
 const TIER0_UPDATE_INTERVAL_SEC := 0.35
+const PLAYER_CONTEXT_TELEPORT_DISTANCE_M := 32.0
 
 var _config = null
 var _budget := CityPedestrianBudget.new()
@@ -20,6 +21,7 @@ var _tier2_state_refs: Array[CityPedestrianState] = []
 var _tier3_state_refs: Array[CityPedestrianState] = []
 var _last_player_position := Vector3.ZERO
 var _last_player_velocity := Vector3.ZERO
+var _last_player_context: Dictionary = {}
 var _has_player_context := false
 var _last_profile_stats := {
 	"crowd_spawn_usec": 0,
@@ -41,6 +43,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_tier3_state_refs.clear()
 	_last_player_position = Vector3.ZERO
 	_last_player_velocity = Vector3.ZERO
+	_last_player_context.clear()
 	_has_player_context = false
 	_last_profile_stats = {
 		"crowd_spawn_usec": 0,
@@ -50,10 +53,11 @@ func setup(config, world_data: Dictionary) -> void:
 func get_budget_contract() -> Dictionary:
 	return _budget_contract.duplicate(true)
 
-func set_player_context(player_position: Vector3, player_velocity: Vector3 = Vector3.ZERO) -> void:
-	_reaction_model.set_player_context(player_position, player_velocity)
+func set_player_context(player_position: Vector3, player_velocity: Vector3 = Vector3.ZERO, context: Dictionary = {}) -> void:
+	_reaction_model.set_player_context(player_position, player_velocity, context)
 	_last_player_position = player_position
 	_last_player_velocity = player_velocity
+	_last_player_context = context.duplicate(true)
 	_has_player_context = true
 
 func notify_projectile_event(origin: Vector3, direction: Vector3, range_m: float = 36.0) -> void:
@@ -64,7 +68,7 @@ func notify_explosion_event(world_position: Vector3, radius_m: float) -> void:
 
 func resolve_projectile_hit(start_position: Vector3, end_position: Vector3, damage: float = 1.0, velocity: Vector3 = Vector3.ZERO) -> Dictionary:
 	var best_hit := {}
-	for state_variant in _pedestrian_streamer.get_active_states():
+	for state_variant in _get_projectile_hit_candidates():
 		var state: CityPedestrianState = state_variant
 		if not state.is_alive():
 			continue
@@ -92,6 +96,34 @@ func resolve_projectile_hit(start_position: Vector3, end_position: Vector3, dama
 		"velocity": velocity,
 		"death_events": [death_event],
 	}
+
+func _get_projectile_hit_candidates() -> Array[CityPedestrianState]:
+	var candidates: Array[CityPedestrianState] = []
+	var seen_ids: Dictionary = {}
+	for state in _tier3_state_refs:
+		if _append_projectile_hit_candidate(candidates, seen_ids, state):
+			continue
+	for state in _tier2_state_refs:
+		if _append_projectile_hit_candidate(candidates, seen_ids, state):
+			continue
+	for state in _tier1_state_refs:
+		if _append_projectile_hit_candidate(candidates, seen_ids, state):
+			continue
+	if not candidates.is_empty():
+		return candidates
+	for state_variant in _pedestrian_streamer.get_active_states():
+		var state: CityPedestrianState = state_variant
+		_append_projectile_hit_candidate(candidates, seen_ids, state)
+	return candidates
+
+func _append_projectile_hit_candidate(candidates: Array[CityPedestrianState], seen_ids: Dictionary, state: CityPedestrianState) -> bool:
+	if state == null:
+		return false
+	if seen_ids.has(state.pedestrian_id):
+		return false
+	seen_ids[state.pedestrian_id] = true
+	candidates.append(state)
+	return true
 
 func resolve_explosion_impact(world_position: Vector3, lethal_radius_m: float, threat_radius_m: float = -1.0) -> Dictionary:
 	var resolved_threat_radius_m := threat_radius_m if threat_radius_m >= 0.0 else lethal_radius_m
@@ -125,8 +157,10 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	if _has_player_context and player_position == _last_player_position:
 		inferred_player_velocity = _last_player_velocity
 	elif _has_player_context and delta > 0.0:
-		inferred_player_velocity = (player_position - _last_player_position) / delta
-	set_player_context(player_position, inferred_player_velocity)
+		var player_travel_distance_m := player_position.distance_to(_last_player_position)
+		if player_travel_distance_m <= PLAYER_CONTEXT_TELEPORT_DISTANCE_M:
+			inferred_player_velocity = (player_position - _last_player_position) / delta
+	set_player_context(player_position, inferred_player_velocity, _last_player_context)
 
 	var active_chunk_ids: Array[String] = []
 	for entry_variant in active_chunk_entries:

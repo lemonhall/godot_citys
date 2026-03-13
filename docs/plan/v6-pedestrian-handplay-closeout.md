@@ -37,6 +37,22 @@
 5. `tests/e2e/test_city_pedestrian_performance_profile.gd` 与 `tests/e2e/test_city_runtime_performance_profile.gd` 必须继续 `PASS`，不得因为 `M9` 收口把 `wall_frame_avg_usec` 打穿 `16667`。
 6. 反作弊条款：不得通过跳过异常模型、屏蔽 inspection mode、延迟真正死亡判定、只调低测试路线或把大量人口塞进不可见层来宣称 `M9` 完成。
 
+## Latest Status
+
+- 2026-03-13 当前功能链已验证通过：
+  - `tests/world/test_city_pedestrian_visual_height_calibration.gd`
+  - `tests/world/test_city_pedestrian_sustained_fire_reaction.gd`
+  - `tests/world/test_city_pedestrian_inspection_mode_non_threat.gd`
+  - `tests/world/test_city_pedestrian_death_visual_persistence.gd`
+  - `tests/world/test_city_pedestrian_density_order_of_magnitude.gd`
+  - `tests/e2e/test_city_pedestrian_live_burst_fire_stability.gd`
+  - `tests/e2e/test_city_pedestrian_character_visual_presence.gd`
+  - `tests/e2e/test_city_pedestrian_live_combat_chain.gd`
+- 2026-03-13 当前 profiling 仍为阻塞：
+  - `tests/e2e/test_city_pedestrian_performance_profile.gd` FAIL，warm `wall_frame_avg_usec = 32259`，`crowd_update_avg_usec = 17412`
+  - `tests/e2e/test_city_runtime_performance_profile.gd` FAIL，warm `wall_frame_avg_usec = 35807`，`crowd_update_avg_usec = 20200`
+- 结论：`M9` 的 hand-play 功能收口已明显推进，但在重新压回 `16.67ms/frame` 红线之前，不能标记为完成。
+
 ## Files
 
 - Modify: `city_game/assets/pedestrians/civilians/pedestrian_model_manifest.json`

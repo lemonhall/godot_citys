@@ -4,7 +4,7 @@ const CityPedestrianCrowdBatch := preload("res://city_game/world/pedestrians/ren
 const CityPedestrianVisualInstance := preload("res://city_game/world/pedestrians/rendering/CityPedestrianVisualInstance.gd")
 const CityPedestrianReactiveAgent := preload("res://city_game/world/pedestrians/simulation/CityPedestrianReactiveAgent.gd")
 
-const DEATH_VISUAL_DURATION_SEC := 1.35
+const DEATH_VISUAL_DURATION_SEC := 3.0
 
 var _chunk_center := Vector3.ZERO
 var _pedestrian_batch: CityPedestrianCrowdBatch = null
@@ -63,10 +63,64 @@ func spawn_pedestrian_death_visual(event: Dictionary) -> void:
 	]
 	_death_root.add_child(death_visual)
 	death_visual.apply_state(_build_death_visual_state(event), _chunk_center)
+	var remaining_sec := float(event.get("duration_sec", DEATH_VISUAL_DURATION_SEC))
+	death_visual.set_meta("death_event", event.duplicate(true))
+	death_visual.set_meta("death_remaining_sec", remaining_sec)
 	_death_visuals.append({
+		"event": event.duplicate(true),
 		"node": death_visual,
-		"remaining_sec": float(event.get("duration_sec", DEATH_VISUAL_DURATION_SEC)),
+		"remaining_sec": remaining_sec,
 	})
+
+func drain_death_visuals(target_parent: Node3D) -> Array[Dictionary]:
+	var transferred_records: Array[Dictionary] = []
+	if target_parent == null:
+		return transferred_records
+	var remaining_sec_by_node: Dictionary = {}
+	var event_by_node: Dictionary = {}
+	for visual_record_variant in _death_visuals:
+		var visual_record: Dictionary = visual_record_variant
+		var source_node := visual_record.get("node") as Node3D
+		if source_node == null or not is_instance_valid(source_node):
+			continue
+		remaining_sec_by_node[source_node] = float(visual_record.get("remaining_sec", DEATH_VISUAL_DURATION_SEC))
+		event_by_node[source_node] = (visual_record.get("event", {}) as Dictionary).duplicate(true)
+	if _death_root == null:
+		_death_visuals.clear()
+		return transferred_records
+	for child in _death_root.get_children():
+		var source_node := child as Node3D
+		if source_node == null or not is_instance_valid(source_node):
+			continue
+		var event: Dictionary = {}
+		if source_node.has_meta("death_event"):
+			event = (source_node.get_meta("death_event", {}) as Dictionary).duplicate(true)
+		elif event_by_node.has(source_node):
+			event = (event_by_node[source_node] as Dictionary).duplicate(true)
+		var remaining_sec := float(source_node.get_meta("death_remaining_sec", remaining_sec_by_node.get(source_node, DEATH_VISUAL_DURATION_SEC)))
+		var migrated_node: Node3D = null
+		if not event.is_empty():
+			var death_visual := CityPedestrianVisualInstance.new()
+			death_visual.name = "%s_migrated_%d" % [
+				str(event.get("pedestrian_id", "pedestrian")).replace(":", "_"),
+				Time.get_ticks_usec(),
+			]
+			target_parent.add_child(death_visual)
+			death_visual.apply_state(_build_death_visual_state(event), Vector3.ZERO)
+			migrated_node = death_visual
+		elif source_node != null and is_instance_valid(source_node):
+			source_node.reparent(target_parent, true)
+			migrated_node = source_node
+		if source_node != null and is_instance_valid(source_node) and source_node != migrated_node:
+			source_node.queue_free()
+		if migrated_node == null or not is_instance_valid(migrated_node):
+			continue
+		transferred_records.append({
+			"node": migrated_node,
+			"remaining_sec": remaining_sec,
+		})
+	_death_visuals.clear()
+	return transferred_records
 
 func _process(delta: float) -> void:
 	if delta <= 0.0 or _death_visuals.is_empty():
@@ -80,6 +134,8 @@ func _process(delta: float) -> void:
 				visual_node.queue_free()
 			_death_visuals.remove_at(visual_index)
 			continue
+		if visual_node != null and is_instance_valid(visual_node):
+			visual_node.set_meta("death_remaining_sec", remaining_sec)
 		visual_record["remaining_sec"] = remaining_sec
 		_death_visuals[visual_index] = visual_record
 

@@ -52,10 +52,13 @@ func _run() -> void:
 
 		if not T.require_true(self, model.has("source_height_m"), "Manifest entry %s must declare source_height_m for per-model normalization" % model_id):
 			return
+		if not T.require_true(self, model.has("visual_target_height_m"), "Manifest entry %s must declare visual_target_height_m for player-relative M9 size calibration" % model_id):
+			return
 		if not T.require_true(self, model.has("source_ground_offset_m"), "Manifest entry %s must declare source_ground_offset_m so scaled models keep feet on the ground" % model_id):
 			return
 
 		var source_height_m := float(model.get("source_height_m", 0.0))
+		var visual_target_height_m := float(model.get("visual_target_height_m", 0.0))
 		var source_ground_offset_m := float(model.get("source_ground_offset_m", 0.0))
 		if not T.require_true(self, absf(source_height_m - float(raw_bounds.get("height_m", 0.0))) <= BOUNDS_EPSILON, "Manifest source_height_m for %s must match the raw imported model height" % model_id):
 			return
@@ -71,11 +74,15 @@ func _run() -> void:
 		if not T.require_true(self, model_root != null, "Visual instance must mount a Model child for %s" % model_id):
 			visual.queue_free()
 			return
-		var expected_uniform_scale := SAMPLE_HEIGHT_M / source_height_m
-		if not T.require_true(self, absf(model_root.scale.y - expected_uniform_scale) <= SCALE_EPSILON, "Visual instance must scale %s from manifest source_height_m" % model_id):
+		var expected_uniform_scale := visual_target_height_m / source_height_m
+		if not T.require_true(self, absf(model_root.scale.y - expected_uniform_scale) <= SCALE_EPSILON, "Visual instance must scale %s from manifest visual_target_height_m" % model_id):
 			visual.queue_free()
 			return
 		if not T.require_true(self, absf(model_root.position.y - source_ground_offset_m * expected_uniform_scale) <= BOUNDS_EPSILON, "Visual instance must raise %s by the scaled source_ground_offset_m" % model_id):
+			visual.queue_free()
+			return
+		var normalized_bounds := _measure_world_bounds(visual)
+		if not T.require_true(self, absf(float(normalized_bounds.get("height_m", 0.0)) - visual_target_height_m) <= BOUNDS_EPSILON, "Visual instance must render %s at manifest visual_target_height_m after normalization" % model_id):
 			visual.queue_free()
 			return
 

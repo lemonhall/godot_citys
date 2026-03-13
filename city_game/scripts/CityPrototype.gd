@@ -483,7 +483,12 @@ func update_streaming_for_position(world_position: Vector3, delta: float = 0.0) 
 		return []
 	var events: Array = _chunk_streamer.update_for_world_position(world_position)
 	if chunk_renderer != null and chunk_renderer.has_method("sync_streaming"):
-		chunk_renderer.sync_streaming(_chunk_streamer.get_active_chunk_entries(), world_position, delta)
+		chunk_renderer.sync_streaming(
+			_chunk_streamer.get_active_chunk_entries(),
+			world_position,
+			delta,
+			_build_pedestrian_player_context()
+		)
 	var hud_debug_expanded := hud != null and hud.has_method("is_debug_expanded") and bool(hud.is_debug_expanded())
 	var debug_expanded := debug_overlay != null and debug_overlay.has_method("is_expanded") and bool(debug_overlay.is_expanded())
 	var hud_snapshot := _build_hud_snapshot(not hud_debug_expanded and not debug_expanded)
@@ -913,6 +918,15 @@ func _vector3_to_dict(value: Vector3) -> Dictionary:
 		"x": snappedf(value.x, 0.01),
 		"y": snappedf(value.y, 0.01),
 		"z": snappedf(value.z, 0.01),
+	}
+
+func _build_pedestrian_player_context() -> Dictionary:
+	var speed_profile := _control_mode
+	if player != null and player.has_method("get_speed_profile"):
+		speed_profile = str(player.get_speed_profile())
+	return {
+		"control_mode": _control_mode,
+		"speed_profile": speed_profile,
 	}
 
 func _build_minimap_cache_key(center_world_position: Vector3, world_radius_m: float) -> String:

@@ -14,56 +14,49 @@ const SEARCH_POSITIONS := [
 	Vector3.ZERO,
 ]
 
+const DEATH_RETENTION_ASSERT_SEC := 0.75
+const REMOUNT_JUMP := Vector3(4096.0, 0.0, 4096.0)
+
 func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
 	var scene := load("res://city_game/scenes/CityPrototype.tscn")
 	if scene == null or not (scene is PackedScene):
-		T.fail_and_quit(self, "Missing CityPrototype.tscn for pedestrian character visual presence")
+		T.fail_and_quit(self, "Missing CityPrototype.tscn for pedestrian death visual persistence")
 		return
 
 	var world := (scene as PackedScene).instantiate()
 	root.add_child(world)
 	await process_frame
 
-	if not T.require_true(self, world.has_method("get_pedestrian_runtime_snapshot"), "CityPrototype must expose get_pedestrian_runtime_snapshot() for M8 visual validation"):
+	if not T.require_true(self, world.has_method("get_chunk_renderer"), "CityPrototype must expose get_chunk_renderer() for death visual persistence validation"):
 		return
-	if not T.require_true(self, world.has_method("get_chunk_renderer"), "CityPrototype must expose get_chunk_renderer() for live visual validation"):
+	if not T.require_true(self, world.has_method("get_pedestrian_runtime_snapshot"), "CityPrototype must expose get_pedestrian_runtime_snapshot() for death visual persistence validation"):
 		return
-	if not T.require_true(self, world.has_method("fire_player_projectile_toward"), "CityPrototype must expose fire_player_projectile_toward() for live death visual validation"):
+	if not T.require_true(self, world.has_method("fire_player_projectile_toward"), "CityPrototype must expose fire_player_projectile_toward() for death visual persistence validation"):
 		return
 
 	var player := world.get_node_or_null("Player")
-	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "PlayerController must expose teleport_to_world_position() for M8 visual validation"):
+	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "Death visual persistence test requires PlayerController teleport support"):
 		return
 
 	var live_target := await _find_tier2_target(world, player)
-	if not T.require_true(self, not live_target.is_empty(), "Live world must surface at least one Tier2 pedestrian for M8 nearfield visual validation"):
+	if not T.require_true(self, not live_target.is_empty(), "Death visual persistence test needs a mounted Tier2 target"):
 		return
 
-	var chunk_scene = live_target.get("chunk_scene") as Node
-	var visual_node := live_target.get("visual_node") as Node
-	if not T.require_true(self, visual_node != null, "Mounted chunk scene must expose a real visual node for the live Tier2 pedestrian target"):
-		return
-	if not T.require_true(self, visual_node.has_method("get_current_animation_name"), "Live Tier2 visual node must expose get_current_animation_name() for M8 validation"):
-		return
-	if not T.require_true(self, visual_node.has_method("uses_placeholder_box_mesh"), "Live Tier2 visual node must expose uses_placeholder_box_mesh() for M8 anti-placeholder validation"):
-		return
-	if not T.require_true(self, not bool(visual_node.call("uses_placeholder_box_mesh")), "Live Tier2 pedestrian must not render as a BoxMesh placeholder in M8"):
-		return
-	if not T.require_true(self, _has_any_token(str(visual_node.call("get_current_animation_name")), ["walk"]), "Live ambient Tier2 pedestrian must play a walk clip in M8"):
-		return
-
-	var aim_position: Vector3 = live_target.get("aim_position", Vector3.ZERO)
+	var chunk_renderer = world.get_chunk_renderer()
+	var chunk_id := str(live_target.get("chunk_id", ""))
+	var pedestrian_id := str(live_target.get("pedestrian_id", ""))
 	var target_position: Vector3 = live_target.get("target_position", Vector3.ZERO)
-	var target_id := str(live_target.get("pedestrian_id", ""))
+	var aim_position: Vector3 = live_target.get("aim_position", Vector3.ZERO)
 	player.teleport_to_world_position(target_position + Vector3(-4.0, 1.1, -4.0))
 	world.update_streaming_for_position(player.global_position, 0.1)
 	await process_frame
+
 	var fired_any := false
 	for _burst_index in range(4):
-		var live_target_state := _find_state(world.get_pedestrian_runtime_snapshot(), target_id)
+		var live_target_state := _find_state(world.get_pedestrian_runtime_snapshot(), pedestrian_id)
 		if live_target_state.is_empty():
 			break
 		var projectile = world.fire_player_projectile_toward(_resolve_projectile_aim_position(live_target_state))
@@ -75,18 +68,35 @@ func _run() -> void:
 			await physics_frame
 			world.update_streaming_for_position(player.global_position, 1.0 / 60.0)
 			await process_frame
-		if _find_state(world.get_pedestrian_runtime_snapshot(), target_id).is_empty():
+		if _find_state(world.get_pedestrian_runtime_snapshot(), pedestrian_id).is_empty():
 			break
-	if not T.require_true(self, fired_any, "Live M8 visual validation must be able to fire a real projectile burst at the mounted Tier2 target"):
+	if not T.require_true(self, fired_any, "Death visual persistence test must fire a live projectile burst at the mounted target"):
 		return
-	var death_visual := _find_death_visual(chunk_scene)
-	if not T.require_true(self, death_visual != null, "Live M8 visual validation must leave a transient death visual after projectile casualty"):
+	var pre_retire_chunk_scene = chunk_renderer.get_chunk_scene(chunk_id)
+
+	var far_position := target_position + REMOUNT_JUMP
+	player.teleport_to_world_position(Vector3(far_position.x, 1.1, far_position.z))
+	var elapsed_sec := 0.0
+	var global_death_visual: Node = null
+	while elapsed_sec < DEATH_RETENTION_ASSERT_SEC:
+		world.update_streaming_for_position(player.global_position, 1.0 / 60.0)
+		await physics_frame
+		await process_frame
+		elapsed_sec += 1.0 / 60.0
+		global_death_visual = _find_global_death_visual(chunk_renderer)
+		if global_death_visual != null:
+			break
+
+	if not T.require_true(self, chunk_renderer.get_chunk_scene(chunk_id) == null, "Death visual persistence test must retire the original chunk to verify remount-safe visuals"):
 		return
-	if not T.require_true(self, death_visual.has_method("get_current_animation_name"), "Live death visual must expose get_current_animation_name() for death clip validation"):
+	if not T.require_true(self, global_death_visual != null, "Retiring the source chunk must not make the casualty visual disappear before %.2fs" % DEATH_RETENTION_ASSERT_SEC):
 		return
-	if not T.require_true(self, _has_any_token(str(death_visual.call("get_current_animation_name")), ["death", "dead"]), "Live death visual must route into a death/dead animation clip after casualty"):
+	if not T.require_true(self, global_death_visual.has_method("get_current_animation_name"), "Global death visual must expose get_current_animation_name() after chunk retirement"):
+		return
+	if not T.require_true(self, _has_any_token(str(global_death_visual.call("get_current_animation_name")), ["death", "dead"]), "Global death visual must keep routing the casualty into a death/dead clip after chunk retirement"):
 		return
 
+	world.queue_free()
 	T.pass_and_quit(self)
 
 func _find_tier2_target(world, player) -> Dictionary:
@@ -114,8 +124,6 @@ func _find_tier2_target(world, player) -> Dictionary:
 				return {
 					"pedestrian_id": str(state.get("pedestrian_id", "")),
 					"chunk_id": str(state.get("chunk_id", "")),
-					"chunk_scene": chunk_scene,
-					"visual_node": visual_node,
 					"target_position": state.get("world_position", Vector3.ZERO),
 					"aim_position": _resolve_projectile_aim_position(state),
 				}
@@ -131,16 +139,17 @@ func _find_visual_node(chunk_scene: Node, pedestrian_id: String) -> Node:
 	var expected_name := pedestrian_id.replace(":", "_")
 	return tier2_root.get_node_or_null(expected_name)
 
-func _find_death_visual(chunk_scene: Node) -> Node:
-	var crowd_root := chunk_scene.get_node_or_null("PedestrianCrowd") as Node
-	if crowd_root == null:
+func _find_global_death_visual(chunk_renderer) -> Node:
+	if chunk_renderer == null:
 		return null
-	var death_root := crowd_root.get_node_or_null("DeathVisuals") as Node
-	if death_root == null or death_root.get_child_count() == 0:
+	var global_root := chunk_renderer.get_node_or_null("PedestrianDeathVisualsGlobal") as Node
+	if global_root == null or global_root.get_child_count() == 0:
 		return null
-	return death_root.get_child(0) as Node
+	return global_root.get_child(0) as Node
 
-func _death_visual_count(chunk_scene: Node) -> int:
+func _chunk_death_visual_count(chunk_scene: Node) -> int:
+	if chunk_scene == null:
+		return 0
 	var crowd_root := chunk_scene.get_node_or_null("PedestrianCrowd") as Node
 	if crowd_root == null:
 		return 0
@@ -157,6 +166,14 @@ func _resolve_projectile_aim_position(state: Dictionary) -> Vector3:
 	var world_position: Vector3 = state.get("world_position", Vector3.ZERO)
 	var height_m := float(state.get("height_m", 1.75))
 	return world_position + Vector3.UP * maxf(height_m * 0.5, 0.9)
+
+func _find_state(snapshot: Dictionary, pedestrian_id: String) -> Dictionary:
+	for tier_key in ["tier3_states", "tier2_states", "tier1_states"]:
+		for state_variant in snapshot.get(tier_key, []):
+			var state: Dictionary = state_variant
+			if str(state.get("pedestrian_id", "")) == pedestrian_id:
+				return state
+	return {}
 
 func _collect_states(snapshot: Dictionary) -> Array:
 	var states: Array = []
@@ -187,14 +204,6 @@ func _has_clear_shot(center: Dictionary, states: Array, shooter_position: Vector
 		if point_2d.distance_to(closest_point) <= 0.6:
 			return false
 	return true
-
-func _find_state(snapshot: Dictionary, pedestrian_id: String) -> Dictionary:
-	for tier_key in ["tier3_states", "tier2_states", "tier1_states"]:
-		for state_variant in snapshot.get(tier_key, []):
-			var state: Dictionary = state_variant
-			if str(state.get("pedestrian_id", "")) == pedestrian_id:
-				return state
-	return {}
 
 func _has_any_token(animation_name: String, tokens: Array[String]) -> bool:
 	var normalized_animation := animation_name.to_lower()

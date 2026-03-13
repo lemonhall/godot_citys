@@ -71,7 +71,8 @@ func _apply_transform(state, chunk_center: Vector3) -> void:
 	rotation.y = atan2(heading.x, heading.z)
 	if _model_root != null:
 		var source_height_m := maxf(float(_selected_entry.get("source_height_m", DEFAULT_SOURCE_HEIGHT_M)), 0.001)
-		var height_scale := maxf(_state_height_m(state) / source_height_m, 0.01)
+		var target_visual_height_m := _resolve_target_visual_height_m(state)
+		var height_scale := maxf(target_visual_height_m / source_height_m, 0.01)
 		var source_ground_offset_m := float(_selected_entry.get("source_ground_offset_m", 0.0))
 		_model_root.scale = Vector3.ONE * height_scale
 		_model_root.position = Vector3(0.0, source_ground_offset_m * height_scale, 0.0)
@@ -107,6 +108,12 @@ func _state_height_m(state) -> float:
 	if state is Dictionary:
 		return float((state as Dictionary).get("height_m", DEFAULT_SOURCE_HEIGHT_M))
 	return float(state.height_m) if state != null else DEFAULT_SOURCE_HEIGHT_M
+
+func _resolve_target_visual_height_m(state) -> float:
+	var manifest_target_height_m := float(_selected_entry.get("visual_target_height_m", 0.0))
+	if manifest_target_height_m > 0.0:
+		return manifest_target_height_m
+	return _state_height_m(state)
 
 func _get_catalog() -> CityPedestrianVisualCatalog:
 	if _shared_catalog == null:

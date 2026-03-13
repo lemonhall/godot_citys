@@ -60,14 +60,14 @@ func _run() -> void:
 		return
 
 	var projectile_result := await _run_live_projectile_chain(world, player, projectile_cluster)
-	print("CITY_PEDESTRIAN_LIVE_PROJECTILE_CHAIN %s" % JSON.stringify(projectile_result))
+	print("CITY_PEDESTRIAN_LIVE_PROJECTILE_CHAIN %s" % JSON.stringify(_summarize_projectile_result(projectile_result)))
 
 	var explosion_cluster := await _find_explosion_cluster_in_world(world, player)
 	if not T.require_true(self, not explosion_cluster.is_empty(), "Live combat chain needs an explosion cluster with threat-ring, witness-ring and a calm outsider beyond 520m"):
 		return
 
 	var grenade_result := await _run_live_grenade_chain(world, player, explosion_cluster)
-	print("CITY_PEDESTRIAN_LIVE_GRENADE_CHAIN %s" % JSON.stringify(grenade_result))
+	print("CITY_PEDESTRIAN_LIVE_GRENADE_CHAIN %s" % JSON.stringify(_summarize_grenade_result(grenade_result)))
 
 	var failures: PackedStringArray = []
 	if not bool(projectile_result.get("projectile_caused_casualty", false)):
@@ -152,6 +152,7 @@ func _run_live_projectile_chain(world, player, cluster: Dictionary) -> Dictionar
 	}
 
 func _run_live_grenade_chain(world, player, cluster: Dictionary) -> Dictionary:
+	var center_id := str(cluster.get("center_id", ""))
 	var center_position: Vector3 = cluster.get("center_position", Vector3.ZERO)
 	var threat_id := str(cluster.get("threat_id", ""))
 	var witness_id := str(cluster.get("witness_id", ""))
@@ -161,6 +162,9 @@ func _run_live_grenade_chain(world, player, cluster: Dictionary) -> Dictionary:
 	player.set_weapon_mode("grenade")
 	world.update_streaming_for_position(player.global_position, 0.1)
 	await process_frame
+	var live_center_state := _find_state(world.get_pedestrian_runtime_snapshot(), center_id)
+	if not live_center_state.is_empty():
+		center_position = live_center_state.get("world_position", center_position)
 	var best_pitch := await _find_best_grenade_pitch(player, center_position)
 	var camera_rig := player.get_node_or_null("CameraRig") as Node3D
 	if camera_rig != null:
@@ -169,11 +173,14 @@ func _run_live_grenade_chain(world, player, cluster: Dictionary) -> Dictionary:
 	await process_frame
 	var preview_state: Dictionary = player.get_grenade_preview_state()
 	var landing_point: Vector3 = preview_state.get("landing_point", Vector3.ZERO)
+	var center_state_at_throw := _find_state(world.get_pedestrian_runtime_snapshot(), center_id)
+	var center_position_at_throw: Vector3 = center_position if center_state_at_throw.is_empty() else center_state_at_throw.get("world_position", center_position)
 	if not player.request_grenade_throw():
 		return {
 			"cluster": cluster,
 			"throw_started": false,
 			"landing_point": landing_point,
+			"center_position_at_throw": center_position_at_throw,
 			"snapshot": world.get_pedestrian_runtime_snapshot(),
 		}
 	var grenade := _latest_live_grenade(world)
@@ -192,7 +199,8 @@ func _run_live_grenade_chain(world, player, cluster: Dictionary) -> Dictionary:
 		world.update_streaming_for_position(player.global_position, 1.0 / 60.0)
 		await process_frame
 	var snapshot: Dictionary = world.get_pedestrian_runtime_snapshot()
-	var center_dead := not _snapshot_contains_pedestrian(snapshot, str(cluster.get("center_id", "")))
+	var center_dead := not _snapshot_contains_pedestrian(snapshot, center_id)
+	var surviving_center_state := _find_state(snapshot, center_id)
 	var threat_state := _find_state(snapshot, threat_id)
 	var witness_state := _find_state(snapshot, witness_id)
 	var far_state := _find_state(snapshot, far_id)
@@ -202,7 +210,10 @@ func _run_live_grenade_chain(world, player, cluster: Dictionary) -> Dictionary:
 		"exploded": exploded,
 		"landing_point": landing_point,
 		"landing_error_m": landing_point.distance_to(center_position),
+		"center_position_at_throw": center_position_at_throw,
+		"center_distance_to_landing_m": landing_point.distance_to(center_position_at_throw),
 		"grenade_killed_center": center_dead,
+		"center_state": surviving_center_state,
 		"threat_state": threat_state,
 		"witness_state": witness_state,
 		"far_state": far_state,
@@ -229,8 +240,7 @@ func _find_best_grenade_pitch(player, target_world_position: Vector3) -> float:
 	var best_error := INF
 	for pitch_deg in range(-58, 19, 2):
 		camera_rig.rotation.x = deg_to_rad(float(pitch_deg))
-		await process_frame
-		var preview_state: Dictionary = player.get_grenade_preview_state()
+		var preview_state := _predict_grenade_preview_state(player)
 		if not bool(preview_state.get("visible", false)):
 			continue
 		var landing_point: Vector3 = preview_state.get("landing_point", Vector3.ZERO)
@@ -239,6 +249,57 @@ func _find_best_grenade_pitch(player, target_world_position: Vector3) -> float:
 			best_error = landing_error
 			best_pitch = camera_rig.rotation.x
 	return best_pitch
+
+func _predict_grenade_preview_state(player) -> Dictionary:
+	var space_state: PhysicsDirectSpaceState3D = player.get_world_3d().direct_space_state if player != null and player.get_world_3d() != null else null
+	if space_state == null:
+		return {
+			"visible": false,
+			"landing_point": Vector3.ZERO,
+		}
+	var current_position: Vector3 = player.get_grenade_spawn_transform().origin
+	var current_velocity: Vector3 = player.get_grenade_launch_velocity()
+	var landing_point := current_position
+	for _step_index in range(int(player.grenade_preview_max_steps)):
+		var next_velocity := current_velocity + Vector3.DOWN * float(player.grenade_gravity_mps2) * float(player.grenade_preview_step_sec)
+		var next_position := current_position + (current_velocity + next_velocity) * 0.5 * float(player.grenade_preview_step_sec)
+		var query := PhysicsRayQueryParameters3D.create(current_position, next_position)
+		query.collide_with_areas = false
+		query.exclude = [player.get_rid()]
+		var hit: Dictionary = space_state.intersect_ray(query)
+		if not hit.is_empty():
+			return {
+				"visible": true,
+				"landing_point": hit.get("position", next_position),
+			}
+		landing_point = next_position
+		current_position = next_position
+		current_velocity = next_velocity
+	return {
+		"visible": true,
+		"landing_point": landing_point,
+	}
+
+func _summarize_projectile_result(result: Dictionary) -> Dictionary:
+	return {
+		"center_id": str((result.get("cluster", {}) as Dictionary).get("center_id", "")),
+		"projectile_killed": bool(result.get("projectile_killed", false)),
+		"projectile_caused_casualty": bool(result.get("projectile_caused_casualty", false)),
+		"witness_a_reactive": bool(result.get("witness_a_reactive", false)),
+		"witness_b_reactive": bool(result.get("witness_b_reactive", false)),
+		"far_stays_calm": bool(result.get("far_stays_calm", false)),
+	}
+
+func _summarize_grenade_result(result: Dictionary) -> Dictionary:
+	return {
+		"center_id": str((result.get("cluster", {}) as Dictionary).get("center_id", "")),
+		"landing_error_m": float(result.get("landing_error_m", -1.0)),
+		"center_distance_to_landing_m": float(result.get("center_distance_to_landing_m", -1.0)),
+		"grenade_killed_center": bool(result.get("grenade_killed_center", false)),
+		"threat_reactive": bool(result.get("threat_reactive", false)),
+		"witness_reactive": bool(result.get("witness_reactive", false)),
+		"far_stays_calm": bool(result.get("far_stays_calm", false)),
+	}
 
 func _orient_player_to_target(player, target_world_position: Vector3) -> void:
 	var planar_target := Vector3(target_world_position.x, player.global_position.y, target_world_position.z)

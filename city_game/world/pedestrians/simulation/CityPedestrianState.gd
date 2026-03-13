@@ -122,6 +122,10 @@ func apply_reaction(data: Dictionary) -> void:
 	var next_reaction_state := str(data.get("reaction_state", "none"))
 	if next_reaction_state == "none":
 		return
+	var next_priority := int(data.get("priority", reaction_priority))
+	if _should_preserve_current_reaction(next_reaction_state, next_priority):
+		reaction_timer_sec = maxf(reaction_timer_sec, float(data.get("duration_sec", 0.0)))
+		return
 	var next_source_position: Vector3 = data.get("source_position", world_position)
 	if reaction_state != next_reaction_state:
 		lateral_offset_sign = _resolve_lateral_offset_sign(next_source_position)
@@ -129,7 +133,7 @@ func apply_reaction(data: Dictionary) -> void:
 	if is_zero_approx(route_direction):
 		route_direction = 1.0
 	reaction_state = next_reaction_state
-	reaction_priority = int(data.get("priority", reaction_priority))
+	reaction_priority = next_priority
 	reaction_source_position = next_source_position
 	if reaction_state == "panic" or reaction_state == "flee":
 		_configure_flee_target(data, next_source_position)
@@ -362,3 +366,17 @@ func _align_route_direction_away_from_source() -> void:
 		route_direction = -1.0
 	else:
 		route_direction = 1.0
+
+func _should_preserve_current_reaction(next_reaction_state: String, next_priority: int) -> bool:
+	if reaction_timer_sec <= 0.0:
+		return false
+	var current_is_violent := _is_violent_reaction_state(reaction_state)
+	var next_is_violent := _is_violent_reaction_state(next_reaction_state)
+	if current_is_violent and not next_is_violent:
+		return true
+	if current_is_violent and next_is_violent and next_priority < reaction_priority:
+		return true
+	return false
+
+func _is_violent_reaction_state(value: String) -> bool:
+	return value == "panic" or value == "flee"

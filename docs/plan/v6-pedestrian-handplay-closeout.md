@@ -1,5 +1,7 @@
 # V6 Pedestrian Hand-Play Closeout
 
+> 注：本文档中的旧 `10x / 540 / 600` density surge 口径已于 2026-03-14 被 [`ECN-0015`](../ecn/ECN-0015-vehicle-aware-pedestrian-density-target-rebaseline.md) supersede。`M9` 仅保留 hand-play fidelity 的历史设计与验证链；当前 active density target 以 [`v6-pedestrian-density-preserving-runtime-recovery.md`](./v6-pedestrian-density-preserving-runtime-recovery.md) 的 vehicle-aware 目标为准。
+
 ## Goal
 
 把 pedestrian 从“自动化与 profile 已过线，但手玩仍出现巨人、矮人、状态抖动、误逃散、命中即无、城市过空”的状态，推进到“近景角色体型可信、violent reaction 稳定、death clip 可靠可见、默认 `lite` 人流存在感达到 `M8` 基线 `10x`，且 fresh profiling 继续守住 `16.67ms/frame` 红线”的状态。

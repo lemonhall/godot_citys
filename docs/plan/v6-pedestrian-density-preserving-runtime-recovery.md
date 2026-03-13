@@ -2,7 +2,7 @@
 
 ## Goal
 
-把 pedestrian crowd 从“只能在低密度下守住红线，或在高密度下打穿红线”的分裂状态，推进到“默认 `lite` 配置下，warm `tier1_count >= 540` / first-visit `>= 600` 与 `wall_frame_avg_usec <= 16667` 在同一工作区、同一默认配置下同时成立”的状态。
+把 pedestrian crowd 从“只能在较低密度平台下守住红线”的状态，推进到“默认 `lite` 配置下，world contract warm / first-visit `tier1_count >= 300`，fresh isolated e2e runtime warm `ped_tier1_count >= 240` / first-visit `>= 280`，并且 `wall_frame_avg_usec <= 16667` 在同一工作区、同一默认配置下同时成立”的状态；该目标以 `ECN-0015` 的 vehicle-aware 重定义为准，明确为未来车辆系统保留预算。
 
 ## PRD Trace
 
@@ -21,7 +21,7 @@
 - 把 violent witness response 从 `500m` 全量广播 + `>=500m` flee，重平衡为 `0-200m` 必逃、`200-400m` deterministic `40%` 抽样、`>400m` calm，以及 `20s-35s` flee tick budget
 - 引入 persistent crowd page runtime、incremental scheduler、dirty chunk snapshot cache、Tier 1 dirty render commit
 - 补齐 crowd breakdown profiling 字段，用证据证明热点已经被拆开
-- 在新 runtime 上恢复 `REQ-0002-016` 的默认 `lite` 高密度合同，而不是继续靠参数回退止血
+- 在新 runtime 上恢复 `REQ-0002-016` 的 vehicle-aware 默认 `lite` 活力合同，而不是继续靠参数回退止血或重回旧的 `540/600` 纯 pedestrian 目标
 
 不做什么：
 
@@ -43,8 +43,8 @@
 2. 自动化测试必须证明：crowd page runtime 在无结构变化时保持可复用，不允许继续每帧清空并重建所有 active chunk snapshots。
 3. 自动化测试必须证明：Tier 1 batched representation 支持 page-local 或 chunk-local dirty commit；稳定帧下 `crowd_tier1_transform_writes` 必须小于 `ped_tier1_count`，不能继续整批重写全部 Tier 1 transforms。
 4. 自动化测试必须证明：violent witness response 已重平衡为 `<=200m` 必逃、`200m-400m` deterministic `40%` 抽样、`>400m` calm，且 flee 持续时间必须落在 `20s-35s` tick budget 内。
-5. 自动化测试必须证明：默认 `lite` 配置下，warm traversal 的 `tier1_count >= 540`，first-visit traversal 的 `tier1_count >= 600`，且 district / road class 排序继续成立。
-6. `tests/e2e/test_city_pedestrian_performance_profile.gd` 与 `tests/e2e/test_city_runtime_performance_profile.gd` 必须在上述高密度默认配置下继续 `PASS`，并且 `wall_frame_avg_usec <= 16667`。
+5. 自动化测试必须证明：默认 `lite` 的 world contract 下，warm traversal 与 first-visit traversal 的 `tier1_count` 都 `>= 300`，且 district / road class 排序继续成立。
+6. `tests/e2e/test_city_pedestrian_performance_profile.gd` 与 `tests/e2e/test_city_runtime_performance_profile.gd` 必须在同一默认 `lite` 配置下继续 `PASS`；fresh isolated profile 的 warm `ped_tier1_count >= 240`、first-visit `ped_tier1_count >= 280`，并且 `wall_frame_avg_usec <= 16667`。
 7. 反作弊条款：不得通过 profile 时临时关闭 pedestrians、改用专用低密度配置、降低测试阈值、把大量 pedestrian 塞进不可见 tier、或只在单个 demo chunk 上做 dirty commit 假实现来宣称 `M10` 完成。
 
 ## Files
@@ -115,7 +115,7 @@
   - first-visit `ped_tier1_count = 189`，`ped_tier2_count = 6`，`wall_frame_avg_usec = 12184`
   - `tests/e2e/test_city_runtime_performance_profile.gd` `PASS`
   - warm `ped_tier1_count = 166`，`wall_frame_avg_usec = 9893`
-- 2026-03-14 结论：当前 main 工作区已经从 2026-03-13 的 warm `54` / first-visit `60` 量级，抬到 world warm `208` / first-visit `201` 与 e2e warm `166` / first-visit `189`，且 fresh isolated profile 继续守住 `16.67ms/frame`；但距离 `M10` DoD 中 warm `>= 540` / first-visit `>= 600` 仍有明显差距，因此本计划仍保持 `in progress`。
+- 2026-03-14 结论：当前 main 工作区已经从 2026-03-13 的 warm `54` / first-visit `60` 量级，抬到 world warm `208` / first-visit `201` 与 e2e warm `166` / first-visit `189`，且 fresh isolated profile 继续守住 `16.67ms/frame`；`ECN-0015` 已把旧的 `540/600` 纯 pedestrian 目标重定义为 vehicle-aware 的 world `300/300` + isolated e2e `240/280`，而当前平台距离这组新 DoD 仍有明确差距，因此本计划继续保持 `in progress`。
 
 ## Risks
 

@@ -33,6 +33,7 @@
 
 - 新增 `REQ-0002-013`：把“近景模型尺度校准与 manifest 鲁棒性”单独立项，要求 7 个 civilian model 对齐 player 参考圆柱体，且不再允许单模型出现巨人级离群。
 - `REQ-0002-013` 的尺度合同进一步明确：`source_height_m` 必须来自 locomotion clip 启动后的 live skeleton 高度，不能再直接采用静态 `MeshInstance` AABB；同时新增 runtime 高度回归测试，专门拦截 `animated_woman.glb` 这类量纲异常。
+- `2026-03-13` 用户追加口径：近景 civilian 的目标体型不再是贴近 player `2m` 参考体，而是统一抬到 `>= 3.0m` 的 live 可见高度，下限优先级高于此前的 player-relative 收口描述。
 - 新增 `REQ-0002-014`：把“连续 violent threat 下的状态机稳定性”和“inspection / C 模式隔离”单独立项，要求 sustained gunfire 不再抖回 walk，`C` 模式仅靠近玩家不再误触发 flee。
 - 新增 `REQ-0002-015`：把“death visual 保活与延迟移除合同”单独立项，要求 casualty 在 projectile / explosion / tier 变动 / chunk 回访路径中都稳定留下可见 death clip。
 - 新增 `REQ-0002-016`：把默认 `lite` crowd density 再抬一个数量级，明确以 `M8` 基线为参照推进到 `10x` 级别的人流存在感。

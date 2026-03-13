@@ -5,9 +5,9 @@ const CityPedestrianVisualInstance := preload("res://city_game/world/pedestrians
 
 const MANIFEST_PATH := "res://city_game/assets/pedestrians/civilians/pedestrian_model_manifest.json"
 const SAMPLE_STATE_HEIGHT_M := 1.75
-const MIN_PLAYER_HEIGHT_RATIO := 0.85
-const MAX_PLAYER_HEIGHT_RATIO := 1.15
-const MAX_HEIGHT_SPREAD_RATIO := 1.25
+const MIN_VISUAL_HEIGHT_M := 3.0
+const MAX_VISUAL_HEIGHT_M := 3.2
+const MAX_HEIGHT_SPREAD_RATIO := 1.10
 const ANIMATION_SETTLE_FRAMES := 4
 
 func _init() -> void:
@@ -62,10 +62,10 @@ func _run() -> void:
 		max_height_m = maxf(max_height_m, live_height_m)
 		if live_height_m <= 0.0:
 			failures.append("Model %s must expose a measurable live skeleton height after animation starts" % model_id)
-		elif live_height_m < player_total_height_m * MIN_PLAYER_HEIGHT_RATIO:
-			failures.append("Model %s must not render drastically shorter than the player in live runtime bounds" % model_id)
-		elif live_height_m > player_total_height_m * MAX_PLAYER_HEIGHT_RATIO:
-			failures.append("Model %s must not render as a live giant in runtime bounds" % model_id)
+		elif live_height_m < MIN_VISUAL_HEIGHT_M:
+			failures.append("Model %s must not render shorter than %.2fm in live runtime bounds" % [model_id, MIN_VISUAL_HEIGHT_M])
+		elif live_height_m > MAX_VISUAL_HEIGHT_M:
+			failures.append("Model %s must not render taller than %.2fm in live runtime bounds" % [model_id, MAX_VISUAL_HEIGHT_M])
 		visual.queue_free()
 		await process_frame
 

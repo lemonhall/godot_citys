@@ -356,7 +356,7 @@
 
 **验收口径**：
 
-- 自动化测试至少断言：在平地、默认 `alive + ambient` 状态下，7 个 civilian model 的最终可见全身高度都落在 player standing cylinder 参考高度的 `0.85x ~ 1.15x` 区间内。
+- 自动化测试至少断言：在平地、默认 `alive + ambient` 状态下，7 个 civilian model 的最终 live 可见全身高度都 `>= 3.0m`，并维持稳定的统一体型区间；该口径以 `2026-03-13` 的用户手玩指令为准，允许其显著高于 player 参考体。
 - 自动化测试至少断言：7 个 civilian model 中“最高 / 最矮”的最终 rendered height 比值 `<= 1.25`，不允许再出现单个离群巨人。
 - 自动化测试至少断言：manifest / 运行期校准链路不能再让类似 `0.053m` 这类明显离群的原始高度在未被修正的情况下直接进入最终缩放公式。
 - 自动化测试至少断言：近景 visual height 校准不会破坏脚底贴地契约，`source_ground_offset_m` 或等价字段仍然成立。

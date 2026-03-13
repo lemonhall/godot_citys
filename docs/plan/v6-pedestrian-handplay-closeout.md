@@ -15,7 +15,7 @@
 
 做什么：
 
-- 修正 civilian manifest / visual scaling 合同，把 7 个 `glb` 的近景最终体型统一对齐到 player standing cylinder 参考体，消灭“女巨人”和整体矮人化
+- 修正 civilian manifest / visual scaling 合同，把 7 个 `glb` 的近景最终体型统一抬到 `>= 3.0m` 的 live 可见高度，消灭“女巨人”和整体矮人化
   - `source_height_m` 必须按 walk 启动后的 live skeleton 高度校准，不能继续使用静态 `MeshInstance` AABB 充当最终缩放基准
 - 为 continuous gunfire / casualty / explosion 引入稳定的 threat hold contract，防止 `panic / flee / run` 在威胁尚未结束时抖回 ambient walk
 - 把 `C` 切出的 inspection mode 从 panic/flee 广播链中隔离出来，保证“仅靠近玩家”最多触发 `yield / sidestep`
@@ -31,7 +31,7 @@
 
 ## Acceptance
 
-1. 自动化测试必须证明：7 个 civilian model 在平地默认状态下的最终 rendered height 都落在 player standing cylinder 参考高度的 `0.85x ~ 1.15x` 区间内，且最高/最矮比值 `<= 1.25`。
+1. 自动化测试必须证明：7 个 civilian model 在平地默认状态下的最终 live rendered height 都 `>= 3.0m`，且最高/最矮比值 `<= 1.10`。
 2. 自动化测试必须证明：automatic rifle 或等价 burst fire 持续期间，位于 threat / witness 半径内的 pedestrian 不再出现 `run -> walk -> run` 抖动；inspection mode 仅靠近玩家时不再误触发 `panic / flee`。
 3. 自动化测试必须证明：凡是模型提供 `death/dead` clip 的 casualty 路径，都至少保留 `0.75s` 的可见 death visual 窗口，不再出现同帧直接消失。
 4. 自动化测试必须证明：以 `2026-03-13` 的 `M8` 基线为参照，默认 `lite` 模式下 warm traversal 的 `tier1_count >= 540`，first-visit traversal 的 `tier1_count >= 600`，且 district / road class 排序仍然成立。

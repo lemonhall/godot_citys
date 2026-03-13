@@ -5,9 +5,9 @@ const CityPedestrianVisualInstance := preload("res://city_game/world/pedestrians
 
 const MANIFEST_PATH := "res://city_game/assets/pedestrians/civilians/pedestrian_model_manifest.json"
 const SAMPLE_STATE_HEIGHT_M := 1.56
-const MIN_PLAYER_HEIGHT_RATIO := 0.85
-const MAX_PLAYER_HEIGHT_RATIO := 1.15
-const MAX_HEIGHT_SPREAD_RATIO := 1.25
+const MIN_VISUAL_HEIGHT_M := 3.0
+const MAX_VISUAL_HEIGHT_M := 3.2
+const MAX_HEIGHT_SPREAD_RATIO := 1.10
 const ANIMATION_SETTLE_FRAMES := 4
 
 func _init() -> void:
@@ -52,9 +52,9 @@ func _run() -> void:
 		measured_heights[model_id] = rendered_height_m
 		min_height_m = minf(min_height_m, rendered_height_m)
 		max_height_m = maxf(max_height_m, rendered_height_m)
-		if not T.require_true(self, rendered_height_m >= player_total_height_m * MIN_PLAYER_HEIGHT_RATIO, "Model %s must not render shorter than %.2fx player standing height" % [model_id, MIN_PLAYER_HEIGHT_RATIO]):
+		if not T.require_true(self, rendered_height_m >= MIN_VISUAL_HEIGHT_M, "Model %s must not render shorter than %.2fm in live visual height" % [model_id, MIN_VISUAL_HEIGHT_M]):
 			return
-		if not T.require_true(self, rendered_height_m <= player_total_height_m * MAX_PLAYER_HEIGHT_RATIO, "Model %s must not render taller than %.2fx player standing height" % [model_id, MAX_PLAYER_HEIGHT_RATIO]):
+		if not T.require_true(self, rendered_height_m <= MAX_VISUAL_HEIGHT_M, "Model %s must not render taller than %.2fm in live visual height" % [model_id, MAX_VISUAL_HEIGHT_M]):
 			return
 		visual.queue_free()
 		await process_frame

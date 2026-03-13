@@ -69,11 +69,11 @@ git commit -m "test: add crowd breakdown profiling guard"
 - Modify: `city_game/world/pedestrians/streaming/CityPedestrianStreamer.gd`
 - Modify: `city_game/world/pedestrians/simulation/CityPedestrianTierController.gd`
 - Modify: `tests/world/test_city_pedestrian_page_cache.gd`
-- Create: `tests/world/test_city_pedestrian_page_runtime_contract.gd`
+- Modify: `tests/world/test_city_pedestrian_page_cache.gd`
 
 **Step 1: 写失败测试**
 
-新增 `test_city_pedestrian_page_runtime_contract.gd`，断言每个 active chunk 的 crowd page：
+以 `test_city_pedestrian_page_cache.gd`、`test_city_pedestrian_incremental_scheduler.gd` 与 `test_city_pedestrian_chunk_snapshot_cache.gd` 组成现行验证链，断言每个 active chunk 的 crowd page：
 
 - 具有稳定的 `page_id`
 - 保留固定 `state_ids`
@@ -85,7 +85,7 @@ git commit -m "test: add crowd breakdown profiling guard"
 Run:
 
 ```powershell
-& 'E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe' --headless --rendering-driver dummy --path 'E:\development\godot_citys' --script 'res://tests/world/test_city_pedestrian_page_runtime_contract.gd'
+& 'E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe' --headless --rendering-driver dummy --path 'E:\development\godot_citys' --script 'res://tests/world/test_city_pedestrian_page_cache.gd'
 ```
 
 Expected: FAIL，当前 streamer 只有 page/state 字典，没有稳定 runtime 容器。
@@ -99,8 +99,9 @@ Expected: FAIL，当前 streamer 只有 page/state 字典，没有稳定 runtime
 Run:
 
 ```powershell
-& 'E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe' --headless --rendering-driver dummy --path 'E:\development\godot_citys' --script 'res://tests/world/test_city_pedestrian_page_runtime_contract.gd'
 & 'E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe' --headless --rendering-driver dummy --path 'E:\development\godot_citys' --script 'res://tests/world/test_city_pedestrian_page_cache.gd'
+& 'E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe' --headless --rendering-driver dummy --path 'E:\development\godot_citys' --script 'res://tests/world/test_city_pedestrian_incremental_scheduler.gd'
+& 'E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe' --headless --rendering-driver dummy --path 'E:\development\godot_citys' --script 'res://tests/world/test_city_pedestrian_chunk_snapshot_cache.gd'
 ```
 
 Expected: PASS，page cache continuity 不回退。
@@ -108,7 +109,7 @@ Expected: PASS，page cache continuity 不回退。
 **Step 5: Commit**
 
 ```powershell
-git add city_game/world/pedestrians/simulation/CityPedestrianPageRuntime.gd city_game/world/pedestrians/streaming/CityPedestrianStreamer.gd city_game/world/pedestrians/simulation/CityPedestrianTierController.gd tests/world/test_city_pedestrian_page_runtime_contract.gd tests/world/test_city_pedestrian_page_cache.gd
+git add city_game/world/pedestrians/simulation/CityPedestrianPageRuntime.gd city_game/world/pedestrians/streaming/CityPedestrianStreamer.gd city_game/world/pedestrians/simulation/CityPedestrianTierController.gd tests/world/test_city_pedestrian_page_cache.gd tests/world/test_city_pedestrian_incremental_scheduler.gd tests/world/test_city_pedestrian_chunk_snapshot_cache.gd
 git commit -m "refactor: add stable pedestrian page runtime"
 ```
 

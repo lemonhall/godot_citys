@@ -1,6 +1,6 @@
 # V6 Pedestrian Hand-Play Closeout
 
-> 注：本文档中的旧 `10x / 540 / 600` density surge 口径已于 2026-03-14 被 [`ECN-0015`](../ecn/ECN-0015-vehicle-aware-pedestrian-density-target-rebaseline.md) supersede。`M9` 仅保留 hand-play fidelity 的历史设计与验证链；当前 active density target 以 [`v6-pedestrian-density-preserving-runtime-recovery.md`](./v6-pedestrian-density-preserving-runtime-recovery.md) 的 vehicle-aware 目标为准。
+> 注：本文档中的旧 `10x / 540 / 600` density surge 口径已于 2026-03-14 被 [`ECN-0015`](../ecn/ECN-0015-vehicle-aware-pedestrian-density-target-rebaseline.md) supersede，随后又被 [`ECN-0016`](../ecn/ECN-0016-m10-lite-target-and-real-scenario-redline-rebaseline.md) 进一步重定义为默认 `lite` 下 `>=250` 的 active 收口平台。`M9` 仅保留 hand-play fidelity 的历史设计与验证链；当前 active density target 以 [`v6-pedestrian-density-preserving-runtime-recovery.md`](./v6-pedestrian-density-preserving-runtime-recovery.md) 为准。
 
 ## Goal
 

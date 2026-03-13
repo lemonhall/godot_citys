@@ -567,8 +567,6 @@ func _should_rebuild_assignments(active_chunk_ids: Array[String], player_positio
 		return true
 	if _force_assignment_rebuild:
 		return true
-	if _reaction_model.get_event_count() > 0:
-		return true
 	if not _string_arrays_equal(_last_assignment_chunk_ids, active_chunk_ids):
 		return true
 	if _can_reuse_farfield_assignments(player_position):

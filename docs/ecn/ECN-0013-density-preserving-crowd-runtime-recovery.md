@@ -42,7 +42,7 @@
 - `v6` 新开 `M10`：把 crowd runtime 从“每帧全量扫描 + 全量排序 + 全量 snapshot rebuild + 全量 Tier1 MultiMesh 重写”升级为“persistent crowd page runtime + incremental scheduler + dirty chunk snapshot cache + dirty Tier1 render commit”。
 - `v6` 新开 `M11`：在 `M10` 的新 runtime 上重新托住 `Tier2 + Tier3` 真实模型、death visual、inspection mode、violent reaction 等 hand-play 功能，不允许通过回退这些需求来换性能。
 - `REQ-0002-003/004/006/007` 的验收口径补充为：必须能证明 crowd runtime 存在 page-local / chunk-local 的 dirty update 合同，而不是 profiling 靠回退密度或保留全量 rebuild。
-- `REQ-0002-016` 的验收口径补充为：达到 warm `540` / first-visit `600` 时，fresh isolated runtime profile 仍需 `<= 16667`，且不得维持“density 红、profile 绿”或“density 绿、profile 红”的分裂状态。
+- `REQ-0002-016` 的验收口径补充为：必须在 active density target 下继续满足 `wall_frame_avg_usec <= 16667`，且不得维持“density 红、profile 绿”或“density 绿、profile 红”的分裂状态；该 active target 后续已由 `ECN-0015`、`ECN-0016` 继续重定义。
 - `REQ-0002-012/013/014/015` 保持原有产品要求不变，但其最终收口点从 `M9` 顺延到 `M11`，必须在 `M10` 新 runtime 上重新验证，不允许拿旧 runtime 的通过记录冒充最终完成。
 
 ## 影响范围
@@ -64,7 +64,7 @@
   - `docs/plan/v6-pedestrian-nearfield-fidelity-restabilization.md`
 - 受影响的测试：
   - `tests/world/test_city_pedestrian_crowd_breakdown.gd`
-  - `tests/world/test_city_pedestrian_page_runtime_contract.gd`
+  - `tests/world/test_city_pedestrian_page_cache.gd`
   - `tests/world/test_city_pedestrian_incremental_scheduler.gd`
   - `tests/world/test_city_pedestrian_chunk_snapshot_cache.gd`
   - `tests/world/test_city_pedestrian_tier1_dirty_commit.gd`

@@ -38,5 +38,5 @@ func _build_contract(preset: String) -> Dictionary:
 		"flee_duration_min_sec": 20.0,
 		"flee_duration_max_sec": 35.0,
 		"flee_scatter_angle_deg": 42.0,
-		"page_cache_capacity": 96,
+		"page_cache_capacity": 160,
 	}

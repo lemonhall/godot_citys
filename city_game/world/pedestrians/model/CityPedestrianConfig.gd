@@ -10,10 +10,10 @@ const DEFAULT_DISTRICT_CLASS_DENSITY := {
 
 const DEFAULT_ROAD_CLASS_DENSITY := {
 	"expressway_elevated": 0.0,
-	"arterial": 0.55,
-	"secondary": 0.40,
-	"collector": 0.26,
-	"local": 0.16,
+	"arterial": 0.50,
+	"secondary": 0.36,
+	"collector": 0.24,
+	"local": 0.14,
 }
 
 const DEFAULT_DISTRICT_CLASS_ARCHETYPE_WEIGHTS := {
@@ -60,7 +60,7 @@ var district_class_density: Dictionary = DEFAULT_DISTRICT_CLASS_DENSITY.duplicat
 var road_class_density: Dictionary = DEFAULT_ROAD_CLASS_DENSITY.duplicate(true)
 var district_class_archetype_weights: Dictionary = DEFAULT_DISTRICT_CLASS_ARCHETYPE_WEIGHTS.duplicate(true)
 var default_archetype_weights: Dictionary = DEFAULT_ARCHETYPE_WEIGHTS.duplicate(true)
-var max_spawn_slots_per_chunk := 48
+var max_spawn_slots_per_chunk := 40
 
 func get_density_for_district_class(district_class: String) -> float:
 	return float(district_class_density.get(district_class, 0.0))

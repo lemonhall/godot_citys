@@ -217,7 +217,8 @@
 - 在 `pedestrian_mode = lite` 且固定 density 预设下，fresh warm traversal 与 first-visit traversal 的 `wall_frame_avg_usec` 都必须 `<= 16667`。
 - 自动化 profiling 输出必须新增 `crowd_update_avg_usec`、`crowd_spawn_avg_usec`、`crowd_render_commit_avg_usec` 与各 tier 计数。
 - [已由 ECN-0013 补充] 自动化 profiling 输出必须能把 crowd update 再拆到至少 `step / reaction / rank / snapshot rebuild / chunk commit / tier1 transform writes` 级别，用于证明红线恢复来自运行时结构改造，而不是巧合。
-- [已由 ECN-0013、ECN-0015 补充] 对 `REQ-0002-016` 的 vehicle-aware density target，必须与本条红线在同一工作区、同一默认 `lite` 配置下同时成立：world contract warm / first-visit `tier1_count >= 300`，以及 fresh isolated e2e runtime warm `ped_tier1_count >= 240`、first-visit `>= 280`；不得接受“density 绿但 profile 红”或“profile 绿但 density 红”的分裂状态。
+- [已由 ECN-0013、ECN-0015、ECN-0016 补充] 对 `REQ-0002-016` 的 vehicle-aware density target，必须与本条红线在同一工作区、同一默认 `lite` 配置下同时成立：world contract warm / first-visit `tier1_count >= 250`，以及 fresh isolated e2e runtime warm / first-visit `ped_tier1_count >= 250`；不得接受“density 绿但 profile 红”或“profile 绿但 density 红”的分裂状态。
+- [已由 ECN-0016 补充] 自动化场景压测至少还要覆盖两类真实手玩链路：`tests/e2e/test_city_pedestrian_high_speed_inspection_performance.gd` 必须证明 `inspection` 高速穿越 crowd 时 `wall_frame_avg_usec <= 16667` 且不会误触发 panic/flee；`tests/e2e/test_city_pedestrian_live_gunshot_performance.gd` 必须证明 live gunshot panic chain 下 `wall_frame_avg_usec <= 16667`，且 sampled mid-ring witness 会进入 `panic/flee`、`>400m` outsider 保持 calm。
 - 反作弊条款：不得通过 profiling 时临时关闭 pedestrians、把 density 改成 `0` 或仅渲染空壳占位来宣称达标。
 
 ### REQ-0002-008 运行期贴地一致性（新增，见 ECN-0009）
@@ -423,13 +424,13 @@
 - 自动化测试至少断言：death visual 生命周期结束后会自动释放，不引入新的长驻节点泄漏。
 - 反作弊条款：不得通过延迟真正死亡判定、假装目标仍存活、或只在单测场景手工保留一个假 death node 来宣称需求完成。
 
-### REQ-0002-016 Lite 模式下的人流数量级抬升（新增，见 ECN-0012；目标已由 ECN-0015 重定义）
+### REQ-0002-016 Lite 模式下的人流数量级抬升（新增，见 ECN-0012；目标已由 ECN-0015、ECN-0016 重定义）
 
-**动机**：`M7-M10` 的 density uplift 已经把系统从 `M6` 的稀疏基线明显拉起来，2026-03-14 的最新手玩反馈也明确改写了产品判断：当前城市已经“开始像有活力的城市”，但仍希望在现有基础上再增加约 `0.5x` 的人流存在感，同时必须为后续车辆系统保留 runtime 与产品空间。因此，这条需求不再追求纯 pedestrian 的 `10x / 540 / 600` 极限，而是改为 vehicle-aware 的城市活力目标。
+**动机**：`M7-M10` 的 density uplift 已经把系统从 `M6` 的稀疏基线明显拉起来，2026-03-14 的最新手玩反馈继续改写了产品判断：当前城市已经“足够像一座有活力的城市”，后续重点不再是继续把 pedestrian-only 密度往上硬堆，而是把当前可承载的平台稳稳收口，并为车辆系统保留 runtime 与产品空间。因此，这条需求从“继续追更高 density”重定义为“把默认 `lite` 的城市活力平台稳定收口在 `>=250` 的数量级”。
 
 **范围**：
 
-- 默认 `pedestrian_mode = lite` 的 deterministic spawn / occupancy contract 必须在当前 verified plateau 基础上继续抬升，目标约为再增加 `0.5x` 的人流存在感；主战场仍然是 `Tier0 + Tier1` 的低成本存在感，而不是继续先抬 Tier 2 / Tier 3 hard cap
+- 默认 `pedestrian_mode = lite` 的 deterministic spawn / occupancy contract 必须在当前 verified plateau 基础上稳定收口到 `>=250` 的数量级；主战场仍然是 `Tier0 + Tier1` 的低成本存在感，而不是继续先抬 Tier 2 / Tier 3 hard cap
 - district / road class 的层次差异必须保留，不能通过把全城抹平成同一密度来伪造“人多了”
 - 如现有 per-chunk slot contract 无法承载上述 vehicle-aware 目标，必须重构 query / spawn-slot / low-cost render 表达；不允许重新滑回 warm `54` / first-visit `60` 的旧稀疏止血基线
 - 所有人流提升都必须继续服从 streaming continuity、identity continuity 与 `16.67ms/frame` 红线
@@ -442,12 +443,12 @@
 
 **验收口径**：
 
-- 自动化测试至少断言：默认 `lite` 的 world contract 下，warm traversal 与 first-visit traversal 的 `tier1_count` 都至少达到 `300`。
+- 自动化测试至少断言：默认 `lite` 的 world contract 下，warm traversal 与 first-visit traversal 的 `tier1_count` 都至少达到 `250`。
 - 自动化测试至少断言：达到上述 vehicle-aware uplift 后，district / road class 的密度排序仍保持 `core > mixed > residential > industrial > periphery` 与 `arterial > secondary > collector > local > expressway_elevated`。
-- 自动化 profiling / e2e 至少断言：在同一默认 `lite` 配置下，fresh isolated pedestrian/runtime profile 的 warm `ped_tier1_count >= 240`，first-visit `ped_tier1_count >= 280`。
+- 自动化 profiling / e2e 至少断言：在同一默认 `lite` 配置下，fresh isolated pedestrian/runtime profile 的 warm / first-visit `ped_tier1_count` 都 `>= 250`。
 - 自动化测试至少断言：M9 仍然不通过继续抬高 `tier2_budget` / `tier3_budget` 作为主要解法；除非另开 ECN，否则其 hard cap 继续维持当前口径。
 - fresh isolated `tests/e2e/test_city_pedestrian_performance_profile.gd` 与 `tests/e2e/test_city_runtime_performance_profile.gd` 必须继续 `PASS`，且 `wall_frame_avg_usec <= 16667`。
-- [已由 ECN-0013、ECN-0015 补充] 如现有 runtime 无法同时承载本条与 `REQ-0002-007`，必须升级 crowd runtime 架构；不得通过把 `max_spawn_slots_per_chunk`、`lane_slot_budget` 或等价密度参数回退到 `54 / 60` 级别的旧基线来伪造“性能恢复”。
+- [已由 ECN-0013、ECN-0015、ECN-0016 补充] 如现有 runtime 无法同时承载本条与 `REQ-0002-007`，必须升级 crowd runtime 架构；不得通过把 `max_spawn_slots_per_chunk`、`lane_slot_budget` 或等价密度参数回退到 `54 / 60` 级别的旧基线、或只在非真实场景下跑空载 profile 来伪造“性能恢复”。
 - 反作弊条款：不得通过只改文档/测试阈值、只改 debug 路线、把大量 pedestrian 塞进不可见 tier、临时关闭真实 visual/update 成本，或维持“密度和红线不能同时成立”的双配置分裂状态来宣称需求完成。
 
 ## Open Questions

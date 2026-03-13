@@ -316,7 +316,7 @@
 **范围**：
 
 - 用户提供的 civilian `glb` 必须归档到项目内正式资产目录，并具有稳定、可引用的 manifest
-- manifest 必须为每个模型显式记录逐模型归一化口径，至少包括 `source_height_m` 与 `source_ground_offset_m`，使不同 `glb` 能统一映射到 pedestrian `height_m` / 贴地契约
+- manifest 必须为每个模型显式记录逐模型归一化口径，至少包括 `source_height_m` 与 `source_ground_offset_m`，使不同 `glb` 能统一映射到 pedestrian `height_m` / 贴地契约；其中 `source_height_m` 必须按 locomotion clip 启动后的 live skeleton 高度标定，不能直接信任原始 `MeshInstance` AABB
 - `Tier2 + Tier3` 必须从当前 `BoxMesh` 占位切换到真实 civilian character model
 - ambient locomotion 至少要能播放 `walk` 动画；`panic / flee` 优先播放 `run` 或等价加速 locomotion 动画
 - 已被 projectile / explosion 判定为死亡的近景 pedestrian，如模型自带 `death/dead` clip，必须通过短暂的 death visual 播放该动画，而不是继续保持“命中即消失”的抽象切除
@@ -343,7 +343,7 @@
 
 **范围**：
 
-- 近景 civilian manifest 必须对每个模型建立更鲁棒的尺度合同，至少能区分“正常原始高度”与“导入/根节点缩放异常导致的离群值”
+- 近景 civilian manifest 必须对每个模型建立更鲁棒的尺度合同，至少能区分“正常原始高度”与“导入/根节点缩放异常导致的离群值”；`source_height_m` 必须以 live skeleton 高度而非静态 mesh AABB 为准
 - 近景 visual scaling 必须以 player standing cylinder / capsule 或等价运行期参考体为视觉锚点，而不是只盯着 simulation `height_m`
 - 允许通过逐模型 `visual_height_scale`、`target_visual_height_m` 或等价字段做校准，但必须保持 deterministic、可测试、可追溯
 - 7 个 civilian model 的最终 rendered height spread 必须收敛到合理范围，不允许再出现单模型极端放大或大面积“矮人化”

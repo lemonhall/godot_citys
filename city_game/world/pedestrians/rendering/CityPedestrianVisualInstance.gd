@@ -70,6 +70,7 @@ func _apply_transform(state, chunk_center: Vector3) -> void:
 	position = local_position
 	rotation.y = atan2(heading.x, heading.z)
 	if _model_root != null:
+		# source_height_m is calibrated from live skeleton bounds so rigs with misleading mesh AABBs still normalize correctly.
 		var source_height_m := maxf(float(_selected_entry.get("source_height_m", DEFAULT_SOURCE_HEIGHT_M)), 0.001)
 		var target_visual_height_m := _resolve_target_visual_height_m(state)
 		var height_scale := maxf(target_visual_height_m / source_height_m, 0.01)

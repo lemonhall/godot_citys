@@ -16,6 +16,7 @@
 做什么：
 
 - 修正 civilian manifest / visual scaling 合同，把 7 个 `glb` 的近景最终体型统一对齐到 player standing cylinder 参考体，消灭“女巨人”和整体矮人化
+  - `source_height_m` 必须按 walk 启动后的 live skeleton 高度校准，不能继续使用静态 `MeshInstance` AABB 充当最终缩放基准
 - 为 continuous gunfire / casualty / explosion 引入稳定的 threat hold contract，防止 `panic / flee / run` 在威胁尚未结束时抖回 ambient walk
 - 把 `C` 切出的 inspection mode 从 panic/flee 广播链中隔离出来，保证“仅靠近玩家”最多触发 `yield / sidestep`
 - 把 death visual 从 live roster / tier 变动时序中解耦，保证 projectile / explosion / chunk remount / tier demotion 路径下都稳定播放 `death/dead`
@@ -41,6 +42,7 @@
 
 - 2026-03-13 当前功能链已验证通过：
   - `tests/world/test_city_pedestrian_visual_height_calibration.gd`
+  - `tests/world/test_city_pedestrian_runtime_visual_height_live_models.gd`
   - `tests/world/test_city_pedestrian_sustained_fire_reaction.gd`
   - `tests/world/test_city_pedestrian_inspection_mode_non_threat.gd`
   - `tests/world/test_city_pedestrian_death_visual_persistence.gd`
@@ -74,13 +76,14 @@
 - Create: `tests/world/test_city_pedestrian_density_order_of_magnitude.gd`
 - Create: `tests/e2e/test_city_pedestrian_live_burst_fire_stability.gd`
 - Modify: `tests/e2e/test_city_pedestrian_character_visual_presence.gd`
+- Create: `tests/world/test_city_pedestrian_runtime_visual_height_live_models.gd`
 - Verify: `tests/e2e/test_city_pedestrian_performance_profile.gd`
 - Verify: `tests/e2e/test_city_runtime_performance_profile.gd`
 
 ## Steps
 
 1. 写失败测试（红）
-   - `test_city_pedestrian_visual_height_calibration.gd` 断言 7 个模型的最终 rendered height 与 player standing cylinder 参考高度对齐，不再出现离群巨人或整体矮人化。
+   - `test_city_pedestrian_visual_height_calibration.gd` 与 `test_city_pedestrian_runtime_visual_height_live_models.gd` 断言 7 个模型的最终 live skeleton height 与 player standing cylinder 参考高度对齐，不再出现离群巨人或整体矮人化。
    - `test_city_pedestrian_sustained_fire_reaction.gd` 与 `test_city_pedestrian_live_burst_fire_stability.gd` 断言 sustained gunfire 期间 `panic / flee / run` 不再抖回 walk。
    - `test_city_pedestrian_inspection_mode_non_threat.gd` 断言 `C/inspection` 模式仅靠近玩家不会触发 panic/flee，但 inspection 模式下真实开枪仍然会触发。
    - `test_city_pedestrian_death_visual_persistence.gd` 与扩展后的 `test_city_pedestrian_character_visual_presence.gd` 断言 casualty 至少保留 `0.75s` death visual。

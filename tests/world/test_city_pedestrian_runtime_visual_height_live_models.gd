@@ -4,7 +4,7 @@ const T := preload("res://tests/_test_util.gd")
 const CityPedestrianVisualInstance := preload("res://city_game/world/pedestrians/rendering/CityPedestrianVisualInstance.gd")
 
 const MANIFEST_PATH := "res://city_game/assets/pedestrians/civilians/pedestrian_model_manifest.json"
-const SAMPLE_STATE_HEIGHT_M := 1.56
+const SAMPLE_STATE_HEIGHT_M := 1.75
 const MIN_PLAYER_HEIGHT_RATIO := 0.85
 const MAX_PLAYER_HEIGHT_RATIO := 1.15
 const MAX_HEIGHT_SPREAD_RATIO := 1.25
@@ -16,7 +16,7 @@ func _init() -> void:
 func _run() -> void:
 	var scene := load("res://city_game/scenes/CityPrototype.tscn")
 	if scene == null or not (scene is PackedScene):
-		T.fail_and_quit(self, "Missing CityPrototype.tscn for pedestrian visual height calibration")
+		T.fail_and_quit(self, "Missing CityPrototype.tscn for live pedestrian runtime height validation")
 		return
 
 	var world := (scene as PackedScene).instantiate()
@@ -24,22 +24,23 @@ func _run() -> void:
 	await process_frame
 
 	var player_half_height_m := float(world.call("_estimate_player_standing_height"))
-	if not T.require_true(self, player_half_height_m > 0.0, "CityPrototype must expose a positive player standing half-height for pedestrian visual calibration"):
+	if not T.require_true(self, player_half_height_m > 0.0, "CityPrototype must expose a positive player standing half-height for live pedestrian runtime height validation"):
 		return
 	var player_total_height_m := player_half_height_m * 2.0
 
 	var manifest_text := FileAccess.get_file_as_string(MANIFEST_PATH)
 	var manifest_variant = JSON.parse_string(manifest_text)
-	if not T.require_true(self, manifest_variant is Dictionary, "Pedestrian visual calibration requires a valid civilian manifest"):
+	if not T.require_true(self, manifest_variant is Dictionary, "Live pedestrian runtime height validation requires a valid civilian manifest"):
 		return
 	var manifest: Dictionary = manifest_variant
 	var models: Array = manifest.get("models", [])
-	if not T.require_true(self, not models.is_empty(), "Pedestrian visual calibration requires at least one civilian model"):
+	if not T.require_true(self, not models.is_empty(), "Live pedestrian runtime height validation requires at least one civilian model"):
 		return
 
 	var measured_heights: Dictionary = {}
 	var min_height_m := INF
 	var max_height_m := 0.0
+	var failures: Array[String] = []
 	for model_index in range(models.size()):
 		var model: Dictionary = models[model_index]
 		var model_id := str(model.get("model_id", ""))
@@ -48,24 +49,34 @@ func _run() -> void:
 		visual.apply_state(_build_state(model_index), Vector3.ZERO)
 		for _frame_index in range(ANIMATION_SETTLE_FRAMES):
 			await process_frame
-		var rendered_height_m := _measure_live_skeleton_height_m(visual)
-		measured_heights[model_id] = rendered_height_m
-		min_height_m = minf(min_height_m, rendered_height_m)
-		max_height_m = maxf(max_height_m, rendered_height_m)
-		if not T.require_true(self, rendered_height_m >= player_total_height_m * MIN_PLAYER_HEIGHT_RATIO, "Model %s must not render shorter than %.2fx player standing height" % [model_id, MIN_PLAYER_HEIGHT_RATIO]):
-			return
-		if not T.require_true(self, rendered_height_m <= player_total_height_m * MAX_PLAYER_HEIGHT_RATIO, "Model %s must not render taller than %.2fx player standing height" % [model_id, MAX_PLAYER_HEIGHT_RATIO]):
-			return
+		var live_height_m := _measure_live_skeleton_height_m(visual)
+		var model_root := visual.get_node_or_null("Model") as Node3D
+		print("CITY_PEDESTRIAN_LIVE_RUNTIME_HEIGHT %s" % JSON.stringify({
+			"model_id": model_id,
+			"live_skeleton_height_m": live_height_m,
+			"model_root_scale_y": model_root.scale.y if model_root != null else 0.0,
+			"animation_name": visual.get_current_animation_name(),
+		}))
+		measured_heights[model_id] = live_height_m
+		min_height_m = minf(min_height_m, live_height_m)
+		max_height_m = maxf(max_height_m, live_height_m)
+		if live_height_m <= 0.0:
+			failures.append("Model %s must expose a measurable live skeleton height after animation starts" % model_id)
+		elif live_height_m < player_total_height_m * MIN_PLAYER_HEIGHT_RATIO:
+			failures.append("Model %s must not render drastically shorter than the player in live runtime bounds" % model_id)
+		elif live_height_m > player_total_height_m * MAX_PLAYER_HEIGHT_RATIO:
+			failures.append("Model %s must not render as a live giant in runtime bounds" % model_id)
 		visual.queue_free()
 		await process_frame
 
-	print("CITY_PEDESTRIAN_VISUAL_HEIGHTS %s" % JSON.stringify({
+	print("CITY_PEDESTRIAN_LIVE_RUNTIME_HEIGHTS %s" % JSON.stringify({
 		"player_total_height_m": player_total_height_m,
-		"measured_heights_m": measured_heights,
+		"measured_live_heights_m": measured_heights,
 		"spread_ratio": max_height_m / maxf(min_height_m, 0.001),
 	}))
-
-	if not T.require_true(self, (max_height_m / maxf(min_height_m, 0.001)) <= MAX_HEIGHT_SPREAD_RATIO, "Civilian visual height spread must stay within %.2f and not create giant outliers" % MAX_HEIGHT_SPREAD_RATIO):
+	if (max_height_m / maxf(min_height_m, 0.001)) > MAX_HEIGHT_SPREAD_RATIO:
+		failures.append("Live pedestrian runtime height spread must stay within %.2f and not create giant or tiny outliers" % MAX_HEIGHT_SPREAD_RATIO)
+	if not T.require_true(self, failures.is_empty(), failures[0] if not failures.is_empty() else ""):
 		return
 
 	world.queue_free()
@@ -73,7 +84,7 @@ func _run() -> void:
 
 func _build_state(model_index: int) -> Dictionary:
 	return {
-		"pedestrian_id": "ped:calibration:%d" % model_index,
+		"pedestrian_id": "ped:runtime:%d" % model_index,
 		"world_position": Vector3.ZERO,
 		"heading": Vector3.FORWARD,
 		"height_m": SAMPLE_STATE_HEIGHT_M,
@@ -100,14 +111,14 @@ func _collect_live_skeleton_bounds(node: Node) -> Dictionary:
 	if node is Skeleton3D:
 		var skeleton := node as Skeleton3D
 		for bone_index in range(skeleton.get_bone_count()):
-			var world_position := skeleton.global_transform * skeleton.get_bone_global_pose(bone_index).origin
+			var bone_world_position := skeleton.global_transform * skeleton.get_bone_global_pose(bone_index).origin
 			if not has_bounds:
-				min_corner = world_position
-				max_corner = world_position
+				min_corner = bone_world_position
+				max_corner = bone_world_position
 				has_bounds = true
 			else:
-				min_corner = min_corner.min(world_position)
-				max_corner = max_corner.max(world_position)
+				min_corner = min_corner.min(bone_world_position)
+				max_corner = max_corner.max(bone_world_position)
 	for child in node.get_children():
 		var child_node := child as Node
 		if child_node == null:

@@ -28,6 +28,10 @@
 - 玩家暴力触发的 direct-hit / explosion casualty 与周边逃散响应
 - 玩家暴力事件引发的 witness-level 局部恐慌扩散与四散逃离
 - 提升 `pedestrian_mode = lite` 下的默认 crowd density，使主街与核心区不再显得过度稀疏
+- 近景 civilian 模型的视觉尺度必须对齐 player 参考圆柱体，并对 manifest / 导入尺度异常保持鲁棒
+- 连续枪击 / 爆炸威胁下的 pedestrian reaction / locomotion 状态机必须稳定，不得抖回 ambient walk
+- `C` 切出的 inspection 模式只改变玩家移动模式，不得把“仅靠近玩家”误广播成 panic / flee threat
+- casualty death visual 必须在 tier 切换、live roster 移除与 chunk 回访路径中保持稳定可见
 - crowd 相关 debug overlay、minimap 调试层与 profiling 指标
 - 面向 `16.67ms/frame` 红线的 crowd lite 默认模式与回归护栏
 
@@ -332,6 +336,106 @@
 - 自动化测试至少断言：`Tier1` 继续保持轻量批渲染或等价低成本表示，不因本轮近景视觉替换而升级成高成本骨骼实例海。
 - fresh isolated `tests/e2e/test_city_pedestrian_performance_profile.gd` 与 `tests/e2e/test_city_runtime_performance_profile.gd` 必须继续 `PASS`，且 `wall_frame_avg_usec <= 16667`。
 - 反作弊条款：不得通过“只给单个 demo ped 换模型”“保留盒子但改材质”“只在测试场景手工摆真实模型”或“击杀后直接瞬移删除近景行人”来宣称需求完成。
+
+### REQ-0002-013 近景模型尺度校准与归一化鲁棒性（新增，见 ECN-0012）
+
+**动机**：`M8` 已把近景 civilian `glb` 接进运行期，但手玩反馈继续暴露出两类产品级差异：一是至少有一个模型会被放大成“女巨人”，二是其余模型虽然按现有公式归一化了，体感上仍明显小于 player 圆柱参考体。说明当前 `source_height_m -> pedestrian height_m` 的单一路径还不够，既没有挡住 manifest 中的异常量纲，也没有把“视觉上该有多大”锚到玩家实际参考体上。
+
+**范围**：
+
+- 近景 civilian manifest 必须对每个模型建立更鲁棒的尺度合同，至少能区分“正常原始高度”与“导入/根节点缩放异常导致的离群值”
+- 近景 visual scaling 必须以 player standing cylinder / capsule 或等价运行期参考体为视觉锚点，而不是只盯着 simulation `height_m`
+- 允许通过逐模型 `visual_height_scale`、`target_visual_height_m` 或等价字段做校准，但必须保持 deterministic、可测试、可追溯
+- 7 个 civilian model 的最终 rendered height spread 必须收敛到合理范围，不允许再出现单模型极端放大或大面积“矮人化”
+
+**非目标**：
+
+- 不做儿童、老人、超大体型等有意设计的体型谱系扩展
+- 不做高模换装、复杂 body-shape 自定义或完整 character creator
+- 不做 foot IK、骨骼 retargeting 大重构
+
+**验收口径**：
+
+- 自动化测试至少断言：在平地、默认 `alive + ambient` 状态下，7 个 civilian model 的最终可见全身高度都落在 player standing cylinder 参考高度的 `0.85x ~ 1.15x` 区间内。
+- 自动化测试至少断言：7 个 civilian model 中“最高 / 最矮”的最终 rendered height 比值 `<= 1.25`，不允许再出现单个离群巨人。
+- 自动化测试至少断言：manifest / 运行期校准链路不能再让类似 `0.053m` 这类明显离群的原始高度在未被修正的情况下直接进入最终缩放公式。
+- 自动化测试至少断言：近景 visual height 校准不会破坏脚底贴地契约，`source_ground_offset_m` 或等价字段仍然成立。
+- 反作弊条款：不得通过单独跳过某个模型、只在测试里换参考体、把 player 圆柱临时缩小，或仅对单场景硬编码缩放来宣称需求完成。
+
+### REQ-0002-014 暴力状态机连续性与 inspection 模式隔离（新增，见 ECN-0012）
+
+**动机**：如果 automatic rifle 连发期间 pedestrian 会从 `run / flee` 抖回 `walk`，或者仅仅因为玩家按下 `C` 切到 inspection 模式、靠近行人就触发 `panic / flee`，那么 crowd 虽然“有状态机”，但并不可信，反而会比简单脚本更穿帮。
+
+**范围**：
+
+- 连续枪击、连续 casualty 与连续 explosion 构成的重叠 threat event，必须提供稳定的 violent-state hold window，不能让 ambient locomotion 提前夺回主导权
+- `panic / flee`、`yield / sidestep` 与 ambient locomotion 必须有明确优先级与回落条件；回落只能发生在 threat quiet window 之后
+- `C` 切出的 inspection mode 只代表玩家控制模式切换，不得被 pedestrian runtime 误识别为 violent threat 或 wide-area panic trigger
+- inspection mode 下真实 gunfire / explosion / casualty 仍必须维持与普通 player mode 相同的 threat broadcast 能力，不能因为修隔离而把真威胁一起屏蔽掉
+
+**非目标**：
+
+- 不做完整行为树、BT/GOAP、社交记忆或长期仇恨系统
+- 不做 civilian 反击、求援或掩体搜索
+- 不把所有近场反应都升级成常驻 Tier 3 高成本 agent
+
+**验收口径**：
+
+- 自动化测试至少断言：automatic rifle 或等价 burst fire 持续 `0.5s` 以上时，位于 threat/witness 半径内的存活 pedestrian 在 quiet window 结束前不得出现 `run -> walk -> run` 的抖动回退。
+- 自动化测试至少断言：同一名 witness 在连续 violent event 重叠期间，`reaction_state` 只能保持或升级，不得在仍有 threat 输入时提前清空回 ambient。
+- 自动化测试至少断言：inspection mode + 仅靠近玩家时，pedestrian 最多进入 `yield / sidestep`，不得误切到 `panic / flee`。
+- 自动化测试至少断言：inspection mode 下真实开枪 / 爆炸 / casualty 仍会正常触发 `panic / flee`，不得因为隔离 `C` 而屏蔽真实 threat。
+- 反作弊条款：不得通过简单延长所有 animation timer、把 inspection mode 完全禁用 pedestrian reaction、或把 `panic/flee` 全局改成 `yield` 来宣称需求完成。
+
+### REQ-0002-015 死亡动画可见性与延迟移除合同（新增，见 ECN-0012）
+
+**动机**：如果 casualty 在某些路径上仍会“命中即无”，而不是留下可见的 `death/dead` 动画窗口，那么 `M8` 的真实模型和 death clip 接入就只是在理想路径上成立，实际手玩里仍然会被 tier 移除、chunk 回访或状态切换吃掉。
+
+**范围**：
+
+- death visual 必须从 live crowd roster / tier membership 的即时移除时序中解耦，成为独立、短生命周期但稳定可见的 transient visual contract
+- projectile kill、burst fire casualty、explosion casualty、tier demotion、chunk 边界回访等路径都必须复用同一套 death visual 生命周期，而不是各自藏不同删节点时序
+- 如模型存在 `death/dead` clip，runtime 必须优先播放该 clip；如不存在，才允许走显式 fallback
+- death visual 的可见时长必须有明确最短窗口，不能因为同帧 snapshot rebuild 或 chunk remount 被提前抹掉
+
+**非目标**：
+
+- 不做 ragdoll、持久尸体、loot corpse 或长期尸体堆积系统
+- 不做复杂受击 blend tree、倒地方向校正或命中部位特化
+- 不把 death visual 扩展成新的常驻 AI agent
+
+**验收口径**：
+
+- 自动化测试至少断言：凡是模型提供 `death/dead` clip 的 casualty 路径，在命中后都必须留下至少 `0.75s` 的可见 death visual 窗口，而不是同帧消失。
+- 自动化测试至少断言：Tier 2、Tier 3、chunk remount / demotion 路径下的 casualty 都会稳定进入同一 death visual 合同，不允许某些路径继续“命中即无”。
+- 自动化测试至少断言：death visual 播放期间，live crowd roster 可被移除，但视觉节点不得被重复 mount/update 逻辑提前清空。
+- 自动化测试至少断言：death visual 生命周期结束后会自动释放，不引入新的长驻节点泄漏。
+- 反作弊条款：不得通过延迟真正死亡判定、假装目标仍存活、或只在单测场景手工保留一个假 death node 来宣称需求完成。
+
+### REQ-0002-016 Lite 模式下的人流数量级抬升（新增，见 ECN-0012）
+
+**动机**：`M7` 的密度 uplift 虽然把系统从 `M6` 的稀疏基线拉起来了，但最新手玩反馈仍然认为“这个城市简直空旷无比”。既然用户明确要求至少 `10x` 的人口存在感，就不能再把 `54 / 60` 级别的 Tier 1 可见人数当作收口标准。
+
+**范围**：
+
+- 默认 `pedestrian_mode = lite` 的 deterministic spawn / occupancy contract 必须再上一个数量级，优先扩容 `Tier0 + Tier1` 的低成本存在感，而不是继续先抬 Tier 2 / Tier 3 hard cap
+- district / road class 的层次差异必须保留，不能通过把全城抹平成同一密度来伪造“人多了”
+- 如现有 per-chunk slot contract 无法承载 `10x` 目标，必须重构 query / spawn-slot / low-cost render 表达；不允许自行打折到“小幅增加”
+- 所有人流提升都必须继续服从 streaming continuity、identity continuity 与 `16.67ms/frame` 红线
+
+**非目标**：
+
+- 不做 `full` crowd 模式
+- 不做把 Tier 2 / Tier 3 海量骨骼实例硬堆到全城
+- 不做用纯静态假人、重复 billboard 或关闭 continuity 的方式伪造“有人”
+
+**验收口径**：
+
+- 自动化测试至少断言：以 `2026-03-13` 的 `M8` 基线为参照，默认 `lite` 下 warm traversal 的 `tier1_count` 至少达到 `540`，first-visit traversal 的 `tier1_count` 至少达到 `600`。
+- 自动化测试至少断言：达到上述 `10x` 量级 uplift 后，district / road class 的密度排序仍保持 `core > mixed > residential > industrial > periphery` 与 `arterial > secondary > collector > local > expressway_elevated`。
+- 自动化测试至少断言：M9 仍然不通过继续抬高 `tier2_budget` / `tier3_budget` 作为主要解法；除非另开 ECN，否则其 hard cap 继续维持当前口径。
+- fresh isolated `tests/e2e/test_city_pedestrian_performance_profile.gd` 与 `tests/e2e/test_city_runtime_performance_profile.gd` 必须继续 `PASS`，且 `wall_frame_avg_usec <= 16667`。
+- 反作弊条款：不得通过只改测试阈值、只改 debug 路线、把大量 pedestrian 塞进不可见 tier、或临时关闭真实 visual/update 成本来宣称需求完成。
 
 ## Open Questions
 

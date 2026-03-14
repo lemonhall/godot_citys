@@ -67,6 +67,13 @@ func _run() -> void:
 		return
 	if not T.require_true(self, String(vehicle_batch.get_meta("vehicle_tier1_visual_source", "")).begins_with("asset_proxy:"), "Tier 1 vehicle batch must reuse an asset-derived vehicle proxy instead of a hand-made primitive proxy"):
 		return
+	if not T.require_true(self, vehicle_batch.has_meta("vehicle_tier1_proxy_scale_profile"), "Tier 1 vehicle batch must expose a proxy scale profile contract"):
+		return
+	var proxy_scale_profile: Dictionary = vehicle_batch.get_meta("vehicle_tier1_proxy_scale_profile", {})
+	if not T.require_true(self, float(proxy_scale_profile.get("width_scale", 1.0)) < 1.0, "Tier 1 proxy width scale must stay slimmer than the full real-model width"):
+		return
+	if not T.require_true(self, float(proxy_scale_profile.get("height_scale", 1.0)) < 1.0, "Tier 1 proxy height scale must stay slimmer than the full real-model height"):
+		return
 	if not T.require_true(self, _mesh_aabb_size(batch_mesh).z > 0.2, "Tier 1 vehicle batch must use a volumetric mesh instead of a flat shadow quad"):
 		return
 	if not T.require_true(self, _collect_unique_axis_levels(batch_mesh, "y").size() >= 3, "Tier 1 vehicle batch mesh must include a raised roof silhouette instead of a single flat slab"):

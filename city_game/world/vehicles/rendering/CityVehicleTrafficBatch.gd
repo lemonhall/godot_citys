@@ -1,7 +1,12 @@
 extends MultiMeshInstance3D
 
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
-const GENERIC_PROXY_MODEL_ID := "car_b"
+const GENERIC_PROXY_MODEL_ID := "car_c"
+const PROXY_SCALE_PROFILE := {
+	"length_scale": 0.94,
+	"width_scale": 0.84,
+	"height_scale": 0.82,
+}
 const BODY_COLOR_PALETTES := {
 	"civilian": [
 		Color(0.76, 0.79, 0.84, 1.0),
@@ -40,6 +45,7 @@ func _init() -> void:
 	material_override = _get_shared_vehicle_material()
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	set_meta("vehicle_tier1_visual_source", _get_shared_vehicle_mesh_source())
+	set_meta("vehicle_tier1_proxy_scale_profile", PROXY_SCALE_PROFILE.duplicate(true))
 
 func configure_from_states(states: Array, chunk_center: Vector3, visual_catalog: CityVehicleVisualCatalog = null) -> int:
 	if multimesh == null:
@@ -87,9 +93,9 @@ func _build_instance_transform(state, chunk_center: Vector3, visual_catalog: Cit
 	heading = heading.normalized()
 	var yaw := atan2(heading.x, heading.z)
 	var dimensions := _resolve_dimensions(state, visual_catalog)
-	var vehicle_width := maxf(float(dimensions.get("width_m", 1.9)), 0.6)
-	var vehicle_height := maxf(float(dimensions.get("height_m", 1.5)), 0.6)
-	var vehicle_length := maxf(float(dimensions.get("length_m", 4.4)), 1.2)
+	var vehicle_width := maxf(float(dimensions.get("width_m", 1.9)) * float(PROXY_SCALE_PROFILE.get("width_scale", 0.84)), 0.5)
+	var vehicle_height := maxf(float(dimensions.get("height_m", 1.5)) * float(PROXY_SCALE_PROFILE.get("height_scale", 0.82)), 0.5)
+	var vehicle_length := maxf(float(dimensions.get("length_m", 4.4)) * float(PROXY_SCALE_PROFILE.get("length_scale", 0.94)), 1.1)
 	var instance_basis := Basis.from_euler(Vector3(0.0, yaw, 0.0)).scaled(Vector3(
 		vehicle_width,
 		vehicle_height,

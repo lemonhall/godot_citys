@@ -449,6 +449,13 @@ func get_renderer_stats() -> Dictionary:
 	var pedestrian_tier1_total := 0
 	var pedestrian_tier2_total := 0
 	var pedestrian_tier3_total := 0
+	var road_runtime_guard_totals := {
+		"road_overlay_child_count_total": 0,
+		"render_mesh_instance_count_total": 0,
+		"render_multimesh_instance_count_total": 0,
+		"path3d_count_total": 0,
+		"forbidden_runtime_node_count_total": 0,
+	}
 	for chunk_id in get_chunk_ids():
 		var chunk_scene = _chunk_scenes[chunk_id]
 		var chunk_stats: Dictionary = chunk_scene.get_runtime_renderer_stats() if chunk_scene.has_method("get_runtime_renderer_stats") else chunk_scene.get_renderer_stats()
@@ -461,6 +468,12 @@ func get_renderer_stats() -> Dictionary:
 		pedestrian_tier1_total += int(chunk_stats.get("pedestrian_tier1_count", 0))
 		pedestrian_tier2_total += int(chunk_stats.get("pedestrian_tier2_count", 0))
 		pedestrian_tier3_total += int(chunk_stats.get("pedestrian_tier3_count", 0))
+		var road_guard_stats: Dictionary = chunk_stats.get("road_runtime_guard_stats", {})
+		road_runtime_guard_totals["road_overlay_child_count_total"] += int(road_guard_stats.get("road_overlay_child_count", 0))
+		road_runtime_guard_totals["render_mesh_instance_count_total"] += int(road_guard_stats.get("render_mesh_instance_count", 0))
+		road_runtime_guard_totals["render_multimesh_instance_count_total"] += int(road_guard_stats.get("render_multimesh_instance_count", 0))
+		road_runtime_guard_totals["path3d_count_total"] += int(road_guard_stats.get("path3d_count", 0))
+		road_runtime_guard_totals["forbidden_runtime_node_count_total"] += int(road_guard_stats.get("forbidden_runtime_node_count", 0))
 	var pedestrian_budget_contract := {}
 	var pedestrian_global_snapshot := {}
 	var pedestrian_runtime_snapshot := {}
@@ -483,6 +496,7 @@ func get_renderer_stats() -> Dictionary:
 		"pedestrian_page_cache_hit_count": int(pedestrian_runtime_snapshot.get("page_cache_hit_count", 0)),
 		"pedestrian_page_cache_miss_count": int(pedestrian_runtime_snapshot.get("page_cache_miss_count", 0)),
 		"pedestrian_duplicate_page_load_count": int(pedestrian_runtime_snapshot.get("duplicate_page_load_count", 0)),
+		"road_runtime_guard_totals": road_runtime_guard_totals.duplicate(true),
 		"lod_mode_counts": lod_mode_counts,
 	}
 	stats.merge(get_streaming_budget_stats(), true)

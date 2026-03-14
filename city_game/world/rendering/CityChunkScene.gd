@@ -206,10 +206,46 @@ func get_min_prop_road_clearance_m() -> float:
 		return float(prop_multimesh.get_meta("min_road_clearance_m"))
 	return 0.0
 
+func get_road_runtime_guard_stats() -> Dictionary:
+	var stats := {
+		"road_overlay_child_count": 0,
+		"render_mesh_instance_count": 0,
+		"render_multimesh_instance_count": 0,
+		"path3d_count": 0,
+		"forbidden_runtime_node_count": 0,
+	}
+	var road_overlay := get_node_or_null("NearGroup/RoadOverlay") as Node
+	if road_overlay == null:
+		return stats
+	stats["road_overlay_child_count"] = road_overlay.get_child_count()
+	_accumulate_road_runtime_guard_stats(road_overlay, stats)
+	return stats
+
+func _accumulate_road_runtime_guard_stats(root: Node, stats: Dictionary) -> void:
+	for child in root.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		if child_node is MeshInstance3D:
+			stats["render_mesh_instance_count"] = int(stats.get("render_mesh_instance_count", 0)) + 1
+		elif child_node is MultiMeshInstance3D:
+			stats["render_multimesh_instance_count"] = int(stats.get("render_multimesh_instance_count", 0)) + 1
+		var is_forbidden_runtime_node := false
+		if child_node is Path3D:
+			stats["path3d_count"] = int(stats.get("path3d_count", 0)) + 1
+			is_forbidden_runtime_node = true
+		var normalized_name := String(child_node.name).to_lower()
+		if normalized_name.begins_with("roadlane") or normalized_name.begins_with("roadsegment") or normalized_name.begins_with("roadintersection") or normalized_name.begins_with("roadmanager"):
+			is_forbidden_runtime_node = true
+		if is_forbidden_runtime_node:
+			stats["forbidden_runtime_node_count"] = int(stats.get("forbidden_runtime_node_count", 0)) + 1
+		_accumulate_road_runtime_guard_stats(child_node, stats)
+
 func get_renderer_stats() -> Dictionary:
 	var prop_multimesh := get_prop_multimesh()
 	var terrain_lod_contract := get_terrain_lod_contract()
 	var pedestrian_crowd_stats := get_pedestrian_crowd_stats()
+	var road_runtime_guard_stats := get_road_runtime_guard_stats()
 	return {
 		"chunk_id": str(_chunk_data.get("chunk_id", "")),
 		"lod_mode": _current_lod_mode,
@@ -224,6 +260,7 @@ func get_renderer_stats() -> Dictionary:
 		"bridge_count": int(_profile.get("bridge_count", 0)),
 		"road_mesh_mode": str(_profile.get("road_mesh_mode", "ribbon")),
 		"road_template_counts": (_profile.get("road_template_counts", {}) as Dictionary).duplicate(true),
+		"road_runtime_guard_stats": road_runtime_guard_stats.duplicate(true),
 		"road_collision_shape_count": get_road_collision_shape_count(),
 		"bridge_collision_shape_count": get_bridge_collision_shape_count(),
 		"bridge_min_clearance_m": get_bridge_min_clearance_m(),
@@ -245,11 +282,14 @@ func get_renderer_stats() -> Dictionary:
 func get_runtime_renderer_stats() -> Dictionary:
 	var prop_multimesh := get_prop_multimesh()
 	var pedestrian_crowd_stats := get_pedestrian_crowd_stats()
+	var road_runtime_guard_stats := get_road_runtime_guard_stats()
 	return {
 		"chunk_id": str(_chunk_data.get("chunk_id", "")),
 		"lod_mode": _current_lod_mode,
 		"visual_variant_id": get_visual_variant_id(),
 		"multimesh_instance_count": prop_multimesh.multimesh.instance_count if prop_multimesh != null and prop_multimesh.multimesh != null else 0,
+		"road_segment_count": (_profile.get("road_segments", []) as Array).size(),
+		"road_runtime_guard_stats": road_runtime_guard_stats.duplicate(true),
 		"pedestrian_tier1_count": int(pedestrian_crowd_stats.get("tier1_count", 0)),
 		"pedestrian_tier2_count": int(pedestrian_crowd_stats.get("tier2_count", 0)),
 		"pedestrian_tier3_count": int(pedestrian_crowd_stats.get("tier3_count", 0)),

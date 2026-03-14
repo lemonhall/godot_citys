@@ -63,6 +63,12 @@ func _run() -> void:
 		return
 	if not T.require_true(self, setup_profile.has("road_overlay_usec"), "Chunk setup profile must expose road overlay cost even when it is zero"):
 		return
+	if not T.require_true(self, int(setup_profile.get("total_usec", 0)) <= 8500, "M4 chunk setup profile must keep total mount cost at or below 8500 usec"):
+		return
+	if not T.require_true(self, int(setup_profile.get("road_overlay_usec", 0)) <= 1400, "M4 chunk setup profile must keep road overlay cost at or below 1400 usec"):
+		return
+	if not T.require_true(self, int(setup_profile.get("ground_usec", 0)) <= 1800, "M4 chunk setup profile must keep ground build cost at or below 1800 usec"):
+		return
 	if not T.require_true(self, int(setup_profile.get("props_usec", 0)) > 0, "Chunk setup profile must expose prop build cost"):
 		return
 	if not T.require_true(self, int(setup_profile.get("proxies_usec", 0)) > 0, "Chunk setup profile must expose proxy build cost"):

@@ -50,6 +50,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(profile.get("streaming_terrain_async_complete_sample_count", 0)) > 0, "First-visit profile must include terrain async completion samples"):
 		return
+	if not T.require_true(self, int(profile.get("streaming_mount_setup_avg_usec", 0)) <= 5500, "M4 first-visit profile must keep mount setup average at or below 5500 usec"):
+		return
+	if not T.require_true(self, int(profile.get("update_streaming_avg_usec", 0)) <= 14500, "M4 first-visit profile must keep update_streaming average at or below 14500 usec"):
+		return
 	if not T.require_true(self, int(profile.get("wall_frame_avg_usec", 0)) <= 16667, "First-visit traversal must keep average wall-frame time at or below the 16.67ms redline"):
 		return
 

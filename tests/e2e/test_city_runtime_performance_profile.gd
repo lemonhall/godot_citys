@@ -92,7 +92,11 @@ func _run() -> void:
 	]:
 		if not T.require_true(self, profile.has(required_key), "Runtime performance profile must expose %s" % required_key):
 			return
-	if not T.require_true(self, int(profile.get("streaming_mount_setup_avg_usec", 0)) <= 16000, "M3 runtime profile must keep mount setup average at or below 16000 usec"):
+	if not T.require_true(self, int(profile.get("wall_frame_avg_usec", 0)) <= 11000, "M4 warm runtime profile must keep average wall-frame time at or below 11000 usec"):
+		return
+	if not T.require_true(self, int(profile.get("streaming_mount_setup_avg_usec", 0)) <= 5500, "M4 warm runtime profile must keep mount setup average at or below 5500 usec"):
+		return
+	if not T.require_true(self, int(profile.get("update_streaming_avg_usec", 0)) <= 10000, "M4 warm runtime profile must keep update_streaming average at or below 10000 usec"):
 		return
 	if not T.require_true(self, int(profile.get("wall_frame_avg_usec", 0)) <= 16667, "Warm traversal must keep average wall-frame time at or below the 16.67ms redline"):
 		return

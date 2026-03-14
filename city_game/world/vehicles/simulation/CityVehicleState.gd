@@ -4,6 +4,9 @@ const TIER_0 := "tier0"
 const TIER_1 := "tier1"
 const TIER_2 := "tier2"
 const TIER_3 := "tier3"
+const INTERACTION_AMBIENT := "ambient"
+const INTERACTION_STOPPED := "stopped"
+const INTERACTION_HIJACKED := "hijacked"
 
 var vehicle_id := ""
 var chunk_id := ""
@@ -27,6 +30,8 @@ var heading := Vector3.FORWARD
 var lane_points: Array[Vector3] = []
 var lane_length_m := 0.0
 var distance_along_lane_m := 0.0
+var interaction_state := INTERACTION_AMBIENT
+var interaction_reason := ""
 
 func setup(data: Dictionary) -> void:
 	vehicle_id = str(data.get("vehicle_id", ""))
@@ -59,6 +64,8 @@ func setup(data: Dictionary) -> void:
 func step(delta: float) -> void:
 	if delta <= 0.0:
 		return
+	if interaction_state != INTERACTION_AMBIENT:
+		return
 	if lane_points.size() < 2:
 		return
 	distance_along_lane_m = fposmod(distance_along_lane_m + speed_mps * delta, lane_length_m)
@@ -71,6 +78,25 @@ func apply_ground_height(height_y: float) -> void:
 
 func set_tier(next_tier: String) -> void:
 	tier = next_tier
+
+func request_stop(reason: String = "projectile") -> void:
+	if interaction_state == INTERACTION_HIJACKED:
+		return
+	interaction_state = INTERACTION_STOPPED
+	interaction_reason = reason
+
+func claim_for_player() -> void:
+	interaction_state = INTERACTION_HIJACKED
+	interaction_reason = "player_hijack"
+
+func is_hijackable() -> bool:
+	return interaction_state == INTERACTION_STOPPED
+
+func is_runtime_active() -> bool:
+	return interaction_state != INTERACTION_HIJACKED
+
+func get_interaction_state() -> String:
+	return interaction_state
 
 func to_snapshot() -> Dictionary:
 	return {
@@ -94,6 +120,8 @@ func to_snapshot() -> Dictionary:
 		"world_position": world_position,
 		"heading": heading,
 		"distance_along_lane_m": distance_along_lane_m,
+		"interaction_state": interaction_state,
+		"interaction_reason": interaction_reason,
 	}
 
 func to_render_snapshot() -> Dictionary:
@@ -101,11 +129,7 @@ func to_render_snapshot() -> Dictionary:
 		"vehicle_id": vehicle_id,
 		"world_position": world_position,
 		"heading": heading,
-		"length_m": length_m,
-		"width_m": width_m,
-		"height_m": height_m,
 		"model_id": model_id,
-		"model_signature": model_signature,
 		"traffic_role": traffic_role,
 	}
 

@@ -142,7 +142,13 @@ func ground_state(state: CityVehicleState) -> void:
 	state.apply_ground_height(CityChunkGroundSampler.sample_drive_height(local_point, chunk_payload, profile, state.road_id))
 
 func get_runtime_snapshot() -> Dictionary:
-	return {
+	return _build_runtime_snapshot(true)
+
+func get_runtime_summary() -> Dictionary:
+	return _build_runtime_snapshot(false)
+
+func _build_runtime_snapshot(include_page_build_counts: bool) -> Dictionary:
+	var snapshot := {
 		"active_page_count": _count_active_pages(),
 		"cached_page_count": _pages_by_chunk_id.size(),
 		"resident_state_count": _states_by_id.size(),
@@ -151,8 +157,10 @@ func get_runtime_snapshot() -> Dictionary:
 		"page_generation_count": _page_generation_count,
 		"duplicate_page_load_count": _duplicate_page_load_count,
 		"page_eviction_count": _page_eviction_count,
-		"page_build_counts": _page_build_counts.duplicate(true),
 	}
+	if include_page_build_counts:
+		snapshot["page_build_counts"] = _page_build_counts.duplicate(true)
+	return snapshot
 
 func prewarm_chunk_entries(chunk_entries: Array) -> void:
 	for entry_variant in chunk_entries:
@@ -279,7 +287,7 @@ func _rebuild_active_state_refs() -> void:
 		for vehicle_id_variant in page.get("state_ids", []):
 			var vehicle_id := str(vehicle_id_variant)
 			var state: CityVehicleState = _states_by_id.get(vehicle_id)
-			if state != null:
+			if state != null and state.is_runtime_active():
 				_active_state_refs.append(state)
 	_active_state_refs_dirty = false
 

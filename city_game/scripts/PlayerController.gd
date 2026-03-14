@@ -1,5 +1,7 @@
 extends CharacterBody3D
 
+const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
+
 signal primary_fire_requested
 signal grenade_throw_requested
 signal weapon_mode_changed(weapon_mode: String)
@@ -52,9 +54,19 @@ const WEAPON_MODE_GRENADE := "grenade"
 @export var ground_slam_shockwave_radius_m := 7.5
 @export var ground_slam_camera_shake_duration_sec := 0.38
 @export var ground_slam_camera_shake_amplitude_m := 0.18
+@export var vehicle_drive_forward_speed := 32.0
+@export var vehicle_drive_reverse_speed := 11.0
+@export var vehicle_drive_accel := 28.0
+@export var vehicle_drive_brake_decel := 36.0
+@export var vehicle_drive_coast_decel := 12.0
+@export var vehicle_drive_turn_rate_deg := 88.0
+@export var vehicle_drive_turn_rate_idle_deg := 42.0
+@export var vehicle_drive_camera_local_position := Vector3(0.0, 3.25, 8.4)
+@export var vehicle_drive_camera_fov := 72.0
 
 @onready var camera_rig: Node3D = $CameraRig
 @onready var camera: Camera3D = $CameraRig/Camera3D
+@onready var player_visual: Node3D = $Visual
 
 var _gravity := ProjectSettings.get_setting("physics/3d/default_gravity") as float
 var _pitch := deg_to_rad(-18.0)
@@ -92,6 +104,18 @@ var _camera_shake_amplitude_m := 0.0
 var _slam_impact_count := 0
 var _last_slam_impact_speed := 0.0
 var _rng := RandomNumberGenerator.new()
+var _driving_vehicle := false
+var _driving_vehicle_state: Dictionary = {}
+var _driving_vehicle_speed_mps := 0.0
+var _vehicle_drive_input_override := {
+	"throttle": 0.0,
+	"steer": 0.0,
+	"brake": false,
+}
+var _vehicle_drive_input_override_active := false
+var _vehicle_visual_catalog: CityVehicleVisualCatalog = null
+var _drive_vehicle_visual_root: Node3D = null
+var _drive_vehicle_model_root: Node3D = null
 
 func _ready() -> void:
 	camera_rig.rotation.x = _pitch
@@ -100,6 +124,7 @@ func _ready() -> void:
 		_default_camera_local_position = camera.position
 		_default_camera_fov = camera.fov
 	_rng.seed = 1337
+	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
 	_ensure_traversal_fx_root()
 	_update_grenade_hold_visual()
 	_update_grenade_preview()
@@ -125,6 +150,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if DisplayServer.get_name() == "headless":
 		return
 	if not _control_enabled:
+		return
+	if _driving_vehicle:
+		if event is InputEventMouseButton:
+			var drive_button := event as InputEventMouseButton
+			if drive_button.pressed:
+				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+		elif event.is_action_pressed("ui_cancel"):
+			if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+				Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+			else:
+				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 		return
 
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -166,6 +202,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	floor_snap_length = _current_floor_snap_length()
+	if _driving_vehicle:
+		_process_vehicle_drive(delta)
+		return
 	if _stabilization_suspend_frames > 0:
 		_stabilization_suspend_frames -= 1
 	if _traversal_mode == TRAVERSAL_MODE_WALL_CLIMB:
@@ -216,12 +255,15 @@ func set_control_enabled(enabled: bool) -> void:
 		_primary_fire_active = false
 		velocity.x = 0.0
 		velocity.z = 0.0
+		_driving_vehicle_speed_mps = 0.0
 	_clear_transient_weapon_state()
 
 func is_control_enabled() -> bool:
 	return _control_enabled
 
 func set_weapon_mode(mode: String) -> void:
+	if _driving_vehicle:
+		return
 	if mode != WEAPON_MODE_RIFLE and mode != WEAPON_MODE_GRENADE:
 		return
 	if _weapon_mode == mode:
@@ -240,6 +282,7 @@ func get_weapon_state() -> Dictionary:
 		"grenade_hold_requested": _grenade_hold_requested,
 		"grenade_ready": _grenade_ready_active,
 		"aim_down_sights_active": _aim_down_sights_active,
+		"driving_vehicle": _driving_vehicle,
 	}
 
 func set_speed_profile(profile: String) -> void:
@@ -276,6 +319,8 @@ func get_mobility_tuning() -> Dictionary:
 		"wall_climb_speed": wall_climb_speed,
 		"ground_slam_initial_speed": ground_slam_initial_speed,
 		"ground_slam_max_speed": ground_slam_max_speed,
+		"vehicle_drive_forward_speed": vehicle_drive_forward_speed,
+		"vehicle_drive_reverse_speed": vehicle_drive_reverse_speed,
 	}
 
 func get_traversal_state() -> Dictionary:
@@ -297,18 +342,84 @@ func get_traversal_fx_state() -> Dictionary:
 		"camera_shake_amplitude_m": _camera_shake_amplitude_m,
 	}
 
+func is_driving_vehicle() -> bool:
+	return _driving_vehicle
+
+func get_driving_vehicle_state() -> Dictionary:
+	var state := _driving_vehicle_state.duplicate(true)
+	state["driving"] = _driving_vehicle
+	state["speed_mps"] = _driving_vehicle_speed_mps
+	state["world_position"] = global_position
+	var heading := -global_transform.basis.z
+	heading.y = 0.0
+	state["heading"] = heading.normalized() if heading.length_squared() > 0.0001 else Vector3.FORWARD
+	return state
+
+func set_vehicle_drive_input(throttle: float, steer: float, brake: bool = false) -> void:
+	_vehicle_drive_input_override_active = true
+	_vehicle_drive_input_override = {
+		"throttle": clampf(throttle, -1.0, 1.0),
+		"steer": clampf(steer, -1.0, 1.0),
+		"brake": brake,
+	}
+
+func clear_vehicle_drive_input() -> void:
+	_vehicle_drive_input_override_active = false
+	_vehicle_drive_input_override = {
+		"throttle": 0.0,
+		"steer": 0.0,
+		"brake": false,
+	}
+
+func enter_vehicle_drive_mode(vehicle_state: Dictionary) -> void:
+	if vehicle_state.is_empty():
+		return
+	_driving_vehicle = true
+	_driving_vehicle_state = vehicle_state.duplicate(true)
+	_driving_vehicle_speed_mps = 0.0
+	_clear_transient_weapon_state()
+	_traversal_mode = TRAVERSAL_MODE_GROUNDED
+	_wall_climb_normal = Vector3.ZERO
+	_wall_climb_contact_point = Vector3.ZERO
+	clear_vehicle_drive_input()
+	var heading: Vector3 = vehicle_state.get("heading", Vector3.FORWARD)
+	heading.y = 0.0
+	if heading.length_squared() <= 0.0001:
+		heading = Vector3.FORWARD
+	rotation.y = _yaw_from_drive_heading(heading.normalized())
+	_pitch = deg_to_rad(-10.0)
+	camera_rig.rotation.x = _pitch
+	global_position = vehicle_state.get("world_position", global_position)
+	global_position.y += _estimate_standing_height()
+	if player_visual != null:
+		player_visual.visible = false
+	_mount_drive_vehicle_visual(vehicle_state)
+	suspend_ground_stabilization(4)
+
 func set_primary_fire_active(active: bool) -> void:
+	if _driving_vehicle:
+		_primary_fire_active = false
+		return
 	_primary_fire_active = active and _control_enabled and _weapon_mode == WEAPON_MODE_RIFLE
 	if _primary_fire_active:
 		request_primary_fire()
 
 func set_aim_down_sights_active(active: bool) -> void:
+	if _driving_vehicle:
+		_aim_down_sights_active = false
+		return
 	_aim_down_sights_active = active and _control_enabled and _weapon_mode == WEAPON_MODE_RIFLE
 
 func is_aim_down_sights_active() -> bool:
 	return _aim_down_sights_active
 
 func set_grenade_ready_active(active: bool) -> void:
+	if _driving_vehicle:
+		_grenade_hold_requested = false
+		_grenade_ready_active = false
+		_update_grenade_hold_visual()
+		_update_grenade_preview()
+		return
 	_grenade_hold_requested = active and _control_enabled and _weapon_mode == WEAPON_MODE_GRENADE
 	_grenade_ready_active = _grenade_hold_requested
 	_update_grenade_hold_visual()
@@ -331,6 +442,8 @@ func get_camera_fov_state() -> Dictionary:
 func request_primary_fire() -> bool:
 	if not _control_enabled:
 		return false
+	if _driving_vehicle:
+		return false
 	if _weapon_mode != WEAPON_MODE_RIFLE:
 		return false
 	if _primary_fire_cooldown_remaining > 0.0:
@@ -341,6 +454,8 @@ func request_primary_fire() -> bool:
 
 func request_grenade_throw() -> bool:
 	if not _control_enabled:
+		return false
+	if _driving_vehicle:
 		return false
 	if _weapon_mode != WEAPON_MODE_GRENADE:
 		return false
@@ -357,6 +472,8 @@ func request_grenade_throw() -> bool:
 func request_wall_climb() -> bool:
 	if not _control_enabled:
 		return false
+	if _driving_vehicle:
+		return false
 	var wall_hit := _find_climbable_wall()
 	if wall_hit.is_empty():
 		return false
@@ -365,6 +482,8 @@ func request_wall_climb() -> bool:
 
 func request_ground_slam() -> bool:
 	if not _control_enabled:
+		return false
+	if _driving_vehicle:
 		return false
 	if _traversal_mode == TRAVERSAL_MODE_GROUNDED or is_on_floor():
 		return false
@@ -497,6 +616,105 @@ func _restore_grenade_ready_from_hold() -> void:
 	_update_grenade_hold_visual()
 	_update_grenade_preview()
 
+func _process_vehicle_drive(delta: float) -> void:
+	if _stabilization_suspend_frames > 0:
+		_stabilization_suspend_frames -= 1
+	var drive_input: Dictionary = _read_vehicle_drive_input()
+	var throttle := float(drive_input.get("throttle", 0.0))
+	var steer := float(drive_input.get("steer", 0.0))
+	var brake := bool(drive_input.get("brake", false))
+	var speed_ratio := clampf(absf(_driving_vehicle_speed_mps) / maxf(vehicle_drive_forward_speed, 0.001), 0.0, 1.0)
+	var turn_rate_deg := lerpf(vehicle_drive_turn_rate_idle_deg, vehicle_drive_turn_rate_deg, speed_ratio)
+	if absf(_driving_vehicle_speed_mps) > 0.05 or absf(throttle) > 0.0:
+		var drive_direction_sign := 1.0 if _driving_vehicle_speed_mps >= 0.0 else -1.0
+		rotation.y += deg_to_rad(turn_rate_deg) * steer * drive_direction_sign * delta
+	if brake:
+		_driving_vehicle_speed_mps = move_toward(_driving_vehicle_speed_mps, 0.0, vehicle_drive_brake_decel * delta)
+	elif throttle > 0.0:
+		_driving_vehicle_speed_mps = move_toward(_driving_vehicle_speed_mps, vehicle_drive_forward_speed * throttle, vehicle_drive_accel * delta)
+	elif throttle < 0.0:
+		if _driving_vehicle_speed_mps > 1.0:
+			_driving_vehicle_speed_mps = move_toward(_driving_vehicle_speed_mps, 0.0, vehicle_drive_brake_decel * delta)
+		else:
+			_driving_vehicle_speed_mps = move_toward(_driving_vehicle_speed_mps, -vehicle_drive_reverse_speed * absf(throttle), vehicle_drive_accel * delta)
+	else:
+		_driving_vehicle_speed_mps = move_toward(_driving_vehicle_speed_mps, 0.0, vehicle_drive_coast_decel * delta)
+	if not is_on_floor():
+		velocity.y -= _gravity * delta
+	else:
+		velocity.y = minf(velocity.y, 0.0)
+	var forward := -global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		forward = Vector3.FORWARD
+	forward = forward.normalized()
+	velocity.x = forward.x * _driving_vehicle_speed_mps
+	velocity.z = forward.z * _driving_vehicle_speed_mps
+	apply_floor_snap()
+	move_and_slide()
+	if _stabilization_suspend_frames <= 0 and velocity.y <= 0.0:
+		var snapped_to_ground := _stabilize_ground_contact()
+		if snapped_to_ground and not is_on_floor():
+			apply_floor_snap()
+			velocity.y = -0.01
+			move_and_slide()
+
+func _read_vehicle_drive_input() -> Dictionary:
+	if _vehicle_drive_input_override_active:
+		return _vehicle_drive_input_override.duplicate(true)
+	var throttle := 0.0
+	if Input.is_key_pressed(KEY_W) or Input.is_action_pressed("ui_up"):
+		throttle += 1.0
+	if Input.is_key_pressed(KEY_S) or Input.is_action_pressed("ui_down"):
+		throttle -= 1.0
+	var steer := 0.0
+	if Input.is_key_pressed(KEY_A) or Input.is_action_pressed("ui_left"):
+		steer += 1.0
+	if Input.is_key_pressed(KEY_D) or Input.is_action_pressed("ui_right"):
+		steer -= 1.0
+	var brake := Input.is_key_pressed(KEY_SPACE) or (throttle < 0.0 and _driving_vehicle_speed_mps > 1.0)
+	return {
+		"throttle": clampf(throttle, -1.0, 1.0),
+		"steer": clampf(steer, -1.0, 1.0),
+		"brake": brake,
+	}
+
+func _mount_drive_vehicle_visual(vehicle_state: Dictionary) -> void:
+	_ensure_drive_vehicle_visual_root()
+	if _drive_vehicle_visual_root == null or _vehicle_visual_catalog == null:
+		return
+	if _drive_vehicle_model_root != null and is_instance_valid(_drive_vehicle_model_root):
+		_drive_vehicle_model_root.queue_free()
+	_drive_vehicle_model_root = null
+	var model_id := str(vehicle_state.get("model_id", ""))
+	var entry := _vehicle_visual_catalog.get_entry(model_id)
+	if entry.is_empty():
+		entry = _vehicle_visual_catalog.select_entry_for_state(vehicle_state)
+	if entry.is_empty():
+		return
+	var model_root := _vehicle_visual_catalog.instantiate_scene_for_entry(entry)
+	if model_root == null:
+		return
+	_drive_vehicle_model_root = model_root
+	_drive_vehicle_model_root.name = "Model"
+	_drive_vehicle_model_root.scale = Vector3.ONE * _vehicle_visual_catalog.resolve_runtime_scale(entry)
+	_drive_vehicle_model_root.position = Vector3(0.0, _vehicle_visual_catalog.resolve_ground_offset_m(entry) * _vehicle_visual_catalog.resolve_runtime_scale(entry), 0.0)
+	_drive_vehicle_visual_root.add_child(_drive_vehicle_model_root)
+	_drive_vehicle_visual_root.visible = true
+
+func _ensure_drive_vehicle_visual_root() -> void:
+	if _drive_vehicle_visual_root != null and is_instance_valid(_drive_vehicle_visual_root):
+		return
+	var drive_root := Node3D.new()
+	drive_root.name = "DriveVehicleVisual"
+	drive_root.position = Vector3(0.0, -_estimate_standing_height(), 0.0)
+	drive_root.rotation.y = PI
+	add_child(drive_root)
+	_drive_vehicle_visual_root = drive_root
+
+func _yaw_from_drive_heading(heading: Vector3) -> float:
+	return atan2(-heading.x, -heading.z)
+
 func _read_move_input() -> Vector2:
 	var horizontal := 0.0
 	if Input.is_key_pressed(KEY_A) or Input.is_action_pressed("ui_left"):
@@ -596,6 +814,13 @@ func _set_primary_collision_enabled(enabled: bool) -> void:
 
 func _update_ads_camera(delta: float) -> void:
 	if camera == null:
+		return
+	if _driving_vehicle:
+		_ads_blend = 0.0
+		_pitch = lerpf(_pitch, deg_to_rad(-10.0), delta * 5.0)
+		camera_rig.rotation.x = _pitch
+		camera.position = camera.position.lerp(vehicle_drive_camera_local_position, clampf(delta * 8.0, 0.0, 1.0))
+		camera.fov = lerpf(camera.fov, vehicle_drive_camera_fov, clampf(delta * 8.0, 0.0, 1.0))
 		return
 	var target_blend := 1.0 if _aim_down_sights_active and _control_enabled else 0.0
 	_ads_blend = move_toward(_ads_blend, target_blend, delta * ads_transition_speed)

@@ -82,15 +82,6 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			state.step(delta)
 	var traffic_step_usec := _duration_or_zero(step_started_usec, active_states.size()) if delta > 0.0 else 0
 
-	var ranking_started_usec := Time.get_ticks_usec()
-	var distance_ranked_states: Array[CityVehicleState] = []
-	for state_variant in active_states:
-		distance_ranked_states.append(state_variant)
-	distance_ranked_states.sort_custom(func(a: CityVehicleState, b: CityVehicleState) -> bool:
-		return player_position.distance_squared_to(a.world_position) < player_position.distance_squared_to(b.world_position)
-	)
-	var traffic_rank_usec := _duration_or_zero(ranking_started_usec, distance_ranked_states.size())
-
 	var active_chunk_ids: Array[String] = []
 	for entry_variant in active_chunk_entries:
 		active_chunk_ids.append(str((entry_variant as Dictionary).get("chunk_id", "")))
@@ -98,7 +89,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	_assignment_rebuild_elapsed_sec += maxf(delta, 0.0)
 	if not _should_rebuild_assignments(active_chunk_ids, player_position):
 		var reuse_result := _rebuild_chunk_snapshots_from_cached_assignments(active_chunk_ids)
-		var runtime_snapshot: Dictionary = _vehicle_streamer.get_runtime_snapshot()
+		var runtime_snapshot: Dictionary = _vehicle_streamer.get_runtime_summary()
 		_update_runtime_snapshot(
 			active_chunk_ids.size(),
 			active_states.size(),
@@ -114,6 +105,14 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			update_started_usec
 		)
 		return get_global_summary()
+	var ranking_started_usec := Time.get_ticks_usec()
+	var distance_ranked_states: Array[CityVehicleState] = []
+	for state_variant in active_states:
+		distance_ranked_states.append(state_variant)
+	distance_ranked_states.sort_custom(func(a: CityVehicleState, b: CityVehicleState) -> bool:
+		return player_position.distance_squared_to(a.world_position) < player_position.distance_squared_to(b.world_position)
+	)
+	var traffic_rank_usec := _duration_or_zero(ranking_started_usec, distance_ranked_states.size())
 	var tier1_budget := int(_budget_contract.get("tier1_budget", 4))
 	var tier2_budget := int(_budget_contract.get("tier2_budget", 2))
 	var tier3_budget := int(_budget_contract.get("tier3_budget", 1))
@@ -186,7 +185,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	_chunk_render_snapshots = next_chunk_render_snapshots
 	var traffic_snapshot_rebuild_usec := _duration_or_zero(snapshot_rebuild_started_usec, next_chunk_render_snapshots.size())
 
-	var runtime_snapshot: Dictionary = _vehicle_streamer.get_runtime_snapshot()
+	var runtime_snapshot: Dictionary = _vehicle_streamer.get_runtime_summary()
 	_update_runtime_snapshot(
 		active_chunk_ids.size(),
 		active_states.size(),
@@ -253,11 +252,82 @@ func get_runtime_snapshot() -> Dictionary:
 	runtime_snapshot["tier3_states"] = _build_full_state_snapshots(_tier3_state_refs)
 	runtime_snapshot["nearfield_budget"] = int(_budget_contract.get("nearfield_budget", 3))
 	runtime_snapshot["tier3_budget"] = int(_budget_contract.get("tier3_budget", 1))
+	runtime_snapshot["budget_contract"] = _budget_contract.duplicate(true)
 	runtime_snapshot["profile_stats"] = _last_profile_stats.duplicate(true)
 	return runtime_snapshot
 
+func resolve_projectile_hit(start_position: Vector3, end_position: Vector3, _damage: float = 1.0, _velocity: Vector3 = Vector3.ZERO) -> Dictionary:
+	var best_state: CityVehicleState = null
+	var best_distance_sq := INF
+	var best_hit_position := end_position
+	for state in _get_interactive_nearfield_states():
+		var vehicle_center := state.world_position + Vector3.UP * maxf(state.height_m * 0.5, 0.75)
+		var closest := _closest_point_on_segment(vehicle_center, start_position, end_position)
+		var hit_radius_m := maxf(maxf(state.length_m, state.width_m) * 0.35, 1.2)
+		var distance_sq := vehicle_center.distance_squared_to(closest)
+		if distance_sq > hit_radius_m * hit_radius_m:
+			continue
+		if distance_sq >= best_distance_sq:
+			continue
+		best_state = state
+		best_distance_sq = distance_sq
+		best_hit_position = closest
+	if best_state == null:
+		return {}
+	best_state.request_stop("projectile")
+	_mark_state_chunk_dirty(best_state)
+	return {
+		"vehicle_id": best_state.vehicle_id,
+		"chunk_id": best_state.chunk_id,
+		"hit_position": best_hit_position,
+		"interaction_state": best_state.get_interaction_state(),
+	}
+
+func resolve_explosion_impact(world_position: Vector3, radius_m: float) -> Dictionary:
+	var stopped_ids: Array[String] = []
+	for state in _get_interactive_nearfield_states():
+		var stop_radius_m := radius_m + maxf(maxf(state.length_m, state.width_m) * 0.4, 1.0)
+		if state.world_position.distance_to(world_position) > stop_radius_m:
+			continue
+		if state.get_interaction_state() != CityVehicleState.INTERACTION_STOPPED:
+			stopped_ids.append(state.vehicle_id)
+		state.request_stop("explosion")
+		_mark_state_chunk_dirty(state)
+	return {
+		"stopped_count": stopped_ids.size(),
+		"stopped_vehicle_ids": stopped_ids.duplicate(),
+	}
+
+func find_hijackable_vehicle_candidate(player_position: Vector3, max_distance_m: float = 6.5) -> Dictionary:
+	var best_state: CityVehicleState = null
+	var best_distance_m := max_distance_m
+	for state in _get_interactive_nearfield_states():
+		if not state.is_hijackable():
+			continue
+		var distance_m := player_position.distance_to(state.world_position)
+		if distance_m > best_distance_m:
+			continue
+		best_state = state
+		best_distance_m = distance_m
+	if best_state == null:
+		return {}
+	var snapshot := best_state.to_snapshot()
+	snapshot["distance_m"] = best_distance_m
+	return snapshot
+
+func claim_vehicle(vehicle_id: String) -> Dictionary:
+	var state: CityVehicleState = _vehicle_streamer.get_state(vehicle_id)
+	if state == null or not state.is_hijackable():
+		return {}
+	var snapshot := state.to_snapshot()
+	state.claim_for_player()
+	_vehicle_streamer.invalidate_active_state_cache()
+	_drop_state_from_cached_assignments(vehicle_id)
+	snapshot["success"] = true
+	return snapshot
+
 func get_runtime_summary() -> Dictionary:
-	var runtime_snapshot: Dictionary = _vehicle_streamer.get_runtime_snapshot()
+	var runtime_snapshot: Dictionary = _vehicle_streamer.get_runtime_summary()
 	return {
 		"active_page_count": int(runtime_snapshot.get("active_page_count", 0)),
 		"cached_page_count": int(runtime_snapshot.get("cached_page_count", 0)),
@@ -452,3 +522,65 @@ func _duration_or_zero(started_usec: int, item_count: int) -> int:
 	if item_count <= 0:
 		return 0
 	return maxi(int(Time.get_ticks_usec() - started_usec), 1)
+
+func _get_interactive_nearfield_states() -> Array[CityVehicleState]:
+	var states: Array[CityVehicleState] = []
+	for state in _tier3_state_refs:
+		if state != null and state.is_runtime_active():
+			states.append(state)
+	for state in _tier2_state_refs:
+		if state != null and state.is_runtime_active():
+			states.append(state)
+	return states
+
+func _closest_point_on_segment(point: Vector3, segment_start: Vector3, segment_end: Vector3) -> Vector3:
+	var segment := segment_end - segment_start
+	var length_sq := segment.length_squared()
+	if length_sq <= 0.0001:
+		return segment_start
+	var t := clampf((point - segment_start).dot(segment) / length_sq, 0.0, 1.0)
+	return segment_start + segment * t
+
+func _mark_state_chunk_dirty(state: CityVehicleState) -> void:
+	if state == null:
+		return
+	if not _chunk_render_snapshots.has(state.chunk_id):
+		return
+	var chunk_snapshot: Dictionary = _chunk_render_snapshots[state.chunk_id]
+	chunk_snapshot["dirty"] = true
+	_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
+
+func _drop_state_from_cached_assignments(vehicle_id: String) -> void:
+	_tier0_state_refs = _filter_out_vehicle(_tier0_state_refs, vehicle_id)
+	_tier1_state_refs = _filter_out_vehicle(_tier1_state_refs, vehicle_id)
+	_tier2_state_refs = _filter_out_vehicle(_tier2_state_refs, vehicle_id)
+	_tier3_state_refs = _filter_out_vehicle(_tier3_state_refs, vehicle_id)
+	for chunk_id_variant in _chunk_render_snapshots.keys():
+		var chunk_id := str(chunk_id_variant)
+		var chunk_snapshot: Dictionary = _chunk_render_snapshots[chunk_id]
+		chunk_snapshot["tier1_states"] = _filter_snapshot_states(chunk_snapshot.get("tier1_states", []), vehicle_id)
+		chunk_snapshot["tier2_states"] = _filter_snapshot_states(chunk_snapshot.get("tier2_states", []), vehicle_id)
+		chunk_snapshot["tier3_states"] = _filter_snapshot_states(chunk_snapshot.get("tier3_states", []), vehicle_id)
+		chunk_snapshot["tier1_count"] = (chunk_snapshot.get("tier1_states", []) as Array).size()
+		chunk_snapshot["tier2_count"] = (chunk_snapshot.get("tier2_states", []) as Array).size()
+		chunk_snapshot["tier3_count"] = (chunk_snapshot.get("tier3_states", []) as Array).size()
+		chunk_snapshot["dirty"] = true
+		_chunk_render_snapshots[chunk_id] = chunk_snapshot
+	_has_assignment_cache = false
+
+func _filter_out_vehicle(states: Array[CityVehicleState], vehicle_id: String) -> Array[CityVehicleState]:
+	var filtered: Array[CityVehicleState] = []
+	for state in states:
+		if state == null or state.vehicle_id == vehicle_id:
+			continue
+		filtered.append(state)
+	return filtered
+
+func _filter_snapshot_states(states: Array, vehicle_id: String) -> Array:
+	var filtered: Array = []
+	for state_variant in states:
+		var state: Dictionary = state_variant
+		if str(state.get("vehicle_id", "")) == vehicle_id:
+			continue
+		filtered.append(state)
+	return filtered

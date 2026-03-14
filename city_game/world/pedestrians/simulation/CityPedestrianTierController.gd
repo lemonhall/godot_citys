@@ -8,7 +8,7 @@ const CityPedestrianLayeredScheduler := preload("res://city_game/world/pedestria
 
 const TIER1_UPDATE_INTERVAL_SEC := 0.12
 const TIER1_STEP_BUCKET_COUNT := 8
-const TIER0_UPDATE_INTERVAL_SEC := 0.35
+const TIER0_UPDATE_INTERVAL_SEC := 0.5
 const TIER0_STEP_BUCKET_COUNT := 8
 const ASSIGNMENT_REBUILD_INTERVAL_SEC := 0.18
 const PLAYER_CONTEXT_TELEPORT_DISTANCE_M := 32.0
@@ -274,7 +274,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 
 	_assignment_rebuild_elapsed_sec += maxf(delta, 0.0)
 	if not _should_rebuild_assignments(active_chunk_ids, player_position, inferred_player_velocity):
-		var reused_runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_snapshot()
+		var reused_runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_summary()
 		_update_runtime_snapshot(
 			active_chunk_ids.size(),
 			active_states.size(),
@@ -442,7 +442,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	_chunk_render_snapshots = next_chunk_render_snapshots
 	var crowd_snapshot_rebuild_usec := _duration_or_zero(snapshot_rebuild_started_usec, active_states.size())
 
-	var runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_snapshot()
+	var runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_summary()
 	_update_runtime_snapshot(
 		active_chunk_ids.size(),
 		active_states.size(),
@@ -562,7 +562,7 @@ func get_runtime_snapshot() -> Dictionary:
 	return runtime_snapshot
 
 func get_runtime_summary() -> Dictionary:
-	var runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_snapshot()
+	var runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_summary()
 	return {
 		"active_page_count": int(runtime_snapshot.get("active_page_count", 0)),
 		"cached_page_count": int(runtime_snapshot.get("cached_page_count", 0)),
@@ -690,7 +690,7 @@ func _step_farfield_state_buckets() -> int:
 			_tier0_step_bucket_cursor = 0
 		var bucket: Array = _tier0_step_buckets[_tier0_step_bucket_cursor]
 		if not bucket.is_empty():
-			stepped_state_count += _step_state_refs(bucket, TIER0_UPDATE_INTERVAL_SEC, false)
+			stepped_state_count += _step_state_refs(bucket, TIER0_UPDATE_INTERVAL_SEC, false, false)
 			_collect_visible_farfield_chunk_ids(bucket, _pending_farfield_render_dirty_chunk_ids)
 		_tier0_step_bucket_cursor = (_tier0_step_bucket_cursor + 1) % _tier0_step_bucket_count
 		if _tier0_step_bucket_cursor == 0:
@@ -743,7 +743,7 @@ func _step_all_active_states(active_states: Array, delta: float) -> Dictionary:
 		"farfield_usec": 0,
 	}
 
-func _step_state_refs(states: Array, step_delta: float, mark_render_dirty: bool = true) -> int:
+func _step_state_refs(states: Array, step_delta: float, mark_render_dirty: bool = true, apply_ground: bool = true) -> int:
 	if step_delta <= 0.0 or states.is_empty():
 		return 0
 	var stepped_state_count := 0
@@ -751,7 +751,8 @@ func _step_state_refs(states: Array, step_delta: float, mark_render_dirty: bool 
 		if state == null or not state.is_alive():
 			continue
 		state.step(step_delta)
-		_pedestrian_streamer.ground_state(state)
+		if apply_ground:
+			_pedestrian_streamer.ground_state(state)
 		if mark_render_dirty:
 			_mark_chunk_render_dirty(state.chunk_id)
 		stepped_state_count += 1

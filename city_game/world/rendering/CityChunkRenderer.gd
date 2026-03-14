@@ -774,6 +774,26 @@ func resolve_explosion_impact(world_position: Vector3, lethal_radius_m: float, t
 	_spawn_pedestrian_death_visuals(impact_result.get("death_events", []))
 	return impact_result
 
+func resolve_vehicle_projectile_hit(start_position: Vector3, end_position: Vector3, damage: float = 1.0, velocity: Vector3 = Vector3.ZERO) -> Dictionary:
+	if _vehicle_tier_controller == null or not _vehicle_tier_controller.has_method("resolve_projectile_hit"):
+		return {}
+	return _vehicle_tier_controller.resolve_projectile_hit(start_position, end_position, damage, velocity)
+
+func resolve_vehicle_explosion(world_position: Vector3, radius_m: float) -> Dictionary:
+	if _vehicle_tier_controller == null or not _vehicle_tier_controller.has_method("resolve_explosion_impact"):
+		return {}
+	return _vehicle_tier_controller.resolve_explosion_impact(world_position, radius_m)
+
+func find_hijackable_vehicle_candidate(player_position: Vector3, max_distance_m: float = 6.5) -> Dictionary:
+	if _vehicle_tier_controller == null or not _vehicle_tier_controller.has_method("find_hijackable_vehicle_candidate"):
+		return {}
+	return _vehicle_tier_controller.find_hijackable_vehicle_candidate(player_position, max_distance_m)
+
+func claim_vehicle_for_player(vehicle_id: String) -> Dictionary:
+	if _vehicle_tier_controller == null or not _vehicle_tier_controller.has_method("claim_vehicle"):
+		return {}
+	return _vehicle_tier_controller.claim_vehicle(vehicle_id)
+
 func _spawn_pedestrian_death_visuals(events: Array) -> void:
 	for event_variant in events:
 		var event := _normalize_death_event(event_variant)

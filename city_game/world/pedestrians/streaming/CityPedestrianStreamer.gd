@@ -155,7 +155,13 @@ func ground_state(state: CityPedestrianState) -> void:
 	state.apply_ground_height(CityChunkGroundSampler.sample_height(local_point, chunk_payload, profile))
 
 func get_runtime_snapshot() -> Dictionary:
-	return {
+	return _build_runtime_snapshot(true)
+
+func get_runtime_summary() -> Dictionary:
+	return _build_runtime_snapshot(false)
+
+func _build_runtime_snapshot(include_page_build_counts: bool) -> Dictionary:
+	var snapshot := {
 		"active_page_count": _count_active_pages(),
 		"cached_page_count": _pages_by_chunk_id.size(),
 		"resident_state_count": _states_by_id.size(),
@@ -164,8 +170,10 @@ func get_runtime_snapshot() -> Dictionary:
 		"page_generation_count": _page_generation_count,
 		"duplicate_page_load_count": _duplicate_page_load_count,
 		"page_eviction_count": _page_eviction_count,
-		"page_build_counts": _page_build_counts.duplicate(true),
 	}
+	if include_page_build_counts:
+		snapshot["page_build_counts"] = _page_build_counts.duplicate(true)
+	return snapshot
 
 func prewarm_chunk_entries(chunk_entries: Array) -> void:
 	for entry_variant in chunk_entries:

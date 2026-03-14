@@ -123,6 +123,9 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		var key_event := event as InputEventKey
+		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_F:
+			try_hijack_nearby_vehicle()
+			return
 		if key_event.pressed and not key_event.echo and handle_debug_keypress(key_event.keycode, key_event.physical_keycode):
 			return
 	if DisplayServer.get_name() == "headless":
@@ -234,6 +237,14 @@ func get_vehicle_runtime_snapshot() -> Dictionary:
 
 func get_navigation_runtime():
 	return _navigation_runtime
+
+func is_player_driving_vehicle() -> bool:
+	return player != null and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle())
+
+func get_player_vehicle_state() -> Dictionary:
+	if player == null or not player.has_method("get_driving_vehicle_state"):
+		return {}
+	return player.get_driving_vehicle_state()
 
 func fire_player_projectile() -> Node3D:
 	if player == null or not player.has_method("get_projectile_spawn_transform") or not player.has_method("get_projectile_direction"):
@@ -523,7 +534,8 @@ func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 		"city_enemy",
 		Color(0.65098, 0.85098, 1.0, 1.0),
 		Color(0.360784, 0.713725, 1.0, 1.0),
-		chunk_renderer if chunk_renderer != null and chunk_renderer.has_method("resolve_projectile_hit") else null
+		chunk_renderer if chunk_renderer != null and chunk_renderer.has_method("resolve_projectile_hit") else null,
+		chunk_renderer if chunk_renderer != null and chunk_renderer.has_method("resolve_vehicle_projectile_hit") else null
 	)
 	_projectile_root.add_child(projectile)
 	if chunk_renderer != null and chunk_renderer.has_method("notify_projectile_event"):
@@ -542,14 +554,60 @@ func _spawn_grenade(origin: Vector3, launch_velocity: Vector3) -> Node3D:
 	return grenade
 
 func _on_player_grenade_exploded(world_position: Vector3, radius_m: float) -> void:
-	if chunk_renderer == null or not chunk_renderer.has_method("resolve_explosion_impact"):
-		return
-	chunk_renderer.resolve_explosion_impact(world_position, maxf(radius_m * 0.35, 4.0), radius_m)
+	if chunk_renderer != null and chunk_renderer.has_method("resolve_explosion_impact"):
+		chunk_renderer.resolve_explosion_impact(world_position, maxf(radius_m * 0.35, 4.0), radius_m)
+	if chunk_renderer != null and chunk_renderer.has_method("resolve_vehicle_explosion"):
+		chunk_renderer.resolve_vehicle_explosion(world_position, radius_m)
 
 func resolve_pedestrian_explosion(world_position: Vector3, lethal_radius_m: float, threat_radius_m: float = -1.0) -> Dictionary:
 	if chunk_renderer == null or not chunk_renderer.has_method("resolve_explosion_impact"):
 		return {}
 	return chunk_renderer.resolve_explosion_impact(world_position, lethal_radius_m, threat_radius_m)
+
+func resolve_vehicle_projectile_hit(start_position: Vector3, end_position: Vector3, damage: float = 1.0, velocity: Vector3 = Vector3.ZERO) -> Dictionary:
+	if chunk_renderer == null or not chunk_renderer.has_method("resolve_vehicle_projectile_hit"):
+		return {}
+	return chunk_renderer.resolve_vehicle_projectile_hit(start_position, end_position, damage, velocity)
+
+func resolve_vehicle_explosion(world_position: Vector3, radius_m: float) -> Dictionary:
+	if chunk_renderer == null or not chunk_renderer.has_method("resolve_vehicle_explosion"):
+		return {}
+	return chunk_renderer.resolve_vehicle_explosion(world_position, radius_m)
+
+func find_hijackable_vehicle_candidate(max_distance_m: float = 6.5) -> Dictionary:
+	if chunk_renderer == null or not chunk_renderer.has_method("find_hijackable_vehicle_candidate"):
+		return {}
+	return chunk_renderer.find_hijackable_vehicle_candidate(_get_active_anchor_position(), max_distance_m)
+
+func try_hijack_nearby_vehicle(max_distance_m: float = 6.5) -> Dictionary:
+	if player == null or chunk_renderer == null:
+		return {
+			"success": false,
+		}
+	if player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle()):
+		return {
+			"success": false,
+		}
+	if not chunk_renderer.has_method("find_hijackable_vehicle_candidate") or not chunk_renderer.has_method("claim_vehicle_for_player"):
+		return {
+			"success": false,
+		}
+	var candidate: Dictionary = chunk_renderer.find_hijackable_vehicle_candidate(_get_active_anchor_position(), max_distance_m)
+	if candidate.is_empty():
+		return {
+			"success": false,
+		}
+	var hijack_result: Dictionary = chunk_renderer.claim_vehicle_for_player(str(candidate.get("vehicle_id", "")))
+	if hijack_result.is_empty():
+		return {
+			"success": false,
+		}
+	if player.has_method("enter_vehicle_drive_mode"):
+		player.enter_vehicle_drive_mode(hijack_result)
+	update_streaming_for_position(_get_active_anchor_position(), 0.0)
+	_refresh_hud_status({}, true)
+	hijack_result["success"] = true
+	return hijack_result
 
 func _connect_enemy_combat(enemy: Node) -> void:
 	if enemy == null or not enemy.has_signal("projectile_fire_requested"):
@@ -594,10 +652,15 @@ func update_streaming_for_position(world_position: Vector3, delta: float = 0.0) 
 			delta,
 			_build_pedestrian_player_context()
 		)
+	var is_headless := DisplayServer.get_name() == "headless"
 	var hud_debug_expanded := hud != null and hud.has_method("is_debug_expanded") and bool(hud.is_debug_expanded())
 	var debug_expanded := debug_overlay != null and debug_overlay.has_method("is_expanded") and bool(debug_overlay.is_expanded())
 	var should_refresh_hud := _should_refresh_hud()
-	var needs_snapshot := should_refresh_hud or debug_expanded
+	var allow_headless_hud_refresh := should_refresh_hud and (
+		not is_headless
+		or (not _has_streaming_backpressure() and _update_streaming_sample_count == 0)
+	)
+	var needs_snapshot := debug_expanded or (allow_headless_hud_refresh and not is_headless)
 	var hud_snapshot := {}
 	if needs_snapshot:
 		hud_snapshot = _build_hud_snapshot(not hud_debug_expanded and not debug_expanded)
@@ -605,7 +668,7 @@ func update_streaming_for_position(world_position: Vector3, delta: float = 0.0) 
 		if needs_snapshot and debug_overlay.has_method("set_snapshot"):
 			debug_overlay.set_snapshot(hud_snapshot)
 		debug_overlay.visible = debug_expanded
-	if should_refresh_hud:
+	if allow_headless_hud_refresh:
 		_refresh_hud_status(hud_snapshot, true)
 	_record_update_streaming_sample(Time.get_ticks_usec() - started_usec)
 	return events
@@ -708,8 +771,9 @@ func _build_crosshair_state() -> Dictionary:
 	if camera != null:
 		screen_position = camera.unproject_position(world_target)
 	var weapon_mode: String = player.get_weapon_mode() if player.has_method("get_weapon_mode") else "rifle"
+	var driving_vehicle := player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle())
 	return {
-		"visible": weapon_mode != "grenade",
+		"visible": weapon_mode != "grenade" and not driving_vehicle,
 		"screen_position": screen_position,
 		"viewport_size": viewport_size,
 		"world_target": world_target,
@@ -719,10 +783,20 @@ func _build_crosshair_state() -> Dictionary:
 func _weapon_status_text() -> String:
 	if player == null or not player.has_method("get_weapon_state"):
 		return ""
+	if player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle()):
+		var driving_state: Dictionary = get_player_vehicle_state()
+		return "vehicle=driving model=%s speed=%.1f" % [
+			str(driving_state.get("model_id", "")),
+			float(driving_state.get("speed_mps", 0.0))
+		]
 	var weapon_state: Dictionary = player.get_weapon_state()
 	var mode := str(weapon_state.get("mode", "rifle"))
 	var grenade_ready := bool(weapon_state.get("grenade_ready", false))
-	return "weapon=%s grenade_ready=%s" % [mode, str(grenade_ready)]
+	var hijack_candidate: Dictionary = find_hijackable_vehicle_candidate()
+	var prompt_text := ""
+	if not hijack_candidate.is_empty():
+		prompt_text = " hijack_prompt=F:%s" % str(hijack_candidate.get("model_id", "vehicle"))
+	return "weapon=%s grenade_ready=%s%s" % [mode, str(grenade_ready), prompt_text]
 
 func reset_performance_profile() -> void:
 	_update_streaming_sample_count = 0

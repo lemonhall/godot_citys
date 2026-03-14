@@ -8,7 +8,9 @@ var _nodes_by_id: Dictionary = {}
 var _edges_by_id: Dictionary = {}
 var _growth_stats: Dictionary = {}
 var _intersections: Array[Dictionary] = []
+var _intersections_by_id: Dictionary = {}
 var _runtime_intersections: Array[Dictionary] = []
+var _runtime_intersections_by_id: Dictionary = {}
 var _edge_indices_by_cell: Dictionary = {}
 var _query_stats := {
 	"last_candidate_count": 0,
@@ -49,7 +51,9 @@ func load_from_cache_payload(payload: Dictionary) -> void:
 	_edges_by_id.clear()
 	_growth_stats.clear()
 	_intersections.clear()
+	_intersections_by_id.clear()
 	_runtime_intersections.clear()
+	_runtime_intersections_by_id.clear()
 	_edge_indices_by_cell.clear()
 	reset_query_stats()
 
@@ -111,14 +115,34 @@ func get_growth_stats() -> Dictionary:
 
 func set_intersections(intersections: Array) -> void:
 	_intersections.clear()
+	_intersections_by_id.clear()
 	for intersection in intersections:
-		_intersections.append((intersection as Dictionary).duplicate(true))
+		var stored := (intersection as Dictionary).duplicate(true)
+		_intersections.append(stored)
+		var intersection_id := str(stored.get("intersection_id", ""))
+		if intersection_id != "":
+			_intersections_by_id[intersection_id] = stored
 	_runtime_intersections.clear()
+	_runtime_intersections_by_id.clear()
 
 func set_runtime_intersections(intersections: Array) -> void:
 	_runtime_intersections.clear()
+	_runtime_intersections_by_id.clear()
 	for intersection in intersections:
-		_runtime_intersections.append((intersection as Dictionary).duplicate(true))
+		var stored := (intersection as Dictionary).duplicate(true)
+		_runtime_intersections.append(stored)
+		var intersection_id := str(stored.get("intersection_id", ""))
+		if intersection_id != "":
+			_runtime_intersections_by_id[intersection_id] = stored
+
+func get_intersection_by_id(intersection_id: String) -> Dictionary:
+	if not _runtime_intersections_by_id.is_empty():
+		if not _runtime_intersections_by_id.has(intersection_id):
+			return {}
+		return (_runtime_intersections_by_id[intersection_id] as Dictionary).duplicate(true)
+	if not _intersections_by_id.has(intersection_id):
+		return {}
+	return (_intersections_by_id[intersection_id] as Dictionary).duplicate(true)
 
 func get_intersections_in_rect(rect: Rect2) -> Array[Dictionary]:
 	var results: Array[Dictionary] = []

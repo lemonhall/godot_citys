@@ -1,6 +1,7 @@
 extends MultiMeshInstance3D
 
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
+const GENERIC_PROXY_MODEL_ID := "car_b"
 const BODY_COLOR_PALETTES := {
 	"civilian": [
 		Color(0.76, 0.79, 0.84, 1.0),
@@ -23,6 +24,8 @@ const BODY_COLOR_PALETTES := {
 
 static var _shared_vehicle_mesh: ArrayMesh = null
 static var _shared_vehicle_material: StandardMaterial3D = null
+static var _shared_vehicle_mesh_source := ""
+static var _shared_visual_catalog: CityVehicleVisualCatalog = null
 
 var _cached_instance_transforms: Array = []
 var _cached_instance_colors: Array = []
@@ -36,6 +39,7 @@ func _init() -> void:
 	multimesh = vehicle_multimesh
 	material_override = _get_shared_vehicle_material()
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	set_meta("vehicle_tier1_visual_source", _get_shared_vehicle_mesh_source())
 
 func configure_from_states(states: Array, chunk_center: Vector3, visual_catalog: CityVehicleVisualCatalog = null) -> int:
 	if multimesh == null:
@@ -184,6 +188,89 @@ func _colors_equal(lhs, rhs) -> bool:
 static func _get_shared_vehicle_mesh() -> ArrayMesh:
 	if _shared_vehicle_mesh != null:
 		return _shared_vehicle_mesh
+	var visual_catalog := _get_shared_visual_catalog()
+	var entry: Dictionary = visual_catalog.get_entry(GENERIC_PROXY_MODEL_ID)
+	var asset_proxy_mesh := _build_asset_proxy_mesh(visual_catalog, entry)
+	if asset_proxy_mesh != null:
+		_shared_vehicle_mesh = asset_proxy_mesh
+		_shared_vehicle_mesh_source = "asset_proxy:%s" % str(entry.get("model_id", GENERIC_PROXY_MODEL_ID))
+		return _shared_vehicle_mesh
+	_shared_vehicle_mesh_source = "primitive_proxy:fallback"
+	_shared_vehicle_mesh = _build_fallback_proxy_mesh()
+	return _shared_vehicle_mesh
+
+static func _get_shared_vehicle_mesh_source() -> String:
+	if _shared_vehicle_mesh_source == "":
+		_get_shared_vehicle_mesh()
+	return _shared_vehicle_mesh_source
+
+static func _get_shared_visual_catalog() -> CityVehicleVisualCatalog:
+	if _shared_visual_catalog == null:
+		_shared_visual_catalog = CityVehicleVisualCatalog.new()
+	return _shared_visual_catalog
+
+static func _build_asset_proxy_mesh(visual_catalog: CityVehicleVisualCatalog, entry: Dictionary) -> ArrayMesh:
+	if visual_catalog == null or entry.is_empty():
+		return null
+	var model_root := visual_catalog.instantiate_scene_for_entry(entry)
+	if model_root == null:
+		return null
+	var surface_tool := SurfaceTool.new()
+	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var appended_surface_count := _append_asset_mesh_surfaces(model_root, surface_tool, Transform3D.IDENTITY)
+	model_root.free()
+	if appended_surface_count <= 0:
+		return null
+	surface_tool.generate_normals()
+	var raw_mesh := surface_tool.commit()
+	if raw_mesh == null:
+		return null
+	return _normalize_proxy_mesh(raw_mesh)
+
+static func _append_asset_mesh_surfaces(node: Node, surface_tool: SurfaceTool, parent_transform: Transform3D) -> int:
+	var appended_surface_count := 0
+	var node_transform := parent_transform
+	var node_3d := node as Node3D
+	if node_3d != null:
+		node_transform = parent_transform * node_3d.transform
+	var mesh_instance := node as MeshInstance3D
+	if mesh_instance != null and mesh_instance.mesh != null:
+		var source_mesh: Mesh = mesh_instance.mesh
+		for surface_index in range(source_mesh.get_surface_count()):
+			surface_tool.append_from(source_mesh, surface_index, node_transform)
+			appended_surface_count += 1
+	for child_variant in node.get_children():
+		var child_node := child_variant as Node
+		if child_node == null:
+			continue
+		appended_surface_count += _append_asset_mesh_surfaces(child_node, surface_tool, node_transform)
+	return appended_surface_count
+
+static func _normalize_proxy_mesh(source_mesh: ArrayMesh) -> ArrayMesh:
+	if source_mesh == null:
+		return null
+	var source_aabb := source_mesh.get_aabb()
+	if source_aabb.size.x <= 0.001 or source_aabb.size.y <= 0.001 or source_aabb.size.z <= 0.001:
+		return source_mesh
+	var center := source_aabb.get_center()
+	var scale := Vector3(
+		1.0 / source_aabb.size.x,
+		1.0 / source_aabb.size.y,
+		1.0 / source_aabb.size.z
+	)
+	var surface_tool := SurfaceTool.new()
+	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var normalization_transform := Transform3D(Basis.IDENTITY.scaled(scale), Vector3(
+		-center.x * scale.x,
+		-center.y * scale.y,
+		-center.z * scale.z
+	))
+	for surface_index in range(source_mesh.get_surface_count()):
+		surface_tool.append_from(source_mesh, surface_index, normalization_transform)
+	surface_tool.generate_normals()
+	return surface_tool.commit()
+
+static func _build_fallback_proxy_mesh() -> ArrayMesh:
 	var surface_tool := SurfaceTool.new()
 	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var body_mesh := BoxMesh.new()
@@ -193,8 +280,7 @@ static func _get_shared_vehicle_mesh() -> ArrayMesh:
 	cabin_mesh.size = Vector3(0.68, 0.48, 0.46)
 	surface_tool.append_from(cabin_mesh, 0, Transform3D(Basis.IDENTITY, Vector3(0.0, 0.26, -0.08)))
 	surface_tool.generate_normals()
-	_shared_vehicle_mesh = surface_tool.commit()
-	return _shared_vehicle_mesh
+	return surface_tool.commit()
 
 static func _get_shared_vehicle_material() -> StandardMaterial3D:
 	if _shared_vehicle_material != null:

@@ -46,6 +46,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(budget_contract.get("tier3_budget", 0)) <= 1, "Vehicle Tier 3 budget must stay at or below the lite cap of 1"):
 		return
+	if not T.require_true(self, float(budget_contract.get("tier2_radius_m", 0.0)) >= 240.0, "Vehicle Tier 2 real-model radius must be at least double the previous 120m contract"):
+		return
+	if not T.require_true(self, float(budget_contract.get("tier3_radius_m", 0.0)) >= 72.0, "Vehicle Tier 3 real-model radius must be at least double the previous 36m contract"):
+		return
 
 	controller.update_active_chunks(streamer.get_active_chunk_entries(), Vector3.ZERO, 0.25)
 	var snapshot: Dictionary = controller.get_global_summary()
@@ -58,6 +62,10 @@ func _run() -> void:
 	if not T.require_true(self, int(snapshot.get("tier2_count", 0)) <= int(budget_contract.get("tier2_budget", 0)), "Vehicle Tier 2 count must stay within budget"):
 		return
 	if not T.require_true(self, int(snapshot.get("tier3_count", 0)) <= int(budget_contract.get("tier3_budget", 0)), "Vehicle Tier 3 count must stay within budget"):
+		return
+	if not T.require_true(self, is_equal_approx(float(snapshot.get("tier2_radius_m", 0.0)), float(budget_contract.get("tier2_radius_m", -1.0))), "Vehicle runtime summary must report the upgraded Tier 2 real-model radius"):
+		return
+	if not T.require_true(self, is_equal_approx(float(snapshot.get("tier3_radius_m", 0.0)), float(budget_contract.get("tier3_radius_m", -1.0))), "Vehicle runtime summary must report the upgraded Tier 3 real-model radius"):
 		return
 	if not T.require_true(
 		self,

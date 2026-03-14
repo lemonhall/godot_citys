@@ -21,7 +21,7 @@ func _build_contract(preset: String) -> Dictionary:
 		"tier2_budget": 2,
 		"tier3_budget": 1,
 		"nearfield_budget": 3,
-		"tier2_radius_m": 120.0,
-		"tier3_radius_m": 36.0,
+		"tier2_radius_m": 240.0,
+		"tier3_radius_m": 72.0,
 		"page_cache_capacity": 160,
 	}

@@ -63,6 +63,10 @@ func _run() -> void:
 	var batch_mesh: Mesh = vehicle_batch.multimesh.mesh
 	if not T.require_true(self, batch_mesh != null, "Tier 1 vehicle batch must expose a base mesh"):
 		return
+	if not T.require_true(self, vehicle_batch.has_meta("vehicle_tier1_visual_source"), "Tier 1 vehicle batch must expose its visual source contract"):
+		return
+	if not T.require_true(self, String(vehicle_batch.get_meta("vehicle_tier1_visual_source", "")).begins_with("asset_proxy:"), "Tier 1 vehicle batch must reuse an asset-derived vehicle proxy instead of a hand-made primitive proxy"):
+		return
 	if not T.require_true(self, _mesh_aabb_size(batch_mesh).z > 0.2, "Tier 1 vehicle batch must use a volumetric mesh instead of a flat shadow quad"):
 		return
 	if not T.require_true(self, _collect_unique_axis_levels(batch_mesh, "y").size() >= 3, "Tier 1 vehicle batch mesh must include a raised roof silhouette instead of a single flat slab"):

@@ -46,6 +46,8 @@ func _add_crossing_lanes(config, lane_graph: CityPedestrianLaneGraph, road_graph
 	var dedupe: Dictionary = {}
 	for intersection_variant in intersections:
 		var intersection: Dictionary = intersection_variant
+		if not bool(intersection.get("pedestrian_crossing_candidate", true)):
+			continue
 		var position: Vector2 = intersection.get("position", Vector2.ZERO)
 		var nearby_edges: Array = road_graph.get_edges_intersecting_rect(Rect2(position - Vector2.ONE * 48.0, Vector2.ONE * 96.0))
 		for edge_variant in nearby_edges:

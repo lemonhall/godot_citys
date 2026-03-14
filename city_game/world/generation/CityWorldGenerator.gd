@@ -152,8 +152,10 @@ func _build_or_load_road_graph(config, district_graph) -> Dictionary:
 	var cached_result := cache.load_graph(config)
 	var cache_load_usec := Time.get_ticks_usec() - cache_load_started_usec
 	if bool(cached_result.get("hit", false)):
+		var cached_road_graph: CityRoadGraph = cached_result.get("road_graph")
+		CityReferenceRoadGraphBuilder.new().rebuild_runtime_intersections(config, cached_road_graph)
 		return {
-			"road_graph": cached_result.get("road_graph"),
+			"road_graph": cached_road_graph,
 			"total_usec": cache_load_usec,
 			"build_usec": 0,
 			"cache_hit": true,

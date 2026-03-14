@@ -8,6 +8,7 @@ var _nodes_by_id: Dictionary = {}
 var _edges_by_id: Dictionary = {}
 var _growth_stats: Dictionary = {}
 var _intersections: Array[Dictionary] = []
+var _runtime_intersections: Array[Dictionary] = []
 var _edge_indices_by_cell: Dictionary = {}
 var _query_stats := {
 	"last_candidate_count": 0,
@@ -48,6 +49,7 @@ func load_from_cache_payload(payload: Dictionary) -> void:
 	_edges_by_id.clear()
 	_growth_stats.clear()
 	_intersections.clear()
+	_runtime_intersections.clear()
 	_edge_indices_by_cell.clear()
 	reset_query_stats()
 
@@ -111,10 +113,17 @@ func set_intersections(intersections: Array) -> void:
 	_intersections.clear()
 	for intersection in intersections:
 		_intersections.append((intersection as Dictionary).duplicate(true))
+	_runtime_intersections.clear()
+
+func set_runtime_intersections(intersections: Array) -> void:
+	_runtime_intersections.clear()
+	for intersection in intersections:
+		_runtime_intersections.append((intersection as Dictionary).duplicate(true))
 
 func get_intersections_in_rect(rect: Rect2) -> Array[Dictionary]:
 	var results: Array[Dictionary] = []
-	for intersection in _intersections:
+	var source := _runtime_intersections if not _runtime_intersections.is_empty() else _intersections
+	for intersection in source:
 		var entry: Dictionary = intersection
 		var position: Vector2 = entry.get("position", Vector2.ZERO)
 		if rect.has_point(position):

@@ -23,6 +23,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("get_player_vehicle_state"), "Vehicle hijack drive flow requires CityPrototype.get_player_vehicle_state()"):
 		return
+	if not T.require_true(self, world.has_method("handle_vehicle_interaction"), "Vehicle hijack drive flow requires CityPrototype.handle_vehicle_interaction()"):
+		return
+	if not T.require_true(self, world.has_method("get_abandoned_vehicle_visual_count"), "Vehicle hijack drive flow requires CityPrototype.get_abandoned_vehicle_visual_count()"):
+		return
 
 	var player = world.get_node_or_null("Player")
 	if not T.require_true(self, player != null, "Vehicle hijack drive flow requires Player node"):
@@ -87,19 +91,49 @@ func _run() -> void:
 	player.clear_vehicle_drive_input()
 
 	var travelled_distance_m := baseline_position.distance_to(player.global_position)
-	if not T.require_true(self, travelled_distance_m >= 6.5, "Vehicle hijack drive flow must let the player drive the hijacked vehicle through the city instead of stalling in place"):
+	if not T.require_true(self, travelled_distance_m >= 9.5, "Vehicle hijack drive flow must let the player drive the hijacked vehicle through the city with a clearly faster pace than before"):
 		return
 
 	var player_vehicle_state: Dictionary = world.get_player_vehicle_state()
 	if not T.require_true(self, str(player_vehicle_state.get("vehicle_id", "")) == target_vehicle_id, "Player driving state must keep the hijacked vehicle_id after travel"):
 		return
-	if not T.require_true(self, float(player_vehicle_state.get("speed_mps", 0.0)) > 0.0, "Player driving state must report positive speed during the travel phase"):
+	if not T.require_true(self, float(player_vehicle_state.get("speed_mps", 0.0)) >= 26.0, "Player driving state must report the tuned faster cruising speed during the travel phase"):
 		return
 
 	var runtime_snapshot: Dictionary = world.get_vehicle_runtime_snapshot()
 	if not T.require_true(self, int(runtime_snapshot.get("duplicate_page_load_count", 0)) == 0, "Vehicle hijack drive flow must not introduce duplicate page loads while driving"):
 		return
 	if not T.require_true(self, not _snapshot_contains_vehicle(runtime_snapshot, target_vehicle_id), "Hijacked vehicle must stay removed from ambient runtime during the drive phase"):
+		return
+
+	var foot_visual := player.get_node_or_null("Visual") as Node3D
+	var exit_result: Dictionary = world.handle_vehicle_interaction()
+	if not T.require_true(self, bool(exit_result.get("success", false)), "Vehicle hijack drive flow must allow F to exit back to the player state"):
+		return
+	if not T.require_true(self, not player.is_driving_vehicle(), "Vehicle hijack drive flow must leave driving mode after the exit interaction"):
+		return
+	if not T.require_true(self, foot_visual != null and foot_visual.visible, "Vehicle hijack drive flow must restore the on-foot player visual after exiting the vehicle"):
+		return
+	if not T.require_true(self, int(world.get_abandoned_vehicle_visual_count()) == 1, "Vehicle hijack drive flow must leave one parked hijacked vehicle visual that can be reclaimed before timeout"):
+		return
+
+	var reenter_result: Dictionary = world.handle_vehicle_interaction()
+	if not T.require_true(self, bool(reenter_result.get("success", false)), "Vehicle hijack drive flow must allow F to re-enter the parked hijacked vehicle before it expires"):
+		return
+	if not T.require_true(self, player.is_driving_vehicle(), "Vehicle hijack drive flow must restore driving mode after re-entry"):
+		return
+	if not T.require_true(self, str(reenter_result.get("vehicle_id", "")) == target_vehicle_id, "Vehicle hijack drive flow must keep the same hijacked vehicle_id through exit and re-entry"):
+		return
+	if not T.require_true(self, int(world.get_abandoned_vehicle_visual_count()) == 0, "Re-entering the parked hijacked vehicle must consume the parked visual instead of duplicating it"):
+		return
+
+	var resumed_drive_origin: Vector3 = player.global_position
+	player.set_vehicle_drive_input(1.0, -0.18, false)
+	for _frame_index in range(30):
+		await physics_frame
+		await process_frame
+	player.clear_vehicle_drive_input()
+	if not T.require_true(self, resumed_drive_origin.distance_to(player.global_position) >= 3.0, "Vehicle hijack drive flow must let the player continue driving after re-entering the parked hijacked vehicle"):
 		return
 
 	world.queue_free()

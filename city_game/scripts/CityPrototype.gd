@@ -8,6 +8,7 @@ const CityChunkNavRuntime := preload("res://city_game/world/navigation/CityChunk
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
 const CityMinimapProjector := preload("res://city_game/world/map/CityMinimapProjector.gd")
+const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
 const CityProjectile := preload("res://city_game/combat/CityProjectile.gd")
 const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
 const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
@@ -25,6 +26,7 @@ const HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_USEC := 400000
 const HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_FAST_USEC := 800000
 const ACTOR_PAGE_PREWARM_RING_RADIUS_CHUNKS := 2
 const CHUNK_PAGE_PREWARM_RING_RADIUS_CHUNKS := 4
+const ABANDONED_HIJACK_VEHICLE_LIFETIME_SEC := 15.0
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -73,6 +75,9 @@ var _fps_overlay_visible := false
 var _last_fps_sample := 0.0
 var _last_hud_refresh_tick_usec := -HUD_REFRESH_INTERVAL_USEC
 var _last_minimap_hud_refresh_tick_usec := -MINIMAP_HUD_REFRESH_INTERVAL_USEC
+var _vehicle_visual_catalog: CityVehicleVisualCatalog = null
+var _abandoned_vehicle_visual_root: Node3D = null
+var _abandoned_vehicle_visuals: Array = []
 
 func _ready() -> void:
 	_configure_environment()
@@ -86,6 +91,7 @@ func _ready() -> void:
 	_chunk_streamer = CityChunkStreamer.new(_world_config, _world_data)
 	_navigation_runtime = CityChunkNavRuntime.new(_world_config, _world_data)
 	_minimap_projector = CityMinimapProjector.new(_world_config, _world_data)
+	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
 		if chunk_renderer.has_method("set_pedestrians_visible"):
@@ -107,6 +113,7 @@ func _ready() -> void:
 	_refresh_hud_status()
 
 func _process(delta: float) -> void:
+	_update_abandoned_vehicle_visuals(delta)
 	if player == null:
 		return
 	var frame_started_usec := Time.get_ticks_usec()
@@ -124,7 +131,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		var key_event := event as InputEventKey
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_F:
-			try_hijack_nearby_vehicle()
+			handle_vehicle_interaction()
 			return
 		if key_event.pressed and not key_event.echo and handle_debug_keypress(key_event.keycode, key_event.physical_keycode):
 			return
@@ -579,6 +586,14 @@ func find_hijackable_vehicle_candidate(max_distance_m: float = 6.5) -> Dictionar
 		return {}
 	return chunk_renderer.find_hijackable_vehicle_candidate(_get_active_anchor_position(), max_distance_m)
 
+func handle_vehicle_interaction(max_distance_m: float = 6.5, abandoned_vehicle_lifetime_sec: float = ABANDONED_HIJACK_VEHICLE_LIFETIME_SEC) -> Dictionary:
+	if player != null and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle()):
+		return try_exit_player_vehicle(abandoned_vehicle_lifetime_sec)
+	var abandoned_candidate := _find_abandoned_vehicle_candidate(_get_active_anchor_position(), max_distance_m)
+	if not abandoned_candidate.is_empty():
+		return try_reenter_abandoned_vehicle(str(abandoned_candidate.get("vehicle_id", "")))
+	return try_hijack_nearby_vehicle(max_distance_m)
+
 func try_hijack_nearby_vehicle(max_distance_m: float = 6.5) -> Dictionary:
 	if player == null or chunk_renderer == null:
 		return {
@@ -608,6 +623,179 @@ func try_hijack_nearby_vehicle(max_distance_m: float = 6.5) -> Dictionary:
 	_refresh_hud_status({}, true)
 	hijack_result["success"] = true
 	return hijack_result
+
+func try_exit_player_vehicle(abandoned_vehicle_lifetime_sec: float = ABANDONED_HIJACK_VEHICLE_LIFETIME_SEC) -> Dictionary:
+	if player == null or not player.has_method("is_driving_vehicle") or not bool(player.is_driving_vehicle()):
+		return {
+			"success": false,
+		}
+	if not player.has_method("exit_vehicle_drive_mode"):
+		return {
+			"success": false,
+		}
+	var exit_result: Dictionary = player.exit_vehicle_drive_mode()
+	if exit_result.is_empty():
+		return {
+			"success": false,
+		}
+	var abandoned_spawned := _spawn_abandoned_vehicle_visual(exit_result, abandoned_vehicle_lifetime_sec)
+	update_streaming_for_position(_get_active_anchor_position(), 0.0)
+	_refresh_hud_status({}, true)
+	exit_result["success"] = true
+	exit_result["abandoned_vehicle_spawned"] = abandoned_spawned
+	return exit_result
+
+func try_reenter_abandoned_vehicle(vehicle_id: String) -> Dictionary:
+	if player == null or vehicle_id.is_empty():
+		return {
+			"success": false,
+		}
+	if not player.has_method("enter_vehicle_drive_mode"):
+		return {
+			"success": false,
+		}
+	_prune_abandoned_vehicle_visuals()
+	for entry_index in range(_abandoned_vehicle_visuals.size()):
+		var entry: Dictionary = _abandoned_vehicle_visuals[entry_index]
+		if str(entry.get("vehicle_id", "")) != vehicle_id:
+			continue
+		var vehicle_state: Dictionary = (entry.get("vehicle_state", {}) as Dictionary).duplicate(true)
+		_free_abandoned_vehicle_visual(entry)
+		_abandoned_vehicle_visuals.remove_at(entry_index)
+		player.enter_vehicle_drive_mode(vehicle_state)
+		update_streaming_for_position(_get_active_anchor_position(), 0.0)
+		_refresh_hud_status({}, true)
+		vehicle_state["success"] = true
+		vehicle_state["reentered"] = true
+		return vehicle_state
+	return {
+		"success": false,
+	}
+
+func get_abandoned_vehicle_visual_count() -> int:
+	_prune_abandoned_vehicle_visuals()
+	return _abandoned_vehicle_visuals.size()
+
+func _spawn_abandoned_vehicle_visual(vehicle_state: Dictionary, lifetime_sec: float) -> bool:
+	_ensure_abandoned_vehicle_visual_root()
+	if _abandoned_vehicle_visual_root == null:
+		return false
+	var model_root := _instantiate_vehicle_visual_model(vehicle_state)
+	if model_root == null:
+		return false
+	var vehicle_root := Node3D.new()
+	vehicle_root.name = "AbandonedHijackedVehicle"
+	var world_position: Vector3 = vehicle_state.get("world_position", Vector3.ZERO)
+	var heading: Vector3 = vehicle_state.get("heading", Vector3.FORWARD)
+	heading.y = 0.0
+	if heading.length_squared() <= 0.0001:
+		heading = Vector3.FORWARD
+	vehicle_root.position = world_position
+	vehicle_root.rotation.y = _yaw_from_vehicle_heading(heading.normalized()) + PI
+	vehicle_root.add_child(model_root)
+	_abandoned_vehicle_visual_root.add_child(vehicle_root)
+	_remove_abandoned_vehicle_visual(str(vehicle_state.get("vehicle_id", "")))
+	_prune_abandoned_vehicle_visuals()
+	_abandoned_vehicle_visuals.append({
+		"vehicle_id": str(vehicle_state.get("vehicle_id", "")),
+		"vehicle_state": vehicle_state.duplicate(true),
+		"visual_root": vehicle_root,
+		"remaining_sec": maxf(lifetime_sec, 0.1),
+	})
+	return true
+
+func _ensure_abandoned_vehicle_visual_root() -> void:
+	if _abandoned_vehicle_visual_root != null and is_instance_valid(_abandoned_vehicle_visual_root):
+		return
+	var root := Node3D.new()
+	root.name = "AbandonedHijackedVehicles"
+	add_child(root)
+	_abandoned_vehicle_visual_root = root
+
+func _instantiate_vehicle_visual_model(vehicle_state: Dictionary) -> Node3D:
+	if _vehicle_visual_catalog == null:
+		_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
+	var model_id := str(vehicle_state.get("model_id", ""))
+	var entry := _vehicle_visual_catalog.get_entry(model_id)
+	if entry.is_empty():
+		entry = _vehicle_visual_catalog.select_entry_for_state(vehicle_state)
+	if entry.is_empty():
+		return null
+	var model_root := _vehicle_visual_catalog.instantiate_scene_for_entry(entry)
+	if model_root == null:
+		return null
+	var runtime_scale := _vehicle_visual_catalog.resolve_runtime_scale(entry)
+	model_root.scale = Vector3.ONE * runtime_scale
+	model_root.position = Vector3(0.0, _vehicle_visual_catalog.resolve_ground_offset_m(entry) * runtime_scale, 0.0)
+	return model_root
+
+func _yaw_from_vehicle_heading(heading: Vector3) -> float:
+	return atan2(-heading.x, -heading.z)
+
+func _prune_abandoned_vehicle_visuals() -> void:
+	var survivors: Array = []
+	for entry_variant in _abandoned_vehicle_visuals:
+		var entry: Dictionary = entry_variant
+		var visual_root = entry.get("visual_root", null)
+		if visual_root != null and is_instance_valid(visual_root):
+			survivors.append(entry)
+	_abandoned_vehicle_visuals = survivors
+
+func _update_abandoned_vehicle_visuals(delta: float) -> void:
+	if _abandoned_vehicle_visuals.is_empty():
+		return
+	var survivors: Array = []
+	for entry_variant in _abandoned_vehicle_visuals:
+		var entry: Dictionary = entry_variant
+		var visual_root = entry.get("visual_root", null)
+		if visual_root == null or not is_instance_valid(visual_root):
+			continue
+		var remaining_sec := maxf(float(entry.get("remaining_sec", 0.0)) - maxf(delta, 0.0), 0.0)
+		if remaining_sec <= 0.0:
+			_free_abandoned_vehicle_visual(entry)
+			continue
+		entry["remaining_sec"] = remaining_sec
+		survivors.append(entry)
+	_abandoned_vehicle_visuals = survivors
+
+func _remove_abandoned_vehicle_visual(vehicle_id: String) -> void:
+	if vehicle_id.is_empty():
+		return
+	var survivors: Array = []
+	for entry_variant in _abandoned_vehicle_visuals:
+		var entry: Dictionary = entry_variant
+		if str(entry.get("vehicle_id", "")) == vehicle_id:
+			_free_abandoned_vehicle_visual(entry)
+			continue
+		var visual_root = entry.get("visual_root", null)
+		if visual_root != null and is_instance_valid(visual_root):
+			survivors.append(entry)
+	_abandoned_vehicle_visuals = survivors
+
+func _find_abandoned_vehicle_candidate(player_position: Vector3, max_distance_m: float = 6.5) -> Dictionary:
+	_prune_abandoned_vehicle_visuals()
+	var best_candidate := {}
+	var best_distance_m := max_distance_m
+	for entry_variant in _abandoned_vehicle_visuals:
+		var entry: Dictionary = entry_variant
+		var vehicle_state: Dictionary = entry.get("vehicle_state", {})
+		if vehicle_state.is_empty():
+			continue
+		var distance_m := player_position.distance_to(vehicle_state.get("world_position", Vector3.ZERO))
+		if distance_m > best_distance_m:
+			continue
+		best_distance_m = distance_m
+		best_candidate = vehicle_state.duplicate(true)
+		best_candidate["distance_m"] = distance_m
+		best_candidate["remaining_sec"] = float(entry.get("remaining_sec", 0.0))
+	if best_candidate.is_empty():
+		return {}
+	return best_candidate
+
+func _free_abandoned_vehicle_visual(entry: Dictionary) -> void:
+	var visual_root = entry.get("visual_root", null)
+	if visual_root != null and is_instance_valid(visual_root):
+		visual_root.queue_free()
 
 func _connect_enemy_combat(enemy: Node) -> void:
 	if enemy == null or not enemy.has_signal("projectile_fire_requested"):
@@ -785,7 +973,7 @@ func _weapon_status_text() -> String:
 		return ""
 	if player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle()):
 		var driving_state: Dictionary = get_player_vehicle_state()
-		return "vehicle=driving model=%s speed=%.1f" % [
+		return "vehicle=driving model=%s speed=%.1f exit_prompt=F:exit" % [
 			str(driving_state.get("model_id", "")),
 			float(driving_state.get("speed_mps", 0.0))
 		]
@@ -793,8 +981,11 @@ func _weapon_status_text() -> String:
 	var mode := str(weapon_state.get("mode", "rifle"))
 	var grenade_ready := bool(weapon_state.get("grenade_ready", false))
 	var hijack_candidate: Dictionary = find_hijackable_vehicle_candidate()
+	var abandoned_candidate := _find_abandoned_vehicle_candidate(_get_active_anchor_position())
 	var prompt_text := ""
-	if not hijack_candidate.is_empty():
+	if not abandoned_candidate.is_empty():
+		prompt_text = " resume_prompt=F:%s" % str(abandoned_candidate.get("model_id", "vehicle"))
+	elif not hijack_candidate.is_empty():
 		prompt_text = " hijack_prompt=F:%s" % str(hijack_candidate.get("model_id", "vehicle"))
 	return "weapon=%s grenade_ready=%s%s" % [mode, str(grenade_ready), prompt_text]
 

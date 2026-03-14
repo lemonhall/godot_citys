@@ -54,13 +54,13 @@ const WEAPON_MODE_GRENADE := "grenade"
 @export var ground_slam_shockwave_radius_m := 7.5
 @export var ground_slam_camera_shake_duration_sec := 0.38
 @export var ground_slam_camera_shake_amplitude_m := 0.18
-@export var vehicle_drive_forward_speed := 32.0
-@export var vehicle_drive_reverse_speed := 11.0
-@export var vehicle_drive_accel := 28.0
-@export var vehicle_drive_brake_decel := 36.0
-@export var vehicle_drive_coast_decel := 12.0
-@export var vehicle_drive_turn_rate_deg := 88.0
-@export var vehicle_drive_turn_rate_idle_deg := 42.0
+@export var vehicle_drive_forward_speed := 42.0
+@export var vehicle_drive_reverse_speed := 14.0
+@export var vehicle_drive_accel := 36.0
+@export var vehicle_drive_brake_decel := 42.0
+@export var vehicle_drive_coast_decel := 13.0
+@export var vehicle_drive_turn_rate_deg := 94.0
+@export var vehicle_drive_turn_rate_idle_deg := 46.0
 @export var vehicle_drive_camera_local_position := Vector3(0.0, 3.25, 8.4)
 @export var vehicle_drive_camera_fov := 72.0
 
@@ -349,7 +349,10 @@ func get_driving_vehicle_state() -> Dictionary:
 	var state := _driving_vehicle_state.duplicate(true)
 	state["driving"] = _driving_vehicle
 	state["speed_mps"] = _driving_vehicle_speed_mps
-	state["world_position"] = global_position
+	var vehicle_world_position := global_position
+	if _driving_vehicle:
+		vehicle_world_position.y -= _estimate_standing_height()
+	state["world_position"] = vehicle_world_position
 	var heading := -global_transform.basis.z
 	heading.y = 0.0
 	state["heading"] = heading.normalized() if heading.length_squared() > 0.0001 else Vector3.FORWARD
@@ -395,6 +398,39 @@ func enter_vehicle_drive_mode(vehicle_state: Dictionary) -> void:
 		player_visual.visible = false
 	_mount_drive_vehicle_visual(vehicle_state)
 	suspend_ground_stabilization(4)
+
+func exit_vehicle_drive_mode(exit_lateral_offset_m: float = 2.35) -> Dictionary:
+	if not _driving_vehicle:
+		return {}
+	var exit_state := get_driving_vehicle_state()
+	var heading: Vector3 = exit_state.get("heading", Vector3.FORWARD)
+	heading.y = 0.0
+	if heading.length_squared() <= 0.0001:
+		heading = Vector3.FORWARD
+	heading = heading.normalized()
+	var lateral := Vector3(-heading.z, 0.0, heading.x)
+	if lateral.length_squared() <= 0.0001:
+		lateral = Vector3.RIGHT
+	lateral = lateral.normalized()
+	_driving_vehicle = false
+	_driving_vehicle_state = {}
+	_driving_vehicle_speed_mps = 0.0
+	clear_vehicle_drive_input()
+	velocity = Vector3.ZERO
+	_traversal_mode = TRAVERSAL_MODE_GROUNDED
+	_wall_climb_normal = Vector3.ZERO
+	_wall_climb_contact_point = Vector3.ZERO
+	if player_visual != null:
+		player_visual.visible = true
+	if _drive_vehicle_model_root != null and is_instance_valid(_drive_vehicle_model_root):
+		_drive_vehicle_model_root.queue_free()
+	_drive_vehicle_model_root = null
+	if _drive_vehicle_visual_root != null and is_instance_valid(_drive_vehicle_visual_root):
+		_drive_vehicle_visual_root.visible = false
+	var exit_world_position: Vector3 = exit_state.get("world_position", global_position)
+	global_position = exit_world_position + lateral * exit_lateral_offset_m + Vector3.UP * _estimate_standing_height()
+	suspend_ground_stabilization(12)
+	return exit_state
 
 func set_primary_fire_active(active: bool) -> void:
 	if _driving_vehicle:

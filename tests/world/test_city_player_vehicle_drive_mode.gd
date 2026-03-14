@@ -32,6 +32,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("try_hijack_nearby_vehicle"), "CityPrototype must expose try_hijack_nearby_vehicle() for drive mode setup"):
 		return
+	if not T.require_true(self, world.has_method("handle_vehicle_interaction"), "CityPrototype must expose handle_vehicle_interaction() for drive mode interaction contract"):
+		return
+	if not T.require_true(self, world.has_method("get_abandoned_vehicle_visual_count"), "CityPrototype must expose get_abandoned_vehicle_visual_count() for drive exit cleanup contract"):
+		return
 
 	if world.has_method("set_control_mode"):
 		world.set_control_mode("inspection")
@@ -57,7 +61,7 @@ func _run() -> void:
 	player.clear_vehicle_drive_input()
 
 	var travelled_distance_m := baseline_position.distance_to(player.global_position)
-	if not T.require_true(self, travelled_distance_m >= 4.5, "Driving mode must move the hijacked vehicle a noticeable distance instead of only swapping visuals"):
+	if not T.require_true(self, travelled_distance_m >= 6.2, "Driving mode must move the hijacked vehicle fast enough to feel clearly quicker than the previous sluggish baseline"):
 		return
 	if not T.require_true(self, absf(wrapf(player.rotation.y - baseline_yaw, -PI, PI)) >= 0.08, "Driving mode must allow the hijacked vehicle to steer and rotate"):
 		return
@@ -69,7 +73,56 @@ func _run() -> void:
 	var driving_state: Dictionary = player.get_driving_vehicle_state()
 	if not T.require_true(self, str(driving_state.get("vehicle_id", "")) == str(target_state.get("vehicle_id", "")), "Driving mode continuity must preserve the hijacked vehicle_id"):
 		return
-	if not T.require_true(self, float(driving_state.get("speed_mps", 0.0)) > 0.0, "Driving mode runtime state must report a positive vehicle speed after acceleration"):
+	if not T.require_true(self, float(driving_state.get("speed_mps", 0.0)) >= 18.0, "Driving mode runtime state must report a noticeably higher top speed after acceleration tuning"):
+		return
+
+	var exit_result: Dictionary = world.handle_vehicle_interaction()
+	if not T.require_true(self, bool(exit_result.get("success", false)), "Pressing F again while driving must let the player exit the hijacked vehicle"):
+		return
+	if not T.require_true(self, str(exit_result.get("vehicle_id", "")) == str(target_state.get("vehicle_id", "")), "Exit flow must preserve the hijacked vehicle identity through the handoff"):
+		return
+	if not T.require_true(self, not player.is_driving_vehicle(), "Exit flow must restore the player out of driving mode"):
+		return
+	if not T.require_true(self, foot_visual.visible, "Exit flow must restore the on-foot player visual"):
+		return
+	if not T.require_true(self, int(world.get_abandoned_vehicle_visual_count()) == 1, "Exit flow must leave behind exactly one parked hijacked vehicle that can still be reclaimed"):
+		return
+
+	for _frame_index in range(600):
+		await physics_frame
+		await process_frame
+	if not T.require_true(self, int(world.get_abandoned_vehicle_visual_count()) == 1, "Parked hijacked vehicle must survive well before the 15 second timeout instead of disappearing too early"):
+		return
+
+	var reenter_result: Dictionary = world.handle_vehicle_interaction()
+	if not T.require_true(self, bool(reenter_result.get("success", false)), "Player must be able to press F again and re-enter the parked hijacked vehicle before the timeout"):
+		return
+	if not T.require_true(self, str(reenter_result.get("vehicle_id", "")) == str(target_state.get("vehicle_id", "")), "Re-entry flow must preserve the original hijacked vehicle identity"):
+		return
+	if not T.require_true(self, player.is_driving_vehicle(), "Re-entry flow must return the player to driving mode"):
+		return
+	if not T.require_true(self, int(world.get_abandoned_vehicle_visual_count()) == 0, "Re-entering the parked hijacked vehicle must consume the parked vehicle visual instead of duplicating it"):
+		return
+
+	var resumed_position: Vector3 = player.global_position
+	player.set_vehicle_drive_input(1.0, 0.0, false)
+	for _frame_index in range(30):
+		await physics_frame
+		await process_frame
+	player.clear_vehicle_drive_input()
+	if not T.require_true(self, resumed_position.distance_to(player.global_position) >= 3.0, "Re-entered hijacked vehicle must continue to be drivable instead of only toggling the state flag"):
+		return
+
+	var second_exit_result: Dictionary = world.handle_vehicle_interaction()
+	if not T.require_true(self, bool(second_exit_result.get("success", false)), "Player must still be able to exit again after re-entering the parked hijacked vehicle"):
+		return
+	if not T.require_true(self, int(world.get_abandoned_vehicle_visual_count()) == 1, "Second exit must recreate a single parked hijacked vehicle visual for the timeout window"):
+		return
+
+	for _frame_index in range(930):
+		await physics_frame
+		await process_frame
+	if not T.require_true(self, int(world.get_abandoned_vehicle_visual_count()) == 0, "Parked hijacked vehicle must self-clean after the 15 second timeout expires"):
 		return
 
 	world.queue_free()

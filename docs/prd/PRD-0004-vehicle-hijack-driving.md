@@ -23,6 +23,7 @@
 - 玩家使用 `grenade explosion` 在近景车辆附近引发截停
 - 近景已截停车辆进入可接管状态，并能被玩家在近距离按 `F` 接管
 - 玩家进入最小驾驶模式：隐藏步行模型、挂载被接管车辆的模型、使用基本车辆加速/刹车/转向移动
+- 玩家在 driving mode 中再次按 `F` 可下车；下车后原 hijacked vehicle 保留为一个 `15` 秒可返场的 parked vehicle，期间可再次按 `F` 重新上车，超时后才消失
 - HUD / runtime snapshot / tests 暴露 hijack / driving 状态
 - 与现有 traffic runtime、streaming、page cache、profile guard 共存
 
@@ -30,7 +31,7 @@
 
 - 不做全城车辆刚体化
 - 不做复杂撞击破坏、车辆生命值、翻车、悬挂、轮胎物理
-- 不做下车系统、开关门动画、座位系统、NPC 驾驶员可视化
+- 不做复杂下车系统、开关门动画、座位系统、NPC 驾驶员可视化
 - 不做 wanted / police chase / carjacking 反抗 / 乘客系统
 - 不做“所有 tier 车辆都可被射停”的重型全局碰撞求解
 
@@ -107,6 +108,7 @@
 
 - 自动化测试至少断言：进入 driving mode 后，步行模型隐藏且玩家状态明确报告 `driving = true`。
 - 自动化测试至少断言：驱动车辆数十帧后，玩家世界位置与朝向发生可观测变化，而不是只换壳不移动。
+- 自动化测试至少断言：持续加速若干帧后，driving state 会达到调优后的可感知巡航速度，而不是停留在明显迟滞的低速基线。
 - 自动化测试至少断言：driving mode 下不会继续触发步行 combat/traversal 动作。
 - 反作弊条款：不得通过直接把玩家切到 inspection 飞行感速度、或只做模型替换没有车辆控制，来宣称完成。
 
@@ -131,8 +133,31 @@
 - 自动化测试至少断言：接管/驾驶过程中不出现 `duplicate_page_load_count` 回退。
 - 反作弊条款：不得通过 profiling 时关闭 hijack feature、关闭 vehicles、降低 traffic density 到近乎 `0`、或仅在空场景验证来宣称达标。
 
+### REQ-0004-005 玩家可从 driving mode 下车，原 hijacked vehicle 短暂残留后消失
+
+**动机**：一旦玩家已经把车抢到手，必须能以最小交互成本回到步行态；否则玩家会被锁死在驾驶态里，玩法闭环不完整。
+
+**范围**：
+
+- 玩家处于 driving mode 时，再次按 `F` 可退出驾驶并恢复 player on-foot 状态
+- 下车后原 hijacked vehicle 允许以单个 `15` 秒可返场 parked vehicle 停留在场景里，期间可再次按 `F` 重新接管，超时后自动消失
+- 退出 driving mode 后不得把同一 `vehicle_id` 再塞回 ambient traffic runtime
+
+**非目标**：
+
+- 不做停车保持、重新上同一辆残留车、开关门或乘员同步
+- 不做复杂下车碰撞检测、车门朝向选择或残车物理
+
+**验收口径**：
+
+- 自动化测试至少断言：driving mode 中再次触发 `F` 交互后，玩家恢复 `driving = false`，步行模型重新显示。
+- 自动化测试至少断言：下车后场景内只留下一个 `15` 秒可返场的 hijacked vehicle parked visual，期间按 `F` 可重新上车并继续驾驶。
+- 自动化测试至少断言：若玩家在 `15` 秒内未重新上车，该 parked vehicle 会在超时后自动清理。
+- 自动化测试至少断言：下车期间与清理之后，ambient runtime snapshot 仍然不会重新出现同一 `vehicle_id`。
+- 反作弊条款：不得通过“按 F 直接清空玩家状态但不恢复步行模型”“下车瞬间整车立刻消失”“把 hijacked vehicle 重新塞回 traffic runtime 继续跑”来宣称完成。
+
 ## Open Questions
 
-- `v9` 是否需要立刻支持下车。当前答案：不需要，留给后续版本。
+- `v9` 是否需要立刻支持下车。当前答案：需要最小版本，只做 `F` 退出驾驶 + `15` 秒可返场 parked vehicle；不做复杂下车系统。
 - `v9` 是否需要车辆撞击伤害。当前答案：不需要，避免 scope 扩张。
 - `v9` 是否需要远景 `Tier 1` 命中。当前答案：不需要，只做近景可互动层。

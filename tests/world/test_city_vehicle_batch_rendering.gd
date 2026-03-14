@@ -60,6 +60,13 @@ func _run() -> void:
 		return
 	if not T.require_true(self, vehicle_batch.multimesh.instance_count > 0, "Tier 1 vehicle batch must contain visible instances"):
 		return
+	var batch_mesh: Mesh = vehicle_batch.multimesh.mesh
+	if not T.require_true(self, batch_mesh != null, "Tier 1 vehicle batch must expose a base mesh"):
+		return
+	if not T.require_true(self, _mesh_aabb_size(batch_mesh).z > 0.2, "Tier 1 vehicle batch must use a volumetric mesh instead of a flat shadow quad"):
+		return
+	if not T.require_true(self, _collect_unique_axis_levels(batch_mesh, "y").size() >= 3, "Tier 1 vehicle batch mesh must include a raised roof silhouette instead of a single flat slab"):
+		return
 
 	var chunk_vehicle_stats: Dictionary = chunk_scene.get_vehicle_stats()
 	print("CITY_VEHICLE_BATCH_CHUNK %s" % visible_chunk_id)
@@ -101,3 +108,33 @@ func _find_visible_vehicle_chunk(renderer) -> Dictionary:
 		"chunk_id": "",
 		"chunk_scene": null,
 	}
+
+func _mesh_aabb_size(mesh: Mesh) -> Vector3:
+	if mesh == null:
+		return Vector3.ZERO
+	return mesh.get_aabb().size
+
+func _collect_unique_axis_levels(mesh: Mesh, axis: String) -> Array:
+	var unique_levels: Array = []
+	if mesh == null:
+		return unique_levels
+	for surface_index in range(mesh.get_surface_count()):
+		var surface_arrays := mesh.surface_get_arrays(surface_index)
+		var vertices: PackedVector3Array = surface_arrays[Mesh.ARRAY_VERTEX]
+		for vertex in vertices:
+			var coordinate := 0.0
+			match axis:
+				"x":
+					coordinate = vertex.x
+				"z":
+					coordinate = vertex.z
+				_:
+					coordinate = vertex.y
+			var found := false
+			for existing_level_variant in unique_levels:
+				if is_equal_approx(float(existing_level_variant), coordinate):
+					found = true
+					break
+			if not found:
+				unique_levels.append(coordinate)
+	return unique_levels

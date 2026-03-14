@@ -28,6 +28,7 @@
 - 参考式连续道路图、共享 2D 城市投影、小地图与导航路径可视化（[已由 ECN-0006 变更](../ecn/ECN-0006-reference-roadgraph-and-minimap.md)）
 - 面向 `60 FPS = 16.67ms/frame` 红线的道路表面性能专项：缓存、分层、异步准备与 surface page 架构预留（[已由 ECN-0007 变更](../ecn/ECN-0007-performance-redline-and-road-surface-pipeline.md)）
 - 面向 `60 FPS = 16.67ms/frame` 红线的 terrain streaming 性能专项：共享规则网格、height/normal page cache、异步准备与 terrain LOD/clipmap-lite 预留（[已由 ECN-0008 变更](../ecn/ECN-0008-terrain-streaming-performance-pipeline.md)）
+- 道路语义契约与交叉口拓扑：为 shared road graph、chunk 渲染、lane graph 和后续 signage / vehicle 系统提供同源 section / lane / intersection metadata，且不得退回 per-road runtime node graph（[已由 ECN-0018 变更](../ecn/ECN-0018-road-semantic-runtime-uplift.md)）
 - chunk-local 导航与跨 chunk 自动化 travel 流程验证
 - 性能与 streaming debug 观测面板
 - 开发态高速巡检模式与稳定运行时报告（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
@@ -77,7 +78,7 @@
 **范围**：
 
 - 生成 district graph
-- 生成参考式全局 continuous road graph，并为 chunk 渲染与 2D 城市投影同时提供可查询的 world-space 连续道路骨架（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)，[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)，[已由 ECN-0006 变更](../ecn/ECN-0006-reference-roadgraph-and-minimap.md)）
+- 生成参考式全局 continuous road graph，并为 chunk 渲染、2D 城市投影与道路语义查询同时提供可查询的 world-space 连续道路骨架（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)，[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)，[已由 ECN-0006 变更](../ecn/ECN-0006-reference-roadgraph-and-minimap.md)，[已由 ECN-0018 变更](../ecn/ECN-0018-road-semantic-runtime-uplift.md)）
 - 提供 block / parcel 的确定性、按 chunk 查询的元数据接口（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
 - 允许 chunk 在没有高模资源时先用占位表现
 
@@ -127,7 +128,7 @@
 - chunk 支持近景实体、中景合批、远景代理
 - near / mid / far 必须从同一份 chunk visual profile 派生，保持主轮廓连续（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
 - 邻近 chunk 必须基于 chunk seed 生成确定性视觉变体，避免近景重复（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
-- chunk 可见道路必须由整城 road skeleton 驱动，并在 chunk 共享边界上连续衔接，不能出现孤路或断路（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
+- chunk 可见道路必须由整城 road skeleton 与同源 road semantic contract 驱动，并在 chunk 共享边界上连续衔接，不能出现孤路或断路（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)，[已由 ECN-0018 变更](../ecn/ECN-0018-road-semantic-runtime-uplift.md)）
 - chunk 路面必须使用连续 ribbon/strip mesh 或等价连续表面，而不是显著可见的分段盒子拼接（[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
 - 普通地面道路表面必须支持基于距离的细节分层，以及缓存/异步准备的性能化管线，避免每次 chunk mount 在主线程全量重建 surface mask（[已由 ECN-0007 变更](../ecn/ECN-0007-performance-redline-and-road-surface-pipeline.md)）
 - chunk ground 几何必须优先复用共享规则网格模板或等价数组契约，并将高度采样限制在唯一顶点级别，不能在 mount 热路径按三角形重复采样同一高度点（[已由 ECN-0008 变更](../ecn/ECN-0008-terrain-streaming-performance-pipeline.md)）
@@ -260,6 +261,32 @@
 - 自动化测试至少断言：terrain prepare 与 terrain commit 被显式拆分，并且后台线程不得直接操作 scene tree 或 GPU 资源；
 - 自动化测试至少断言：terrain near / mid / far 至少存在两档不同分辨率或等价分层，同时道路覆盖与可行走地表连续；
 - fresh runtime profiling 必须持续输出 terrain 相关指标，并以 `16.67ms/frame` 红线为最终验收约束。
+
+### REQ-0001-012 道路语义契约与交叉口拓扑
+
+**动机**：当前 shared road graph 已经解决了“哪里有路”，但 lane / section / intersection 语义仍然偏薄，导致 chunk 渲染、pedestrian lane graph 与未来 signage / vehicle 系统不得不重复从几何端点临时猜测。如果直接把参考项目的 node-driven runtime 搬进来，又会把 streaming 和性能重新拉回错误架构。
+
+**范围**：
+
+- 在 shared `road_graph` / template catalog 中显式记录 road section semantic contract，至少包括 `template_id`、directional lane schema、marking profile、shoulder / median / edge offset profile 或等价字段。
+- 在 intersection data 中显式记录 ordered branches、intersection type、branch connection semantics，以及可供 chunk layout / lane graph 查询的拓扑 contract。
+- 允许 chunk road layout、road surface、bridge mesh、pedestrian lane graph 和后续 signage / vehicle 系统从同一 contract 取数。
+- 语义 contract 必须可脱离 scene node 查询，并保持 fixed seed 下 deterministic。
+- 实现路径必须继续复用当前 `road_graph -> chunk road layout -> surface page / bridge mesh` 管线（[已由 ECN-0018 变更](../ecn/ECN-0018-road-semantic-runtime-uplift.md)）
+
+**非目标**：
+
+- 不引入 `RoadManager`、`RoadContainer`、`RoadPoint`、`RoadSegment`、`RoadIntersection`、`RoadLane` 风格的运行时节点树
+- 不引入 `Path3D` lane runtime、per-segment `MeshInstance3D` 道路 scene graph 或 editor plugin 工作流
+- 不在 v7 直接做车辆交通仿真、道路编辑器或最终 signage 系统
+
+**验收口径**：
+
+- 自动化测试至少断言：固定 seed 下 road edge / intersection semantic contract 稳定，section / lane / intersection metadata 可重复查询。
+- 自动化测试至少断言：intersection ordered branches 与 type / connection semantics 成立，不再完全依赖 endpoint cluster 临时猜测。
+- 自动化测试至少断言：chunk layout / surface / bridge 至少有一条正式 consumer 链消费 semantic contract。
+- fresh runtime / first-visit / chunk setup profiling 继续守住 `16.67ms/frame` 红线及本轮计划阈值。
+- 反作弊条款：不得通过把道路重新拆成 per-road / per-lane scene node、`Path3D` 树或大量独立 `MeshInstance3D` 来实现语义升级。
 
 ### REQ-0001-007 端到端 travel 验证
 

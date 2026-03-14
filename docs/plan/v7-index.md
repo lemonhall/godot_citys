@@ -1,0 +1,48 @@
+# V7 Index
+
+## 愿景
+
+PRD 入口：[PRD-0001 Large City Foundation](../prd/PRD-0001-large-city-foundation.md)
+
+设计入口：[2026-03-14-road-generator-reference-adaptation-design.md](../plans/2026-03-14-road-generator-reference-adaptation-design.md)
+
+道路性能 research 入口：[2026-03-12-road-rendering-performance-options.md](../research/2026-03-12-road-rendering-performance-options.md)
+
+open-world terrain / road research 入口：[2026-03-12-open-world-terrain-road-performance-patterns.md](../research/2026-03-12-open-world-terrain-road-performance-patterns.md)
+
+`v7` 的目标不是把当前项目替换成另一个道路插件，也不是把道路重新做成 editor/node graph 驱动的 runtime 系统。`v7` 要做的是：把 `godot-road-generator` 里真正有价值的道路语义资产，下沉到当前已经守住红线的 `shared road graph -> chunk road layout -> surface page / bridge mesh` 管线里，让 chunk 渲染、pedestrian lane graph、未来 signage / vehicle 系统都能查询同一份道路语义 contract，同时继续守住 `60 FPS = 16.67ms/frame` 这条硬红线。
+
+## 里程碑
+
+| 里程碑 | 范围 | DoD | 验证命令/测试 | 状态 |
+|---|---|---|---|---|
+| M1 道路语义契约上游化 | `road_graph` / template catalog 显式产出 `section / lane / edge` semantic metadata | fixed seed 下 edge semantic contract 稳定；lane schema / marking / shoulder / edge offset 等字段可脱离 scene node 查询 | `tests/world/test_city_road_semantic_contract.gd`、`tests/world/test_city_road_semantic_seed_stability.gd`、`tests/world/test_city_road_section_templates.gd`、`tests/world/test_city_reference_road_graph.gd` | todo |
+| M2 交叉口拓扑契约 | ordered branches、intersection type、branch connection semantics 进入 shared road graph | intersection 不再只靠 endpoint cluster 临时猜测；branch ordering / type / connection semantics 有自动化验证 | `tests/world/test_city_road_intersection_topology.gd`、`tests/world/test_city_road_intersection_branch_order.gd`、`tests/world/test_city_reference_road_graph.gd` | todo |
+| M3 Chunk Road Pipeline 语义接管 | `CityRoadLayoutBuilder`、`CityRoadMaskBuilder`、`CityRoadMeshBuilder`、`CityChunkProfileBuilder` 消费 semantic contract | chunk layout / surface / bridge 至少各有一条正式 consumer 链改为读取 semantic contract；共享 graph takeover 不回退 | `tests/world/test_city_road_layout_semantic_takeover.gd`、`tests/world/test_city_shared_graph_road_takeover.gd`、`tests/world/test_city_bridge_deck_collision.gd` | todo |
+| M4 Runtime 护栏与红线复验 | 禁止道路 runtime 节点膨胀，fresh warm / cold profiling 复验 | 不得引入 `Path3D` lane tree、per-road / per-lane scene node 或 per-segment mesh runtime；`runtime warm <= 11000`、`runtime mount <= 5500`、`runtime update <= 10000`、`first-visit wall <= 16667`、`first-visit mount <= 5500`、`first-visit update <= 14500`、`chunk setup total <= 8500`、`road_overlay <= 1400`、`ground <= 1800` | `tests/world/test_city_road_runtime_node_budget.gd`、`tests/world/test_city_chunk_setup_profile_breakdown.gd`、`tests/e2e/test_city_runtime_performance_profile.gd`、`tests/e2e/test_city_first_visit_performance_profile.gd` | todo |
+
+## 计划索引
+
+- [v7-road-semantic-runtime-uplift.md](./v7-road-semantic-runtime-uplift.md)
+
+## 追溯矩阵
+
+| Req ID | v7 Plan | 单元/集成测试 | E2E / 验证命令 | 证据 | 状态 |
+|---|---|---|---|---|---|
+| REQ-0001-002 | `v7-road-semantic-runtime-uplift.md` | `tests/world/test_city_reference_road_graph.gd`、`tests/world/test_city_road_semantic_contract.gd`、`tests/world/test_city_road_semantic_seed_stability.gd` | `--script res://tests/world/test_city_reference_road_graph.gd` | 2026-03-14 fresh baseline 已证明 shared road graph 链路稳定；`v7` 需要把语义 contract 正式上游化 | todo |
+| REQ-0001-004 | `v7-road-semantic-runtime-uplift.md` | `tests/world/test_city_shared_graph_road_takeover.gd`、`tests/world/test_city_road_layout_semantic_takeover.gd`、`tests/world/test_city_bridge_deck_collision.gd` | `--script res://tests/world/test_city_shared_graph_road_takeover.gd` | 2026-03-14 fresh baseline：chunk road pipeline 已稳定消费 shared graph；`v7` 要改为消费更完整 semantic contract | todo |
+| REQ-0001-005 | `v7-road-semantic-runtime-uplift.md` | `tests/world/test_city_road_intersection_topology.gd`、`tests/world/test_city_road_intersection_branch_order.gd` | `--script res://tests/world/test_city_road_intersection_topology.gd` | 当前宏观路由仍主要消费几何骨架；`v7` 需要补齐 intersection topology contract | todo |
+| REQ-0001-006 | `v7-road-semantic-runtime-uplift.md` | `tests/world/test_city_road_runtime_node_budget.gd`、`tests/world/test_city_chunk_setup_profile_breakdown.gd` | `--script res://tests/e2e/test_city_runtime_performance_profile.gd`、`--script res://tests/e2e/test_city_first_visit_performance_profile.gd` | 2026-03-14 fresh profiling：runtime warm `8973`、first-visit `13972`、chunk setup `7238`；`v7` 以此建立 runtime guard | todo |
+| REQ-0001-010 | `v7-road-semantic-runtime-uplift.md` | `tests/world/test_city_chunk_setup_profile_breakdown.gd`、`tests/world/test_city_road_runtime_node_budget.gd` | `--script res://tests/e2e/test_city_runtime_performance_profile.gd` | 当前 road surface pipeline 已守住 warm path；`v7` 不允许通过节点回退破坏 `ECN-0007` 的性能资产 | todo |
+| REQ-0001-011 | `v7-road-semantic-runtime-uplift.md` | `tests/world/test_city_chunk_setup_profile_breakdown.gd` | `--script res://tests/e2e/test_city_first_visit_performance_profile.gd` | 当前 cold path 仍有有限余量；`v7` 必须保证道路语义升级不把 terrain/streaming 热点重新打穿 | todo |
+| REQ-0001-012 | `v7-road-semantic-runtime-uplift.md` | `tests/world/test_city_road_semantic_contract.gd`、`tests/world/test_city_road_semantic_seed_stability.gd`、`tests/world/test_city_road_intersection_topology.gd`、`tests/world/test_city_road_intersection_branch_order.gd`、`tests/world/test_city_road_layout_semantic_takeover.gd` | `--script res://tests/e2e/test_city_runtime_performance_profile.gd`、`--script res://tests/e2e/test_city_first_visit_performance_profile.gd` | `ECN-0018` 新增该需求，要求道路语义 contract 与交叉口拓扑正式进入 shared runtime pipeline | todo |
+
+## ECN 索引
+
+- [ECN-0018-road-semantic-runtime-uplift.md](../ecn/ECN-0018-road-semantic-runtime-uplift.md)：把 reference road generator 的可复用价值限定为“道路语义与交叉口拓扑 contract”，并明确禁止把当前项目回退成道路 runtime 节点系统。
+
+## 差异列表
+
+- 2026-03-14 对 `refs/godot-road-generator` 的通读结论已收敛：可借的是 `section / lane / intersection` 语义 contract，不可借的是 `RoadManager / RoadLane(Path3D)` 一类 node-driven runtime。
+- 2026-03-14 fresh profiling 基线已经落盘：`test_city_runtime_performance_profile.gd` `wall_frame_avg_usec = 8973`、`streaming_mount_setup_avg_usec = 4394`、`update_streaming_avg_usec = 8547`；`test_city_first_visit_performance_profile.gd` `wall_frame_avg_usec = 13972`、`streaming_mount_setup_avg_usec = 4838`、`update_streaming_avg_usec = 13219`；`test_city_chunk_setup_profile_breakdown.gd` `total_usec = 7238`、`road_overlay_usec = 1029`、`ground_usec = 1284`。`v7` 的性能 DoD 以这些 fresh 数字为护栏，而不是空口宣称“语义升级不影响性能”。
+- 当前 `v7` 还是规划态，不得把本轮文档输出描述为“道路语义 runtime 已完成”；本轮完成的是方案筛选、PRD/ECN 落档与里程碑冻结。

@@ -13,9 +13,9 @@
 
 ## Current Status
 
-- `2026-03-14` 当前 `M2` 已被手玩反馈阻塞，不能按本文件的旧版 closeout 口径继续推进。
-- 正式状态说明见：[v8-m2-handplay-feedback-and-replan.md](./v8-m2-handplay-feedback-and-replan.md)
-- 本文件保留为 `M2` 原始 runtime 计划，但以下 acceptance / steps 已按最新 hand-play 结论重写；不得再把 `Tier 1 shadow`、白盒代理或仅靠 density 调参视为完成路径。
+- `2026-03-14` 当前 `M2` 已完成 closeout。
+- 正式验证说明见：[v8-m2-verification-2026-03-14.md](./v8-m2-verification-2026-03-14.md)
+- [v8-m2-handplay-feedback-and-replan.md](./v8-m2-handplay-feedback-and-replan.md) 继续保留为历史问题与 replan 过程留档。
 
 ## Scope
 

@@ -6,10 +6,13 @@ const CityRoadSurfacePageProvider := preload("res://city_game/world/rendering/Ci
 const CityTerrainPageProvider := preload("res://city_game/world/rendering/CityTerrainPageProvider.gd")
 const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTerrainMeshBuilder.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
+const CityChunkMultimeshBuilder := preload("res://city_game/world/rendering/CityChunkMultimeshBuilder.gd")
+const CityRoadMeshBuilder := preload("res://city_game/world/rendering/CityRoadMeshBuilder.gd")
 const CityPedestrianTierController := preload("res://city_game/world/pedestrians/simulation/CityPedestrianTierController.gd")
 const CityPedestrianVisualCatalog := preload("res://city_game/world/pedestrians/rendering/CityPedestrianVisualCatalog.gd")
 const CityPedestrianVisualInstance := preload("res://city_game/world/pedestrians/rendering/CityPedestrianVisualInstance.gd")
 const CityVehicleTierController := preload("res://city_game/world/vehicles/simulation/CityVehicleTierController.gd")
+const CityVehicleTrafficRenderer := preload("res://city_game/world/vehicles/rendering/CityVehicleTrafficRenderer.gd")
 
 const PREPARE_BUDGET_PER_TICK := 1
 const MOUNT_BUDGET_PER_TICK := 1
@@ -36,6 +39,9 @@ var _queued_terrain_jobs: Array[Dictionary] = []
 var _pending_mount_ids: Array[String] = []
 var _pending_retire_ids: Array[String] = []
 var _scene_pool: Array[Node3D] = []
+var _cached_chunk_ids: Array[String] = []
+var _cached_chunk_ids_dirty := true
+var _has_prewarmed_initial_pages := false
 var _last_player_position := Vector3.ZERO
 var _last_active_chunk_entries: Array[Dictionary] = []
 var _last_prepare_usec := 0
@@ -143,6 +149,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_pending_mount_ids.clear()
 	_pending_retire_ids.clear()
 	_last_active_chunk_entries.clear()
+	_has_prewarmed_initial_pages = false
 	_last_prepare_usec = 0
 	_last_mount_usec = 0
 	_last_retire_usec = 0
@@ -166,6 +173,7 @@ func setup(config, world_data: Dictionary) -> void:
 		_pedestrian_tier_controller = CityPedestrianTierController.new()
 		_pedestrian_tier_controller.setup(_config, _world_data)
 	if _world_data.has("vehicle_query"):
+		CityVehicleTrafficRenderer.prewarm_shared_resources()
 		_vehicle_tier_controller = CityVehicleTierController.new()
 		_vehicle_tier_controller.setup(_config, _world_data)
 	reset_streaming_profile_stats()
@@ -196,6 +204,10 @@ func _notification(what: int) -> void:
 		if is_instance_valid(chunk_scene):
 			chunk_scene.free()
 	_chunk_scenes.clear()
+	_cached_chunk_ids.clear()
+	_cached_chunk_ids_dirty = true
+	_free_payload_node_references(_prepared_payloads)
+	_free_payload_node_references(_surface_waiting_payloads)
 	_prepared_payloads.clear()
 	_pending_prepare.clear()
 	_surface_waiting_payloads.clear()
@@ -223,10 +235,17 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta
 	if _config == null:
 		return
 	_last_player_position = player_position
-	_last_pedestrian_player_context = player_context.duplicate(true)
+	if not _has_prewarmed_initial_pages \
+			and _chunk_scenes.is_empty() \
+			and _prepared_payloads.is_empty() \
+			and _pending_prepare.is_empty() \
+			and not active_chunk_entries.is_empty():
+		prewarm_chunk_pages(active_chunk_entries)
+		_has_prewarmed_initial_pages = true
+	_last_pedestrian_player_context = player_context
 	_last_active_chunk_entries.clear()
 	for entry_variant in active_chunk_entries:
-		_last_active_chunk_entries.append((entry_variant as Dictionary).duplicate(true))
+		_last_active_chunk_entries.append(entry_variant as Dictionary)
 
 	var target_chunk_entries := _build_target_chunk_map(active_chunk_entries)
 	var target_chunk_ids: Dictionary = {}
@@ -243,7 +262,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta
 		return _distance_to_entry(player_position, a) < _distance_to_entry(player_position, b)
 	)
 	for entry in new_entries:
-		_pending_prepare[str(entry.get("chunk_id", ""))] = entry.duplicate(true)
+		_pending_prepare[str(entry.get("chunk_id", ""))] = entry
 
 	for chunk_id in get_chunk_ids():
 		if target_chunk_ids.has(chunk_id):
@@ -253,7 +272,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta
 	for chunk_id in _prepared_payloads.keys():
 		if target_chunk_ids.has(chunk_id):
 			continue
-		_prepared_payloads.erase(chunk_id)
+		_discard_prepared_payload(chunk_id)
 
 	for chunk_id in _pending_prepare.keys():
 		if target_chunk_ids.has(chunk_id):
@@ -263,7 +282,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta
 	for chunk_id in _surface_waiting_payloads.keys():
 		if target_chunk_ids.has(chunk_id):
 			continue
-		_surface_waiting_payloads.erase(chunk_id)
+		_discard_waiting_payload(chunk_id)
 
 	for pending_index in range(_pending_mount_ids.size() - 1, -1, -1):
 		var pending_chunk_id := _pending_mount_ids[pending_index]
@@ -295,17 +314,51 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta
 	_update_vehicle_traffic(player_position, delta)
 
 func get_chunk_ids() -> Array[String]:
-	var ids: Array[String] = []
-	for chunk_id in _chunk_scenes.keys():
-		ids.append(str(chunk_id))
-	ids.sort()
-	return ids
+	if _cached_chunk_ids_dirty:
+		_cached_chunk_ids.clear()
+		for chunk_id in _chunk_scenes.keys():
+			_cached_chunk_ids.append(str(chunk_id))
+		_cached_chunk_ids.sort()
+		_cached_chunk_ids_dirty = false
+	return _cached_chunk_ids.duplicate()
 
 func get_chunk_scene_count() -> int:
 	return _chunk_scenes.size()
 
 func get_chunk_scene(chunk_id: String):
 	return _chunk_scenes.get(chunk_id)
+
+func prewarm_actor_pages(chunk_entries: Array) -> void:
+	if _pedestrian_tier_controller != null and _pedestrian_tier_controller.has_method("prewarm_chunk_entries"):
+		_pedestrian_tier_controller.prewarm_chunk_entries(chunk_entries)
+	if _vehicle_tier_controller != null and _vehicle_tier_controller.has_method("prewarm_chunk_entries"):
+		_vehicle_tier_controller.prewarm_chunk_entries(chunk_entries)
+
+func prewarm_chunk_pages(chunk_entries: Array, prewarm_terrain: bool = true, prewarm_surface: bool = true) -> void:
+	var warmed_surface_keys: Dictionary = {}
+	var warmed_terrain_keys: Dictionary = {}
+	for entry_variant in chunk_entries:
+		var entry: Dictionary = entry_variant
+		var payload := _build_chunk_payload(entry)
+		payload["initial_lod_mode"] = _resolve_initial_lod_mode(payload)
+		if prewarm_terrain:
+			var terrain_page_header: Dictionary = _terrain_page_provider.build_chunk_page_header(payload, int(CityChunkScene.TERRAIN_GRID_STEPS))
+			var terrain_runtime_key := str(terrain_page_header.get("runtime_key", ""))
+			if terrain_runtime_key != "" and not warmed_terrain_keys.has(terrain_runtime_key) and not _terrain_page_provider.has_runtime_bundle(terrain_runtime_key):
+				var terrain_page_request := _terrain_page_provider.build_page_request(payload, int(CityChunkScene.TERRAIN_GRID_STEPS), terrain_page_header)
+				var terrain_runtime_bundle := CityTerrainPageProvider.prepare_page_bundle(terrain_page_request)
+				_terrain_page_provider.store_runtime_bundle(terrain_runtime_key, terrain_runtime_bundle)
+				warmed_terrain_keys[terrain_runtime_key] = true
+		if prewarm_surface:
+			for detail_mode in [CityChunkScene.SURFACE_DETAIL_COARSE, CityChunkScene.SURFACE_DETAIL_FULL]:
+				var surface_page_header: Dictionary = _surface_page_provider.build_chunk_page_header(payload, detail_mode)
+				var surface_runtime_key := str(surface_page_header.get("runtime_key", ""))
+				if surface_runtime_key == "" or warmed_surface_keys.has(surface_runtime_key) or _surface_page_provider.has_runtime_bundle(surface_runtime_key):
+					continue
+				var page_request := _surface_page_provider.build_page_request(payload, detail_mode, surface_page_header)
+				var surface_data := CityRoadMaskBuilder.prepare_surface_data(page_request.get("surface_request", {}))
+				_surface_page_provider.store_runtime_bundle(surface_runtime_key, surface_data)
+				warmed_surface_keys[surface_runtime_key] = true
 
 func get_streaming_budget_stats() -> Dictionary:
 	return {
@@ -736,7 +789,7 @@ func _spawn_pedestrian_death_visuals(events: Array) -> void:
 func _build_target_chunk_map(active_chunk_entries: Array) -> Dictionary:
 	var map := {}
 	for entry in active_chunk_entries:
-		map[str(entry.get("chunk_id", ""))] = entry.duplicate(true)
+		map[str(entry.get("chunk_id", ""))] = entry
 	return map
 
 func _queue_retire(chunk_id: String) -> void:
@@ -787,6 +840,7 @@ func _process_prepare_budget() -> void:
 		payload["surface_page_provider"] = _surface_page_provider
 		payload["terrain_page_provider"] = _terrain_page_provider
 		payload["initial_lod_mode"] = _resolve_initial_lod_mode(payload)
+		_prebuild_near_mount_nodes(payload)
 		_surface_waiting_payloads[chunk_id] = payload
 		var terrain_page_header: Dictionary = _terrain_page_provider.build_chunk_page_header(payload, int(CityChunkScene.TERRAIN_GRID_STEPS))
 		payload["terrain_page_header"] = terrain_page_header
@@ -802,7 +856,7 @@ func _process_prepare_budget() -> void:
 			_surface_waiting_payloads[chunk_id] = payload
 		else:
 			_queue_terrain_job(chunk_id, payload, terrain_page_header, int(CityChunkScene.TERRAIN_GRID_STEPS), _terrain_lod_grid_steps_by_mode())
-		payload = (_surface_waiting_payloads.get(chunk_id, payload) as Dictionary).duplicate(true)
+		payload = (_surface_waiting_payloads.get(chunk_id, payload) as Dictionary).duplicate(false)
 		var detail_mode := _resolve_surface_detail_mode_for_lod(str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR)))
 		var page_header: Dictionary = _surface_page_provider.build_chunk_page_header(payload, detail_mode)
 		payload["surface_page_header"] = page_header
@@ -840,10 +894,12 @@ func _process_mount_budget() -> void:
 			var chunk_snapshot: Dictionary = _pedestrian_tier_controller.get_chunk_snapshot_ref(chunk_id) if _pedestrian_tier_controller.has_method("get_chunk_snapshot_ref") else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id)
 			chunk_scene.apply_pedestrian_chunk_snapshot(chunk_snapshot)
 			chunk_snapshot["dirty"] = false
+			chunk_snapshot["farfield_render_dirty"] = false
 		if _vehicle_tier_controller != null and chunk_scene.has_method("apply_vehicle_chunk_snapshot"):
 			var vehicle_chunk_snapshot: Dictionary = _vehicle_tier_controller.get_chunk_snapshot_ref(chunk_id) if _vehicle_tier_controller.has_method("get_chunk_snapshot_ref") else _vehicle_tier_controller.get_chunk_snapshot(chunk_id)
 			chunk_scene.apply_vehicle_chunk_snapshot(vehicle_chunk_snapshot)
 			vehicle_chunk_snapshot["dirty"] = false
+			vehicle_chunk_snapshot["farfield_render_dirty"] = false
 		if chunk_scene.has_method("set_pedestrian_visibility"):
 			chunk_scene.set_pedestrian_visibility(_pedestrian_visibility_enabled)
 		_record_mount_setup_sample(Time.get_ticks_usec() - setup_started_usec)
@@ -852,6 +908,7 @@ func _process_mount_budget() -> void:
 		chunk_scene.visible = true
 		add_child(chunk_scene)
 		_chunk_scenes[chunk_id] = chunk_scene
+		_cached_chunk_ids_dirty = true
 		_prepared_payloads.erase(chunk_id)
 		mounted_count += 1
 	_last_mount_count = mounted_count
@@ -866,6 +923,7 @@ func _process_retire_budget() -> void:
 			continue
 		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
 		_chunk_scenes.erase(chunk_id)
+		_cached_chunk_ids_dirty = true
 		_migrate_chunk_death_visuals(chunk_scene)
 		remove_child(chunk_scene)
 		chunk_scene.visible = false
@@ -1119,6 +1177,46 @@ func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 		"pedestrian_chunk_snapshot": {},
 		"vehicle_chunk_snapshot": {},
 	}
+
+func _prebuild_near_mount_nodes(payload: Dictionary) -> void:
+	if str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR)) != CityChunkScene.LOD_NEAR:
+		return
+	var profile: Dictionary = payload.get("prepared_profile", {})
+	if profile.is_empty():
+		return
+	payload["prepared_road_overlay"] = CityRoadMeshBuilder.build_road_overlay(profile, payload)
+	payload["prepared_street_lamps"] = CityChunkMultimeshBuilder.build_street_lamps(profile)
+
+func _discard_prepared_payload(chunk_id: String) -> void:
+	if not _prepared_payloads.has(chunk_id):
+		return
+	_free_payload_nodes(_prepared_payloads[chunk_id])
+	_prepared_payloads.erase(chunk_id)
+
+func _discard_waiting_payload(chunk_id: String) -> void:
+	if not _surface_waiting_payloads.has(chunk_id):
+		return
+	_free_payload_nodes(_surface_waiting_payloads[chunk_id])
+	_surface_waiting_payloads.erase(chunk_id)
+
+func _free_payload_node_references(payload_map: Dictionary) -> void:
+	for payload_variant in payload_map.values():
+		_free_payload_nodes(payload_variant)
+
+func _free_payload_nodes(payload_variant) -> void:
+	if not payload_variant is Dictionary:
+		return
+	var payload: Dictionary = payload_variant
+	_free_payload_node_if_detached(payload.get("prepared_road_overlay"))
+	_free_payload_node_if_detached(payload.get("prepared_street_lamps"))
+
+func _free_payload_node_if_detached(node_variant) -> void:
+	var node := node_variant as Node
+	if node == null or not is_instance_valid(node):
+		return
+	if node.get_parent() != null:
+		return
+	node.free()
 
 func _chunk_center_from_key(chunk_key: Vector2i) -> Vector3:
 	var bounds: Rect2 = _config.get_world_bounds()
@@ -1465,8 +1563,8 @@ func _apply_completed_terrain_job(thread_result: Dictionary) -> void:
 	if not _surface_waiting_payloads.has(chunk_id):
 		return
 	var payload: Dictionary = _surface_waiting_payloads[chunk_id]
-	payload["terrain_page_binding"] = (thread_result.get("terrain_page_binding", {}) as Dictionary).duplicate(true)
-	payload["terrain_lod_mesh_results"] = (thread_result.get("terrain_lod_mesh_results", {}) as Dictionary).duplicate(true)
+	payload["terrain_page_binding"] = (thread_result.get("terrain_page_binding", {}) as Dictionary).duplicate(false)
+	payload["terrain_lod_mesh_results"] = (thread_result.get("terrain_lod_mesh_results", {}) as Dictionary).duplicate(false)
 	_surface_waiting_payloads[chunk_id] = payload
 	_try_enqueue_waiting_payload(chunk_id)
 

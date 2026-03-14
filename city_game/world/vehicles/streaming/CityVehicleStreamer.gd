@@ -25,6 +25,7 @@ var _page_eviction_count := 0
 var _ground_contexts_by_chunk_id: Dictionary = {}
 var _active_state_refs: Array[CityVehicleState] = []
 var _active_state_refs_dirty := true
+var _last_active_chunk_ids: Array[String] = []
 
 func setup(config, world_data: Dictionary, budget_contract: Dictionary) -> void:
 	_config = config
@@ -46,18 +47,40 @@ func setup(config, world_data: Dictionary, budget_contract: Dictionary) -> void:
 	_ground_contexts_by_chunk_id.clear()
 	_active_state_refs.clear()
 	_active_state_refs_dirty = true
+	_last_active_chunk_ids.clear()
 
 func sync_active_chunks(active_chunk_entries: Array) -> Dictionary:
 	_tick += 1
 	var active_chunk_ids: Array[String] = []
+	for entry_variant in active_chunk_entries:
+		var entry: Dictionary = entry_variant
+		var chunk_id := str(entry.get("chunk_id", ""))
+		active_chunk_ids.append(chunk_id)
+	active_chunk_ids.sort()
+	if _can_reuse_active_pages(active_chunk_ids):
+		_refresh_active_page_ticks(active_chunk_ids)
+		return {
+			"active_chunk_ids": active_chunk_ids,
+			"active_page_count": active_chunk_ids.size(),
+			"cached_page_count": _pages_by_chunk_id.size(),
+		}
+
 	var active_chunk_id_set: Dictionary = {}
+	var last_active_chunk_id_set: Dictionary = {}
 	var active_state_refs_changed := false
+	for chunk_id in _last_active_chunk_ids:
+		last_active_chunk_id_set[chunk_id] = true
 	for entry_variant in active_chunk_entries:
 		var entry: Dictionary = entry_variant
 		var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)
 		var chunk_id := str(entry.get("chunk_id", ""))
-		active_chunk_ids.append(chunk_id)
 		active_chunk_id_set[chunk_id] = true
+		if last_active_chunk_id_set.has(chunk_id) and _pages_by_chunk_id.has(chunk_id):
+			var resident_page: Dictionary = _pages_by_chunk_id[chunk_id]
+			resident_page["active"] = true
+			resident_page["last_active_tick"] = _tick
+			_pages_by_chunk_id[chunk_id] = resident_page
+			continue
 		var page_existed := _pages_by_chunk_id.has(chunk_id)
 		var page := _ensure_page(chunk_key, chunk_id)
 		if not bool(page.get("active", false)) and int(page.get("visit_count", 0)) > 0:
@@ -69,9 +92,10 @@ func sync_active_chunks(active_chunk_entries: Array) -> Dictionary:
 		page["visit_count"] = int(page.get("visit_count", 0)) + 1
 		_pages_by_chunk_id[chunk_id] = page
 
-	for chunk_id_variant in _pages_by_chunk_id.keys():
-		var chunk_id := str(chunk_id_variant)
+	for chunk_id in _last_active_chunk_ids:
 		if active_chunk_id_set.has(chunk_id):
+			continue
+		if not _pages_by_chunk_id.has(chunk_id):
 			continue
 		var page: Dictionary = _pages_by_chunk_id[chunk_id]
 		if bool(page.get("active", false)):
@@ -86,6 +110,7 @@ func sync_active_chunks(active_chunk_entries: Array) -> Dictionary:
 	if active_state_refs_changed:
 		_rebuild_active_state_refs()
 	_prune_ground_contexts()
+	_last_active_chunk_ids = active_chunk_ids.duplicate()
 	return {
 		"active_chunk_ids": active_chunk_ids,
 		"active_page_count": _count_active_pages(),
@@ -114,7 +139,7 @@ func ground_state(state: CityVehicleState) -> void:
 	var profile: Dictionary = ground_context.get("profile", {})
 	var chunk_center: Vector3 = chunk_payload.get("chunk_center", Vector3.ZERO)
 	var local_point := Vector2(state.world_position.x - chunk_center.x, state.world_position.z - chunk_center.z)
-	state.apply_ground_height(CityChunkGroundSampler.sample_height(local_point, chunk_payload, profile))
+	state.apply_ground_height(CityChunkGroundSampler.sample_drive_height(local_point, chunk_payload, profile, state.road_id))
 
 func get_runtime_snapshot() -> Dictionary:
 	return {
@@ -128,6 +153,14 @@ func get_runtime_snapshot() -> Dictionary:
 		"page_eviction_count": _page_eviction_count,
 		"page_build_counts": _page_build_counts.duplicate(true),
 	}
+
+func prewarm_chunk_entries(chunk_entries: Array) -> void:
+	for entry_variant in chunk_entries:
+		var entry: Dictionary = entry_variant
+		var chunk_id := str(entry.get("chunk_id", ""))
+		if chunk_id == "" or _pages_by_chunk_id.has(chunk_id):
+			continue
+		_ensure_page(entry.get("chunk_key", Vector2i.ZERO), chunk_id)
 
 func invalidate_active_state_cache() -> void:
 	_active_state_refs_dirty = true
@@ -298,3 +331,33 @@ func _prune_ground_contexts() -> void:
 		if _pages_by_chunk_id.has(chunk_id):
 			continue
 		_ground_contexts_by_chunk_id.erase(chunk_id)
+
+func _can_reuse_active_pages(active_chunk_ids: Array[String]) -> bool:
+	if not _string_arrays_equal(_last_active_chunk_ids, active_chunk_ids):
+		return false
+	var page_cache_capacity := int(_budget_contract.get("page_cache_capacity", 160))
+	if _pages_by_chunk_id.size() > page_cache_capacity:
+		return false
+	for chunk_id in active_chunk_ids:
+		if not _pages_by_chunk_id.has(chunk_id):
+			return false
+		var page: Dictionary = _pages_by_chunk_id[chunk_id]
+		if not bool(page.get("active", false)):
+			return false
+	return true
+
+func _refresh_active_page_ticks(active_chunk_ids: Array[String]) -> void:
+	for chunk_id in active_chunk_ids:
+		var page: Dictionary = _pages_by_chunk_id.get(chunk_id, {})
+		if page.is_empty():
+			continue
+		page["last_active_tick"] = _tick
+		_pages_by_chunk_id[chunk_id] = page
+
+func _string_arrays_equal(lhs: Array[String], rhs: Array[String]) -> bool:
+	if lhs.size() != rhs.size():
+		return false
+	for item_index in range(lhs.size()):
+		if lhs[item_index] != rhs[item_index]:
+			return false
+	return true

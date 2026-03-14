@@ -2,6 +2,9 @@ extends RefCounted
 
 const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
 
+static var _shared_unit_box_mesh: BoxMesh = null
+static var _material_cache: Dictionary = {}
+
 static func build_road_overlay(profile: Dictionary, chunk_data: Dictionary) -> Node3D:
 	var road_root := Node3D.new()
 	road_root.name = "RoadOverlay"
@@ -33,6 +36,54 @@ static func build_road_overlay(profile: Dictionary, chunk_data: Dictionary) -> N
 	road_root.set_meta("road_semantic_stats", semantic_stats)
 
 	return road_root
+
+static func build_bridge_proxy(profile: Dictionary, chunk_data: Dictionary) -> Node3D:
+	var palette: Dictionary = profile.get("palette", {})
+	var road_color: Color = palette.get("road", Color(0.16, 0.17, 0.19, 1.0))
+	var bridge_segments := _filter_bridge_segments(profile.get("road_segments", []))
+	if bridge_segments.is_empty():
+		return null
+
+	var proxy_root := Node3D.new()
+	proxy_root.name = "BridgeProxy"
+	var deck_proxy := _build_bridge_proxy_decks(bridge_segments, road_color)
+	if deck_proxy != null:
+		proxy_root.add_child(deck_proxy)
+	return proxy_root if proxy_root.get_child_count() > 0 else null
+
+static func _build_bridge_proxy_decks(road_segments: Array, color: Color) -> MultiMeshInstance3D:
+	var transforms: Array[Transform3D] = []
+	for segment_variant in road_segments:
+		var segment_dict: Dictionary = segment_variant
+		var points: Array = segment_dict.get("points", [])
+		if points.size() < 2:
+			continue
+		var width := _resolve_surface_width_m(segment_dict)
+		var thickness := maxf(float(segment_dict.get("deck_thickness_m", 0.4)) * 0.7, 0.35)
+		for point_index in range(points.size() - 1):
+			var a: Vector3 = points[point_index]
+			var b: Vector3 = points[point_index + 1]
+			var segment_length := a.distance_to(b)
+			if segment_length <= 0.001:
+				continue
+			var transform := _build_segment_transform(a, b, thickness)
+			transform.basis = transform.basis.scaled(Vector3(width, 1.0, maxf(segment_length + width * 0.2, width)))
+			transforms.append(transform)
+	if transforms.is_empty():
+		return null
+
+	var instance := MultiMeshInstance3D.new()
+	instance.name = "BridgeDeckProxy"
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = _get_shared_unit_box_mesh()
+	multimesh.instance_count = transforms.size()
+	for transform_index in range(transforms.size()):
+		multimesh.set_instance_transform(transform_index, transforms[transform_index])
+	instance.multimesh = multimesh
+
+	instance.material_override = _get_cached_material(color, false)
+	return instance
 
 static func _filter_bridge_segments(road_segments: Array) -> Array:
 	var bridge_segments: Array = []
@@ -83,12 +134,7 @@ static func _build_road_surface_mesh(road_segments: Array, color: Color, stripe_
 	mesh_instance.name = "RoadStripe" if stripe_only else "RoadSurface"
 	surface_tool.generate_normals()
 	mesh_instance.mesh = surface_tool.commit()
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 1.0
-	material.metallic = 0.0
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mesh_instance.material_override = material
+	mesh_instance.material_override = _get_cached_material(color, true)
 	return mesh_instance
 
 static func _append_roadbed(surface_tool: SurfaceTool, points: Array, width: float, thickness: float, top_only: bool) -> bool:
@@ -418,20 +464,15 @@ static func _build_bridge_supports(road_segments: Array, chunk_data: Dictionary,
 
 	var instance := MultiMeshInstance3D.new()
 	instance.name = "BridgeSupports"
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3.ONE
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
-	multimesh.mesh = mesh
+	multimesh.mesh = _get_shared_unit_box_mesh()
 	multimesh.instance_count = transforms.size()
 	for transform_index in range(transforms.size()):
 		multimesh.set_instance_transform(transform_index, transforms[transform_index])
 	instance.multimesh = multimesh
 
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 1.0
-	instance.material_override = material
+	instance.material_override = _get_cached_material(color, false)
 	return instance
 
 static func _sample_bridge_support_positions(points: Array, bridge_range: Vector2) -> Array[Vector3]:
@@ -459,3 +500,25 @@ static func _sample_polyline(points: Array, ratio: float) -> Vector3:
 			return a.lerp(b, (target - traversed) / segment_length)
 		traversed += segment_length
 	return points[-1]
+
+static func _get_shared_unit_box_mesh() -> BoxMesh:
+	if _shared_unit_box_mesh == null:
+		_shared_unit_box_mesh = BoxMesh.new()
+		_shared_unit_box_mesh.size = Vector3.ONE
+	return _shared_unit_box_mesh
+
+static func _get_cached_material(color: Color, cull_disabled: bool) -> StandardMaterial3D:
+	var cache_key := "%s|%s" % [_color_cache_key(color), "cull_off" if cull_disabled else "cull_on"]
+	if _material_cache.has(cache_key):
+		return _material_cache[cache_key]
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.roughness = 1.0
+	material.metallic = 0.0
+	if cull_disabled:
+		material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_material_cache[cache_key] = material
+	return material
+
+static func _color_cache_key(color: Color) -> String:
+	return "%.4f|%.4f|%.4f|%.4f" % [color.r, color.g, color.b, color.a]

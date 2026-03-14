@@ -4,6 +4,9 @@ const CityVehicleBudget := preload("res://city_game/world/vehicles/streaming/Cit
 const CityVehicleStreamer := preload("res://city_game/world/vehicles/streaming/CityVehicleStreamer.gd")
 const CityVehicleState := preload("res://city_game/world/vehicles/simulation/CityVehicleState.gd")
 
+const ASSIGNMENT_REBUILD_INTERVAL_SEC := 0.18
+const PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M := 96.0
+
 var _config = null
 var _budget := CityVehicleBudget.new()
 var _vehicle_streamer := CityVehicleStreamer.new()
@@ -14,6 +17,10 @@ var _tier0_state_refs: Array[CityVehicleState] = []
 var _tier1_state_refs: Array[CityVehicleState] = []
 var _tier2_state_refs: Array[CityVehicleState] = []
 var _tier3_state_refs: Array[CityVehicleState] = []
+var _last_assignment_chunk_ids: Array[String] = []
+var _last_assignment_player_position := Vector3.ZERO
+var _assignment_rebuild_elapsed_sec := 0.0
+var _has_assignment_cache := false
 var _last_profile_stats := {
 	"traffic_spawn_usec": 0,
 	"traffic_update_usec": 0,
@@ -39,6 +46,10 @@ func setup(config, world_data: Dictionary) -> void:
 	_tier1_state_refs.clear()
 	_tier2_state_refs.clear()
 	_tier3_state_refs.clear()
+	_last_assignment_chunk_ids.clear()
+	_last_assignment_player_position = Vector3.ZERO
+	_assignment_rebuild_elapsed_sec = 0.0
+	_has_assignment_cache = false
 	_last_profile_stats = {
 		"traffic_spawn_usec": 0,
 		"traffic_update_usec": 0,
@@ -53,6 +64,9 @@ func setup(config, world_data: Dictionary) -> void:
 
 func get_budget_contract() -> Dictionary:
 	return _budget_contract.duplicate(true)
+
+func prewarm_chunk_entries(chunk_entries: Array) -> void:
+	_vehicle_streamer.prewarm_chunk_entries(chunk_entries)
 
 func update_active_chunks(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0) -> Dictionary:
 	var update_started_usec := Time.get_ticks_usec()
@@ -80,6 +94,26 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	var active_chunk_ids: Array[String] = []
 	for entry_variant in active_chunk_entries:
 		active_chunk_ids.append(str((entry_variant as Dictionary).get("chunk_id", "")))
+	active_chunk_ids.sort()
+	_assignment_rebuild_elapsed_sec += maxf(delta, 0.0)
+	if not _should_rebuild_assignments(active_chunk_ids, player_position):
+		var reuse_result := _rebuild_chunk_snapshots_from_cached_assignments(active_chunk_ids)
+		var runtime_snapshot: Dictionary = _vehicle_streamer.get_runtime_snapshot()
+		_update_runtime_snapshot(
+			active_chunk_ids.size(),
+			active_states.size(),
+			int(reuse_result.get("tier0_count", 0)),
+			int(reuse_result.get("tier1_count", 0)),
+			int(reuse_result.get("tier2_count", 0)),
+			int(reuse_result.get("tier3_count", 0)),
+			runtime_snapshot,
+			traffic_spawn_usec,
+			traffic_step_usec,
+			0,
+			int(reuse_result.get("traffic_snapshot_rebuild_usec", 0)),
+			update_started_usec
+		)
+		return get_global_summary()
 	var tier1_budget := int(_budget_contract.get("tier1_budget", 4))
 	var tier2_budget := int(_budget_contract.get("tier2_budget", 2))
 	var tier3_budget := int(_budget_contract.get("tier3_budget", 1))
@@ -167,6 +201,10 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 		traffic_snapshot_rebuild_usec,
 		update_started_usec
 	)
+	_last_assignment_chunk_ids = active_chunk_ids.duplicate()
+	_last_assignment_player_position = player_position
+	_assignment_rebuild_elapsed_sec = 0.0
+	_has_assignment_cache = true
 	return get_global_summary()
 
 func get_global_summary() -> Dictionary:
@@ -257,6 +295,80 @@ func _make_empty_chunk_render_snapshot(chunk_id: String) -> Dictionary:
 		"tier3_states": [],
 	}
 
+func _should_rebuild_assignments(active_chunk_ids: Array[String], player_position: Vector3) -> bool:
+	if not _has_assignment_cache:
+		return true
+	if not _string_arrays_equal(_last_assignment_chunk_ids, active_chunk_ids):
+		return true
+	if player_position.distance_to(_last_assignment_player_position) > PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M:
+		return true
+	return _assignment_rebuild_elapsed_sec >= ASSIGNMENT_REBUILD_INTERVAL_SEC
+
+func _rebuild_chunk_snapshots_from_cached_assignments(active_chunk_ids: Array[String]) -> Dictionary:
+	var snapshot_started_usec := Time.get_ticks_usec()
+	var next_chunk_render_snapshots: Dictionary = {}
+	var tier0_count := 0
+	var tier1_count := 0
+	var tier2_count := 0
+	var tier3_count := 0
+	for chunk_id in active_chunk_ids:
+		next_chunk_render_snapshots[chunk_id] = _make_empty_chunk_render_snapshot(chunk_id)
+	for state in _tier0_state_refs:
+		if state == null or not next_chunk_render_snapshots.has(state.chunk_id):
+			continue
+		var chunk_snapshot: Dictionary = next_chunk_render_snapshots[state.chunk_id]
+		chunk_snapshot["tier0_count"] = int(chunk_snapshot.get("tier0_count", 0)) + 1
+		next_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
+		tier0_count += 1
+	for state in _tier1_state_refs:
+		if state == null or not next_chunk_render_snapshots.has(state.chunk_id):
+			continue
+		_vehicle_streamer.ground_state(state)
+		var chunk_snapshot: Dictionary = next_chunk_render_snapshots[state.chunk_id]
+		var tier1_states: Array = chunk_snapshot.get("tier1_states", [])
+		tier1_states.append(state.to_render_snapshot())
+		chunk_snapshot["tier1_states"] = tier1_states
+		chunk_snapshot["tier1_count"] = int(chunk_snapshot.get("tier1_count", 0)) + 1
+		next_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
+		tier1_count += 1
+	for state in _tier2_state_refs:
+		if state == null or not next_chunk_render_snapshots.has(state.chunk_id):
+			continue
+		_vehicle_streamer.ground_state(state)
+		var chunk_snapshot: Dictionary = next_chunk_render_snapshots[state.chunk_id]
+		var tier2_states: Array = chunk_snapshot.get("tier2_states", [])
+		tier2_states.append(state.to_render_snapshot())
+		chunk_snapshot["tier2_states"] = tier2_states
+		chunk_snapshot["tier2_count"] = int(chunk_snapshot.get("tier2_count", 0)) + 1
+		next_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
+		tier2_count += 1
+	for state in _tier3_state_refs:
+		if state == null or not next_chunk_render_snapshots.has(state.chunk_id):
+			continue
+		_vehicle_streamer.ground_state(state)
+		var chunk_snapshot: Dictionary = next_chunk_render_snapshots[state.chunk_id]
+		var tier3_states: Array = chunk_snapshot.get("tier3_states", [])
+		tier3_states.append(state.to_render_snapshot())
+		chunk_snapshot["tier3_states"] = tier3_states
+		chunk_snapshot["tier3_count"] = int(chunk_snapshot.get("tier3_count", 0)) + 1
+		next_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
+		tier3_count += 1
+	for chunk_id_variant in next_chunk_render_snapshots.keys():
+		var chunk_id := str(chunk_id_variant)
+		var next_snapshot: Dictionary = next_chunk_render_snapshots[chunk_id]
+		var previous_snapshot: Dictionary = _chunk_render_snapshots.get(chunk_id, {})
+		next_snapshot["dirty"] = not _chunk_snapshot_matches(previous_snapshot, next_snapshot)
+		next_snapshot["farfield_render_dirty"] = false
+		next_chunk_render_snapshots[chunk_id] = next_snapshot
+	_chunk_render_snapshots = next_chunk_render_snapshots
+	return {
+		"tier0_count": tier0_count,
+		"tier1_count": tier1_count,
+		"tier2_count": tier2_count,
+		"tier3_count": tier3_count,
+		"traffic_snapshot_rebuild_usec": _duration_or_zero(snapshot_started_usec, next_chunk_render_snapshots.size()),
+	}
+
 func _chunk_snapshot_matches(previous_snapshot: Dictionary, next_snapshot: Dictionary) -> bool:
 	if previous_snapshot.is_empty():
 		return false
@@ -265,6 +377,14 @@ func _chunk_snapshot_matches(previous_snapshot: Dictionary, next_snapshot: Dicti
 			return false
 	for key in ["tier1_states", "tier2_states", "tier3_states"]:
 		if not _state_snapshot_arrays_match(previous_snapshot.get(key, []), next_snapshot.get(key, [])):
+			return false
+	return true
+
+func _string_arrays_equal(lhs: Array[String], rhs: Array[String]) -> bool:
+	if lhs.size() != rhs.size():
+		return false
+	for item_index in range(lhs.size()):
+		if lhs[item_index] != rhs[item_index]:
 			return false
 	return true
 

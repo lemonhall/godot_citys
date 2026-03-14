@@ -2,6 +2,10 @@
 
 ## Update
 
+- `2026-03-14` 本文件记录的两个真实 blocker 已完成 closeout：
+  - 道路可视覆盖与车辆 lane 消费错位已修复，车辆 grounding 现在优先贴合 road surface / bridge deck，中远景桥面也已通过 proxy 持续可见。
+  - combined `chunk setup` / warm runtime / first-visit redline 已拿到 fresh isolated profiling 证据，详见 [v8-m2-verification-2026-03-14.md](./v8-m2-verification-2026-03-14.md)。
+- 因此，本文件从“replan required”的进行中记录，转为 `M2` 历史问题留档；后续不得再把其中的 `road coverage alignment` 与 `combined redline` 描述成当前未解决问题。
 - `2026-03-14` 当前工作区的 `M2` 已不再被“远景方案不像车”“长期单向车流”“车辆分布很怪”这些产品问题阻塞。
 - 最新手玩结论已经明确收敛为：当前远中景车辆表现、双向可见性和整体分布状态，用户都已经可以接受。
 - 因此，`M2` 的真实状态不应再描述成“hand-play 体验整体失败”，而应改成“功能体验基本成立，但 closeout 仍被道路可视覆盖错位与性能红线证据卡住”。
@@ -20,6 +24,8 @@
   3. `road coverage alignment` 诊断与道路侧修复
 
 ## Current Remaining Issues
+
+以下两项是本文件在 replan 时刻的剩余问题；它们现在都已经在当前工作区完成 closeout。
 
 ### 1. 道路可视渲染与车辆 lane 消费仍然脱节
 
@@ -221,10 +227,10 @@
 
 ## Bottom Line
 
-`2026-03-14` 当前工作区里，`M2` 的真实状态是：
+`2026-03-14` 当前工作区里，`M2` 的最终 closeout 状态是：
 
 - `vehicle_query / lane graph / runtime guard` 这些 contract 已经有基础
 - 当前 hand-play 对远景方案、双向车流和车辆分布已经基本满意
-- 道路可视渲染与车辆 lane 消费仍然没有真正对齐，这个问题应由道路系统继续收口
-- 性能表现已经明显改善，但还没有拿到足够硬的 combined redline closeout 证据
-- 因此，`M2` 现在更准确的状态是：`功能体验基本成立，剩余 blocker 只剩道路覆盖错位与性能红线`
+- 道路可视渲染与车辆 lane 消费已经重新对齐，桥/高架在中远景可持续可见
+- fresh isolated profiling 已证明 `chunk setup`、warm runtime 与 first-visit 全部守住当前 `M4` 红线
+- 因此，`M2` 现在更准确的状态是：`closeout complete`

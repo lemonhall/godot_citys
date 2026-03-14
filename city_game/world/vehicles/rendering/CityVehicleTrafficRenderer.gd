@@ -23,16 +23,24 @@ var _last_snapshot := {
 	"tier3_states": [],
 }
 
+static func prewarm_shared_resources() -> void:
+	CityVehicleVisualCatalog.prewarm_shared_resources()
+	CityVehicleVisualInstance.prewarm_shared_catalog()
+	CityVehicleTrafficBatch.prewarm_shared_proxy_resources()
+
 func setup(chunk_data: Dictionary) -> void:
 	_chunk_center = chunk_data.get("chunk_center", Vector3.ZERO)
-	_visual_catalog = CityVehicleVisualCatalog.new()
-	CityVehicleVisualInstance.prewarm_shared_catalog()
-	_ensure_nodes()
+	var initial_snapshot: Dictionary = chunk_data.get("vehicle_chunk_snapshot", {})
+	if not initial_snapshot.is_empty():
+		apply_chunk_snapshot(initial_snapshot)
 
 func apply_chunk_snapshot(snapshot: Dictionary) -> int:
-	_ensure_nodes()
 	var normalized_snapshot := _normalize_snapshot(snapshot)
 	_last_snapshot = normalized_snapshot
+	if not _snapshot_has_visible_states(normalized_snapshot) and not _has_runtime_nodes():
+		return 0
+	_ensure_visual_catalog()
+	_ensure_nodes()
 	var tier1_states: Array = normalized_snapshot.get("tier1_states", [])
 	_last_tier1_transform_write_count = _vehicle_batch.configure_from_states(tier1_states, _chunk_center, _visual_catalog)
 	_sync_agents(normalized_snapshot.get("tier2_states", []), _tier2_root, _tier2_agents)
@@ -67,6 +75,20 @@ func _ensure_nodes() -> void:
 		_tier3_root = Node3D.new()
 		_tier3_root.name = "Tier3Vehicles"
 		add_child(_tier3_root)
+
+func _ensure_visual_catalog() -> void:
+	if _visual_catalog != null:
+		return
+	_visual_catalog = CityVehicleVisualCatalog.new()
+	CityVehicleVisualInstance.prewarm_shared_catalog()
+
+func _has_runtime_nodes() -> bool:
+	return _vehicle_batch != null or _tier2_root != null or _tier3_root != null
+
+func _snapshot_has_visible_states(snapshot: Dictionary) -> bool:
+	return not (snapshot.get("tier1_states", []) as Array).is_empty() \
+		or not (snapshot.get("tier2_states", []) as Array).is_empty() \
+		or not (snapshot.get("tier3_states", []) as Array).is_empty()
 
 func _sync_agents(states: Array, target_root: Node3D, agent_map: Dictionary) -> void:
 	var keep_ids: Dictionary = {}

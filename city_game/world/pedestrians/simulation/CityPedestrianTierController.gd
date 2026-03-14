@@ -10,12 +10,12 @@ const TIER1_UPDATE_INTERVAL_SEC := 0.12
 const TIER1_STEP_BUCKET_COUNT := 8
 const TIER0_UPDATE_INTERVAL_SEC := 0.35
 const TIER0_STEP_BUCKET_COUNT := 8
-const ASSIGNMENT_REBUILD_INTERVAL_SEC := 0.12
+const ASSIGNMENT_REBUILD_INTERVAL_SEC := 0.18
 const PLAYER_CONTEXT_TELEPORT_DISTANCE_M := 32.0
-const PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M := 0.01
+const PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M := 32.0
 const PLAYER_ASSIGNMENT_REBUILD_SPEED_DELTA_MPS := 0.1
-const FARFIELD_ASSIGNMENT_REBUILD_DISTANCE_M := 48.0
-const LAYERED_ASSIGNMENT_REBUILD_DISTANCE_M := 48.0
+const FARFIELD_ASSIGNMENT_REBUILD_DISTANCE_M := 96.0
+const LAYERED_ASSIGNMENT_REBUILD_DISTANCE_M := 96.0
 
 var _config = null
 var _budget := CityPedestrianBudget.new()
@@ -137,6 +137,9 @@ func setup(config, world_data: Dictionary) -> void:
 func get_budget_contract() -> Dictionary:
 	return _budget_contract.duplicate(true)
 
+func prewarm_chunk_entries(chunk_entries: Array) -> void:
+	_pedestrian_streamer.prewarm_chunk_entries(chunk_entries)
+
 func set_player_context(player_position: Vector3, player_velocity: Vector3 = Vector3.ZERO, context: Dictionary = {}) -> void:
 	_reaction_model.set_player_context(player_position, player_velocity, context)
 	_last_player_position = player_position
@@ -257,14 +260,13 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	var active_chunk_ids: Array[String] = []
 	for entry_variant in active_chunk_entries:
 		active_chunk_ids.append(str((entry_variant as Dictionary).get("chunk_id", "")))
+	active_chunk_ids.sort()
 	var spawn_started_usec := Time.get_ticks_usec()
 	_pedestrian_streamer.sync_active_chunks(active_chunk_entries)
 	var crowd_spawn_usec := Time.get_ticks_usec() - spawn_started_usec
 	if _reaction_model.advance_time(delta):
 		_mark_assignment_rebuild_required()
 	var active_states: Array = _pedestrian_streamer.get_active_states()
-	var threat_regions: Array = _reaction_model.get_active_threat_regions(_budget_contract)
-	var layer_context: Dictionary = _layered_scheduler.build_context(active_states, player_position, _budget_contract, threat_regions, _last_player_context)
 
 	var step_profile := _empty_step_profile()
 	if delta > 0.0:
@@ -297,6 +299,8 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 		)
 		return get_global_summary()
 
+	var threat_regions: Array = _reaction_model.get_active_threat_regions(_budget_contract)
+	var layer_context: Dictionary = _layered_scheduler.build_context(active_states, player_position, _budget_contract, threat_regions, _last_player_context)
 	var assignment_candidate_states: Array = layer_context.get("assignment_candidate_states", [])
 	var midfield_states: Array = layer_context.get("midfield_states", [])
 	var threat_candidate_states: Array = layer_context.get("threat_candidate_states", [])

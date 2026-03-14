@@ -18,13 +18,29 @@ static var _shared_manifest_snapshot: Dictionary = {}
 static var _shared_model_entries: Array[Dictionary] = []
 static var _shared_entries_by_id: Dictionary = {}
 static var _shared_entries_by_role: Dictionary = {}
+static var _shared_spawn_pools_by_road_class: Dictionary = {}
 static var _shared_scene_cache: Dictionary = {}
 
 var _manifest_snapshot: Dictionary = {}
 var _model_entries: Array[Dictionary] = []
 var _entries_by_id: Dictionary = {}
 var _entries_by_role: Dictionary = {}
+var _spawn_pools_by_road_class: Dictionary = {}
 var _scene_cache: Dictionary = {}
+
+static func prewarm_shared_resources() -> void:
+	_ensure_shared_manifest_loaded()
+	for entry_variant in _shared_model_entries:
+		var entry: Dictionary = entry_variant
+		var file_path := str(entry.get("file", ""))
+		if file_path == "":
+			continue
+		if _shared_scene_cache.has(file_path):
+			continue
+		var scene_resource := load(file_path)
+		var packed_scene := scene_resource as PackedScene
+		if packed_scene != null:
+			_shared_scene_cache[file_path] = packed_scene
 
 func _init() -> void:
 	_load_manifest()
@@ -109,18 +125,21 @@ func _load_manifest() -> void:
 	_model_entries.clear()
 	_entries_by_id.clear()
 	_entries_by_role.clear()
+	_spawn_pools_by_road_class.clear()
 	_scene_cache = _shared_scene_cache
 	if _shared_manifest_loaded:
 		_manifest_snapshot = _shared_manifest_snapshot
 		_model_entries = _shared_model_entries
 		_entries_by_id = _shared_entries_by_id
 		_entries_by_role = _shared_entries_by_role
+		_spawn_pools_by_road_class = _shared_spawn_pools_by_road_class
 		return
 	if not FileAccess.file_exists(MANIFEST_PATH):
 		_shared_manifest_snapshot = _manifest_snapshot
 		_shared_model_entries = _model_entries
 		_shared_entries_by_id = _entries_by_id
 		_shared_entries_by_role = _entries_by_role
+		_shared_spawn_pools_by_road_class = _spawn_pools_by_road_class
 		_shared_manifest_loaded = true
 		return
 	var manifest_text := FileAccess.get_file_as_string(MANIFEST_PATH)
@@ -130,6 +149,7 @@ func _load_manifest() -> void:
 		_shared_model_entries = _model_entries
 		_shared_entries_by_id = _entries_by_id
 		_shared_entries_by_role = _entries_by_role
+		_shared_spawn_pools_by_road_class = _spawn_pools_by_road_class
 		_shared_manifest_loaded = true
 		return
 	_manifest_snapshot = (manifest_variant as Dictionary).duplicate(true)
@@ -144,10 +164,48 @@ func _load_manifest() -> void:
 		if not _entries_by_role.has(role):
 			_entries_by_role[role] = []
 		(_entries_by_role[role] as Array).append(entry)
+	_spawn_pools_by_road_class = _build_spawn_pools(_entries_by_role, _model_entries)
 	_shared_manifest_snapshot = _manifest_snapshot
 	_shared_model_entries = _model_entries
 	_shared_entries_by_id = _entries_by_id
 	_shared_entries_by_role = _entries_by_role
+	_shared_spawn_pools_by_road_class = _spawn_pools_by_road_class
+	_shared_manifest_loaded = true
+
+func _prewarm_scene_resources() -> void:
+	for entry in _model_entries:
+		_resolve_packed_scene(entry)
+
+static func _ensure_shared_manifest_loaded() -> void:
+	if _shared_manifest_loaded:
+		return
+	var manifest_snapshot: Dictionary = {}
+	var model_entries: Array[Dictionary] = []
+	var entries_by_id: Dictionary = {}
+	var entries_by_role: Dictionary = {}
+	var spawn_pools_by_road_class: Dictionary = {}
+	if FileAccess.file_exists(MANIFEST_PATH):
+		var manifest_text := FileAccess.get_file_as_string(MANIFEST_PATH)
+		var manifest_variant = JSON.parse_string(manifest_text)
+		if manifest_variant is Dictionary:
+			manifest_snapshot = (manifest_variant as Dictionary).duplicate(true)
+			var models: Array = manifest_snapshot.get("models", [])
+			for model_variant in models:
+				if not model_variant is Dictionary:
+					continue
+				var entry := (model_variant as Dictionary).duplicate(true)
+				model_entries.append(entry)
+				entries_by_id[str(entry.get("model_id", ""))] = entry
+				var role := str(entry.get("traffic_role", "civilian"))
+				if not entries_by_role.has(role):
+					entries_by_role[role] = []
+				(entries_by_role[role] as Array).append(entry)
+			spawn_pools_by_road_class = _build_spawn_pools(entries_by_role, model_entries)
+	_shared_manifest_snapshot = manifest_snapshot
+	_shared_model_entries = model_entries
+	_shared_entries_by_id = entries_by_id
+	_shared_entries_by_role = entries_by_role
+	_shared_spawn_pools_by_road_class = spawn_pools_by_road_class
 	_shared_manifest_loaded = true
 
 func _select_entry_for_spawn_slot(spawn_slot: Dictionary) -> Dictionary:
@@ -164,25 +222,30 @@ func _select_entry_for_spawn_slot(spawn_slot: Dictionary) -> Dictionary:
 
 func _resolve_pool_for_spawn_slot(spawn_slot: Dictionary) -> Array:
 	var road_class := str(spawn_slot.get("road_class", "local"))
-	if road_class == "arterial" or road_class == "expressway_elevated":
-		var mixed_pool: Array = []
-		if _entries_by_role.has("commercial"):
-			mixed_pool.append_array((_entries_by_role["commercial"] as Array).duplicate(true))
-		if _entries_by_role.has("civilian"):
-			mixed_pool.append_array((_entries_by_role["civilian"] as Array).duplicate(true))
-		if _entries_by_role.has("service"):
-			mixed_pool.append_array((_entries_by_role["service"] as Array).duplicate(true))
-		return mixed_pool
-	if road_class == "secondary":
-		var secondary_pool: Array = []
-		if _entries_by_role.has("civilian"):
-			secondary_pool.append_array((_entries_by_role["civilian"] as Array).duplicate(true))
-		if _entries_by_role.has("service"):
-			secondary_pool.append_array((_entries_by_role["service"] as Array).duplicate(true))
-		return secondary_pool
-	if _entries_by_role.has("civilian"):
-		return (_entries_by_role["civilian"] as Array).duplicate(true)
-	return _model_entries.duplicate(true)
+	if _spawn_pools_by_road_class.has(road_class):
+		return _spawn_pools_by_road_class[road_class] as Array
+	return _spawn_pools_by_road_class.get("__default__", _model_entries) as Array
+
+static func _build_spawn_pools(entries_by_role: Dictionary, model_entries: Array) -> Dictionary:
+	var civilian_pool: Array = entries_by_role.get("civilian", model_entries)
+	var service_pool: Array = entries_by_role.get("service", [])
+	var commercial_pool: Array = entries_by_role.get("commercial", [])
+	var secondary_pool: Array = []
+	var arterial_pool: Array = []
+	secondary_pool.append_array(civilian_pool)
+	secondary_pool.append_array(service_pool)
+	arterial_pool.append_array(commercial_pool)
+	arterial_pool.append_array(civilian_pool)
+	arterial_pool.append_array(service_pool)
+	return {
+		"local": civilian_pool,
+		"service": civilian_pool,
+		"collector": civilian_pool,
+		"secondary": secondary_pool if not secondary_pool.is_empty() else civilian_pool,
+		"arterial": arterial_pool if not arterial_pool.is_empty() else civilian_pool,
+		"expressway_elevated": arterial_pool if not arterial_pool.is_empty() else civilian_pool,
+		"__default__": civilian_pool if not civilian_pool.is_empty() else model_entries,
+	}
 
 func _resolve_packed_scene(entry: Dictionary) -> PackedScene:
 	var file_path := str(entry.get("file", ""))

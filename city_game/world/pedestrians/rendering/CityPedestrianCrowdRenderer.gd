@@ -28,15 +28,16 @@ var _last_snapshot := {
 
 func setup(chunk_data: Dictionary) -> void:
 	_chunk_center = chunk_data.get("chunk_center", Vector3.ZERO)
-	_ensure_nodes()
 	var initial_snapshot: Dictionary = chunk_data.get("pedestrian_chunk_snapshot", {})
 	if not initial_snapshot.is_empty():
 		apply_chunk_snapshot(initial_snapshot)
 
 func apply_chunk_snapshot(snapshot: Dictionary) -> int:
-	_ensure_nodes()
 	var normalized_snapshot := _normalize_snapshot(snapshot)
 	_last_snapshot = normalized_snapshot
+	if not _snapshot_has_visible_states(normalized_snapshot) and not _has_runtime_nodes():
+		return 0
+	_ensure_nodes()
 	var tier1_states: Array = normalized_snapshot.get("tier1_states", [])
 	_last_tier1_transform_write_count = _pedestrian_batch.configure_from_states(tier1_states, _chunk_center)
 	_sync_tier2_agents(normalized_snapshot.get("tier2_states", []))
@@ -158,6 +159,14 @@ func _ensure_nodes() -> void:
 		_death_root = Node3D.new()
 		_death_root.name = "DeathVisuals"
 		add_child(_death_root)
+
+func _has_runtime_nodes() -> bool:
+	return _pedestrian_batch != null or _tier2_root != null or _tier3_root != null or _death_root != null
+
+func _snapshot_has_visible_states(snapshot: Dictionary) -> bool:
+	return not (snapshot.get("tier1_states", []) as Array).is_empty() \
+		or not (snapshot.get("tier2_states", []) as Array).is_empty() \
+		or not (snapshot.get("tier3_states", []) as Array).is_empty()
 
 func _sync_tier2_agents(states: Array) -> void:
 	var keep_ids: Dictionary = {}

@@ -174,6 +174,8 @@ static func _build_local_cell_roads(expanded_rect: Rect2, chunk_center: Vector3,
 
 static func _make_segment_from_world_polyline(edge_data: Dictionary, chunk_center: Vector3, world_seed: int, segment_seed: int) -> Dictionary:
 	var road_class := str(edge_data.get("class", "arterial"))
+	var road_id := str(edge_data.get("road_id", edge_data.get("edge_id", "")))
+	var edge_id := str(edge_data.get("edge_id", road_id))
 	var points_2d: Array = edge_data.get("points", [])
 	if points_2d.size() < 2:
 		return {}
@@ -219,6 +221,8 @@ static func _make_segment_from_world_polyline(edge_data: Dictionary, chunk_cente
 			local_points = bridge_profile.get("points", local_points)
 			deck_thickness = maxf(deck_thickness, 1.0)
 	return {
+		"road_id": road_id,
+		"edge_id": edge_id,
 		"class": road_class,
 		"template_id": template_id,
 		"lane_count_total": resolved_lane_count_total,

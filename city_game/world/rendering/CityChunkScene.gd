@@ -42,6 +42,7 @@ var _terrain_mesh_apply_count := 0
 var _terrain_collision_apply_count := 0
 var _pedestrian_crowd: Node3D = null
 var _vehicle_traffic: Node3D = null
+var _bridge_proxy: Node3D = null
 var _pedestrians_visible := true
 
 func setup(chunk_data: Dictionary) -> void:
@@ -49,7 +50,7 @@ func setup(chunk_data: Dictionary) -> void:
 	var surface_page_binding: Dictionary = chunk_data.get("surface_page_binding", {})
 	var terrain_page_provider = chunk_data.get("terrain_page_provider")
 	var terrain_page_binding: Dictionary = chunk_data.get("terrain_page_binding", {})
-	_chunk_data = chunk_data.duplicate(true)
+	_chunk_data = chunk_data.duplicate(false)
 	if surface_page_provider != null:
 		_chunk_data["surface_page_provider"] = surface_page_provider
 	if not surface_page_binding.is_empty():
@@ -58,7 +59,7 @@ func setup(chunk_data: Dictionary) -> void:
 		_chunk_data["terrain_page_provider"] = terrain_page_provider
 	if not terrain_page_binding.is_empty():
 		_chunk_data["terrain_page_binding"] = terrain_page_binding
-	_profile = (chunk_data.get("prepared_profile", {}) as Dictionary).duplicate(true)
+	_profile = (chunk_data.get("prepared_profile", {}) as Dictionary).duplicate(false)
 	if _profile.is_empty():
 		_profile = CityChunkProfileBuilder.build_profile(_chunk_data)
 	_current_lod_mode = _normalize_lod_mode(str(_chunk_data.get("initial_lod_mode", LOD_NEAR)))
@@ -70,18 +71,23 @@ func setup(chunk_data: Dictionary) -> void:
 func set_lod_mode(mode: String) -> void:
 	var normalized_mode := _normalize_lod_mode(mode)
 	var target_surface_detail_mode := _resolve_surface_detail_mode_for_lod(normalized_mode)
-	if normalized_mode == _current_lod_mode and target_surface_detail_mode == _current_surface_detail_mode:
+	var near_group := get_node_or_null("NearGroup") as Node3D
+	if normalized_mode == _current_lod_mode and target_surface_detail_mode == _current_surface_detail_mode and (normalized_mode != LOD_NEAR or near_group != null):
 		return
+	if normalized_mode == LOD_NEAR and near_group == null:
+		_build_near_group()
+		near_group = get_node_or_null("NearGroup") as Node3D
 	if target_surface_detail_mode != _current_surface_detail_mode:
 		_apply_ground_surface_detail_mode(target_surface_detail_mode)
 	_current_lod_mode = normalized_mode
 	_apply_terrain_lod_mode(normalized_mode)
 	_apply_terrain_collision_mode(normalized_mode)
-	var near_group := get_node_or_null("NearGroup") as Node3D
 	var mid_proxy := get_node_or_null("MidProxy") as Node3D
 	var far_proxy := get_node_or_null("FarProxy") as Node3D
 	if near_group != null:
 		near_group.visible = normalized_mode == LOD_NEAR
+	if _bridge_proxy != null:
+		_bridge_proxy.visible = normalized_mode != LOD_NEAR
 	if mid_proxy != null:
 		mid_proxy.visible = normalized_mode == LOD_MID
 	if far_proxy != null:
@@ -158,7 +164,7 @@ func get_lod_contract() -> Dictionary:
 	}
 
 func get_prop_multimesh() -> MultiMeshInstance3D:
-	return get_node("NearGroup/Props/StreetLamps") as MultiMeshInstance3D
+	return get_node_or_null("NearGroup/Props/StreetLamps") as MultiMeshInstance3D
 
 func get_ground_body() -> StaticBody3D:
 	return get_node_or_null("GroundBody") as StaticBody3D
@@ -281,6 +287,7 @@ func _accumulate_road_runtime_guard_stats(root: Node, stats: Dictionary) -> void
 
 func get_renderer_stats() -> Dictionary:
 	var prop_multimesh := get_prop_multimesh()
+	var near_group := get_node_or_null("NearGroup") as Node3D
 	var terrain_lod_contract := get_terrain_lod_contract()
 	var pedestrian_crowd_stats := get_pedestrian_crowd_stats()
 	var road_runtime_guard_stats := get_road_runtime_guard_stats()
@@ -293,7 +300,7 @@ func get_renderer_stats() -> Dictionary:
 		"profile_signature": get_profile_signature(),
 		"setup_profile": get_setup_profile(),
 		"multimesh_instance_count": prop_multimesh.multimesh.instance_count if prop_multimesh != null else 0,
-		"near_child_count": get_node("NearGroup").get_child_count(),
+		"near_child_count": near_group.get_child_count() if near_group != null else 0,
 		"road_segment_count": (_profile.get("road_segments", []) as Array).size(),
 		"curved_road_segment_count": int(_profile.get("curved_road_segment_count", 0)),
 		"non_axis_road_segment_count": int(_profile.get("non_axis_road_segment_count", 0)),
@@ -427,6 +434,7 @@ func _rebuild() -> void:
 	_terrain_collision_apply_count = 0
 	_pedestrian_crowd = null
 	_vehicle_traffic = null
+	_bridge_proxy = null
 
 	var chunk_size_m := float(_chunk_data.get("chunk_size_m", 256.0))
 	var setup_profile := {
@@ -466,26 +474,15 @@ func _rebuild() -> void:
 	setup_profile["ground_duplication_ratio"] = float(ground_result.get("duplication_ratio", 0.0))
 	setup_profile["ground_runtime_page_hit"] = bool(ground_result.get("runtime_page_hit", false))
 
-	var near_group := Node3D.new()
-	near_group.name = "NearGroup"
-	add_child(near_group)
-
-	phase_started_usec = Time.get_ticks_usec()
-	var road_overlay := CityRoadMeshBuilder.build_road_overlay(_profile, _chunk_data)
-	near_group.add_child(road_overlay)
-	setup_profile["road_overlay_usec"] = Time.get_ticks_usec() - phase_started_usec
-	var props := Node3D.new()
-	props.name = "Props"
-	near_group.add_child(props)
-
-	phase_started_usec = Time.get_ticks_usec()
-	for building in _profile.get("buildings", []):
-		near_group.add_child(_build_building(building))
-	setup_profile["buildings_usec"] = Time.get_ticks_usec() - phase_started_usec
-
-	phase_started_usec = Time.get_ticks_usec()
-	props.add_child(CityChunkMultimeshBuilder.build_street_lamps(_profile))
-	setup_profile["props_usec"] = Time.get_ticks_usec() - phase_started_usec
+	if _current_lod_mode == LOD_NEAR:
+		var near_build_stats := _build_near_group()
+		setup_profile["road_overlay_usec"] = int(near_build_stats.get("road_overlay_usec", 0))
+		setup_profile["buildings_usec"] = int(near_build_stats.get("buildings_usec", 0))
+		setup_profile["props_usec"] = int(near_build_stats.get("props_usec", 0))
+	_bridge_proxy = CityRoadMeshBuilder.build_bridge_proxy(_profile, _chunk_data)
+	if _bridge_proxy != null:
+		_bridge_proxy.visible = _current_lod_mode != LOD_NEAR
+		add_child(_bridge_proxy)
 
 	phase_started_usec = Time.get_ticks_usec()
 	_pedestrian_crowd = CityPedestrianCrowdRenderer.new()
@@ -516,6 +513,44 @@ func _rebuild() -> void:
 	setup_profile["set_lod_usec"] = Time.get_ticks_usec() - phase_started_usec
 	setup_profile["total_usec"] = Time.get_ticks_usec() - rebuild_started_usec
 	_setup_profile = setup_profile
+
+func _build_near_group() -> Dictionary:
+	if get_node_or_null("NearGroup") != null:
+		return {
+			"road_overlay_usec": 0,
+			"buildings_usec": 0,
+			"props_usec": 0,
+		}
+	var near_group := Node3D.new()
+	near_group.name = "NearGroup"
+	add_child(near_group)
+
+	var stats := {
+		"road_overlay_usec": 0,
+		"buildings_usec": 0,
+		"props_usec": 0,
+	}
+	var phase_started_usec := Time.get_ticks_usec()
+	var road_overlay := _chunk_data.get("prepared_road_overlay") as Node3D
+	if road_overlay == null:
+		road_overlay = CityRoadMeshBuilder.build_road_overlay(_profile, _chunk_data)
+	near_group.add_child(road_overlay)
+	stats["road_overlay_usec"] = int(Time.get_ticks_usec() - phase_started_usec)
+
+	var props := Node3D.new()
+	props.name = "Props"
+	near_group.add_child(props)
+	phase_started_usec = Time.get_ticks_usec()
+	for building in _profile.get("buildings", []):
+		near_group.add_child(_build_building(building))
+	stats["buildings_usec"] = int(Time.get_ticks_usec() - phase_started_usec)
+	phase_started_usec = Time.get_ticks_usec()
+	var street_lamps := _chunk_data.get("prepared_street_lamps") as MultiMeshInstance3D
+	if street_lamps == null:
+		street_lamps = CityChunkMultimeshBuilder.build_street_lamps(_profile)
+	props.add_child(street_lamps)
+	stats["props_usec"] = int(Time.get_ticks_usec() - phase_started_usec)
+	return stats
 
 func _build_building(building: Dictionary) -> Node3D:
 	var collision_size: Vector3 = building.get("collision_size", building.get("size", Vector3(18.0, 24.0, 18.0)))

@@ -16,7 +16,15 @@ const CONTROL_MODE_PLAYER := "player"
 const CONTROL_MODE_INSPECTION := "inspection"
 const MINIMAP_POSITION_REFRESH_M := 256.0
 const HUD_REFRESH_INTERVAL_USEC := 50000
+const HUD_REFRESH_INTERVAL_FAST_USEC := 120000
 const MINIMAP_HUD_REFRESH_INTERVAL_USEC := 120000
+const MINIMAP_HUD_REFRESH_INTERVAL_FAST_USEC := 320000
+const HEADLESS_HUD_REFRESH_INTERVAL_USEC := 200000
+const HEADLESS_HUD_REFRESH_INTERVAL_FAST_USEC := 400000
+const HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_USEC := 400000
+const HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_FAST_USEC := 800000
+const ACTOR_PAGE_PREWARM_RING_RADIUS_CHUNKS := 2
+const CHUNK_PAGE_PREWARM_RING_RADIUS_CHUNKS := 4
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -93,6 +101,7 @@ func _ready() -> void:
 
 	set_control_mode(CONTROL_MODE_PLAYER)
 	update_streaming_for_position(_get_active_anchor_position())
+	_prewarm_actor_pages_around_spawn()
 	if hud != null and hud.has_method("set_fps_overlay_visible"):
 		hud.set_fps_overlay_visible(_fps_overlay_visible)
 	_refresh_hud_status()
@@ -143,17 +152,17 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 	if hud == null:
 		return
 	var is_headless := DisplayServer.get_name() == "headless"
-	var hud_debug_expanded := hud.has_method("is_debug_expanded") and bool(hud.is_debug_expanded())
-
-	var snapshot: Dictionary = snapshot_override.duplicate(false) if not snapshot_override.is_empty() else _build_hud_snapshot(not hud_debug_expanded)
 	if is_headless:
-		var should_refresh_minimap := (_minimap_request_count == 0) or (Time.get_ticks_usec() - _last_minimap_hud_refresh_tick_usec >= MINIMAP_HUD_REFRESH_INTERVAL_USEC)
+		var minimap_refresh_interval_usec := _resolve_minimap_refresh_interval_usec(true)
+		var should_refresh_minimap := (_minimap_request_count == 0) or (Time.get_ticks_usec() - _last_minimap_hud_refresh_tick_usec >= minimap_refresh_interval_usec)
 		if should_refresh_minimap:
 			build_minimap_snapshot()
 			_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
 		_last_hud_refresh_tick_usec = Time.get_ticks_usec()
 		_record_hud_refresh_sample(Time.get_ticks_usec() - refresh_started_usec)
 		return
+	var hud_debug_expanded := hud.has_method("is_debug_expanded") and bool(hud.is_debug_expanded())
+	var snapshot: Dictionary = snapshot_override.duplicate(false) if not snapshot_override.is_empty() else _build_hud_snapshot(not hud_debug_expanded)
 	if hud_debug_expanded and hud.has_method("set_status"):
 		var world_summary := str(_world_data.get("summary", "World data unavailable"))
 		var active_speed_text := ""
@@ -414,6 +423,41 @@ func _build_hud_snapshot(collapsed: bool = false) -> Dictionary:
 		if chunk_renderer.has_method("get_vehicle_runtime_summary"):
 			snapshot.merge(chunk_renderer.get_vehicle_runtime_summary(), true)
 	return snapshot
+
+func _prewarm_actor_pages_around_spawn() -> void:
+	if _chunk_streamer == null or chunk_renderer == null or not chunk_renderer.has_method("prewarm_actor_pages"):
+		return
+	var active_entries: Array = _chunk_streamer.get_active_chunk_entries()
+	if active_entries.is_empty():
+		return
+	var min_key := Vector2i(2147483647, 2147483647)
+	var max_key := Vector2i(-2147483648, -2147483648)
+	for entry_variant in active_entries:
+		var entry: Dictionary = entry_variant
+		var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)
+		min_key.x = mini(min_key.x, chunk_key.x)
+		min_key.y = mini(min_key.y, chunk_key.y)
+		max_key.x = maxi(max_key.x, chunk_key.x)
+		max_key.y = maxi(max_key.y, chunk_key.y)
+	var prewarm_entries: Array[Dictionary] = []
+	for chunk_x in range(min_key.x - ACTOR_PAGE_PREWARM_RING_RADIUS_CHUNKS, max_key.x + ACTOR_PAGE_PREWARM_RING_RADIUS_CHUNKS + 1):
+		for chunk_y in range(min_key.y - ACTOR_PAGE_PREWARM_RING_RADIUS_CHUNKS, max_key.y + ACTOR_PAGE_PREWARM_RING_RADIUS_CHUNKS + 1):
+			var chunk_key := Vector2i(chunk_x, chunk_y)
+			prewarm_entries.append({
+				"chunk_key": chunk_key,
+				"chunk_id": _world_config.format_chunk_id(chunk_key),
+			})
+	chunk_renderer.prewarm_actor_pages(prewarm_entries)
+	if chunk_renderer.has_method("prewarm_chunk_pages"):
+		var page_prewarm_entries: Array[Dictionary] = []
+		for chunk_x in range(min_key.x - CHUNK_PAGE_PREWARM_RING_RADIUS_CHUNKS, max_key.x + CHUNK_PAGE_PREWARM_RING_RADIUS_CHUNKS + 1):
+			for chunk_y in range(min_key.y - CHUNK_PAGE_PREWARM_RING_RADIUS_CHUNKS, max_key.y + CHUNK_PAGE_PREWARM_RING_RADIUS_CHUNKS + 1):
+				var page_chunk_key := Vector2i(chunk_x, chunk_y)
+				page_prewarm_entries.append({
+					"chunk_key": page_chunk_key,
+					"chunk_id": _world_config.format_chunk_id(page_chunk_key),
+				})
+		chunk_renderer.prewarm_chunk_pages(page_prewarm_entries, false, true)
 
 func _ensure_combat_roots() -> void:
 	if _combat_root == null:
@@ -1069,7 +1113,29 @@ func _invalidate_minimap_cache() -> void:
 
 func _should_refresh_hud() -> bool:
 	var now_usec := Time.get_ticks_usec()
-	return _last_hud_refresh_tick_usec < 0 or now_usec - _last_hud_refresh_tick_usec >= HUD_REFRESH_INTERVAL_USEC
+	var refresh_interval_usec := _resolve_hud_refresh_interval_usec(DisplayServer.get_name() == "headless")
+	return _last_hud_refresh_tick_usec < 0 or now_usec - _last_hud_refresh_tick_usec >= refresh_interval_usec
+
+func _resolve_hud_refresh_interval_usec(is_headless: bool) -> int:
+	if _has_streaming_backpressure():
+		return HEADLESS_HUD_REFRESH_INTERVAL_FAST_USEC if is_headless else HUD_REFRESH_INTERVAL_FAST_USEC
+	return HEADLESS_HUD_REFRESH_INTERVAL_USEC if is_headless else HUD_REFRESH_INTERVAL_USEC
+
+func _resolve_minimap_refresh_interval_usec(is_headless: bool) -> int:
+	if _has_streaming_backpressure():
+		return HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_FAST_USEC if is_headless else MINIMAP_HUD_REFRESH_INTERVAL_FAST_USEC
+	return HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_USEC if is_headless else MINIMAP_HUD_REFRESH_INTERVAL_USEC
+
+func _has_streaming_backpressure() -> bool:
+	if chunk_renderer == null or not chunk_renderer.has_method("get_streaming_budget_stats"):
+		return false
+	var stats: Dictionary = chunk_renderer.get_streaming_budget_stats()
+	return int(stats.get("pending_prepare_count", 0)) > 0 \
+		or int(stats.get("pending_surface_async_count", 0)) > 0 \
+		or int(stats.get("queued_surface_async_count", 0)) > 0 \
+		or int(stats.get("pending_terrain_async_count", 0)) > 0 \
+		or int(stats.get("queued_terrain_async_count", 0)) > 0 \
+		or int(stats.get("pending_mount_count", 0)) > 0
 
 func _record_update_streaming_sample(duration_usec: int) -> void:
 	_update_streaming_sample_count += 1

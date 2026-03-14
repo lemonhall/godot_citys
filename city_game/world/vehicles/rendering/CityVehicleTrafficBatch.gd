@@ -47,6 +47,10 @@ func _init() -> void:
 	set_meta("vehicle_tier1_visual_source", _get_shared_vehicle_mesh_source())
 	set_meta("vehicle_tier1_proxy_scale_profile", PROXY_SCALE_PROFILE.duplicate(true))
 
+static func prewarm_shared_proxy_resources() -> void:
+	_get_shared_vehicle_mesh()
+	_get_shared_vehicle_material()
+
 func configure_from_states(states: Array, chunk_center: Vector3, visual_catalog: CityVehicleVisualCatalog = null) -> int:
 	if multimesh == null:
 		return 0

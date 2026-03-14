@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "notes": [
+    "All source_dimensions_m values were measured from the imported glb geometry AABB on 2026-03-14.",
+    "v8 M0 only establishes asset intake, stable naming, and a realistic length baseline; runtime wrapper scenes and traffic code are still future work.",
+    "runtime_uniform_scale is intentionally uniform so the low-poly proportions stay intact and future vehicle visual code can reuse one normalization path.",
+    "source_ground_offset_m is the Y correction needed to place the model on the ground plane."
+  ],
+  "models": [
+    {
+      "model_id": "car_a",
+      "file": "res://city_game/assets/vehicles/civilian/car_a.glb",
+      "traffic_role": "civilian",
+      "vehicle_class": "compact_car",
+      "length_axis": "z",
+      "up_axis": "y",
+      "source_dimensions_m": {
+        "length_m": 3.3096,
+        "width_m": 1.6384,
+        "height_m": 1.1456
+      },
+      "source_ground_offset_m": 0.0283,
+      "target_length_m": 3.95,
+      "runtime_uniform_scale": 1.1935,
+      "final_dimensions_m": {
+        "length_m": 3.95,
+        "width_m": 1.9554,
+        "height_m": 1.3673
+      },
+      "notes": [
+        "Best used as a compact civilian hatchback.",
+        "Short wheelbase makes it useful for dense local-road traffic."
+      ]
+    },
+    {
+      "model_id": "car_b",
+      "file": "res://city_game/assets/vehicles/civilian/car_b.glb",
+      "traffic_role": "civilian",
+      "vehicle_class": "sedan",
+      "length_axis": "z",
+      "up_axis": "y",
+      "source_dimensions_m": {
+        "length_m": 4.2207,
+        "width_m": 1.8074,
+        "height_m": 1.1766
+      },
+      "source_ground_offset_m": -0.0060,
+      "target_length_m": 4.45,
+      "runtime_uniform_scale": 1.0543,
+      "final_dimensions_m": {
+        "length_m": 4.45,
+        "width_m": 1.9056,
+        "height_m": 1.2405
+      },
+      "notes": [
+        "Default civilian sedan candidate.",
+        "Already close to meter scale and only needs a mild uplift."
+      ]
+    },
+    {
+      "model_id": "car_c",
+      "file": "res://city_game/assets/vehicles/civilian/car_c.glb",
+      "traffic_role": "civilian",
+      "vehicle_class": "compact_sedan",
+      "length_axis": "z",
+      "up_axis": "y",
+      "source_dimensions_m": {
+        "length_m": 3.8623,
+        "width_m": 1.7754,
+        "height_m": 1.2079
+      },
+      "source_ground_offset_m": 0.0250,
+      "target_length_m": 4.10,
+      "runtime_uniform_scale": 1.0615,
+      "final_dimensions_m": {
+        "length_m": 4.10,
+        "width_m": 1.8847,
+        "height_m": 1.2822
+      },
+      "notes": [
+        "Works as a second civilian sedan variant.",
+        "Slightly shorter than car_b and good for local/secondary road mix."
+      ]
+    },
+    {
+      "model_id": "sports_car_a",
+      "file": "res://city_game/assets/vehicles/civilian/sports_car_a.glb",
+      "traffic_role": "civilian",
+      "vehicle_class": "sports_car",
+      "length_axis": "z",
+      "up_axis": "y",
+      "source_dimensions_m": {
+        "length_m": 5.6551,
+        "width_m": 2.6706,
+        "height_m": 1.8647
+      },
+      "source_ground_offset_m": 0.0118,
+      "target_length_m": 4.60,
+      "runtime_uniform_scale": 0.8134,
+      "final_dimensions_m": {
+        "length_m": 4.60,
+        "width_m": 2.1723,
+        "height_m": 1.5168
+      },
+      "notes": [
+        "Source asset is oversized and should be scaled down before runtime use.",
+        "Keep this variant rare in ambient traffic."
+      ]
+    },
+    {
+      "model_id": "suv_a",
+      "file": "res://city_game/assets/vehicles/civilian/suv_a.glb",
+      "traffic_role": "civilian",
+      "vehicle_class": "suv",
+      "length_axis": "z",
+      "up_axis": "y",
+      "source_dimensions_m": {
+        "length_m": 4.2093,
+        "width_m": 2.1111,
+        "height_m": 1.5279
+      },
+      "source_ground_offset_m": 0.0181,
+      "target_length_m": 4.60,
+      "runtime_uniform_scale": 1.0928,
+      "final_dimensions_m": {
+        "length_m": 4.60,
+        "width_m": 2.3070,
+        "height_m": 1.6697
+      },
+      "notes": [
+        "Primary SUV or family car candidate.",
+        "Wide body should be verified against local-road clearance once runtime wrappers exist."
+      ]
+    },
+    {
+      "model_id": "pickup_truck_a",
+      "file": "res://city_game/assets/vehicles/civilian/pickup_truck_a.glb",
+      "traffic_role": "civilian",
+      "vehicle_class": "pickup_truck",
+      "length_axis": "z",
+      "up_axis": "y",
+      "source_dimensions_m": {
+        "length_m": 5.1804,
+        "width_m": 2.3122,
+        "height_m": 1.8484
+      },
+      "source_ground_offset_m": 0.0059,
+      "target_length_m": 5.35,
+      "runtime_uniform_scale": 1.0327,
+      "final_dimensions_m": {
+        "length_m": 5.35,
+        "width_m": 2.3879,
+        "height_m": 1.9089
+      },
+      "notes": [
+        "Use for low-frequency utility traffic.",
+        "Good candidate for industrial and periphery districts."
+      ]
+    },
+    {
+      "model_id": "police_car_a",
+      "file": "res://city_game/assets/vehicles/service/police_car_a.glb",
+      "traffic_role": "service",
+      "vehicle_class": "police_sedan",
+      "length_axis": "z",
+      "up_axis": "y",
+      "source_dimensions_m": {
+        "length_m": 3.7305,
+        "width_m": 1.7776,
+        "height_m": 1.2387
+      },
+      "source_ground_offset_m": 0.0163,
+      "target_length_m": 4.35,
+      "runtime_uniform_scale": 1.1661,
+      "final_dimensions_m": {
+        "length_m": 4.35,
+        "width_m": 2.0728,
+        "height_m": 1.4444
+      },
+      "notes": [
+        "Keep out of default civilian density tables unless a service-traffic slice explicitly enables it.",
+        "Useful for future police or response systems but not required for v8 ambient traffic core."
+      ]
+    },
+    {
+      "model_id": "truck_a",
+      "file": "res://city_game/assets/vehicles/commercial/truck_a.glb",
+      "traffic_role": "commercial",
+      "vehicle_class": "cargo_truck",
+      "length_axis": "z",
+      "up_axis": "y",
+      "source_dimensions_m": {
+        "length_m": 5.2556,
+        "width_m": 2.7093,
+        "height_m": 2.8840
+      },
+      "source_ground_offset_m": -0.0007,
+      "target_length_m": 5.60,
+      "runtime_uniform_scale": 1.0655,
+      "final_dimensions_m": {
+        "length_m": 5.60,
+        "width_m": 2.8868,
+        "height_m": 3.0730
+      },
+      "notes": [
+        "Tallest asset in the current pack and should stay low-frequency.",
+        "Best reserved for arterial and industrial traffic until clearance rules are validated."
+      ]
+    }
+  ]
+}

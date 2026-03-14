@@ -372,6 +372,16 @@ func _build_hud_snapshot(collapsed: bool = false) -> Dictionary:
 			snapshot["crowd_reaction_usec"] = int(streaming_profile.get("crowd_reaction_usec", 0))
 			snapshot["crowd_rank_usec"] = int(streaming_profile.get("crowd_rank_usec", 0))
 			snapshot["crowd_snapshot_rebuild_usec"] = int(streaming_profile.get("crowd_snapshot_rebuild_usec", 0))
+			snapshot["crowd_farfield_count"] = int(streaming_profile.get("crowd_farfield_count", 0))
+			snapshot["crowd_midfield_count"] = int(streaming_profile.get("crowd_midfield_count", 0))
+			snapshot["crowd_nearfield_count"] = int(streaming_profile.get("crowd_nearfield_count", 0))
+			snapshot["crowd_farfield_step_usec"] = int(streaming_profile.get("crowd_farfield_step_usec", 0))
+			snapshot["crowd_midfield_step_usec"] = int(streaming_profile.get("crowd_midfield_step_usec", 0))
+			snapshot["crowd_nearfield_step_usec"] = int(streaming_profile.get("crowd_nearfield_step_usec", 0))
+			snapshot["crowd_assignment_rebuild_usec"] = int(streaming_profile.get("crowd_assignment_rebuild_usec", 0))
+			snapshot["crowd_assignment_candidate_count"] = int(streaming_profile.get("crowd_assignment_candidate_count", 0))
+			snapshot["crowd_threat_broadcast_usec"] = int(streaming_profile.get("crowd_threat_broadcast_usec", 0))
+			snapshot["crowd_threat_candidate_count"] = int(streaming_profile.get("crowd_threat_candidate_count", 0))
 			snapshot["crowd_chunk_commit_usec"] = int(streaming_profile.get("crowd_chunk_commit_usec", 0))
 			snapshot["crowd_tier1_transform_writes"] = int(streaming_profile.get("crowd_tier1_transform_writes", 0))
 		if chunk_renderer.has_method("get_pedestrian_runtime_summary"):
@@ -710,6 +720,16 @@ func get_performance_profile() -> Dictionary:
 		"crowd_reaction_usec": int(streaming_profile.get("crowd_reaction_usec", 0)),
 		"crowd_rank_usec": int(streaming_profile.get("crowd_rank_usec", 0)),
 		"crowd_snapshot_rebuild_usec": int(streaming_profile.get("crowd_snapshot_rebuild_usec", 0)),
+		"crowd_farfield_count": int(streaming_profile.get("crowd_farfield_count", 0)),
+		"crowd_midfield_count": int(streaming_profile.get("crowd_midfield_count", 0)),
+		"crowd_nearfield_count": int(streaming_profile.get("crowd_nearfield_count", 0)),
+		"crowd_farfield_step_usec": int(streaming_profile.get("crowd_farfield_step_usec", 0)),
+		"crowd_midfield_step_usec": int(streaming_profile.get("crowd_midfield_step_usec", 0)),
+		"crowd_nearfield_step_usec": int(streaming_profile.get("crowd_nearfield_step_usec", 0)),
+		"crowd_assignment_rebuild_usec": int(streaming_profile.get("crowd_assignment_rebuild_usec", 0)),
+		"crowd_assignment_candidate_count": int(streaming_profile.get("crowd_assignment_candidate_count", 0)),
+		"crowd_threat_broadcast_usec": int(streaming_profile.get("crowd_threat_broadcast_usec", 0)),
+		"crowd_threat_candidate_count": int(streaming_profile.get("crowd_threat_candidate_count", 0)),
 		"crowd_chunk_commit_usec": int(streaming_profile.get("crowd_chunk_commit_usec", 0)),
 		"crowd_tier1_transform_writes": int(streaming_profile.get("crowd_tier1_transform_writes", 0)),
 		"ped_tier0_count": int(renderer_stats.get("pedestrian_tier0_total", 0)),

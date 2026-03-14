@@ -26,8 +26,9 @@ func _run() -> void:
 	var reaction_history: Array[String] = [str(state.reaction_state)]
 	for path_z in [5.0, 5.2, 4.8, 5.1]:
 		state.step(0.12)
+		reaction_model.advance_time(0.12)
 		reaction_model.notify_projectile_event(Vector3(0.0, 0.0, path_z), Vector3.RIGHT, SHOT_RANGE_M)
-		reaction_model.update_reactions(active_states, budget_contract, 0.12)
+		reaction_model.update_reactions(active_states, budget_contract, 0.0)
 		reaction_history.append(str(state.reaction_state))
 
 	print("CITY_PEDESTRIAN_SUSTAINED_FIRE_REACTION %s" % JSON.stringify({

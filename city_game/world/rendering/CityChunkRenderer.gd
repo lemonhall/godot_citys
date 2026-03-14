@@ -17,6 +17,7 @@ const MAX_POOLED_CHUNKS := 8
 const SURFACE_ASYNC_CONCURRENCY_LIMIT := 1
 const TERRAIN_ASYNC_CONCURRENCY_LIMIT := 1
 const PLAYER_CONTEXT_TELEPORT_DISTANCE_M := 32.0
+const FARFIELD_RENDER_DEFER_SPEED_MPS := 8.0
 const DEFAULT_DEATH_VISUAL_DURATION_SEC := 3.0
 
 var _config
@@ -369,6 +370,16 @@ func get_streaming_profile_stats() -> Dictionary:
 		"crowd_reaction_usec": int(crowd_runtime_profile.get("crowd_reaction_usec", _crowd_reaction_last_usec)),
 		"crowd_rank_usec": int(crowd_runtime_profile.get("crowd_rank_usec", _crowd_rank_last_usec)),
 		"crowd_snapshot_rebuild_usec": int(crowd_runtime_profile.get("crowd_snapshot_rebuild_usec", _crowd_snapshot_rebuild_last_usec)),
+		"crowd_farfield_count": int(crowd_runtime_profile.get("crowd_farfield_count", 0)),
+		"crowd_midfield_count": int(crowd_runtime_profile.get("crowd_midfield_count", 0)),
+		"crowd_nearfield_count": int(crowd_runtime_profile.get("crowd_nearfield_count", 0)),
+		"crowd_farfield_step_usec": int(crowd_runtime_profile.get("crowd_farfield_step_usec", 0)),
+		"crowd_midfield_step_usec": int(crowd_runtime_profile.get("crowd_midfield_step_usec", 0)),
+		"crowd_nearfield_step_usec": int(crowd_runtime_profile.get("crowd_nearfield_step_usec", 0)),
+		"crowd_assignment_rebuild_usec": int(crowd_runtime_profile.get("crowd_assignment_rebuild_usec", 0)),
+		"crowd_assignment_candidate_count": int(crowd_runtime_profile.get("crowd_assignment_candidate_count", 0)),
+		"crowd_threat_broadcast_usec": int(crowd_runtime_profile.get("crowd_threat_broadcast_usec", 0)),
+		"crowd_threat_candidate_count": int(crowd_runtime_profile.get("crowd_threat_candidate_count", 0)),
 		"crowd_chunk_commit_usec": _crowd_chunk_commit_last_usec,
 		"crowd_tier1_transform_writes": _crowd_tier1_transform_writes,
 	}
@@ -671,6 +682,7 @@ func _process_mount_budget() -> void:
 		if _pedestrian_tier_controller != null and chunk_scene.has_method("apply_pedestrian_chunk_snapshot"):
 			var chunk_snapshot: Dictionary = _pedestrian_tier_controller.get_chunk_snapshot_ref(chunk_id) if _pedestrian_tier_controller.has_method("get_chunk_snapshot_ref") else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id)
 			chunk_scene.apply_pedestrian_chunk_snapshot(chunk_snapshot)
+			chunk_snapshot["dirty"] = false
 		if chunk_scene.has_method("set_pedestrian_visibility"):
 			chunk_scene.set_pedestrian_visibility(_pedestrian_visibility_enabled)
 		_record_mount_setup_sample(Time.get_ticks_usec() - setup_started_usec)
@@ -867,17 +879,29 @@ func _update_pedestrian_crowd(player_position: Vector3, delta: float) -> void:
 	var render_commit_started_usec := Time.get_ticks_usec()
 	var tier1_transform_writes := 0
 	var applied_chunk_count := 0
+	var defer_farfield_only_commit := _has_pending_streaming_work() or player_velocity.length() >= FARFIELD_RENDER_DEFER_SPEED_MPS
 	for chunk_id in get_chunk_ids():
 		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
 		if chunk_scene.has_method("apply_pedestrian_chunk_snapshot"):
 			var chunk_snapshot: Dictionary = _pedestrian_tier_controller.get_chunk_snapshot_ref(chunk_id) if _pedestrian_tier_controller.has_method("get_chunk_snapshot_ref") else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id)
+			if defer_farfield_only_commit and bool(chunk_snapshot.get("farfield_render_dirty", false)):
+				continue
 			if bool(chunk_snapshot.get("dirty", true)):
 				tier1_transform_writes += int(chunk_scene.apply_pedestrian_chunk_snapshot(chunk_snapshot))
 				chunk_snapshot["dirty"] = false
+				chunk_snapshot["farfield_render_dirty"] = false
 				applied_chunk_count += 1
 	_crowd_chunk_commit_last_usec = int(Time.get_ticks_usec() - render_commit_started_usec) if applied_chunk_count > 0 else 0
 	_crowd_tier1_transform_writes = tier1_transform_writes
 	_record_crowd_render_commit_sample(_crowd_chunk_commit_last_usec)
+
+func _has_pending_streaming_work() -> bool:
+	return not _pending_prepare.is_empty() \
+		or not _pending_surface_jobs.is_empty() \
+		or not _queued_surface_jobs.is_empty() \
+		or not _pending_terrain_jobs.is_empty() \
+		or not _queued_terrain_jobs.is_empty() \
+		or not _pending_mount_ids.is_empty()
 
 func _distance_to_entry(player_position: Vector3, entry: Dictionary) -> float:
 	var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)

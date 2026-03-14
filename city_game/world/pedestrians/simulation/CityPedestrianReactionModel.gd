@@ -60,7 +60,6 @@ func notify_casualty_event(world_position: Vector3, witness_radius_m: float = -1
 	})
 
 func update_reactions(active_states: Array, budget_contract: Dictionary, delta: float) -> Array[Dictionary]:
-	_age_events(delta)
 	var player_speed_mps := _player_velocity.length()
 	var reactive_candidates: Array[Dictionary] = []
 	for state_variant in active_states:
@@ -81,6 +80,64 @@ func update_reactions(active_states: Array, budget_contract: Dictionary, delta: 
 
 func get_event_count() -> int:
 	return _events.size()
+
+func advance_time(delta: float) -> bool:
+	if delta <= 0.0:
+		return false
+	var previous_event_count := _events.size()
+	_age_events(delta)
+	return _events.size() != previous_event_count
+
+func get_active_threat_regions(budget_contract: Dictionary) -> Array[Dictionary]:
+	var threat_regions: Array[Dictionary] = []
+	if _has_player_context and not _is_inspection_context():
+		threat_regions.append({
+			"type": "player",
+			"position": _player_position,
+			"radius_m": float(budget_contract.get("violent_witness_core_radius_m", 200.0)),
+		})
+	for event_variant in _events:
+		var event: Dictionary = event_variant
+		var event_type := str(event.get("type", ""))
+		match event_type:
+			"projectile":
+				var origin: Vector3 = event.get("origin", Vector3.ZERO)
+				var direction: Vector3 = event.get("direction", Vector3.FORWARD)
+				var range_m := float(event.get("range_m", budget_contract.get("projectile_range_m", 36.0)))
+				var midpoint := origin + direction.normalized() * range_m * 0.5
+				threat_regions.append({
+					"type": "projectile",
+					"position": midpoint,
+					"radius_m": range_m * 0.5 + float(budget_contract.get("projectile_reaction_radius_m", 4.5)),
+				})
+			"gunshot":
+				threat_regions.append({
+					"type": "gunshot",
+					"position": event.get("position", Vector3.ZERO),
+					"radius_m": float(budget_contract.get("gunshot_radius_m", 400.0)),
+				})
+			"explosion":
+				var explosion_radius_m := float(event.get("threat_radius_m", -1.0))
+				if explosion_radius_m < 0.0:
+					explosion_radius_m = maxf(
+						float(event.get("radius_m", 0.0)),
+						float(budget_contract.get("explosion_reaction_radius_m", 400.0))
+					)
+				threat_regions.append({
+					"type": "explosion",
+					"position": event.get("position", Vector3.ZERO),
+					"radius_m": explosion_radius_m,
+				})
+			"casualty":
+				var casualty_radius_m := float(event.get("witness_radius_m", -1.0))
+				if casualty_radius_m < 0.0:
+					casualty_radius_m = float(budget_contract.get("casualty_witness_radius_m", 400.0))
+				threat_regions.append({
+					"type": "casualty",
+					"position": event.get("position", Vector3.ZERO),
+					"radius_m": casualty_radius_m,
+				})
+	return threat_regions
 
 func _age_events(delta: float) -> void:
 	if delta <= 0.0:

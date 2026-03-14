@@ -65,14 +65,16 @@ func _run() -> void:
 		return
 	if not T.require_true(self, vehicle_batch.has_meta("vehicle_tier1_visual_source"), "Tier 1 vehicle batch must expose its visual source contract"):
 		return
-	if not T.require_true(self, String(vehicle_batch.get_meta("vehicle_tier1_visual_source", "")).begins_with("asset_proxy:"), "Tier 1 vehicle batch must reuse an asset-derived vehicle proxy instead of a hand-made primitive proxy"):
+	if not T.require_true(self, String(vehicle_batch.get_meta("vehicle_tier1_visual_source", "")).begins_with("proxy_glb:"), "Tier 1 vehicle batch must reuse a dedicated proxy glb instead of a generated asset proxy"):
 		return
 	if not T.require_true(self, vehicle_batch.has_meta("vehicle_tier1_proxy_scale_profile"), "Tier 1 vehicle batch must expose a proxy scale profile contract"):
 		return
 	var proxy_scale_profile: Dictionary = vehicle_batch.get_meta("vehicle_tier1_proxy_scale_profile", {})
-	if not T.require_true(self, float(proxy_scale_profile.get("width_scale", 1.0)) < 1.0, "Tier 1 proxy width scale must stay slimmer than the full real-model width"):
+	if not T.require_true(self, is_equal_approx(float(proxy_scale_profile.get("length_scale", 0.0)), 1.0), "Tier 1 proxy length scale must stay at 1.0 so the dedicated proxy glb is not stretched at runtime"):
 		return
-	if not T.require_true(self, float(proxy_scale_profile.get("height_scale", 1.0)) < 1.0, "Tier 1 proxy height scale must stay slimmer than the full real-model height"):
+	if not T.require_true(self, is_equal_approx(float(proxy_scale_profile.get("width_scale", 0.0)), 1.0), "Tier 1 proxy width scale must stay at 1.0 so the dedicated proxy glb is not stretched at runtime"):
+		return
+	if not T.require_true(self, is_equal_approx(float(proxy_scale_profile.get("height_scale", 0.0)), 1.0), "Tier 1 proxy height scale must stay at 1.0 so the dedicated proxy glb is not stretched at runtime"):
 		return
 	if not T.require_true(self, _mesh_aabb_size(batch_mesh).z > 0.2, "Tier 1 vehicle batch must use a volumetric mesh instead of a flat shadow quad"):
 		return

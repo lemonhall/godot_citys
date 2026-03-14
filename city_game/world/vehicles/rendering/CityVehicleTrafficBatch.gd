@@ -1,11 +1,12 @@
 extends MultiMeshInstance3D
 
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
-const GENERIC_PROXY_MODEL_ID := "car_c"
+const PROXY_GLB_PATH := "res://city_game/assets/vehicles/proxy/tier1_proxy.glb"
+const PROXY_GROUND_CLEARANCE_M := 0.02
 const PROXY_SCALE_PROFILE := {
-	"length_scale": 0.94,
-	"width_scale": 0.84,
-	"height_scale": 0.82,
+	"length_scale": 1.0,
+	"width_scale": 1.0,
+	"height_scale": 1.0,
 }
 const BODY_COLOR_PALETTES := {
 	"civilian": [
@@ -30,7 +31,6 @@ const BODY_COLOR_PALETTES := {
 static var _shared_vehicle_mesh: ArrayMesh = null
 static var _shared_vehicle_material: StandardMaterial3D = null
 static var _shared_vehicle_mesh_source := ""
-static var _shared_visual_catalog: CityVehicleVisualCatalog = null
 
 var _cached_instance_transforms: Array = []
 var _cached_instance_colors: Array = []
@@ -92,31 +92,11 @@ func _build_instance_transform(state, chunk_center: Vector3, visual_catalog: Cit
 		heading = Vector3.FORWARD
 	heading = heading.normalized()
 	var yaw := atan2(heading.x, heading.z)
-	var dimensions := _resolve_dimensions(state, visual_catalog)
-	var vehicle_width := maxf(float(dimensions.get("width_m", 1.9)) * float(PROXY_SCALE_PROFILE.get("width_scale", 0.84)), 0.5)
-	var vehicle_height := maxf(float(dimensions.get("height_m", 1.5)) * float(PROXY_SCALE_PROFILE.get("height_scale", 0.82)), 0.5)
-	var vehicle_length := maxf(float(dimensions.get("length_m", 4.4)) * float(PROXY_SCALE_PROFILE.get("length_scale", 0.94)), 1.1)
-	var instance_basis := Basis.from_euler(Vector3(0.0, yaw, 0.0)).scaled(Vector3(
-		vehicle_width,
-		vehicle_height,
-		vehicle_length
-	))
+	var instance_basis := Basis.from_euler(Vector3(0.0, yaw, 0.0))
 	return Transform3D(
 		instance_basis,
-		Vector3(local_position.x, local_position.y + vehicle_height * 0.5 + 0.02, local_position.z)
+		Vector3(local_position.x, local_position.y + PROXY_GROUND_CLEARANCE_M, local_position.z)
 	)
-
-func _resolve_dimensions(state, visual_catalog: CityVehicleVisualCatalog) -> Dictionary:
-	var dimensions := {
-		"length_m": _state_length_m(state),
-		"width_m": _state_width_m(state),
-		"height_m": _state_height_m(state),
-	}
-	if visual_catalog == null:
-		return dimensions
-	if dimensions["length_m"] > 0.0 and dimensions["width_m"] > 0.0 and dimensions["height_m"] > 0.0:
-		return dimensions
-	return visual_catalog.resolve_dimensions_m(visual_catalog.select_entry_for_state(state))
 
 func _resolve_instance_color(state, visual_catalog: CityVehicleVisualCatalog) -> Color:
 	var role := _state_role(state)
@@ -140,21 +120,6 @@ func _state_heading(state) -> Vector3:
 	if state is Dictionary:
 		return (state as Dictionary).get("heading", Vector3.FORWARD)
 	return state.heading if state != null else Vector3.FORWARD
-
-func _state_length_m(state) -> float:
-	if state is Dictionary:
-		return float((state as Dictionary).get("length_m", 4.4))
-	return float(state.length_m) if state != null else 4.4
-
-func _state_width_m(state) -> float:
-	if state is Dictionary:
-		return float((state as Dictionary).get("width_m", 1.9))
-	return float(state.width_m) if state != null else 1.9
-
-func _state_height_m(state) -> float:
-	if state is Dictionary:
-		return float((state as Dictionary).get("height_m", 1.5))
-	return float(state.height_m) if state != null else 1.5
 
 func _state_role(state) -> String:
 	if state is Dictionary:
@@ -194,12 +159,10 @@ func _colors_equal(lhs, rhs) -> bool:
 static func _get_shared_vehicle_mesh() -> ArrayMesh:
 	if _shared_vehicle_mesh != null:
 		return _shared_vehicle_mesh
-	var visual_catalog := _get_shared_visual_catalog()
-	var entry: Dictionary = visual_catalog.get_entry(GENERIC_PROXY_MODEL_ID)
-	var asset_proxy_mesh := _build_asset_proxy_mesh(visual_catalog, entry)
-	if asset_proxy_mesh != null:
-		_shared_vehicle_mesh = asset_proxy_mesh
-		_shared_vehicle_mesh_source = "asset_proxy:%s" % str(entry.get("model_id", GENERIC_PROXY_MODEL_ID))
+	var proxy_glb_mesh := _build_proxy_glb_mesh()
+	if proxy_glb_mesh != null:
+		_shared_vehicle_mesh = proxy_glb_mesh
+		_shared_vehicle_mesh_source = "proxy_glb:%s" % PROXY_GLB_PATH
 		return _shared_vehicle_mesh
 	_shared_vehicle_mesh_source = "primitive_proxy:fallback"
 	_shared_vehicle_mesh = _build_fallback_proxy_mesh()
@@ -210,15 +173,13 @@ static func _get_shared_vehicle_mesh_source() -> String:
 		_get_shared_vehicle_mesh()
 	return _shared_vehicle_mesh_source
 
-static func _get_shared_visual_catalog() -> CityVehicleVisualCatalog:
-	if _shared_visual_catalog == null:
-		_shared_visual_catalog = CityVehicleVisualCatalog.new()
-	return _shared_visual_catalog
-
-static func _build_asset_proxy_mesh(visual_catalog: CityVehicleVisualCatalog, entry: Dictionary) -> ArrayMesh:
-	if visual_catalog == null or entry.is_empty():
+static func _build_proxy_glb_mesh() -> ArrayMesh:
+	var scene_resource := load(PROXY_GLB_PATH)
+	var packed_scene := scene_resource as PackedScene
+	if packed_scene == null:
 		return null
-	var model_root := visual_catalog.instantiate_scene_for_entry(entry)
+	var instance_variant = packed_scene.instantiate()
+	var model_root := instance_variant as Node
 	if model_root == null:
 		return null
 	var surface_tool := SurfaceTool.new()
@@ -231,7 +192,7 @@ static func _build_asset_proxy_mesh(visual_catalog: CityVehicleVisualCatalog, en
 	var raw_mesh := surface_tool.commit()
 	if raw_mesh == null:
 		return null
-	return _normalize_proxy_mesh(raw_mesh)
+	return _align_proxy_mesh_to_ground_center(raw_mesh)
 
 static func _append_asset_mesh_surfaces(node: Node, surface_tool: SurfaceTool, parent_transform: Transform3D) -> int:
 	var appended_surface_count := 0
@@ -252,25 +213,19 @@ static func _append_asset_mesh_surfaces(node: Node, surface_tool: SurfaceTool, p
 		appended_surface_count += _append_asset_mesh_surfaces(child_node, surface_tool, node_transform)
 	return appended_surface_count
 
-static func _normalize_proxy_mesh(source_mesh: ArrayMesh) -> ArrayMesh:
+static func _align_proxy_mesh_to_ground_center(source_mesh: ArrayMesh) -> ArrayMesh:
 	if source_mesh == null:
 		return null
 	var source_aabb := source_mesh.get_aabb()
 	if source_aabb.size.x <= 0.001 or source_aabb.size.y <= 0.001 or source_aabb.size.z <= 0.001:
 		return source_mesh
 	var center := source_aabb.get_center()
-	var scale := Vector3(
-		1.0 / source_aabb.size.x,
-		1.0 / source_aabb.size.y,
-		1.0 / source_aabb.size.z
-	)
+	var translation := Vector3(-center.x, -source_aabb.position.y, -center.z)
+	if translation.is_zero_approx():
+		return source_mesh
 	var surface_tool := SurfaceTool.new()
 	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var normalization_transform := Transform3D(Basis.IDENTITY.scaled(scale), Vector3(
-		-center.x * scale.x,
-		-center.y * scale.y,
-		-center.z * scale.z
-	))
+	var normalization_transform := Transform3D(Basis.IDENTITY, translation)
 	for surface_index in range(source_mesh.get_surface_count()):
 		surface_tool.append_from(source_mesh, surface_index, normalization_transform)
 	surface_tool.generate_normals()

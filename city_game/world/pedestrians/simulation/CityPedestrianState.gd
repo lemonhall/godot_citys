@@ -93,6 +93,7 @@ func step(delta: float) -> void:
 		stride_phase = fposmod(stride_phase + delta * 0.9, 1.0)
 		_advance_reaction_timers(delta)
 		return
+	var previous_planar_position := Vector3(world_position.x, 0.0, world_position.z)
 	var progress_delta := (speed_mps * _reaction_speed_multiplier() * delta) / maxf(lane_length_m, 0.001)
 	route_progress += progress_delta * route_direction
 	if route_progress > 1.0:
@@ -102,7 +103,10 @@ func step(delta: float) -> void:
 		route_progress = -route_progress
 		route_direction = 1.0
 	var sample := _sample_lane_state(route_progress)
-	var lateral := Vector3(-sample.heading.z, 0.0, sample.heading.x)
+	var travel_heading: Vector3 = sample.heading
+	if route_direction < 0.0:
+		travel_heading = -travel_heading
+	var lateral := Vector3(-travel_heading.z, 0.0, travel_heading.x)
 	if lateral.length_squared() <= 0.0001:
 		lateral = Vector3.RIGHT
 	lateral = lateral.normalized()
@@ -110,7 +114,11 @@ func step(delta: float) -> void:
 	var adjusted_position: Vector3 = sample.position + lateral * lateral_offset_m
 	world_position.x = adjusted_position.x
 	world_position.z = adjusted_position.z
-	heading = sample.heading
+	var motion_heading := Vector3(world_position.x - previous_planar_position.x, 0.0, world_position.z - previous_planar_position.z)
+	if motion_heading.length_squared() > 0.0001:
+		heading = motion_heading.normalized()
+	else:
+		heading = travel_heading if travel_heading.length_squared() > 0.0001 else sample.heading
 	stride_phase = fposmod(stride_phase + delta * maxf(speed_mps * 0.55, 0.5), 1.0)
 	_advance_reaction_timers(delta)
 

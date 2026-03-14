@@ -5,6 +5,7 @@ const CityChunkHlodBuilder := preload("res://city_game/world/rendering/CityChunk
 const CityChunkOccluderBuilder := preload("res://city_game/world/rendering/CityChunkOccluderBuilder.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 const CityPedestrianCrowdRenderer := preload("res://city_game/world/pedestrians/rendering/CityPedestrianCrowdRenderer.gd")
+const CityVehicleTrafficRenderer := preload("res://city_game/world/vehicles/rendering/CityVehicleTrafficRenderer.gd")
 const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTerrainMeshBuilder.gd")
 const CityRoadMeshBuilder := preload("res://city_game/world/rendering/CityRoadMeshBuilder.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
@@ -40,6 +41,7 @@ var _building_collisions_enabled := true
 var _terrain_mesh_apply_count := 0
 var _terrain_collision_apply_count := 0
 var _pedestrian_crowd: Node3D = null
+var _vehicle_traffic: Node3D = null
 var _pedestrians_visible := true
 
 func setup(chunk_data: Dictionary) -> void:
@@ -221,6 +223,42 @@ func get_road_runtime_guard_stats() -> Dictionary:
 	_accumulate_road_runtime_guard_stats(road_overlay, stats)
 	return stats
 
+func get_vehicle_runtime_guard_stats() -> Dictionary:
+	var stats := {
+		"vehicle_root_child_count": 0,
+		"farfield_multimesh_instance_count": 0,
+		"tier2_node_count": 0,
+		"tier3_node_count": 0,
+		"path3d_count": 0,
+		"forbidden_runtime_node_count": 0,
+	}
+	var vehicle_root := get_node_or_null("VehicleTraffic") as Node
+	if vehicle_root == null:
+		return stats
+	stats["vehicle_root_child_count"] = vehicle_root.get_child_count()
+	var vehicle_stats := get_vehicle_stats()
+	stats["farfield_multimesh_instance_count"] = 1 if int(vehicle_stats.get("tier1_instance_count", 0)) > 0 else 0
+	stats["tier2_node_count"] = int(vehicle_stats.get("tier2_node_count", 0))
+	stats["tier3_node_count"] = int(vehicle_stats.get("tier3_node_count", 0))
+	_accumulate_vehicle_runtime_guard_stats(vehicle_root, stats)
+	return stats
+
+func _accumulate_vehicle_runtime_guard_stats(root: Node, stats: Dictionary) -> void:
+	for child in root.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		var is_forbidden_runtime_node := false
+		if child_node is Path3D:
+			stats["path3d_count"] = int(stats.get("path3d_count", 0)) + 1
+			is_forbidden_runtime_node = true
+		var normalized_name := String(child_node.name).to_lower()
+		if normalized_name.begins_with("vehiclelane") or normalized_name.begins_with("vehiclesegment") or normalized_name.begins_with("vehiclemanager"):
+			is_forbidden_runtime_node = true
+		if is_forbidden_runtime_node:
+			stats["forbidden_runtime_node_count"] = int(stats.get("forbidden_runtime_node_count", 0)) + 1
+		_accumulate_vehicle_runtime_guard_stats(child_node, stats)
+
 func _accumulate_road_runtime_guard_stats(root: Node, stats: Dictionary) -> void:
 	for child in root.get_children():
 		var child_node := child as Node
@@ -246,6 +284,8 @@ func get_renderer_stats() -> Dictionary:
 	var terrain_lod_contract := get_terrain_lod_contract()
 	var pedestrian_crowd_stats := get_pedestrian_crowd_stats()
 	var road_runtime_guard_stats := get_road_runtime_guard_stats()
+	var vehicle_stats := get_vehicle_stats()
+	var vehicle_runtime_guard_stats := get_vehicle_runtime_guard_stats()
 	return {
 		"chunk_id": str(_chunk_data.get("chunk_id", "")),
 		"lod_mode": _current_lod_mode,
@@ -277,12 +317,19 @@ func get_renderer_stats() -> Dictionary:
 		"pedestrian_tier2_count": int(pedestrian_crowd_stats.get("tier2_count", 0)),
 		"pedestrian_tier3_count": int(pedestrian_crowd_stats.get("tier3_count", 0)),
 		"pedestrian_multimesh_instance_count": int(pedestrian_crowd_stats.get("tier1_instance_count", 0)),
+		"vehicle_tier1_count": int(vehicle_stats.get("tier1_count", 0)),
+		"vehicle_tier2_count": int(vehicle_stats.get("tier2_count", 0)),
+		"vehicle_tier3_count": int(vehicle_stats.get("tier3_count", 0)),
+		"vehicle_multimesh_instance_count": int(vehicle_stats.get("tier1_instance_count", 0)),
+		"vehicle_runtime_guard_stats": vehicle_runtime_guard_stats.duplicate(true),
 	}
 
 func get_runtime_renderer_stats() -> Dictionary:
 	var prop_multimesh := get_prop_multimesh()
 	var pedestrian_crowd_stats := get_pedestrian_crowd_stats()
 	var road_runtime_guard_stats := get_road_runtime_guard_stats()
+	var vehicle_stats := get_vehicle_stats()
+	var vehicle_runtime_guard_stats := get_vehicle_runtime_guard_stats()
 	return {
 		"chunk_id": str(_chunk_data.get("chunk_id", "")),
 		"lod_mode": _current_lod_mode,
@@ -294,6 +341,11 @@ func get_runtime_renderer_stats() -> Dictionary:
 		"pedestrian_tier2_count": int(pedestrian_crowd_stats.get("tier2_count", 0)),
 		"pedestrian_tier3_count": int(pedestrian_crowd_stats.get("tier3_count", 0)),
 		"pedestrian_multimesh_instance_count": int(pedestrian_crowd_stats.get("tier1_instance_count", 0)),
+		"vehicle_tier1_count": int(vehicle_stats.get("tier1_count", 0)),
+		"vehicle_tier2_count": int(vehicle_stats.get("tier2_count", 0)),
+		"vehicle_tier3_count": int(vehicle_stats.get("tier3_count", 0)),
+		"vehicle_multimesh_instance_count": int(vehicle_stats.get("tier1_instance_count", 0)),
+		"vehicle_runtime_guard_stats": vehicle_runtime_guard_stats.duplicate(true),
 	}
 
 func get_pedestrian_batch() -> MultiMeshInstance3D:
@@ -316,10 +368,34 @@ func get_pedestrian_crowd_stats() -> Dictionary:
 	crowd_stats["visible"] = _pedestrians_visible
 	return crowd_stats
 
+func get_vehicle_batch() -> MultiMeshInstance3D:
+	if _vehicle_traffic == null or not _vehicle_traffic.has_method("get_batch"):
+		return null
+	return _vehicle_traffic.get_batch()
+
+func get_vehicle_stats() -> Dictionary:
+	if _vehicle_traffic == null or not _vehicle_traffic.has_method("get_vehicle_stats"):
+		return {
+			"tier0_count": 0,
+			"tier1_count": 0,
+			"tier2_count": 0,
+			"tier3_count": 0,
+			"tier1_instance_count": 0,
+			"tier1_transform_write_count": 0,
+			"tier2_node_count": 0,
+			"tier3_node_count": 0,
+		}
+	return (_vehicle_traffic.get_vehicle_stats() as Dictionary).duplicate(true)
+
 func apply_pedestrian_chunk_snapshot(snapshot: Dictionary) -> int:
 	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("apply_chunk_snapshot"):
 		return 0
 	return _pedestrian_crowd.apply_chunk_snapshot(snapshot)
+
+func apply_vehicle_chunk_snapshot(snapshot: Dictionary) -> int:
+	if _vehicle_traffic == null or not _vehicle_traffic.has_method("apply_chunk_snapshot"):
+		return 0
+	return _vehicle_traffic.apply_chunk_snapshot(snapshot)
 
 func spawn_pedestrian_death_visual(event: Dictionary) -> void:
 	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("spawn_pedestrian_death_visual"):
@@ -350,6 +426,7 @@ func _rebuild() -> void:
 	_terrain_mesh_apply_count = 0
 	_terrain_collision_apply_count = 0
 	_pedestrian_crowd = null
+	_vehicle_traffic = null
 
 	var chunk_size_m := float(_chunk_data.get("chunk_size_m", 256.0))
 	var setup_profile := {
@@ -417,6 +494,13 @@ func _rebuild() -> void:
 	add_child(_pedestrian_crowd)
 	set_pedestrian_visibility(_pedestrians_visible)
 	setup_profile["pedestrians_usec"] = Time.get_ticks_usec() - phase_started_usec
+
+	phase_started_usec = Time.get_ticks_usec()
+	_vehicle_traffic = CityVehicleTrafficRenderer.new()
+	_vehicle_traffic.name = "VehicleTraffic"
+	_vehicle_traffic.setup(_chunk_data)
+	add_child(_vehicle_traffic)
+	setup_profile["vehicles_usec"] = Time.get_ticks_usec() - phase_started_usec
 
 	phase_started_usec = Time.get_ticks_usec()
 	add_child(CityChunkHlodBuilder.build_mid_proxy(_profile))

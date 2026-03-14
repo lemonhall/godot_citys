@@ -75,6 +75,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(world_stats.get("road_class_count", 0)) >= 6, "world_stats must report all configured road classes"):
 		return
+	if not T.require_true(self, int(world_stats.get("max_spawn_slots_per_chunk", 0)) == 2, "Vehicle lite profile must cap max_spawn_slots_per_chunk at 2 for hand-play-safe traffic density"):
+		return
 	if not T.require_true(self, int(world_stats.get("lane_count", 0)) > 0, "world_stats must report non-zero lane_count"):
 		return
 	if not T.require_true(self, int(world_stats.get("intersection_turn_contract_count", 0)) > 0, "world_stats must report non-zero intersection_turn_contract_count"):

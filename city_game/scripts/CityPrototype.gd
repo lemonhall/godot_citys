@@ -218,6 +218,11 @@ func get_pedestrian_runtime_snapshot() -> Dictionary:
 		return {}
 	return chunk_renderer.get_pedestrian_runtime_snapshot()
 
+func get_vehicle_runtime_snapshot() -> Dictionary:
+	if chunk_renderer == null or not chunk_renderer.has_method("get_vehicle_runtime_snapshot"):
+		return {}
+	return chunk_renderer.get_vehicle_runtime_snapshot()
+
 func get_navigation_runtime():
 	return _navigation_runtime
 
@@ -336,6 +341,7 @@ func get_streaming_snapshot() -> Dictionary:
 	snapshot["pedestrian_visible"] = are_pedestrians_visible()
 	snapshot["fps_overlay_visible"] = _fps_overlay_visible
 	snapshot["pedestrian_mode"] = str(snapshot.get("pedestrian_mode", (snapshot.get("pedestrian_budget_contract", {}) as Dictionary).get("preset", "lite")))
+	snapshot["vehicle_mode"] = str(snapshot.get("vehicle_mode", "lite"))
 	snapshot["ped_tier0_count"] = int(snapshot.get("pedestrian_tier0_total", snapshot.get("ped_tier0_count", 0)))
 	snapshot["ped_tier1_count"] = int(snapshot.get("pedestrian_tier1_total", snapshot.get("ped_tier1_count", 0)))
 	snapshot["ped_tier2_count"] = int(snapshot.get("pedestrian_tier2_total", snapshot.get("ped_tier2_count", 0)))
@@ -343,6 +349,13 @@ func get_streaming_snapshot() -> Dictionary:
 	snapshot["ped_page_cache_hit_count"] = int(snapshot.get("pedestrian_page_cache_hit_count", 0))
 	snapshot["ped_page_cache_miss_count"] = int(snapshot.get("pedestrian_page_cache_miss_count", 0))
 	snapshot["ped_duplicate_page_load_count"] = int(snapshot.get("pedestrian_duplicate_page_load_count", 0))
+	snapshot["veh_tier0_count"] = int(snapshot.get("vehicle_tier0_total", snapshot.get("veh_tier0_count", 0)))
+	snapshot["veh_tier1_count"] = int(snapshot.get("vehicle_tier1_total", snapshot.get("veh_tier1_count", 0)))
+	snapshot["veh_tier2_count"] = int(snapshot.get("vehicle_tier2_total", snapshot.get("veh_tier2_count", 0)))
+	snapshot["veh_tier3_count"] = int(snapshot.get("vehicle_tier3_total", snapshot.get("veh_tier3_count", 0)))
+	snapshot["veh_page_cache_hit_count"] = int(snapshot.get("vehicle_page_cache_hit_count", 0))
+	snapshot["veh_page_cache_miss_count"] = int(snapshot.get("vehicle_page_cache_miss_count", 0))
+	snapshot["veh_duplicate_page_load_count"] = int(snapshot.get("vehicle_duplicate_page_load_count", 0))
 	var current_chunk_id := str(snapshot.get("current_chunk_id", ""))
 	if current_chunk_id != "" and chunk_renderer != null and chunk_renderer.has_method("get_chunk_scene_stats"):
 		var current_chunk_stats: Dictionary = chunk_renderer.get_chunk_scene_stats(current_chunk_id)
@@ -384,8 +397,22 @@ func _build_hud_snapshot(collapsed: bool = false) -> Dictionary:
 			snapshot["crowd_threat_candidate_count"] = int(streaming_profile.get("crowd_threat_candidate_count", 0))
 			snapshot["crowd_chunk_commit_usec"] = int(streaming_profile.get("crowd_chunk_commit_usec", 0))
 			snapshot["crowd_tier1_transform_writes"] = int(streaming_profile.get("crowd_tier1_transform_writes", 0))
+			snapshot["traffic_update_avg_usec"] = int(streaming_profile.get("traffic_update_avg_usec", 0))
+			snapshot["traffic_spawn_avg_usec"] = int(streaming_profile.get("traffic_spawn_avg_usec", 0))
+			snapshot["traffic_render_commit_avg_usec"] = int(streaming_profile.get("traffic_render_commit_avg_usec", 0))
+			snapshot["traffic_active_state_count"] = int(streaming_profile.get("traffic_active_state_count", 0))
+			snapshot["traffic_step_usec"] = int(streaming_profile.get("traffic_step_usec", 0))
+			snapshot["traffic_rank_usec"] = int(streaming_profile.get("traffic_rank_usec", 0))
+			snapshot["traffic_snapshot_rebuild_usec"] = int(streaming_profile.get("traffic_snapshot_rebuild_usec", 0))
+			snapshot["traffic_tier1_count"] = int(streaming_profile.get("traffic_tier1_count", 0))
+			snapshot["traffic_tier2_count"] = int(streaming_profile.get("traffic_tier2_count", 0))
+			snapshot["traffic_tier3_count"] = int(streaming_profile.get("traffic_tier3_count", 0))
+			snapshot["traffic_chunk_commit_usec"] = int(streaming_profile.get("traffic_chunk_commit_usec", 0))
+			snapshot["traffic_tier1_transform_writes"] = int(streaming_profile.get("traffic_tier1_transform_writes", 0))
 		if chunk_renderer.has_method("get_pedestrian_runtime_summary"):
 			snapshot.merge(chunk_renderer.get_pedestrian_runtime_summary(), true)
+		if chunk_renderer.has_method("get_vehicle_runtime_summary"):
+			snapshot.merge(chunk_renderer.get_vehicle_runtime_summary(), true)
 	return snapshot
 
 func _ensure_combat_roots() -> void:
@@ -706,6 +733,7 @@ func get_performance_profile() -> Dictionary:
 		"minimap_cache_misses": _minimap_cache_misses,
 		"minimap_rebuild_count": _minimap_rebuild_count,
 		"pedestrian_mode": str(renderer_stats.get("pedestrian_mode", "lite")),
+		"vehicle_mode": str(renderer_stats.get("vehicle_mode", "lite")),
 		"crowd_update_max_usec": int(streaming_profile.get("crowd_update_max_usec", 0)),
 		"crowd_update_avg_usec": int(streaming_profile.get("crowd_update_avg_usec", 0)),
 		"crowd_update_sample_count": int(streaming_profile.get("crowd_update_sample_count", 0)),
@@ -739,6 +767,31 @@ func get_performance_profile() -> Dictionary:
 		"ped_page_cache_hit_count": int(renderer_stats.get("pedestrian_page_cache_hit_count", 0)),
 		"ped_page_cache_miss_count": int(renderer_stats.get("pedestrian_page_cache_miss_count", 0)),
 		"ped_duplicate_page_load_count": int(renderer_stats.get("pedestrian_duplicate_page_load_count", 0)),
+		"traffic_update_max_usec": int(streaming_profile.get("traffic_update_max_usec", 0)),
+		"traffic_update_avg_usec": int(streaming_profile.get("traffic_update_avg_usec", 0)),
+		"traffic_update_sample_count": int(streaming_profile.get("traffic_update_sample_count", 0)),
+		"traffic_spawn_max_usec": int(streaming_profile.get("traffic_spawn_max_usec", 0)),
+		"traffic_spawn_avg_usec": int(streaming_profile.get("traffic_spawn_avg_usec", 0)),
+		"traffic_spawn_sample_count": int(streaming_profile.get("traffic_spawn_sample_count", 0)),
+		"traffic_render_commit_max_usec": int(streaming_profile.get("traffic_render_commit_max_usec", 0)),
+		"traffic_render_commit_avg_usec": int(streaming_profile.get("traffic_render_commit_avg_usec", 0)),
+		"traffic_render_commit_sample_count": int(streaming_profile.get("traffic_render_commit_sample_count", 0)),
+		"traffic_active_state_count": int(streaming_profile.get("traffic_active_state_count", 0)),
+		"traffic_step_usec": int(streaming_profile.get("traffic_step_usec", 0)),
+		"traffic_rank_usec": int(streaming_profile.get("traffic_rank_usec", 0)),
+		"traffic_snapshot_rebuild_usec": int(streaming_profile.get("traffic_snapshot_rebuild_usec", 0)),
+		"traffic_tier1_count": int(streaming_profile.get("traffic_tier1_count", 0)),
+		"traffic_tier2_count": int(streaming_profile.get("traffic_tier2_count", 0)),
+		"traffic_tier3_count": int(streaming_profile.get("traffic_tier3_count", 0)),
+		"traffic_chunk_commit_usec": int(streaming_profile.get("traffic_chunk_commit_usec", 0)),
+		"traffic_tier1_transform_writes": int(streaming_profile.get("traffic_tier1_transform_writes", 0)),
+		"veh_tier0_count": int(renderer_stats.get("vehicle_tier0_total", 0)),
+		"veh_tier1_count": int(renderer_stats.get("vehicle_tier1_total", 0)),
+		"veh_tier2_count": int(renderer_stats.get("vehicle_tier2_total", 0)),
+		"veh_tier3_count": int(renderer_stats.get("vehicle_tier3_total", 0)),
+		"veh_page_cache_hit_count": int(renderer_stats.get("vehicle_page_cache_hit_count", 0)),
+		"veh_page_cache_miss_count": int(renderer_stats.get("vehicle_page_cache_miss_count", 0)),
+		"veh_duplicate_page_load_count": int(renderer_stats.get("vehicle_duplicate_page_load_count", 0)),
 		"streaming_prepare_profile_max_usec": int(streaming_profile.get("prepare_profile_max_usec", 0)),
 		"streaming_prepare_profile_avg_usec": int(streaming_profile.get("prepare_profile_avg_usec", 0)),
 		"streaming_prepare_profile_sample_count": int(streaming_profile.get("prepare_profile_sample_count", 0)),

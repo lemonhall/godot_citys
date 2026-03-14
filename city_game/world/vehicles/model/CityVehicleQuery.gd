@@ -114,6 +114,8 @@ func _build_spawn_result(chunk_key: Vector2i, district_id: String, district_prof
 			if spawn_slots.size() >= max_spawn_slots:
 				break
 			var sample: Dictionary = candidate_samples[selected_index]
+			if not _is_spawn_slot_spacing_clear(spawn_slots, sample, headway_m):
+				continue
 			var seed_salt := int(lane.get("seed", 0)) + selected_index * 53 + spawn_slots.size() * 19
 			spawn_slots.append({
 				"spawn_slot_id": "%s:%s:%02d" % [chunk_id, lane_id, selected_index],
@@ -140,12 +142,21 @@ func _build_spawn_result(chunk_key: Vector2i, district_id: String, district_prof
 	}
 
 func _resolve_selected_slot_count(candidate_count: int, density_factor: float) -> int:
-	if candidate_count <= 0 or density_factor <= 0.18:
+	if candidate_count <= 0 or density_factor <= 0.54:
 		return 0
 	var raw_count := int(round(float(candidate_count) * density_factor))
-	if raw_count <= 0 and density_factor >= 0.35:
+	if raw_count <= 0 and density_factor >= 0.6:
 		raw_count = 1
 	return clampi(raw_count, 0, candidate_count)
+
+func _is_spawn_slot_spacing_clear(existing_slots: Array[Dictionary], sample: Dictionary, min_headway_m: float) -> bool:
+	var candidate_position: Vector3 = sample.get("world_position", Vector3.ZERO)
+	var min_world_gap_m := maxf(min_headway_m * 0.72, 8.5)
+	for slot in existing_slots:
+		var existing_position: Vector3 = slot.get("world_position", Vector3.ZERO)
+		if existing_position.distance_to(candidate_position) < min_world_gap_m:
+			return false
+	return true
 
 func _pick_evenly_spaced_indices(total_count: int, selected_count: int) -> Array[int]:
 	var indices: Array[int] = []

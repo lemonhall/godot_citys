@@ -26,7 +26,7 @@ const ROAD_CLASS_MIN_HEADWAY_M := {
 	"service": 14.0,
 }
 
-const MAX_SPAWN_SLOTS_PER_CHUNK := 96
+const MAX_SPAWN_SLOTS_PER_CHUNK := 2
 
 func to_snapshot() -> Dictionary:
 	return {

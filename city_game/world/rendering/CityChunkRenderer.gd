@@ -9,6 +9,7 @@ const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMa
 const CityPedestrianTierController := preload("res://city_game/world/pedestrians/simulation/CityPedestrianTierController.gd")
 const CityPedestrianVisualCatalog := preload("res://city_game/world/pedestrians/rendering/CityPedestrianVisualCatalog.gd")
 const CityPedestrianVisualInstance := preload("res://city_game/world/pedestrians/rendering/CityPedestrianVisualInstance.gd")
+const CityVehicleTierController := preload("res://city_game/world/vehicles/simulation/CityVehicleTierController.gd")
 
 const PREPARE_BUDGET_PER_TICK := 1
 const MOUNT_BUDGET_PER_TICK := 1
@@ -95,7 +96,26 @@ var _crowd_rank_last_usec := 0
 var _crowd_snapshot_rebuild_last_usec := 0
 var _crowd_chunk_commit_last_usec := 0
 var _crowd_tier1_transform_writes := 0
+var _traffic_update_sample_count := 0
+var _traffic_update_total_usec := 0
+var _traffic_update_max_usec := 0
+var _traffic_update_last_usec := 0
+var _traffic_spawn_sample_count := 0
+var _traffic_spawn_total_usec := 0
+var _traffic_spawn_max_usec := 0
+var _traffic_spawn_last_usec := 0
+var _traffic_render_commit_sample_count := 0
+var _traffic_render_commit_total_usec := 0
+var _traffic_render_commit_max_usec := 0
+var _traffic_render_commit_last_usec := 0
+var _traffic_active_state_count := 0
+var _traffic_step_last_usec := 0
+var _traffic_rank_last_usec := 0
+var _traffic_snapshot_rebuild_last_usec := 0
+var _traffic_chunk_commit_last_usec := 0
+var _traffic_tier1_transform_writes := 0
 var _pedestrian_tier_controller = null
+var _vehicle_tier_controller = null
 var _last_pedestrian_player_position := Vector3.ZERO
 var _last_pedestrian_player_velocity := Vector3.ZERO
 var _last_pedestrian_player_context: Dictionary = {}
@@ -131,6 +151,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_last_retire_count = 0
 	_last_queue_process_frame = -1
 	_pedestrian_tier_controller = null
+	_vehicle_tier_controller = null
 	_last_pedestrian_player_position = Vector3.ZERO
 	_last_pedestrian_player_velocity = Vector3.ZERO
 	_last_pedestrian_player_context.clear()
@@ -144,6 +165,9 @@ func setup(config, world_data: Dictionary) -> void:
 		_pedestrian_visual_catalog = CityPedestrianVisualCatalog.new()
 		_pedestrian_tier_controller = CityPedestrianTierController.new()
 		_pedestrian_tier_controller.setup(_config, _world_data)
+	if _world_data.has("vehicle_query"):
+		_vehicle_tier_controller = CityVehicleTierController.new()
+		_vehicle_tier_controller.setup(_config, _world_data)
 	reset_streaming_profile_stats()
 	set_process(true)
 
@@ -186,6 +210,7 @@ func _notification(what: int) -> void:
 	_surface_page_provider.clear()
 	_terrain_page_provider.clear()
 	_pedestrian_tier_controller = null
+	_vehicle_tier_controller = null
 	_last_pedestrian_player_position = Vector3.ZERO
 	_last_pedestrian_player_velocity = Vector3.ZERO
 	_last_pedestrian_player_context.clear()
@@ -267,6 +292,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta
 	_process_streaming_queues_once_per_frame()
 	_update_lod_states(player_position)
 	_update_pedestrian_crowd(player_position, delta)
+	_update_vehicle_traffic(player_position, delta)
 
 func get_chunk_ids() -> Array[String]:
 	var ids: Array[String] = []
@@ -307,8 +333,11 @@ func get_streaming_budget_stats() -> Dictionary:
 
 func get_streaming_profile_stats() -> Dictionary:
 	var crowd_runtime_profile: Dictionary = {}
+	var traffic_runtime_profile: Dictionary = {}
 	if _pedestrian_tier_controller != null:
 		crowd_runtime_profile = (_pedestrian_tier_controller.get_global_summary().get("profile_stats", {}) as Dictionary).duplicate(true)
+	if _vehicle_tier_controller != null:
+		traffic_runtime_profile = (_vehicle_tier_controller.get_global_summary().get("profile_stats", {}) as Dictionary).duplicate(true)
 	return {
 		"prepare_profile_sample_count": _prepare_profile_sample_count,
 		"prepare_profile_total_usec": _prepare_profile_total_usec,
@@ -382,6 +411,30 @@ func get_streaming_profile_stats() -> Dictionary:
 		"crowd_threat_candidate_count": int(crowd_runtime_profile.get("crowd_threat_candidate_count", 0)),
 		"crowd_chunk_commit_usec": _crowd_chunk_commit_last_usec,
 		"crowd_tier1_transform_writes": _crowd_tier1_transform_writes,
+		"traffic_update_sample_count": _traffic_update_sample_count,
+		"traffic_update_total_usec": _traffic_update_total_usec,
+		"traffic_update_avg_usec": _average_usec(_traffic_update_total_usec, _traffic_update_sample_count),
+		"traffic_update_max_usec": _traffic_update_max_usec,
+		"traffic_update_last_usec": _traffic_update_last_usec,
+		"traffic_spawn_sample_count": _traffic_spawn_sample_count,
+		"traffic_spawn_total_usec": _traffic_spawn_total_usec,
+		"traffic_spawn_avg_usec": _average_usec(_traffic_spawn_total_usec, _traffic_spawn_sample_count),
+		"traffic_spawn_max_usec": _traffic_spawn_max_usec,
+		"traffic_spawn_last_usec": _traffic_spawn_last_usec,
+		"traffic_render_commit_sample_count": _traffic_render_commit_sample_count,
+		"traffic_render_commit_total_usec": _traffic_render_commit_total_usec,
+		"traffic_render_commit_avg_usec": _average_usec(_traffic_render_commit_total_usec, _traffic_render_commit_sample_count),
+		"traffic_render_commit_max_usec": _traffic_render_commit_max_usec,
+		"traffic_render_commit_last_usec": _traffic_render_commit_last_usec,
+		"traffic_active_state_count": int(traffic_runtime_profile.get("traffic_active_state_count", _traffic_active_state_count)),
+		"traffic_step_usec": int(traffic_runtime_profile.get("traffic_step_usec", _traffic_step_last_usec)),
+		"traffic_rank_usec": int(traffic_runtime_profile.get("traffic_rank_usec", _traffic_rank_last_usec)),
+		"traffic_snapshot_rebuild_usec": int(traffic_runtime_profile.get("traffic_snapshot_rebuild_usec", _traffic_snapshot_rebuild_last_usec)),
+		"traffic_tier1_count": int(traffic_runtime_profile.get("traffic_tier1_count", 0)),
+		"traffic_tier2_count": int(traffic_runtime_profile.get("traffic_tier2_count", 0)),
+		"traffic_tier3_count": int(traffic_runtime_profile.get("traffic_tier3_count", 0)),
+		"traffic_chunk_commit_usec": _traffic_chunk_commit_last_usec,
+		"traffic_tier1_transform_writes": _traffic_tier1_transform_writes,
 	}
 
 func reset_streaming_profile_stats() -> void:
@@ -436,6 +489,24 @@ func reset_streaming_profile_stats() -> void:
 	_crowd_snapshot_rebuild_last_usec = 0
 	_crowd_chunk_commit_last_usec = 0
 	_crowd_tier1_transform_writes = 0
+	_traffic_update_sample_count = 0
+	_traffic_update_total_usec = 0
+	_traffic_update_max_usec = 0
+	_traffic_update_last_usec = 0
+	_traffic_spawn_sample_count = 0
+	_traffic_spawn_total_usec = 0
+	_traffic_spawn_max_usec = 0
+	_traffic_spawn_last_usec = 0
+	_traffic_render_commit_sample_count = 0
+	_traffic_render_commit_total_usec = 0
+	_traffic_render_commit_max_usec = 0
+	_traffic_render_commit_last_usec = 0
+	_traffic_active_state_count = 0
+	_traffic_step_last_usec = 0
+	_traffic_rank_last_usec = 0
+	_traffic_snapshot_rebuild_last_usec = 0
+	_traffic_chunk_commit_last_usec = 0
+	_traffic_tier1_transform_writes = 0
 
 func get_renderer_stats() -> Dictionary:
 	var lod_mode_counts := {
@@ -449,10 +520,23 @@ func get_renderer_stats() -> Dictionary:
 	var pedestrian_tier1_total := 0
 	var pedestrian_tier2_total := 0
 	var pedestrian_tier3_total := 0
+	var vehicle_multimesh_instance_total := 0
+	var vehicle_tier0_total := 0
+	var vehicle_tier1_total := 0
+	var vehicle_tier2_total := 0
+	var vehicle_tier3_total := 0
 	var road_runtime_guard_totals := {
 		"road_overlay_child_count_total": 0,
 		"render_mesh_instance_count_total": 0,
 		"render_multimesh_instance_count_total": 0,
+		"path3d_count_total": 0,
+		"forbidden_runtime_node_count_total": 0,
+	}
+	var vehicle_runtime_guard_totals := {
+		"vehicle_root_child_count_total": 0,
+		"farfield_multimesh_instance_count_total": 0,
+		"tier2_node_count_total": 0,
+		"tier3_node_count_total": 0,
 		"path3d_count_total": 0,
 		"forbidden_runtime_node_count_total": 0,
 	}
@@ -468,19 +552,37 @@ func get_renderer_stats() -> Dictionary:
 		pedestrian_tier1_total += int(chunk_stats.get("pedestrian_tier1_count", 0))
 		pedestrian_tier2_total += int(chunk_stats.get("pedestrian_tier2_count", 0))
 		pedestrian_tier3_total += int(chunk_stats.get("pedestrian_tier3_count", 0))
+		vehicle_multimesh_instance_total += int(chunk_stats.get("vehicle_multimesh_instance_count", 0))
+		vehicle_tier1_total += int(chunk_stats.get("vehicle_tier1_count", 0))
+		vehicle_tier2_total += int(chunk_stats.get("vehicle_tier2_count", 0))
+		vehicle_tier3_total += int(chunk_stats.get("vehicle_tier3_count", 0))
 		var road_guard_stats: Dictionary = chunk_stats.get("road_runtime_guard_stats", {})
 		road_runtime_guard_totals["road_overlay_child_count_total"] += int(road_guard_stats.get("road_overlay_child_count", 0))
 		road_runtime_guard_totals["render_mesh_instance_count_total"] += int(road_guard_stats.get("render_mesh_instance_count", 0))
 		road_runtime_guard_totals["render_multimesh_instance_count_total"] += int(road_guard_stats.get("render_multimesh_instance_count", 0))
 		road_runtime_guard_totals["path3d_count_total"] += int(road_guard_stats.get("path3d_count", 0))
 		road_runtime_guard_totals["forbidden_runtime_node_count_total"] += int(road_guard_stats.get("forbidden_runtime_node_count", 0))
+		var vehicle_guard_stats: Dictionary = chunk_stats.get("vehicle_runtime_guard_stats", {})
+		vehicle_runtime_guard_totals["vehicle_root_child_count_total"] += int(vehicle_guard_stats.get("vehicle_root_child_count", 0))
+		vehicle_runtime_guard_totals["farfield_multimesh_instance_count_total"] += int(vehicle_guard_stats.get("farfield_multimesh_instance_count", 0))
+		vehicle_runtime_guard_totals["tier2_node_count_total"] += int(vehicle_guard_stats.get("tier2_node_count", 0))
+		vehicle_runtime_guard_totals["tier3_node_count_total"] += int(vehicle_guard_stats.get("tier3_node_count", 0))
+		vehicle_runtime_guard_totals["path3d_count_total"] += int(vehicle_guard_stats.get("path3d_count", 0))
+		vehicle_runtime_guard_totals["forbidden_runtime_node_count_total"] += int(vehicle_guard_stats.get("forbidden_runtime_node_count", 0))
 	var pedestrian_budget_contract := {}
 	var pedestrian_global_snapshot := {}
 	var pedestrian_runtime_snapshot := {}
+	var vehicle_budget_contract := {}
+	var vehicle_global_snapshot := {}
+	var vehicle_runtime_snapshot := {}
 	if _pedestrian_tier_controller != null:
 		pedestrian_budget_contract = _pedestrian_tier_controller.get_budget_contract()
 		pedestrian_global_snapshot = _pedestrian_tier_controller.get_global_summary()
 		pedestrian_runtime_snapshot = _pedestrian_tier_controller.get_runtime_summary()
+	if _vehicle_tier_controller != null:
+		vehicle_budget_contract = _vehicle_tier_controller.get_budget_contract()
+		vehicle_global_snapshot = _vehicle_tier_controller.get_global_summary()
+		vehicle_runtime_snapshot = _vehicle_tier_controller.get_runtime_summary()
 	var stats := {
 		"active_rendered_chunk_count": get_chunk_scene_count(),
 		"multimesh_instance_total": multimesh_instance_total,
@@ -496,7 +598,18 @@ func get_renderer_stats() -> Dictionary:
 		"pedestrian_page_cache_hit_count": int(pedestrian_runtime_snapshot.get("page_cache_hit_count", 0)),
 		"pedestrian_page_cache_miss_count": int(pedestrian_runtime_snapshot.get("page_cache_miss_count", 0)),
 		"pedestrian_duplicate_page_load_count": int(pedestrian_runtime_snapshot.get("duplicate_page_load_count", 0)),
+		"vehicle_multimesh_instance_total": vehicle_multimesh_instance_total,
+		"vehicle_tier0_total": int(vehicle_global_snapshot.get("tier0_count", vehicle_tier0_total)),
+		"vehicle_tier1_total": int(vehicle_global_snapshot.get("tier1_count", vehicle_tier1_total)),
+		"vehicle_tier2_total": int(vehicle_global_snapshot.get("tier2_count", vehicle_tier2_total)),
+		"vehicle_tier3_total": int(vehicle_global_snapshot.get("tier3_count", vehicle_tier3_total)),
+		"vehicle_active_state_count": int(vehicle_global_snapshot.get("active_state_count", 0)),
+		"vehicle_mode": str(vehicle_budget_contract.get("preset", "lite")),
+		"vehicle_page_cache_hit_count": int(vehicle_runtime_snapshot.get("page_cache_hit_count", 0)),
+		"vehicle_page_cache_miss_count": int(vehicle_runtime_snapshot.get("page_cache_miss_count", 0)),
+		"vehicle_duplicate_page_load_count": int(vehicle_runtime_snapshot.get("duplicate_page_load_count", 0)),
 		"road_runtime_guard_totals": road_runtime_guard_totals.duplicate(true),
+		"vehicle_runtime_guard_totals": vehicle_runtime_guard_totals.duplicate(true),
 		"lod_mode_counts": lod_mode_counts,
 	}
 	stats.merge(get_streaming_budget_stats(), true)
@@ -542,6 +655,36 @@ func get_pedestrian_runtime_summary() -> Dictionary:
 	runtime_summary["ped_page_cache_hit_count"] = int(pedestrian_runtime_summary.get("page_cache_hit_count", 0))
 	runtime_summary["ped_page_cache_miss_count"] = int(pedestrian_runtime_summary.get("page_cache_miss_count", 0))
 	runtime_summary["ped_duplicate_page_load_count"] = int(pedestrian_runtime_summary.get("duplicate_page_load_count", 0))
+	return runtime_summary
+
+func get_vehicle_runtime_snapshot() -> Dictionary:
+	if _vehicle_tier_controller == null or not _vehicle_tier_controller.has_method("get_runtime_snapshot"):
+		return {}
+	return _vehicle_tier_controller.get_runtime_snapshot()
+
+func get_vehicle_runtime_summary() -> Dictionary:
+	var runtime_summary := {
+		"vehicle_mode": "lite",
+		"veh_tier0_count": 0,
+		"veh_tier1_count": 0,
+		"veh_tier2_count": 0,
+		"veh_tier3_count": 0,
+		"veh_page_cache_hit_count": 0,
+		"veh_page_cache_miss_count": 0,
+		"veh_duplicate_page_load_count": 0,
+	}
+	if _vehicle_tier_controller == null:
+		return runtime_summary
+	var budget_contract: Dictionary = _vehicle_tier_controller.get_budget_contract()
+	var vehicle_runtime_summary: Dictionary = _vehicle_tier_controller.get_runtime_summary()
+	runtime_summary["vehicle_mode"] = str(budget_contract.get("preset", "lite"))
+	runtime_summary["veh_tier0_count"] = int(vehicle_runtime_summary.get("tier0_count", 0))
+	runtime_summary["veh_tier1_count"] = int(vehicle_runtime_summary.get("tier1_count", 0))
+	runtime_summary["veh_tier2_count"] = int(vehicle_runtime_summary.get("tier2_count", 0))
+	runtime_summary["veh_tier3_count"] = int(vehicle_runtime_summary.get("tier3_count", 0))
+	runtime_summary["veh_page_cache_hit_count"] = int(vehicle_runtime_summary.get("page_cache_hit_count", 0))
+	runtime_summary["veh_page_cache_miss_count"] = int(vehicle_runtime_summary.get("page_cache_miss_count", 0))
+	runtime_summary["veh_duplicate_page_load_count"] = int(vehicle_runtime_summary.get("duplicate_page_load_count", 0))
 	return runtime_summary
 
 func set_pedestrians_visible(is_visible: bool) -> void:
@@ -697,6 +840,10 @@ func _process_mount_budget() -> void:
 			var chunk_snapshot: Dictionary = _pedestrian_tier_controller.get_chunk_snapshot_ref(chunk_id) if _pedestrian_tier_controller.has_method("get_chunk_snapshot_ref") else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id)
 			chunk_scene.apply_pedestrian_chunk_snapshot(chunk_snapshot)
 			chunk_snapshot["dirty"] = false
+		if _vehicle_tier_controller != null and chunk_scene.has_method("apply_vehicle_chunk_snapshot"):
+			var vehicle_chunk_snapshot: Dictionary = _vehicle_tier_controller.get_chunk_snapshot_ref(chunk_id) if _vehicle_tier_controller.has_method("get_chunk_snapshot_ref") else _vehicle_tier_controller.get_chunk_snapshot(chunk_id)
+			chunk_scene.apply_vehicle_chunk_snapshot(vehicle_chunk_snapshot)
+			vehicle_chunk_snapshot["dirty"] = false
 		if chunk_scene.has_method("set_pedestrian_visibility"):
 			chunk_scene.set_pedestrian_visibility(_pedestrian_visibility_enabled)
 		_record_mount_setup_sample(Time.get_ticks_usec() - setup_started_usec)
@@ -909,6 +1056,33 @@ func _update_pedestrian_crowd(player_position: Vector3, delta: float) -> void:
 	_crowd_tier1_transform_writes = tier1_transform_writes
 	_record_crowd_render_commit_sample(_crowd_chunk_commit_last_usec)
 
+func _update_vehicle_traffic(player_position: Vector3, delta: float) -> void:
+	if _vehicle_tier_controller == null:
+		return
+	var traffic_snapshot: Dictionary = _vehicle_tier_controller.update_active_chunks(_last_active_chunk_entries, player_position, delta)
+	var traffic_profile_stats: Dictionary = traffic_snapshot.get("profile_stats", {})
+	_record_traffic_spawn_sample(int(traffic_profile_stats.get("traffic_spawn_usec", 0)))
+	_record_traffic_update_sample(int(traffic_profile_stats.get("traffic_update_usec", 0)))
+	_traffic_active_state_count = int(traffic_profile_stats.get("traffic_active_state_count", traffic_snapshot.get("active_state_count", 0)))
+	_traffic_step_last_usec = int(traffic_profile_stats.get("traffic_step_usec", 0))
+	_traffic_rank_last_usec = int(traffic_profile_stats.get("traffic_rank_usec", 0))
+	_traffic_snapshot_rebuild_last_usec = int(traffic_profile_stats.get("traffic_snapshot_rebuild_usec", 0))
+	var render_commit_started_usec := Time.get_ticks_usec()
+	var tier1_transform_writes := 0
+	var applied_chunk_count := 0
+	for chunk_id in get_chunk_ids():
+		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
+		if chunk_scene.has_method("apply_vehicle_chunk_snapshot"):
+			var chunk_snapshot: Dictionary = _vehicle_tier_controller.get_chunk_snapshot_ref(chunk_id) if _vehicle_tier_controller.has_method("get_chunk_snapshot_ref") else _vehicle_tier_controller.get_chunk_snapshot(chunk_id)
+			if bool(chunk_snapshot.get("dirty", true)):
+				tier1_transform_writes += int(chunk_scene.apply_vehicle_chunk_snapshot(chunk_snapshot))
+				chunk_snapshot["dirty"] = false
+				chunk_snapshot["farfield_render_dirty"] = false
+				applied_chunk_count += 1
+	_traffic_chunk_commit_last_usec = int(Time.get_ticks_usec() - render_commit_started_usec) if applied_chunk_count > 0 else 0
+	_traffic_tier1_transform_writes = tier1_transform_writes
+	_record_traffic_render_commit_sample(_traffic_chunk_commit_last_usec)
+
 func _has_pending_streaming_work() -> bool:
 	return not _pending_prepare.is_empty() \
 		or not _pending_surface_jobs.is_empty() \
@@ -943,6 +1117,7 @@ func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 		"world_seed": int(_config.base_seed),
 		"road_graph": _world_data.get("road_graph"),
 		"pedestrian_chunk_snapshot": {},
+		"vehicle_chunk_snapshot": {},
 	}
 
 func _chunk_center_from_key(chunk_key: Vector2i) -> Vector3:
@@ -1029,6 +1204,30 @@ func _record_crowd_render_commit_sample(duration_usec: int) -> void:
 	_crowd_render_commit_total_usec += duration_usec
 	_crowd_render_commit_max_usec = maxi(_crowd_render_commit_max_usec, duration_usec)
 	_crowd_render_commit_last_usec = duration_usec
+
+func _record_traffic_update_sample(duration_usec: int) -> void:
+	if duration_usec < 0:
+		return
+	_traffic_update_sample_count += 1
+	_traffic_update_total_usec += duration_usec
+	_traffic_update_max_usec = maxi(_traffic_update_max_usec, duration_usec)
+	_traffic_update_last_usec = duration_usec
+
+func _record_traffic_spawn_sample(duration_usec: int) -> void:
+	if duration_usec < 0:
+		return
+	_traffic_spawn_sample_count += 1
+	_traffic_spawn_total_usec += duration_usec
+	_traffic_spawn_max_usec = maxi(_traffic_spawn_max_usec, duration_usec)
+	_traffic_spawn_last_usec = duration_usec
+
+func _record_traffic_render_commit_sample(duration_usec: int) -> void:
+	if duration_usec < 0:
+		return
+	_traffic_render_commit_sample_count += 1
+	_traffic_render_commit_total_usec += duration_usec
+	_traffic_render_commit_max_usec = maxi(_traffic_render_commit_max_usec, duration_usec)
+	_traffic_render_commit_last_usec = duration_usec
 
 func _average_usec(total_usec: int, sample_count: int) -> int:
 	if sample_count <= 0:

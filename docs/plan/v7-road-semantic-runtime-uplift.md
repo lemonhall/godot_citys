@@ -2,7 +2,7 @@
 
 ## Goal
 
-把 `godot-road-generator` 中可复用的道路语义资产下沉到当前项目的 shared road pipeline，让 `road_graph`、chunk road layout、road surface、bridge mesh 与后续 lane graph / signage / vehicle 系统都能查询同一份 `section / lane / intersection` contract，同时继续守住 `16.67ms/frame` 的运行期红线。
+把 `godot-road-generator` 中可复用的道路语义资产下沉到当前项目的 shared road pipeline，让 `road_graph`、chunk road layout、road surface、bridge mesh 与后续行人 lane graph / 交通标识系统 / 车辆系统都能查询同一份 `section / lane / intersection` contract，同时继续守住 `16.67ms/frame` 的运行期红线。
 
 ## PRD Trace
 
@@ -29,7 +29,7 @@
 - 不移植 `RoadManager`、`RoadContainer`、`RoadPoint`、`RoadSegment`、`RoadIntersection`、`RoadLane` 这一套 reference runtime 节点体系。
 - 不引入 `Path3D` lane runtime、`RoadLaneAgent`、per-road / per-lane scene tree。
 - 不把当前普通地面道路从 terrain overlay / surface page 回退成 per-segment `MeshInstance3D` 管线。
-- 不在 `v7` 直接完成车辆交通仿真、最终 signage 系统、道路编辑器工作流或 Terrain3D 集成。
+- 不在 `v7` 直接完成车辆交通仿真、最终交通标识系统、道路编辑器工作流或 Terrain3D 集成。
 
 ## Acceptance
 
@@ -92,12 +92,12 @@
 ## Risks
 
 - 如果 lane / intersection semantics 设计成 consumer 私有字段，而不是 shared contract，会再次把语义分裂到多个子系统里。
-- 如果交叉口仍以 endpoint cluster 几何猜测为主，后续 signage / vehicle / lane graph 会继续复制脆弱逻辑。
+- 如果交叉口仍以 endpoint cluster 几何猜测为主，后续交通标识系统 / 车辆系统 / 行人 lane graph 会继续复制脆弱逻辑。
 - 如果为了“更像 reference repo”而引入 `Path3D` lane tree 或 per-road scene nodes，运行期红线会被直接打穿。
 - 如果只加数据字段而没有正式 consumer 接管，`v7` 会变成“有 contract 但没人用”的空心升级。
 
 ## Progress Notes
 
 - 2026-03-14 closeout 口径说明：本节保留 `M1-M4` 阶段性历史快照用于追溯；`v7` closeout 的唯一 fresh rerun 真值表统一见 `v7-m4-verification-2026-03-14.md`。
-- 2026-03-14 `M4` scoped closeout：新增 `tests/world/test_city_road_runtime_node_budget.gd`，把“无 `Path3D`、无 `RoadLane / RoadSegment / RoadIntersection / RoadManager` runtime node、overlay child count 固定、render mesh 不退回 per-segment mesh”写成正式 guard contract；`CityChunkScene` 与 `CityChunkRenderer` 现已输出 `road_runtime_guard_stats / road_runtime_guard_totals`。2026-03-14 fresh isolated rerun 已通过：`test_city_road_runtime_node_budget.gd`、`test_city_chunk_setup_profile_breakdown.gd`、`test_city_runtime_performance_profile.gd`、`test_city_first_visit_performance_profile.gd`，其中 chunk setup `total_usec = 4794`、`road_overlay_usec = 973`、`ground_usec = 1226`；warm runtime `wall_frame_avg_usec = 7898`、`streaming_mount_setup_avg_usec = 3432`、`update_streaming_avg_usec = 7210`；first-visit `wall_frame_avg_usec = 14041`、`streaming_mount_setup_avg_usec = 4746`、`update_streaming_avg_usec = 13189`。补充 contract/guard 回归也已通过：`test_city_road_semantic_contract.gd`、`test_city_road_intersection_topology.gd`、`test_city_road_layout_semantic_takeover.gd`、`test_city_chunk_renderer.gd`、`test_city_streaming_profile_stats.gd`、`test_city_bridge_deck_collision.gd`、`test_city_ground_road_overlay_material.gd`、`test_city_shared_graph_road_takeover.gd`。结论：`v7` 已按本期 scoped acceptance 收口，shared semantic contract 没有把 runtime 重新拉回 node-driven 道路体系，而且 warm / cold / chunk setup 三条性能线都以 fresh rerun 方式守住了 `M4` 阈值；但 richer `ordered_branches / branch_connection_semantics` downstream consumerization 仍留给后续版本。
+- 2026-03-14 `M4` scoped closeout：新增 `tests/world/test_city_road_runtime_node_budget.gd`，把“无 `Path3D`、无 `RoadLane / RoadSegment / RoadIntersection / RoadManager` runtime node、overlay child count 固定、render mesh 不退回 per-segment mesh”写成正式 guard contract；`CityChunkScene` 与 `CityChunkRenderer` 现已输出 `road_runtime_guard_stats / road_runtime_guard_totals`。2026-03-14 fresh isolated rerun 已通过：`test_city_road_runtime_node_budget.gd`、`test_city_chunk_setup_profile_breakdown.gd`、`test_city_runtime_performance_profile.gd`、`test_city_first_visit_performance_profile.gd`，其中 chunk setup `total_usec = 4794`、`road_overlay_usec = 973`、`ground_usec = 1226`；warm runtime `wall_frame_avg_usec = 7898`、`streaming_mount_setup_avg_usec = 3432`、`update_streaming_avg_usec = 7210`；first-visit `wall_frame_avg_usec = 14041`、`streaming_mount_setup_avg_usec = 4746`、`update_streaming_avg_usec = 13189`。补充 contract/guard 回归也已通过：`test_city_road_semantic_contract.gd`、`test_city_road_intersection_topology.gd`、`test_city_road_layout_semantic_takeover.gd`、`test_city_chunk_renderer.gd`、`test_city_streaming_profile_stats.gd`、`test_city_bridge_deck_collision.gd`、`test_city_ground_road_overlay_material.gd`、`test_city_shared_graph_road_takeover.gd`。结论：`v7` 已按本期 scoped acceptance 收口，shared semantic contract 没有把 runtime 重新拉回 node-driven 道路体系，而且 warm / cold / chunk setup 三条性能线都以 fresh rerun 方式守住了 `M4` 阈值；但 richer `ordered_branches / branch_connection_semantics` downstream consumerization 仍留给后续交通标识系统 / 车辆系统 / 更丰富的行人系统版本。
 - 2026-03-14 `M3` closeout：新增 `tests/world/test_city_road_layout_semantic_takeover.gd`，用故意冲突的 legacy 字段与 `section_semantics` 做反作弊断言，确认 `CityRoadLayoutBuilder` 现已以 `lane_schema / edge_profile` 作为 chunk segment 的宽度、lane count 与 median 来源；`CityRoadMaskBuilder` 与 `CityRoadMeshBuilder` 现已正式消费 `marking_profile_id / surface_half_width_m / median_width_m`，其中 mask stripe、bridge stripe 与 bridge collision width 都会跟随 semantic contract；`CityChunkProfileBuilder` 现已输出 `road_semantic_consumer_stats`，让 profile 自身也成为正式 consumer。fresh world 回归已通过：`test_city_road_layout_semantic_takeover.gd`、`test_city_shared_graph_road_takeover.gd`、`test_city_bridge_deck_collision.gd`、`test_city_road_semantic_contract.gd`、`test_city_road_section_templates.gd`、`test_city_road_mask_profile_breakdown.gd`、`test_city_road_surface_lod.gd`、`test_city_chunk_profile_prepare_breakdown.gd`、`test_city_ground_road_overlay_material.gd`、`test_city_surface_page_contract.gd`、`test_city_surface_page_runtime_sharing.gd`、`test_city_pedestrian_lane_graph.gd`、`test_city_pedestrian_lane_graph_continuity.gd`、`test_city_pedestrian_query_local_lane_sampling.gd`。fresh isolated profiling 结果为：`test_city_chunk_setup_profile_breakdown.gd` `total_usec = 5568`、`road_overlay_usec = 971`、`ground_usec = 1189`；`test_city_runtime_performance_profile.gd` 两轮分别为 `9499 / 4930 / 9039` 与 `10195 / 4911 / 9761`；`test_city_first_visit_performance_profile.gd` 两轮分别为 `16192 / 5521 / 15317` 与 `16633 / 5174 / 15597`（格式：`wall_frame_avg_usec / streaming_mount_setup_avg_usec / update_streaming_avg_usec`）。结论：`M3` 已完成，但 `M4` 仍必须继续处理 runtime guard，因为 cold-path `update_streaming` 仍高于 `14500` 目标，而且 warm / cold 运行期都高于 `M2` closeout 基线。

@@ -11,7 +11,7 @@
 - `PRD-0001` 已经完成大世界、shared `road_graph`、chunk streaming、terrain/page cache 和 `v7` 的道路语义 contract。
 - `PRD-0002` 已经把 pedestrian crowd 做成 `query + layered runtime + renderer + profile guard` 的结构，并在 `ECN-0015` 中明确把人口目标改成 vehicle-aware 口径，为车辆系统保留预算空间。
 - `v7` 已将 `section_semantics`、`intersection_type`、`ordered_branches`、`branch_connection_semantics` 上游化，但这些 richer contracts 目前还没有正式落到车辆系统 consumer。
-- 2026-03-14 新增的 8 个车辆 `glb` 已经被归档到 `city_game/assets/vehicles/`，并建立了尺度 manifest；说明素材基础已经具备，但运行期系统仍不存在。
+- 2026-03-14 新增的 9 个车辆 `glb` 已经被归档到 `city_game/assets/vehicles/`，并建立了尺度 manifest；其中 `taxi_a` 已补进默认 civilian 资产池。说明素材基础已经具备，但运行期系统仍不存在。
 
 ## Scope
 
@@ -63,7 +63,7 @@
 **验收口径**：
 
 - 自动化测试至少断言：仓库根目录不再存在车辆 `glb` 素材；全部模型已归档到正式资产目录，并被 manifest 全覆盖。
-- 自动化测试至少断言：manifest 对 8 个模型全部显式记录 `source_dimensions_m`、`source_ground_offset_m`、`target_length_m` 与稳定 `model_id`。
+- 自动化测试至少断言：manifest 对 9 个模型全部显式记录 `source_dimensions_m`、`source_ground_offset_m`、`target_length_m` 与稳定 `model_id`。
 - 反作弊条款：不得通过“只在文档里写目标尺寸”“只归档一部分模型”或“把素材藏进临时目录但不建 manifest”来宣称完成。
 
 ### REQ-0003-002 行车世界配置与确定性分布

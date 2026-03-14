@@ -58,6 +58,31 @@
       ]
     },
     {
+      "model_id": "taxi_a",
+      "file": "res://city_game/assets/vehicles/civilian/taxi_a.glb",
+      "traffic_role": "civilian",
+      "vehicle_class": "taxi_sedan",
+      "length_axis": "z",
+      "up_axis": "y",
+      "source_dimensions_m": {
+        "length_m": 4.2207,
+        "width_m": 1.8074,
+        "height_m": 1.3105
+      },
+      "source_ground_offset_m": 0.0109,
+      "target_length_m": 4.45,
+      "runtime_uniform_scale": 1.0543,
+      "final_dimensions_m": {
+        "length_m": 4.45,
+        "width_m": 1.9055,
+        "height_m": 1.3817
+      },
+      "notes": [
+        "City taxi baseline using the new Taxi.glb source asset.",
+        "Very close to car_b in footprint but with a slightly taller cabin silhouette."
+      ]
+    },
+    {
       "model_id": "car_c",
       "file": "res://city_game/assets/vehicles/civilian/car_c.glb",
       "traffic_role": "civilian",

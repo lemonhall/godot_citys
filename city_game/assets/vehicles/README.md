@@ -13,6 +13,7 @@
 
 - `civilian/car_a.glb`
 - `civilian/car_b.glb`
+- `civilian/taxi_a.glb`
 - `civilian/car_c.glb`
 - `civilian/sports_car_a.glb`
 - `civilian/suv_a.glb`
@@ -29,7 +30,7 @@
 ## 尺度口径
 
 - `vehicle_model_manifest.json` 中的 `source_dimensions_m` 来自 `glb` 几何 AABB 的实测结果，口径为 `length / width / height`
-- 当前 8 个模型整体已经接近“米”尺度，但不同素材之间存在明显长宽高风格差异，因此只记录统一长度目标与 `uniform scale`，不做非等比拉伸
+- 当前 9 个模型整体已经接近“米”尺度，但不同素材之间存在明显长宽高风格差异，因此只记录统一长度目标与 `uniform scale`，不做非等比拉伸
 - `source_ground_offset_m` 定义为“把模型底部对齐到地面时需要补偿的 Y 偏移”；正值表示模型底部低于原点，负值表示模型整体悬空于原点之上
 - `runtime_uniform_scale` 只是 `v8 M0` 的现实尺度基线，不是最终玩法承诺；真正接入运行期时仍要与道路宽度、交叉口半径、停车/等待距离一起复核
 
@@ -37,6 +38,7 @@
 
 - `car_a`：紧凑型两厢，源尺寸 `3.3096 x 1.6384 x 1.1456m`，建议目标长度 `3.95m`
 - `car_b`：普通轿车，源尺寸 `4.2207 x 1.8074 x 1.1766m`，建议目标长度 `4.45m`
+- `taxi_a`：出租车轿车，源尺寸 `4.2207 x 1.8074 x 1.3105m`，建议目标长度 `4.45m`
 - `car_c`：紧凑型轿车，源尺寸 `3.8623 x 1.7754 x 1.2079m`，建议目标长度 `4.10m`
 - `sports_car_a`：跑车，源尺寸 `5.6551 x 2.6706 x 1.8647m`，建议目标长度 `4.60m`
 - `suv_a`：SUV，源尺寸 `4.2093 x 2.1111 x 1.5279m`，建议目标长度 `4.60m`

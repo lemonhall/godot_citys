@@ -60,6 +60,26 @@ func _run() -> void:
 		return
 	if not T.require_true(self, pedestrian_batch.multimesh.instance_count > 0, "Tier 1 pedestrian batch must contain visible instances"):
 		return
+	var batch_mesh: Mesh = pedestrian_batch.multimesh.mesh
+	if not T.require_true(self, batch_mesh != null, "Tier 1 pedestrian batch must expose a base mesh"):
+		return
+	if not T.require_true(self, pedestrian_batch.has_meta("pedestrian_tier1_visual_source"), "Tier 1 pedestrian batch must expose its visual source contract"):
+		return
+	if not T.require_true(self, String(pedestrian_batch.get_meta("pedestrian_tier1_visual_source", "")).begins_with("proxy_scene:"), "Tier 1 pedestrian batch must reuse a dedicated proxy scene instead of a stretched BoxMesh"):
+		return
+	if not T.require_true(self, pedestrian_batch.has_meta("pedestrian_tier1_proxy_scale_profile"), "Tier 1 pedestrian batch must expose a proxy scale profile contract"):
+		return
+	var proxy_scale_profile: Dictionary = pedestrian_batch.get_meta("pedestrian_tier1_proxy_scale_profile", {})
+	if not T.require_true(self, is_equal_approx(float(proxy_scale_profile.get("height_scale", 0.0)), 1.0), "Tier 1 pedestrian proxy height scale must stay at 1.0 so the fixed proxy is not stretched at runtime"):
+		return
+	if not T.require_true(self, is_equal_approx(float(proxy_scale_profile.get("width_scale", 0.0)), 1.0), "Tier 1 pedestrian proxy width scale must stay at 1.0 so the fixed proxy is not stretched at runtime"):
+		return
+	if not T.require_true(self, is_equal_approx(float(proxy_scale_profile.get("depth_scale", 0.0)), 1.0), "Tier 1 pedestrian proxy depth scale must stay at 1.0 so the fixed proxy is not stretched at runtime"):
+		return
+	if not T.require_true(self, _mesh_aabb_size(batch_mesh).y > 2.5, "Tier 1 pedestrian batch must keep a human-height volumetric mesh instead of a short placeholder box"):
+		return
+	if not T.require_true(self, _collect_unique_axis_levels(batch_mesh, "y").size() >= 5, "Tier 1 pedestrian proxy mesh must expose a readable head-torso-leg silhouette instead of a single rod"):
+		return
 
 	var chunk_crowd_stats: Dictionary = chunk_scene.get_pedestrian_crowd_stats()
 	print("CITY_PEDESTRIAN_BATCH_CHUNK %s" % visible_chunk_id)
@@ -101,3 +121,33 @@ func _find_visible_pedestrian_chunk(renderer) -> Dictionary:
 		"chunk_id": "",
 		"chunk_scene": null,
 	}
+
+func _mesh_aabb_size(mesh: Mesh) -> Vector3:
+	if mesh == null:
+		return Vector3.ZERO
+	return mesh.get_aabb().size
+
+func _collect_unique_axis_levels(mesh: Mesh, axis: String) -> Array:
+	var unique_levels: Array = []
+	if mesh == null:
+		return unique_levels
+	for surface_index in range(mesh.get_surface_count()):
+		var surface_arrays := mesh.surface_get_arrays(surface_index)
+		var vertices: PackedVector3Array = surface_arrays[Mesh.ARRAY_VERTEX]
+		for vertex in vertices:
+			var coordinate := 0.0
+			match axis:
+				"x":
+					coordinate = vertex.x
+				"z":
+					coordinate = vertex.z
+				_:
+					coordinate = vertex.y
+			var found := false
+			for existing_level_variant in unique_levels:
+				if is_equal_approx(float(existing_level_variant), coordinate):
+					found = true
+					break
+			if not found:
+				unique_levels.append(coordinate)
+	return unique_levels

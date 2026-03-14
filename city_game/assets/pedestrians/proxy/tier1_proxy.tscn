@@ -1,0 +1,46 @@
+[gd_scene load_steps=6 format=3]
+
+[sub_resource type="BoxMesh" id="1"]
+size = Vector3(0.42, 0.42, 0.42)
+
+[sub_resource type="BoxMesh" id="2"]
+size = Vector3(0.72, 1.18, 0.36)
+
+[sub_resource type="BoxMesh" id="3"]
+size = Vector3(0.62, 0.34, 0.32)
+
+[sub_resource type="BoxMesh" id="4"]
+size = Vector3(0.18, 1.1, 0.18)
+
+[sub_resource type="BoxMesh" id="5"]
+size = Vector3(0.22, 1.02, 0.22)
+
+[node name="Tier1PedestrianProxy" type="Node3D"]
+
+[node name="Head" type="MeshInstance3D" parent="."]
+position = Vector3(0, 2.89, 0)
+mesh = SubResource("1")
+
+[node name="Torso" type="MeshInstance3D" parent="."]
+position = Vector3(0, 2.02, 0)
+mesh = SubResource("2")
+
+[node name="Pelvis" type="MeshInstance3D" parent="."]
+position = Vector3(0, 1.2, 0)
+mesh = SubResource("3")
+
+[node name="LeftArm" type="MeshInstance3D" parent="."]
+position = Vector3(-0.45, 1.93, 0)
+mesh = SubResource("4")
+
+[node name="RightArm" type="MeshInstance3D" parent="."]
+position = Vector3(0.45, 1.93, 0)
+mesh = SubResource("4")
+
+[node name="LeftLeg" type="MeshInstance3D" parent="."]
+position = Vector3(-0.17, 0.51, 0)
+mesh = SubResource("5")
+
+[node name="RightLeg" type="MeshInstance3D" parent="."]
+position = Vector3(0.17, 0.51, 0)
+mesh = SubResource("5")

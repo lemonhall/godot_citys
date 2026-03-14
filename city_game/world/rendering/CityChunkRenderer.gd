@@ -530,12 +530,12 @@ func get_pedestrian_runtime_summary() -> Dictionary:
 	runtime_summary["ped_duplicate_page_load_count"] = int(pedestrian_runtime_summary.get("duplicate_page_load_count", 0))
 	return runtime_summary
 
-func set_pedestrians_visible(visible: bool) -> void:
-	_pedestrian_visibility_enabled = visible
+func set_pedestrians_visible(is_visible: bool) -> void:
+	_pedestrian_visibility_enabled = is_visible
 	for chunk_id in get_chunk_ids():
 		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
 		if chunk_scene.has_method("set_pedestrian_visibility"):
-			chunk_scene.set_pedestrian_visibility(visible)
+			chunk_scene.set_pedestrian_visibility(is_visible)
 
 func are_pedestrians_visible() -> bool:
 	return _pedestrian_visibility_enabled

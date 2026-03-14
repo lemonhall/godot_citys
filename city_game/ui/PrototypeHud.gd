@@ -50,8 +50,8 @@ func get_minimap_state() -> Dictionary:
 		"snapshot": _minimap_snapshot.duplicate(true),
 	}
 
-func set_fps_overlay_visible(visible: bool) -> void:
-	_fps_overlay_state["visible"] = visible
+func set_fps_overlay_visible(is_visible: bool) -> void:
+	_fps_overlay_state["visible"] = is_visible
 	_apply_fps_overlay_state()
 
 func set_fps_overlay_sample(fps: float) -> void:

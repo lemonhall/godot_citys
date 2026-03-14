@@ -258,7 +258,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	for entry_variant in active_chunk_entries:
 		active_chunk_ids.append(str((entry_variant as Dictionary).get("chunk_id", "")))
 	var spawn_started_usec := Time.get_ticks_usec()
-	var streaming_snapshot: Dictionary = _pedestrian_streamer.sync_active_chunks(active_chunk_entries)
+	_pedestrian_streamer.sync_active_chunks(active_chunk_entries)
 	var crowd_spawn_usec := Time.get_ticks_usec() - spawn_started_usec
 	if _reaction_model.advance_time(delta):
 		_mark_assignment_rebuild_required()
@@ -317,7 +317,6 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 
 	var tier1_budget := int(_budget_contract.get("tier1_budget", 768))
 	var tier2_budget := int(_budget_contract.get("tier2_budget", 96))
-	var tier3_budget := int(_budget_contract.get("tier3_budget", 24))
 	var nearfield_budget := int(_budget_contract.get("nearfield_budget", tier2_budget))
 	var tier2_radius_m := float(_budget_contract.get("tier2_radius_m", 110.0))
 	var tier2_radius_sq := tier2_radius_m * tier2_radius_m

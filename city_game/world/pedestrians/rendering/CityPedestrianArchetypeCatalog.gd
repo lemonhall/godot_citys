@@ -44,7 +44,8 @@ func build_descriptor(spawn_slot: Dictionary) -> Dictionary:
 	var archetype_weights: Dictionary = (spawn_slot.get("archetype_weights", {}) as Dictionary).duplicate(true)
 	var archetype_id := _select_archetype_id(archetype_weights, local_seed)
 	var definition: Dictionary = (ARCHETYPES.get(archetype_id, ARCHETYPES["resident"]) as Dictionary).duplicate(true)
-	var variant_index := int(posmod(local_seed / 31, 3))
+	var variant_bucket_seed := int(float(local_seed) / 31.0)
+	var variant_index := int(posmod(variant_bucket_seed, 3))
 	var variant_t := float(variant_index) * 0.5
 	var height_range: Vector2 = definition.get("height_range_m", Vector2(1.65, 1.85))
 	var speed_range: Vector2 = definition.get("speed_mps", Vector2(1.1, 1.4))

@@ -59,7 +59,7 @@ func notify_casualty_event(world_position: Vector3, witness_radius_m: float = -1
 		"ttl_sec": 2.2,
 	})
 
-func update_reactions(active_states: Array, budget_contract: Dictionary, delta: float) -> Array[Dictionary]:
+func update_reactions(active_states: Array, budget_contract: Dictionary, _delta: float) -> Array[Dictionary]:
 	var player_speed_mps := _player_velocity.length()
 	var reactive_candidates: Array[Dictionary] = []
 	for state_variant in active_states:

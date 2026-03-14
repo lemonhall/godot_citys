@@ -51,9 +51,9 @@ func _build_instance_transform(state, chunk_center: Vector3) -> Transform3D:
 	var yaw := atan2(heading.x, heading.z)
 	var radius_m := _state_radius_m(state)
 	var height_m := _state_height_m(state)
-	var basis := Basis.from_euler(Vector3(0.0, yaw, 0.0)).scaled(Vector3(radius_m * 2.0, height_m, radius_m * 1.8))
+	var instance_basis := Basis.from_euler(Vector3(0.0, yaw, 0.0)).scaled(Vector3(radius_m * 2.0, height_m, radius_m * 1.8))
 	return Transform3D(
-		basis,
+		instance_basis,
 		Vector3(local_position.x, local_position.y + height_m * 0.5, local_position.z)
 	)
 

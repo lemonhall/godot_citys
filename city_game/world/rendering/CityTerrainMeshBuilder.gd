@@ -74,7 +74,7 @@ func build_profiled_terrain_arrays_from_binding(chunk_size_m: float, grid_steps:
 	return {
 		"arrays": arrays,
 		"collision_faces": collision_faces,
-		"collision_face_count": int(collision_faces.size() / 3),
+		"collision_face_count": int(collision_faces.size() / 3.0),
 		"sample_stats": sample_stats,
 		"page_contract": (sample_binding.get("page_contract", {}) as Dictionary).duplicate(true),
 		"runtime_hit": bool(sample_binding.get("runtime_hit", false)),

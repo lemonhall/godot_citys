@@ -291,12 +291,12 @@ func drain_pedestrian_death_visuals(target_parent: Node3D) -> Array[Dictionary]:
 		return []
 	return _pedestrian_crowd.drain_death_visuals(target_parent)
 
-func set_pedestrian_visibility(visible: bool) -> void:
-	if _pedestrians_visible == visible:
+func set_pedestrian_visibility(is_visible: bool) -> void:
+	if _pedestrians_visible == is_visible:
 		return
-	_pedestrians_visible = visible
+	_pedestrians_visible = is_visible
 	if _pedestrian_crowd != null:
-		_pedestrian_crowd.visible = visible
+		_pedestrian_crowd.visible = is_visible
 
 func are_pedestrians_visible() -> bool:
 	return _pedestrians_visible
@@ -599,7 +599,7 @@ func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 		"body": ground_body,
 		"mesh_usec": mesh_usec,
 		"collision_usec": collision_usec,
-		"collision_face_count": int(collision_faces.size() / 3),
+		"collision_face_count": int(collision_faces.size() / 3.0),
 		"material_usec": material_usec,
 		"mask_textures_usec": int(material_result.get("mask_textures_usec", 0)),
 		"mask_cache_hit": bool(material_result.get("mask_cache_hit", false)),

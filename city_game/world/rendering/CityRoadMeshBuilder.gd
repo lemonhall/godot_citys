@@ -13,6 +13,7 @@ static func build_road_overlay(profile: Dictionary, chunk_data: Dictionary) -> N
 
 	var road_segments: Array = profile.get("road_segments", [])
 	var bridge_segments := _filter_bridge_segments(road_segments)
+	var semantic_stats := _build_semantic_consumer_stats(bridge_segments)
 	var road_surface := _build_road_surface_mesh(bridge_segments, road_color, false)
 	if road_surface != null:
 		road_root.add_child(road_surface)
@@ -29,6 +30,7 @@ static func build_road_overlay(profile: Dictionary, chunk_data: Dictionary) -> N
 	var supports := _build_bridge_supports(bridge_segments, chunk_data, support_color)
 	if supports != null:
 		road_root.add_child(supports)
+	road_root.set_meta("road_semantic_stats", semantic_stats)
 
 	return road_root
 
@@ -50,11 +52,11 @@ static func _build_road_surface_mesh(road_segments: Array, color: Color, stripe_
 		var points: Array = segment_dict.get("points", [])
 		if points.size() < 2:
 			continue
-		var width := 0.7 if stripe_only else float(segment_dict.get("width", 11.0))
-		if stripe_only:
-			var template_id := str(segment_dict.get("template_id", "local"))
-			if template_id == "service":
-				continue
+		var width := _resolve_marking_width_m(segment_dict) if stripe_only else _resolve_surface_width_m(segment_dict)
+		if width <= 0.0:
+			continue
+		if stripe_only and _resolve_marking_half_width_m(segment_dict) <= 0.0:
+			continue
 		var thickness := 0.05 if stripe_only else float(segment_dict.get("deck_thickness_m", 0.4))
 		if _append_roadbed(surface_tool, points, width, thickness, stripe_only):
 			has_geometry = true
@@ -201,21 +203,25 @@ static func _build_intersection_clusters(road_segments: Array) -> Array[Dictiona
 		var points: Array = segment_dict.get("points", [])
 		if points.is_empty():
 			continue
-		var width := float(segment_dict.get("width", 11.0))
+		var edge_profile := _resolve_edge_profile(segment_dict)
+		var width := _resolve_surface_width_m(segment_dict)
+		var surface_half_width_m := width * 0.5
+		var median_width_m := float(edge_profile.get("median_width_m", segment_dict.get("median_width_m", 0.0)))
 		var thickness := float(segment_dict.get("deck_thickness_m", 0.4))
+		var cluster_radius_m := surface_half_width_m * 1.12 + maxf(median_width_m, 0.0) * 0.15
 		for endpoint_index in [0, points.size() - 1]:
 			var point: Vector3 = points[endpoint_index]
 			var key := "%d|%d|%d" % [int(round(point.x * 2.0)), int(round(point.y * 2.0)), int(round(point.z * 2.0))]
 			if not clusters.has(key):
 				clusters[key] = {
 					"center": point,
-					"radius": width * 0.56,
+					"radius": cluster_radius_m,
 					"thickness": thickness,
 					"count": 0,
 					"bridge": bool(segment_dict.get("bridge", false)),
 				}
 			var cluster: Dictionary = clusters[key]
-			cluster["radius"] = maxf(float(cluster.get("radius", 0.0)), width * 0.56)
+			cluster["radius"] = maxf(float(cluster.get("radius", 0.0)), cluster_radius_m)
 			cluster["thickness"] = maxf(float(cluster.get("thickness", 0.0)), thickness)
 			cluster["count"] = int(cluster.get("count", 0)) + 1
 			cluster["bridge"] = bool(cluster.get("bridge", false)) or bool(segment_dict.get("bridge", false))
@@ -260,7 +266,7 @@ static func _build_collision_bodies(road_segments: Array) -> Node3D:
 		var points: Array = segment_dict.get("points", [])
 		if points.size() < 2:
 			continue
-		var width := float(segment_dict.get("width", 11.0))
+		var width := _resolve_surface_width_m(segment_dict)
 		var thickness := maxf(float(segment_dict.get("deck_thickness_m", 0.4)), 0.3)
 		var is_bridge := bool(segment_dict.get("bridge", false))
 		for point_index in range(points.size() - 1):
@@ -300,6 +306,75 @@ static func _build_collision_bodies(road_segments: Array) -> Node3D:
 	collision_root.set_meta("road_collision_shape_count", road_collision_shape_count)
 	collision_root.set_meta("bridge_collision_shape_count", bridge_collision_shape_count)
 	return collision_root
+
+static func _build_semantic_consumer_stats(road_segments: Array) -> Dictionary:
+	var semantic_surface_width_segment_count := 0
+	var semantic_marking_segment_count := 0
+	var semantic_median_segment_count := 0
+	var semantic_marking_profile_counts: Dictionary = {}
+	for road_segment in road_segments:
+		var segment_dict: Dictionary = road_segment
+		var edge_profile := _resolve_edge_profile(segment_dict)
+		if float(edge_profile.get("surface_half_width_m", 0.0)) > 0.0:
+			semantic_surface_width_segment_count += 1
+		if edge_profile.has("median_width_m"):
+			semantic_median_segment_count += 1
+		var marking_profile_id := _resolve_marking_profile_id(segment_dict)
+		if marking_profile_id != "":
+			semantic_marking_segment_count += 1
+			semantic_marking_profile_counts[marking_profile_id] = int(semantic_marking_profile_counts.get(marking_profile_id, 0)) + 1
+	return {
+		"semantic_surface_width_segment_count": semantic_surface_width_segment_count,
+		"semantic_marking_segment_count": semantic_marking_segment_count,
+		"semantic_median_segment_count": semantic_median_segment_count,
+		"semantic_marking_profile_counts": semantic_marking_profile_counts,
+	}
+
+static func _resolve_section_semantics(segment_dict: Dictionary) -> Dictionary:
+	return (segment_dict.get("section_semantics", {}) as Dictionary)
+
+static func _resolve_edge_profile(segment_dict: Dictionary) -> Dictionary:
+	var section_semantics := _resolve_section_semantics(segment_dict)
+	return (section_semantics.get("edge_profile", {}) as Dictionary)
+
+static func _resolve_surface_width_m(segment_dict: Dictionary) -> float:
+	var edge_profile := _resolve_edge_profile(segment_dict)
+	var semantic_half_width_m := float(edge_profile.get("surface_half_width_m", 0.0))
+	if semantic_half_width_m > 0.0:
+		return semantic_half_width_m * 2.0
+	var semantic_width_m := float(_resolve_section_semantics(segment_dict).get("width_m", 0.0))
+	if semantic_width_m > 0.0:
+		return semantic_width_m
+	return float(segment_dict.get("width", 11.0))
+
+static func _resolve_marking_profile_id(segment_dict: Dictionary) -> String:
+	var section_semantics := _resolve_section_semantics(segment_dict)
+	var marking_profile_id := str(section_semantics.get("marking_profile_id", ""))
+	if marking_profile_id != "":
+		return marking_profile_id
+	match str(segment_dict.get("template_id", "local")):
+		"expressway_elevated":
+			return "expressway_divided"
+		"arterial":
+			return "arterial_divided"
+		"service":
+			return "service_single_edge"
+		_:
+			return "local_centerline"
+
+static func _resolve_marking_half_width_m(segment_dict: Dictionary) -> float:
+	match _resolve_marking_profile_id(segment_dict):
+		"expressway_divided":
+			return 0.34
+		"arterial_divided":
+			return 0.28
+		"local_centerline":
+			return 0.22
+		_:
+			return 0.0
+
+static func _resolve_marking_width_m(segment_dict: Dictionary) -> float:
+	return _resolve_marking_half_width_m(segment_dict) * 2.0
 
 static func _build_segment_transform(a: Vector3, b: Vector3, thickness: float) -> Transform3D:
 	var direction := b - a

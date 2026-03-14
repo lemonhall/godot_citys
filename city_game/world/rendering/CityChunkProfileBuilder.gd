@@ -118,6 +118,9 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 	var terrain_relief := _measure_terrain_relief(chunk_center, chunk_size_m, world_seed)
 	var terrain_relief_usec := Time.get_ticks_usec() - terrain_relief_started_usec
 	var min_clearance := _measure_min_building_clearance(buildings)
+	var road_semantic_stats_started_usec := Time.get_ticks_usec()
+	var road_semantic_consumer_stats := _build_road_semantic_consumer_stats(road_segments)
+	var road_semantic_stats_usec := Time.get_ticks_usec() - road_semantic_stats_started_usec
 	var profile := {
 		"variant_id": "p%d-r%d-b%d-a%d" % [palette_index, road_segments.size(), buildings.size(), building_archetype_ids.size()],
 		"palette": palette.duplicate(true),
@@ -138,6 +141,7 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 		"road_mesh_mode": str(road_layout.get("road_mesh_mode", "ribbon")),
 		"road_signature": str(road_layout.get("signature", "")),
 		"road_template_counts": (road_layout.get("road_template_counts", {}) as Dictionary).duplicate(true),
+		"road_semantic_consumer_stats": road_semantic_consumer_stats,
 		"bridge_min_clearance_m": float(road_layout.get("bridge_min_clearance_m", 0.0)),
 		"bridge_deck_thickness_m": float(road_layout.get("bridge_deck_thickness_m", 0.0)),
 		"terrain_relief_m": terrain_relief,
@@ -151,6 +155,7 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 		"road_layout_usec": road_layout_usec,
 		"buildings_usec": buildings_usec,
 		"terrain_relief_usec": terrain_relief_usec,
+		"road_semantic_stats_usec": road_semantic_stats_usec,
 		"signature_usec": signature_usec,
 		"total_usec": Time.get_ticks_usec() - build_started_usec,
 	}
@@ -421,6 +426,49 @@ static func _build_signature(profile: Dictionary, road_signature: String) -> Str
 			size.z,
 		])
 	return "|".join(signature_parts)
+
+static func _build_road_semantic_consumer_stats(road_segments: Array) -> Dictionary:
+	var layout_segment_contract_count := 0
+	var semantic_lane_schema_segment_count := 0
+	var semantic_surface_width_segment_count := 0
+	var semantic_marking_segment_count := 0
+	var semantic_median_segment_count := 0
+	var surface_semantic_ready_segment_count := 0
+	var bridge_semantic_ready_segment_count := 0
+	var semantic_marking_profile_counts: Dictionary = {}
+	for road_segment in road_segments:
+		var segment_dict: Dictionary = road_segment
+		var section_semantics: Dictionary = (segment_dict.get("section_semantics", {}) as Dictionary)
+		if section_semantics.is_empty():
+			continue
+		layout_segment_contract_count += 1
+		var lane_schema: Dictionary = (section_semantics.get("lane_schema", {}) as Dictionary)
+		var edge_profile: Dictionary = (section_semantics.get("edge_profile", {}) as Dictionary)
+		if not lane_schema.is_empty():
+			semantic_lane_schema_segment_count += 1
+		if float(edge_profile.get("surface_half_width_m", 0.0)) > 0.0:
+			semantic_surface_width_segment_count += 1
+		if edge_profile.has("median_width_m"):
+			semantic_median_segment_count += 1
+		var marking_profile_id := str(section_semantics.get("marking_profile_id", ""))
+		if marking_profile_id != "":
+			semantic_marking_segment_count += 1
+			semantic_marking_profile_counts[marking_profile_id] = int(semantic_marking_profile_counts.get(marking_profile_id, 0)) + 1
+		var semantic_surface_ready := not lane_schema.is_empty() and float(edge_profile.get("surface_half_width_m", 0.0)) > 0.0 and marking_profile_id != ""
+		if semantic_surface_ready and not bool(segment_dict.get("bridge", false)):
+			surface_semantic_ready_segment_count += 1
+		if semantic_surface_ready and bool(segment_dict.get("bridge", false)):
+			bridge_semantic_ready_segment_count += 1
+	return {
+		"layout_segment_contract_count": layout_segment_contract_count,
+		"semantic_lane_schema_segment_count": semantic_lane_schema_segment_count,
+		"semantic_surface_width_segment_count": semantic_surface_width_segment_count,
+		"semantic_marking_segment_count": semantic_marking_segment_count,
+		"semantic_median_segment_count": semantic_median_segment_count,
+		"surface_semantic_ready_segment_count": surface_semantic_ready_segment_count,
+		"bridge_semantic_ready_segment_count": bridge_semantic_ready_segment_count,
+		"semantic_marking_profile_counts": semantic_marking_profile_counts,
+	}
 
 static func _fallback_seed(chunk_key: Vector2i) -> int:
 	return int((chunk_key.x * 92837111 + chunk_key.y * 689287499) & 0x7fffffff)

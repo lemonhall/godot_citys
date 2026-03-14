@@ -179,8 +179,18 @@ static func _make_segment_from_world_polyline(edge_data: Dictionary, chunk_cente
 		return {}
 	var template_id := str(edge_data.get("template_id", CityRoadTemplateCatalog.get_template_id_for_class(road_class)))
 	var template := CityRoadTemplateCatalog.get_template(template_id)
-	var section_semantics: Dictionary = edge_data.get("section_semantics", template.get("section_semantics", {}))
-	var resolved_width_m := float(edge_data.get("width_m", template.get("width_m", 11.0)))
+	var section_semantics := _resolve_segment_section_semantics(edge_data, template)
+	var lane_schema: Dictionary = section_semantics.get("lane_schema", {})
+	var edge_profile: Dictionary = section_semantics.get("edge_profile", {})
+	var resolved_width_m := _resolve_segment_width_m(edge_data, template, section_semantics, edge_profile)
+	var resolved_lane_count_forward := _resolve_segment_lane_count(lane_schema, "forward_lane_count", int(edge_data.get("lane_count_forward", template.get("lane_count_forward", 0))))
+	var resolved_lane_count_backward := _resolve_segment_lane_count(lane_schema, "backward_lane_count", int(edge_data.get("lane_count_backward", template.get("lane_count_backward", 0))))
+	var resolved_lane_count_shared := _resolve_segment_lane_count(lane_schema, "shared_center_lane_count", int(edge_data.get("lane_count_shared", template.get("lane_count_shared", 0))))
+	var resolved_lane_count_total := resolved_lane_count_forward + resolved_lane_count_backward + resolved_lane_count_shared
+	if resolved_lane_count_total <= 0:
+		resolved_lane_count_total = int(edge_data.get("lane_count_total", template.get("lane_count_total", 2)))
+	var resolved_median_width_m := _resolve_segment_edge_value(edge_profile, "median_width_m", float(edge_data.get("median_width_m", template.get("median_width_m", 0.0))))
+	var resolved_shoulder_width_m := _resolve_segment_shoulder_width_m(edge_profile, float(edge_data.get("shoulder_width_m", template.get("shoulder_width_m", 0.0))))
 	var local_points := _world_polyline_to_local_points(points_2d, chunk_center, world_seed)
 	if local_points.size() < 2:
 		return {}
@@ -198,7 +208,7 @@ static func _make_segment_from_world_polyline(edge_data: Dictionary, chunk_cente
 			world_seed,
 			bridge_clearance,
 			max_grade,
-			float(template.get("width_m", 11.0)),
+			resolved_width_m,
 			template_id
 		)
 		if bridge_profile.is_empty():
@@ -211,20 +221,57 @@ static func _make_segment_from_world_polyline(edge_data: Dictionary, chunk_cente
 	return {
 		"class": road_class,
 		"template_id": template_id,
-		"lane_count_total": int(edge_data.get("lane_count_total", template.get("lane_count_total", 2))),
-		"lane_count_forward": int(edge_data.get("lane_count_forward", template.get("lane_count_forward", 0))),
-		"lane_count_backward": int(edge_data.get("lane_count_backward", template.get("lane_count_backward", 0))),
-		"lane_count_shared": int(edge_data.get("lane_count_shared", template.get("lane_count_shared", 0))),
+		"lane_count_total": resolved_lane_count_total,
+		"lane_count_forward": resolved_lane_count_forward,
+		"lane_count_backward": resolved_lane_count_backward,
+		"lane_count_shared": resolved_lane_count_shared,
 		"width": resolved_width_m,
-		"median_width_m": float(edge_data.get("median_width_m", template.get("median_width_m", 0.0))),
-		"shoulder_width_m": float(edge_data.get("shoulder_width_m", template.get("shoulder_width_m", 0.0))),
+		"median_width_m": resolved_median_width_m,
+		"shoulder_width_m": resolved_shoulder_width_m,
 		"section_semantics": section_semantics.duplicate(true),
 		"deck_thickness_m": deck_thickness,
 		"points": local_points,
 		"bridge": bridge,
 		"bridge_clearance_m": bridge_clearance,
 		"bridge_range": bridge_range,
-}
+	}
+
+static func _resolve_segment_section_semantics(edge_data: Dictionary, template: Dictionary) -> Dictionary:
+	var template_semantics: Dictionary = (template.get("section_semantics", {}) as Dictionary).duplicate(true)
+	var section_semantics: Dictionary = (edge_data.get("section_semantics", template_semantics) as Dictionary).duplicate(true)
+	if section_semantics.is_empty():
+		section_semantics = template_semantics
+	var lane_schema: Dictionary = (section_semantics.get("lane_schema", template_semantics.get("lane_schema", {})) as Dictionary).duplicate(true)
+	var edge_profile: Dictionary = (section_semantics.get("edge_profile", template_semantics.get("edge_profile", {})) as Dictionary).duplicate(true)
+	section_semantics["lane_schema"] = lane_schema
+	section_semantics["edge_profile"] = edge_profile
+	return section_semantics
+
+static func _resolve_segment_width_m(edge_data: Dictionary, template: Dictionary, section_semantics: Dictionary, edge_profile: Dictionary) -> float:
+	var surface_half_width_m := float(edge_profile.get("surface_half_width_m", 0.0))
+	if surface_half_width_m > 0.0:
+		return surface_half_width_m * 2.0
+	var semantic_width_m := float(section_semantics.get("width_m", 0.0))
+	if semantic_width_m > 0.0:
+		return semantic_width_m
+	return float(edge_data.get("width_m", template.get("width_m", 11.0)))
+
+static func _resolve_segment_lane_count(lane_schema: Dictionary, key: String, fallback: int) -> int:
+	if lane_schema.has(key):
+		return maxi(int(lane_schema.get(key, fallback)), 0)
+	return maxi(fallback, 0)
+
+static func _resolve_segment_edge_value(edge_profile: Dictionary, key: String, fallback: float) -> float:
+	if edge_profile.has(key):
+		return maxf(float(edge_profile.get(key, fallback)), 0.0)
+	return maxf(fallback, 0.0)
+
+static func _resolve_segment_shoulder_width_m(edge_profile: Dictionary, fallback: float) -> float:
+	var left_shoulder_width_m := float(edge_profile.get("left_shoulder_width_m", -1.0))
+	var right_shoulder_width_m := float(edge_profile.get("right_shoulder_width_m", -1.0))
+	if left_shoulder_width_m < 0.0 and right_shoulder_width_m < 0.0:
+		return maxf(fallback, 0.0)
+	return maxf((maxf(left_shoulder_width_m, 0.0) + maxf(right_shoulder_width_m, 0.0)) * 0.5, 0.0)
 
 static func _get_local_grid_origin(world_seed: int) -> Vector2:
 	return Vector2(

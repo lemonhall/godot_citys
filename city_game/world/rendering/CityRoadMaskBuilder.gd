@@ -42,6 +42,7 @@ static func prepare_surface_data(surface_request: Dictionary) -> Dictionary:
 	var surface_segments := _extract_surface_segments(surface_request.get("surface_segments", []))
 	var clusters := _build_intersection_clusters(surface_segments)
 	var stripe_review := _review_stripe_paint(surface_segments, surface_world_size_m, mask_resolution, detail_mode)
+	var semantic_stats := _build_semantic_consumer_stats(surface_segments)
 	var stripe_paint_enabled := bool(stripe_review.get("enabled", false))
 	var paint_usec := 0
 	var cache_write_usec := 0
@@ -104,6 +105,10 @@ static func prepare_surface_data(surface_request: Dictionary) -> Dictionary:
 			"stripe_paint_enabled": stripe_paint_enabled,
 			"stripe_min_radius_px": float(stripe_review.get("min_radius_px", 0.0)),
 			"stripe_max_radius_px": float(stripe_review.get("max_radius_px", 0.0)),
+			"semantic_surface_width_segment_count": int(semantic_stats.get("semantic_surface_width_segment_count", 0)),
+			"semantic_marking_segment_count": int(semantic_stats.get("semantic_marking_segment_count", 0)),
+			"semantic_median_segment_count": int(semantic_stats.get("semantic_median_segment_count", 0)),
+			"semantic_marking_profile_counts": (semantic_stats.get("semantic_marking_profile_counts", {}) as Dictionary).duplicate(true),
 			"paint_usec": paint_usec,
 			"image_usec": 0,
 			"texture_usec": 0,
@@ -177,11 +182,10 @@ static func _paint_segment_mask(mask_bytes: PackedByteArray, segment_dict: Dicti
 	var points: Array = segment_dict.get("points", [])
 	if points.size() < 2:
 		return
-	var template_id := str(segment_dict.get("template_id", "local"))
-	if stripe_only and template_id == "service":
-		return
 
 	var radius_px := _world_radius_to_pixels(_resolve_mask_radius_m(segment_dict, stripe_only), surface_world_size_m, mask_resolution)
+	if radius_px <= 0.0:
+		return
 	var feather_px := 1.0 if stripe_only else 1.5
 	for point_index in range(points.size() - 1):
 		var start_point: Vector3 = points[point_index]
@@ -197,13 +201,8 @@ static func _paint_segment_mask(mask_bytes: PackedByteArray, segment_dict: Dicti
 
 static func _resolve_mask_radius_m(segment_dict: Dictionary, stripe_only: bool) -> float:
 	if stripe_only:
-		var lane_count_total := int(segment_dict.get("lane_count_total", 2))
-		if lane_count_total >= 6:
-			return 0.34
-		if lane_count_total >= 4:
-			return 0.28
-		return 0.22
-	return float(segment_dict.get("width", 11.0)) * 0.5 + 0.4
+		return _resolve_marking_half_width_m(segment_dict)
+	return _resolve_surface_half_width_m(segment_dict) + 0.4
 
 static func _review_stripe_paint(surface_segments: Array, surface_world_size_m: float, mask_resolution: int, detail_mode: String) -> Dictionary:
 	var review := {
@@ -218,7 +217,10 @@ static func _review_stripe_paint(surface_segments: Array, surface_world_size_m: 
 	var max_radius_px := 0.0
 	for road_segment in surface_segments:
 		var segment_dict: Dictionary = road_segment
-		var stripe_radius_px := _world_radius_to_pixels(_resolve_mask_radius_m(segment_dict, true), surface_world_size_m, mask_resolution)
+		var stripe_half_width_m := _resolve_marking_half_width_m(segment_dict)
+		if stripe_half_width_m <= 0.0:
+			continue
+		var stripe_radius_px := _world_radius_to_pixels(stripe_half_width_m, surface_world_size_m, mask_resolution)
 		if stripe_radius_px <= 0.0:
 			continue
 		found_radius = true
@@ -302,18 +304,21 @@ static func _build_intersection_clusters(road_segments: Array) -> Array:
 		var points: Array = segment_dict.get("points", [])
 		if points.is_empty():
 			continue
-		var width := float(segment_dict.get("width", 11.0))
+		var edge_profile := _resolve_edge_profile(segment_dict)
+		var surface_half_width_m := _resolve_surface_half_width_m(segment_dict)
+		var median_width_m := float(edge_profile.get("median_width_m", segment_dict.get("median_width_m", 0.0)))
+		var cluster_radius_m := surface_half_width_m * 1.12 + maxf(median_width_m, 0.0) * 0.15
 		for endpoint_index in [0, points.size() - 1]:
 			var point: Vector3 = points[endpoint_index]
 			var key := "%d|%d|%d" % [int(round(point.x * 2.0)), int(round(point.y * 2.0)), int(round(point.z * 2.0))]
 			if not clusters.has(key):
 				clusters[key] = {
 					"center": point,
-					"radius": width * 0.56,
+					"radius": cluster_radius_m,
 					"count": 0,
 				}
 			var cluster: Dictionary = clusters[key]
-			cluster["radius"] = maxf(float(cluster.get("radius", 0.0)), width * 0.56)
+			cluster["radius"] = maxf(float(cluster.get("radius", 0.0)), cluster_radius_m)
 			cluster["count"] = int(cluster.get("count", 0)) + 1
 			clusters[key] = cluster
 	var results: Array = []
@@ -322,3 +327,69 @@ static func _build_intersection_clusters(road_segments: Array) -> Array:
 		if int(cluster_dict.get("count", 0)) >= 2:
 			results.append(cluster_dict)
 	return results
+
+static func _build_semantic_consumer_stats(surface_segments: Array) -> Dictionary:
+	var semantic_surface_width_segment_count := 0
+	var semantic_marking_segment_count := 0
+	var semantic_median_segment_count := 0
+	var semantic_marking_profile_counts: Dictionary = {}
+	for road_segment in surface_segments:
+		var segment_dict: Dictionary = road_segment
+		var edge_profile := _resolve_edge_profile(segment_dict)
+		if float(edge_profile.get("surface_half_width_m", 0.0)) > 0.0:
+			semantic_surface_width_segment_count += 1
+		if edge_profile.has("median_width_m"):
+			semantic_median_segment_count += 1
+		var marking_profile_id := _resolve_marking_profile_id(segment_dict)
+		if marking_profile_id != "":
+			semantic_marking_segment_count += 1
+			semantic_marking_profile_counts[marking_profile_id] = int(semantic_marking_profile_counts.get(marking_profile_id, 0)) + 1
+	return {
+		"semantic_surface_width_segment_count": semantic_surface_width_segment_count,
+		"semantic_marking_segment_count": semantic_marking_segment_count,
+		"semantic_median_segment_count": semantic_median_segment_count,
+		"semantic_marking_profile_counts": semantic_marking_profile_counts,
+	}
+
+static func _resolve_section_semantics(segment_dict: Dictionary) -> Dictionary:
+	return (segment_dict.get("section_semantics", {}) as Dictionary)
+
+static func _resolve_edge_profile(segment_dict: Dictionary) -> Dictionary:
+	var section_semantics := _resolve_section_semantics(segment_dict)
+	return (section_semantics.get("edge_profile", {}) as Dictionary)
+
+static func _resolve_surface_half_width_m(segment_dict: Dictionary) -> float:
+	var edge_profile := _resolve_edge_profile(segment_dict)
+	var semantic_half_width_m := float(edge_profile.get("surface_half_width_m", 0.0))
+	if semantic_half_width_m > 0.0:
+		return semantic_half_width_m
+	var semantic_width_m := float(_resolve_section_semantics(segment_dict).get("width_m", 0.0))
+	if semantic_width_m > 0.0:
+		return semantic_width_m * 0.5
+	return float(segment_dict.get("width", 11.0)) * 0.5
+
+static func _resolve_marking_profile_id(segment_dict: Dictionary) -> String:
+	var section_semantics := _resolve_section_semantics(segment_dict)
+	var marking_profile_id := str(section_semantics.get("marking_profile_id", ""))
+	if marking_profile_id != "":
+		return marking_profile_id
+	match str(segment_dict.get("template_id", "local")):
+		"expressway_elevated":
+			return "expressway_divided"
+		"arterial":
+			return "arterial_divided"
+		"service":
+			return "service_single_edge"
+		_:
+			return "local_centerline"
+
+static func _resolve_marking_half_width_m(segment_dict: Dictionary) -> float:
+	match _resolve_marking_profile_id(segment_dict):
+		"expressway_divided":
+			return 0.34
+		"arterial_divided":
+			return 0.28
+		"local_centerline":
+			return 0.22
+		_:
+			return 0.0

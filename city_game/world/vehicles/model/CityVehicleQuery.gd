@@ -95,6 +95,11 @@ func _build_spawn_result(chunk_key: Vector2i, district_id: String, district_prof
 	var max_spawn_slots := int(_vehicle_config.get_max_spawn_slots_per_chunk())
 	var district_density := float(district_profile.get("density_scalar", 0.0))
 	var chunk_id: String = _config.format_chunk_id(chunk_key)
+	var lane_candidates_by_direction := {
+		"forward": [],
+		"backward": [],
+		"other": [],
+	}
 
 	for lane_variant in sorted_lanes:
 		var lane: Dictionary = lane_variant
@@ -110,30 +115,61 @@ func _build_spawn_result(chunk_key: Vector2i, district_id: String, district_prof
 		if selected_count <= 0:
 			continue
 		var selected_indices := _pick_evenly_spaced_indices(candidate_samples.size(), selected_count)
-		for selected_index in selected_indices:
+		var direction_bucket := _resolve_direction_bucket(str(lane.get("direction", "")))
+		(lane_candidates_by_direction[direction_bucket] as Array).append({
+			"lane": lane.duplicate(true),
+			"road_class": road_class,
+			"headway_m": headway_m,
+			"candidate_samples": candidate_samples.duplicate(true),
+			"selected_indices": selected_indices.duplicate(true),
+			"next_pick_index": 0,
+		})
+
+	var ordered_candidates := _build_balanced_lane_candidate_order(lane_candidates_by_direction)
+	var has_pending_candidates := true
+	while spawn_slots.size() < max_spawn_slots and has_pending_candidates:
+		has_pending_candidates = false
+		for candidate_index in range(ordered_candidates.size()):
+			var candidate: Dictionary = ordered_candidates[candidate_index]
+			var selected_indices: Array = candidate.get("selected_indices", [])
+			var next_pick_index := int(candidate.get("next_pick_index", 0))
+			if next_pick_index >= selected_indices.size():
+				continue
+			has_pending_candidates = true
+			var lane: Dictionary = candidate.get("lane", {})
+			var lane_id := str(lane.get("lane_id", ""))
+			var road_class := str(candidate.get("road_class", lane.get("road_class", "local")))
+			var headway_m := float(candidate.get("headway_m", 0.0))
+			var candidate_samples: Array = candidate.get("candidate_samples", [])
+			while next_pick_index < selected_indices.size():
+				var selected_index := int(selected_indices[next_pick_index])
+				next_pick_index += 1
+				if selected_index < 0 or selected_index >= candidate_samples.size():
+					continue
+				var sample: Dictionary = candidate_samples[selected_index]
+				if not _is_spawn_slot_spacing_clear(spawn_slots, sample, lane, headway_m):
+					continue
+				var seed_salt := int(lane.get("seed", 0)) + selected_index * 53 + spawn_slots.size() * 19
+				spawn_slots.append({
+					"spawn_slot_id": "%s:%s:%02d" % [chunk_id, lane_id, selected_index],
+					"lane_ref_id": lane_id,
+					"road_id": str(lane.get("road_id", "")),
+					"road_class": road_class,
+					"lane_type": "driving",
+					"direction": str(lane.get("direction", "")),
+					"district_id": district_id,
+					"seed": _config.derive_seed("veh_spawn_slot", chunk_key, seed_salt),
+					"world_position": sample.get("world_position", Vector3.ZERO),
+					"heading_deg": float(sample.get("heading_deg", 0.0)),
+					"distance_along_lane_m": float(sample.get("distance_along_lane_m", 0.0)),
+					"min_headway_m": headway_m,
+				})
+				road_class_counts[road_class] = int(road_class_counts.get(road_class, 0)) + 1
+				break
+			candidate["next_pick_index"] = next_pick_index
+			ordered_candidates[candidate_index] = candidate
 			if spawn_slots.size() >= max_spawn_slots:
 				break
-			var sample: Dictionary = candidate_samples[selected_index]
-			if not _is_spawn_slot_spacing_clear(spawn_slots, sample, headway_m):
-				continue
-			var seed_salt := int(lane.get("seed", 0)) + selected_index * 53 + spawn_slots.size() * 19
-			spawn_slots.append({
-				"spawn_slot_id": "%s:%s:%02d" % [chunk_id, lane_id, selected_index],
-				"lane_ref_id": lane_id,
-				"road_id": str(lane.get("road_id", "")),
-				"road_class": road_class,
-				"lane_type": "driving",
-				"direction": str(lane.get("direction", "")),
-				"district_id": district_id,
-				"seed": _config.derive_seed("veh_spawn_slot", chunk_key, seed_salt),
-				"world_position": sample.get("world_position", Vector3.ZERO),
-				"heading_deg": float(sample.get("heading_deg", 0.0)),
-				"distance_along_lane_m": float(sample.get("distance_along_lane_m", 0.0)),
-				"min_headway_m": headway_m,
-			})
-			road_class_counts[road_class] = int(road_class_counts.get(road_class, 0)) + 1
-		if spawn_slots.size() >= max_spawn_slots:
-			break
 
 	return {
 		"road_class_counts": road_class_counts,
@@ -149,14 +185,67 @@ func _resolve_selected_slot_count(candidate_count: int, density_factor: float) -
 		raw_count = 1
 	return clampi(raw_count, 0, candidate_count)
 
-func _is_spawn_slot_spacing_clear(existing_slots: Array[Dictionary], sample: Dictionary, min_headway_m: float) -> bool:
+func _is_spawn_slot_spacing_clear(existing_slots: Array[Dictionary], sample: Dictionary, lane: Dictionary, min_headway_m: float) -> bool:
 	var candidate_position: Vector3 = sample.get("world_position", Vector3.ZERO)
-	var min_world_gap_m := maxf(min_headway_m * 0.72, 8.5)
+	var candidate_lane_id := str(lane.get("lane_id", ""))
+	var candidate_road_id := str(lane.get("road_id", ""))
+	var candidate_direction := str(lane.get("direction", ""))
+	var candidate_distance := float(sample.get("distance_along_lane_m", 0.0))
 	for slot in existing_slots:
 		var existing_position: Vector3 = slot.get("world_position", Vector3.ZERO)
-		if existing_position.distance_to(candidate_position) < min_world_gap_m:
+		var existing_lane_id := str(slot.get("lane_ref_id", ""))
+		var existing_road_id := str(slot.get("road_id", ""))
+		var existing_direction := str(slot.get("direction", ""))
+		var existing_headway_m := float(slot.get("min_headway_m", min_headway_m))
+		var required_headway_m := maxf(min_headway_m, existing_headway_m)
+		var world_gap_m := existing_position.distance_to(candidate_position)
+		if existing_lane_id == candidate_lane_id:
+			var existing_distance := float(slot.get("distance_along_lane_m", 0.0))
+			if absf(existing_distance - candidate_distance) + 0.01 < required_headway_m - 0.5:
+				return false
+			continue
+		if existing_road_id == candidate_road_id:
+			if existing_direction == candidate_direction:
+				if world_gap_m < maxf(required_headway_m * 0.85, 12.0):
+					return false
+			elif world_gap_m < 2.75:
+				return false
+			continue
+		if world_gap_m < 4.5:
 			return false
 	return true
+
+func _build_balanced_lane_candidate_order(lane_candidates_by_direction: Dictionary) -> Array:
+	var forward_candidates: Array = (lane_candidates_by_direction.get("forward", []) as Array).duplicate(true)
+	var backward_candidates: Array = (lane_candidates_by_direction.get("backward", []) as Array).duplicate(true)
+	var other_candidates: Array = (lane_candidates_by_direction.get("other", []) as Array).duplicate(true)
+	for candidates in [forward_candidates, backward_candidates, other_candidates]:
+		candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			var a_lane: Dictionary = a.get("lane", {})
+			var b_lane: Dictionary = b.get("lane", {})
+			var a_road_id := str(a_lane.get("road_id", ""))
+			var b_road_id := str(b_lane.get("road_id", ""))
+			if a_road_id == b_road_id:
+				return str(a_lane.get("lane_id", "")) < str(b_lane.get("lane_id", ""))
+			return a_road_id < b_road_id
+		)
+	var ordered_candidates: Array = []
+	var max_count := maxi(forward_candidates.size(), maxi(backward_candidates.size(), other_candidates.size()))
+	for candidate_index in range(max_count):
+		if candidate_index < forward_candidates.size():
+			ordered_candidates.append(forward_candidates[candidate_index])
+		if candidate_index < backward_candidates.size():
+			ordered_candidates.append(backward_candidates[candidate_index])
+		if candidate_index < other_candidates.size():
+			ordered_candidates.append(other_candidates[candidate_index])
+	return ordered_candidates
+
+func _resolve_direction_bucket(direction: String) -> String:
+	if direction == "forward":
+		return "forward"
+	if direction == "backward":
+		return "backward"
+	return "other"
 
 func _pick_evenly_spaced_indices(total_count: int, selected_count: int) -> Array[int]:
 	var indices: Array[int] = []

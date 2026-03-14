@@ -1,5 +1,10 @@
 # V8 Pedestrian Vehicle Conflict Guard
 
+## Current Status
+
+- `2026-03-14` 最新手玩决策已明确：当前阶段允许车辆与行人直接穿模，`M3` 不再作为 `v8` 当前 closeout 的前置项。
+- 本文件保留为未来可选增强计划，不代表必须在本轮 `v8` 完成前实现。
+
 ## Goal
 
 让 `v8` 的车辆系统与现有行人系统形成最小必要但正式的人车关系：车辆不再把 crossing candidate 当空气，行人也不因为车辆引入而失去既有的 lane / spawn / redline contract。

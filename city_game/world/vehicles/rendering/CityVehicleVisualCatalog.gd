@@ -170,7 +170,16 @@ func _resolve_pool_for_spawn_slot(spawn_slot: Dictionary) -> Array:
 			mixed_pool.append_array((_entries_by_role["commercial"] as Array).duplicate(true))
 		if _entries_by_role.has("civilian"):
 			mixed_pool.append_array((_entries_by_role["civilian"] as Array).duplicate(true))
+		if _entries_by_role.has("service"):
+			mixed_pool.append_array((_entries_by_role["service"] as Array).duplicate(true))
 		return mixed_pool
+	if road_class == "secondary":
+		var secondary_pool: Array = []
+		if _entries_by_role.has("civilian"):
+			secondary_pool.append_array((_entries_by_role["civilian"] as Array).duplicate(true))
+		if _entries_by_role.has("service"):
+			secondary_pool.append_array((_entries_by_role["service"] as Array).duplicate(true))
+		return secondary_pool
 	if _entries_by_role.has("civilian"):
 		return (_entries_by_role["civilian"] as Array).duplicate(true)
 	return _model_entries.duplicate(true)

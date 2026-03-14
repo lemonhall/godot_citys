@@ -2,12 +2,40 @@
 
 ## Update
 
-- `2026-03-14` 当前工作区的 `M2` 不能继续按“边修边补白盒 / 阴影 / density”方式推进，也不能标记为完成。
-- 本轮已经得到一组足够明确的手玩结论：车辆系统的主要风险不再只是“有没有车”，而是“当前车辆到底是不是作为城市道路系统的真实 downstream consumer 在工作”。
-- 当前结论不是“车辆 runtime 完全没做出来”，而是“world contract 已经有了，但 hand-play 体验、道路可视对齐和 live performance 仍然不成立”。
-- 因此本轮决定先落状态说明文档，停止继续堆战术 patch，并把 `M2` 视为 `blocked / replan required`。
+- `2026-03-14` 当前工作区的 `M2` 已不再被“远景方案不像车”“长期单向车流”“车辆分布很怪”这些产品问题阻塞。
+- 最新手玩结论已经明确收敛为：当前远中景车辆表现、双向可见性和整体分布状态，用户都已经可以接受。
+- 因此，`M2` 的真实状态不应再描述成“hand-play 体验整体失败”，而应改成“功能体验基本成立，但 closeout 仍被道路可视覆盖错位与性能红线证据卡住”。
+- 本文件保留前半轮问题定位过程，但后续状态与 next round 必须以“只剩道路系统问题 + 性能问题”为准。
 
-## Hand-Play Blockers
+## 2026-03-14 Follow-Up Decisions
+
+- 本轮后续修复范围已经进一步收口：
+  - 必须补上车辆独立的性能护栏，不能只靠总 `wall_frame` 间接覆盖。
+  - 必须把默认手玩视角下的双向车流可见性写成正式 contract，避免长期单向偏置。
+  - 车辆 spacing guard 需要加强，尤其是同路同向的跟车距离；但当前密度被用户确认“基本合适”，本轮不再继续做动态 density 系统。
+- `车在草坪上跑` 仍然记录为严重 blocker，但它被重新归类为 `road system / road overlay consumer` 问题，不再和车辆 query / density / proxy patch 混成一个修复项。
+- 因此，当前 `M2` 的最近实现优先级调整为：
+  1. `vehicle performance guard`
+  2. `bidirectional coverage + spacing guard`
+  3. `road coverage alignment` 诊断与道路侧修复
+
+## Current Remaining Issues
+
+### 1. 道路可视渲染与车辆 lane 消费仍然脱节
+
+- 当前用户已经明确判断：这不是车辆 query 的问题，而是道路系统 / road overlay consumer 的问题。
+- 车辆其实在 shared road semantics 派生出的 drivable lane 上跑，但主画面仍会出现“那里明明语义上是路、渲染上却是草”的错位。
+- 因此，`M2` 的剩余视觉 blocker 不再是“车辆不像车”，而是“道路系统没有把对应道路画出来或画对”。
+
+### 2. 性能问题仍未正式收口到红线
+
+- 当前手玩口径已经不再是最早那种“只要有车就稳定 30-40 FPS”的严重失败，但也还不能诚实描述成 `<= 16.67ms` 已正式守住。
+- 最新自动化证据更接近“车辆独立 budget 已有护栏，但 combined warm / first-visit redline 仍会偶发或轻微超线”。
+- 因此，`M2` 现在的性能状态应描述为：`明显改善，但仍未 closeout`。
+
+## Historical Blockers
+
+以下 1-3 是本轮前半段的历史 blocker，用来解释为什么当时需要重写 `M2` 口径；它们不再是当前工作区的主要剩余问题。当前真正挂着的，只剩上面的 `道路覆盖错位` 与 `性能红线证据`。
 
 ### 1. Tier 1 远景视觉方案不成立
 
@@ -141,33 +169,23 @@
 
 ## Decision
 
-### 1. 停止继续把 `M2` 往当前 shadow-proxy 方向硬推
+### 1. `M2` 不再因 Tier 1 视觉方案、双向覆盖或分布状态被阻塞
 
-当前 `Tier 1 shadow` 方案虽然能让某些 headless 数据变绿，但已经被手玩明确否决。
+- 当前用户已经明确接受现有远景方案、双向车流和整体分布。
+- 因此，`M2` 不能继续按“远景策略待定 / 还得继续重做分布”来描述当前状态。
 
-因此：
+### 2. `M2` 剩余 closeout 焦点收缩为道路覆盖与性能红线
 
-- 不再把“地面影子代理车”视为 `M2` 的默认 closeout 方案
-- 当前工作区中的相关实验只保留为诊断历史，不代表产品方向
-
-### 2. 先补诊断，再重做 M2
-
-下一轮要先补的不是更多 patch，而是 3 组诊断合同：
-
-1. `lane graph -> road overlay` coverage 对齐诊断
-2. `minimap road -> main scene road` coverage 对齐诊断
-3. `direction coverage / same-road spacing / model variety` 的 runtime distribution 诊断
+- 下一轮主要不是继续修车辆“像不像车”，而是把 `lane graph / minimap / road overlay` 的 coverage 对齐问题交回道路系统收口。
+- 同时继续补 performance evidence，把 `vehicle-specific budget` 与 combined runtime redline 之间的证据链补齐。
 
 ### 3. M2 closeout 口径需要重写
 
-当前 `v8-ambient-traffic-layered-runtime.md` 的 DoD 更偏“runtime contract 成立”，但缺少 hand-play 产品门槛。
-下一轮 `M2` 必须把以下内容写成正式 acceptance：
+当前 `v8-ambient-traffic-layered-runtime.md` 的 DoD 需要按最新手玩结论重写为：
 
-- 中距离 `Tier 1` 看起来仍然是车，而不是影子或白盒
+- 当前远中景车辆形态、双向可见性和整体分布已达到可接受状态
 - 车辆不会在主画面草坪上行驶
-- 双向交通在默认手玩视角下可见，不出现长期单向偏置
-- 同模扎堆和贴屁股连环车不作为常态
-- live hand-play FPS 不能出现“只要有车就稳定掉到 30-40” 的产品级回退
+- combined runtime 的性能证据能正式证明 `16.67ms` 红线成立，而不是“体感还行但没有硬证据”
 
 ## Next Round
 
@@ -182,29 +200,31 @@
 - 新的 world/debug tests
 - 一份对齐诊断结果写回 `docs/plan`
 
-### Round 2: Tier 1 可视策略重做
+### Round 2: 性能证据与红线收口
 
 目标：
 
-- 用“仍像车”的轻量表示替代当前 shadow proxy
+- 把车辆独立 budget、combined warm runtime、combined first-visit 的证据链补齐
+- 判清楚当前性能问题到底是 traffic runtime 本身、streaming mount、还是更上游的 combined cost
 
 约束：
 
-- 不能回退到 per-vehicle 重节点海
-- 不能再用白盒或纯阴影交差
+- 不能靠 profiling 专用降配、临时关车、临时减人来宣称达标
+- 不能把道路系统问题继续伪装成车辆系统问题
 
-### Round 3: 分布策略与 live redline
+### Round 3: 进入 M3 前的最小收口判断
 
 目标：
 
-- 重新定义双向交通覆盖、车型扰动、同路段 spacing 约束
-- 再做 fresh warm / first-visit / hand-play closeout
+- 如果道路覆盖错位已被道路系统修掉，combined redline 也拿到正式证据，那么 `M2` 就可以从“blocked / replan required”改成“closeout ready”。
+- 之后再进入 `M3 Pedestrian Coupling 与红线共存`，而不是继续在 `M2` 上做无止境的视觉微调。
 
 ## Bottom Line
 
 `2026-03-14` 当前工作区里，`M2` 的真实状态是：
 
 - `vehicle_query / lane graph / runtime guard` 这些 contract 已经有基础
-- 但 hand-play 体验仍然明显失败
-- 道路可视渲染与车辆 lane 消费很可能还没有真正对齐
-- 所以本轮只能先落“状态与重做边界文档”，不能把 `M2` 描述成接近完成
+- 当前 hand-play 对远景方案、双向车流和车辆分布已经基本满意
+- 道路可视渲染与车辆 lane 消费仍然没有真正对齐，这个问题应由道路系统继续收口
+- 性能表现已经明显改善，但还没有拿到足够硬的 combined redline closeout 证据
+- 因此，`M2` 现在更准确的状态是：`功能体验基本成立，剩余 blocker 只剩道路覆盖错位与性能红线`

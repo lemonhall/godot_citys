@@ -6,6 +6,7 @@ const CityBlockLayout := preload("res://city_game/world/model/CityBlockLayout.gd
 const CityReferenceRoadGraphBuilder := preload("res://city_game/world/generation/CityReferenceRoadGraphBuilder.gd")
 const CityRoadGraphCache := preload("res://city_game/world/generation/CityRoadGraphCache.gd")
 const CityPedestrianWorldBuilder := preload("res://city_game/world/pedestrians/generation/CityPedestrianWorldBuilder.gd")
+const CityRoadTemplateCatalog := preload("res://city_game/world/rendering/CityRoadTemplateCatalog.gd")
 
 var _last_generation_profile: Dictionary = {}
 
@@ -97,7 +98,7 @@ func _build_road_graph(config, district_graph):
 			if x + 1 < district_grid.x:
 				var to_id_h: String = config.format_district_id(Vector2i(x + 1, y))
 				var horizontal_class: String = _resolve_road_class(district_grid, Vector2i(x, y), true)
-				road_graph.add_edge({
+				var horizontal_edge := {
 					"edge_id": "road_h_%02d_%02d" % [x, y],
 					"road_id": "road_h_%02d_%02d" % [x, y],
 					"from": source_id,
@@ -105,7 +106,6 @@ func _build_road_graph(config, district_graph):
 					"class": horizontal_class,
 					"display_name": _build_road_name(horizontal_class, true, y),
 					"seed": config.derive_seed("road_h", Vector2i(x, y)),
-					"width_m": _resolve_width_for_class(horizontal_class),
 					"points": _build_edge_points(
 						road_graph.get_node_by_id(source_id).get("center", Vector2.ZERO),
 						road_graph.get_node_by_id(to_id_h).get("center", Vector2.ZERO),
@@ -113,12 +113,14 @@ func _build_road_graph(config, district_graph):
 						config.derive_seed("road_h", Vector2i(x, y)),
 						horizontal_class
 					),
-				})
+				}
+				horizontal_edge.merge(_build_semantic_edge_fields(horizontal_class), true)
+				road_graph.add_edge(horizontal_edge)
 				_attach_edge_bounds(road_graph.edges[-1])
 			if y + 1 < district_grid.y:
 				var to_id_v: String = config.format_district_id(Vector2i(x, y + 1))
 				var vertical_class: String = _resolve_road_class(district_grid, Vector2i(x, y), false)
-				road_graph.add_edge({
+				var vertical_edge := {
 					"edge_id": "road_v_%02d_%02d" % [x, y],
 					"road_id": "road_v_%02d_%02d" % [x, y],
 					"from": source_id,
@@ -126,7 +128,6 @@ func _build_road_graph(config, district_graph):
 					"class": vertical_class,
 					"display_name": _build_road_name(vertical_class, false, x),
 					"seed": config.derive_seed("road_v", Vector2i(x, y)),
-					"width_m": _resolve_width_for_class(vertical_class),
 					"points": _build_edge_points(
 						road_graph.get_node_by_id(source_id).get("center", Vector2.ZERO),
 						road_graph.get_node_by_id(to_id_v).get("center", Vector2.ZERO),
@@ -134,7 +135,9 @@ func _build_road_graph(config, district_graph):
 						config.derive_seed("road_v", Vector2i(x, y)),
 						vertical_class
 					),
-				})
+				}
+				vertical_edge.merge(_build_semantic_edge_fields(vertical_class), true)
+				road_graph.add_edge(vertical_edge)
 				_attach_edge_bounds(road_graph.edges[-1])
 	for district in district_graph.districts:
 		_append_district_collector_roads(config, road_graph, district)
@@ -226,14 +229,7 @@ func _resolve_road_class(district_grid: Vector2i, edge_key: Vector2i, horizontal
 	return "secondary"
 
 func _resolve_width_for_class(road_class: String) -> float:
-	match road_class:
-		"expressway_elevated":
-			return 34.0
-		"arterial":
-			return 22.0
-		"collector":
-			return 11.0
-	return 11.0
+	return float(CityRoadTemplateCatalog.get_width_for_class(road_class))
 
 func _build_edge_points(from_center: Vector2, to_center: Vector2, horizontal: bool, edge_seed: int, road_class: String) -> Array[Vector2]:
 	var direction := (to_center - from_center).normalized()
@@ -286,9 +282,9 @@ func _append_district_collector_roads(config, road_graph: CityRoadGraph, distric
 			"class": "collector",
 			"display_name": "%s Connector" % district_id,
 			"seed": edge_seed,
-			"width_m": 11.0,
 			"points": _build_boundary_to_hub_points(portal, hub, side, edge_seed),
 		}
+		edge.merge(_build_semantic_edge_fields("collector"), true)
 		road_graph.add_edge(edge)
 		_attach_edge_bounds(road_graph.edges[-1])
 
@@ -358,3 +354,18 @@ func _build_road_name(road_class: String, horizontal: bool, index: int) -> Strin
 	var prefix := "Skyway" if road_class == "expressway_elevated" else ("Avenue" if road_class == "arterial" else "Street")
 	var axis := "E" if horizontal else "N"
 	return "%s %s%02d" % [prefix, axis, index]
+
+func _build_semantic_edge_fields(road_class: String) -> Dictionary:
+	var template := CityRoadTemplateCatalog.get_template_for_class(road_class)
+	var section_semantics: Dictionary = template.get("section_semantics", {})
+	return {
+		"template_id": str(template.get("template_id", "local")),
+		"width_m": float(template.get("width_m", 11.0)),
+		"lane_count_total": int(template.get("lane_count_total", 2)),
+		"lane_count_forward": int(template.get("lane_count_forward", 0)),
+		"lane_count_backward": int(template.get("lane_count_backward", 0)),
+		"lane_count_shared": int(template.get("lane_count_shared", 0)),
+		"median_width_m": float(template.get("median_width_m", 0.0)),
+		"shoulder_width_m": float(template.get("shoulder_width_m", 0.0)),
+		"section_semantics": section_semantics.duplicate(true),
+	}

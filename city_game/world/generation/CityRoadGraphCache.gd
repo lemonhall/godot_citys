@@ -2,7 +2,7 @@ extends RefCounted
 
 const CityRoadGraph := preload("res://city_game/world/model/CityRoadGraph.gd")
 
-const CACHE_SCHEMA_VERSION := 1
+const CACHE_SCHEMA_VERSION := 4
 const CACHE_DIRECTORY := "user://cache/world"
 
 func build_cache_signature(config) -> String:

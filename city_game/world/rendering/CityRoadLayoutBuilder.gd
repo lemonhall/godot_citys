@@ -37,13 +37,7 @@ static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 	var road_graph = chunk_data.get("road_graph")
 	if road_graph != null and road_graph.has_method("get_edges_intersecting_rect"):
 		for edge in road_graph.get_edges_intersecting_rect(expanded_rect):
-			var segment := _make_segment_from_world_polyline(
-				str(edge.get("class", "arterial")),
-				edge.get("points", []),
-				chunk_center,
-				world_seed,
-				int(edge.get("seed", world_seed))
-			)
+			var segment := _make_segment_from_world_polyline(edge, chunk_center, world_seed, int(edge.get("seed", world_seed)))
 			if segment.is_empty():
 				continue
 			if not _polyline_intersects_chunk(segment.get("points", []), half_size):
@@ -148,7 +142,10 @@ static func _build_local_cell_roads(expanded_rect: Rect2, chunk_center: Vector3,
 				hub,
 				_cell_seed(world_seed, "local_axis_we", cell_key)
 			)
-			var east_west_segment := _make_segment_from_world_polyline("local", east_west, chunk_center, world_seed, _cell_seed(world_seed, "local_segment_we", cell_key))
+			var east_west_segment := _make_segment_from_world_polyline({
+				"class": "local",
+				"points": east_west,
+			}, chunk_center, world_seed, _cell_seed(world_seed, "local_segment_we", cell_key))
 			if not east_west_segment.is_empty() and _polyline_intersects_chunk(east_west_segment.get("points", []), half_size):
 				segments.append(east_west_segment)
 
@@ -158,22 +155,32 @@ static func _build_local_cell_roads(expanded_rect: Rect2, chunk_center: Vector3,
 				hub,
 				_cell_seed(world_seed, "local_axis_ns", cell_key)
 			)
-			var north_south_segment := _make_segment_from_world_polyline("local", north_south, chunk_center, world_seed, _cell_seed(world_seed, "local_segment_ns", cell_key))
+			var north_south_segment := _make_segment_from_world_polyline({
+				"class": "local",
+				"points": north_south,
+			}, chunk_center, world_seed, _cell_seed(world_seed, "local_segment_ns", cell_key))
 			if not north_south_segment.is_empty() and _polyline_intersects_chunk(north_south_segment.get("points", []), half_size):
 				segments.append(north_south_segment)
 
 			if _should_add_service_link(cell_key, world_seed):
 				var service_points := _build_local_service_points(portals, hub, cell_key, world_seed)
-				var service_segment := _make_segment_from_world_polyline("service", service_points, chunk_center, world_seed, _cell_seed(world_seed, "local_segment_service", cell_key))
+				var service_segment := _make_segment_from_world_polyline({
+					"class": "service",
+					"points": service_points,
+				}, chunk_center, world_seed, _cell_seed(world_seed, "local_segment_service", cell_key))
 				if not service_segment.is_empty() and _polyline_intersects_chunk(service_segment.get("points", []), half_size):
 					segments.append(service_segment)
 	return segments
 
-static func _make_segment_from_world_polyline(road_class: String, points_2d: Array, chunk_center: Vector3, world_seed: int, segment_seed: int) -> Dictionary:
+static func _make_segment_from_world_polyline(edge_data: Dictionary, chunk_center: Vector3, world_seed: int, segment_seed: int) -> Dictionary:
+	var road_class := str(edge_data.get("class", "arterial"))
+	var points_2d: Array = edge_data.get("points", [])
 	if points_2d.size() < 2:
 		return {}
-	var template_id := CityRoadTemplateCatalog.get_template_id_for_class(road_class)
+	var template_id := str(edge_data.get("template_id", CityRoadTemplateCatalog.get_template_id_for_class(road_class)))
 	var template := CityRoadTemplateCatalog.get_template(template_id)
+	var section_semantics: Dictionary = edge_data.get("section_semantics", template.get("section_semantics", {}))
+	var resolved_width_m := float(edge_data.get("width_m", template.get("width_m", 11.0)))
 	var local_points := _world_polyline_to_local_points(points_2d, chunk_center, world_seed)
 	if local_points.size() < 2:
 		return {}
@@ -204,10 +211,14 @@ static func _make_segment_from_world_polyline(road_class: String, points_2d: Arr
 	return {
 		"class": road_class,
 		"template_id": template_id,
-		"lane_count_total": int(template.get("lane_count_total", 2)),
-		"width": float(template.get("width_m", 11.0)),
-		"median_width_m": float(template.get("median_width_m", 0.0)),
-		"shoulder_width_m": float(template.get("shoulder_width_m", 0.0)),
+		"lane_count_total": int(edge_data.get("lane_count_total", template.get("lane_count_total", 2))),
+		"lane_count_forward": int(edge_data.get("lane_count_forward", template.get("lane_count_forward", 0))),
+		"lane_count_backward": int(edge_data.get("lane_count_backward", template.get("lane_count_backward", 0))),
+		"lane_count_shared": int(edge_data.get("lane_count_shared", template.get("lane_count_shared", 0))),
+		"width": resolved_width_m,
+		"median_width_m": float(edge_data.get("median_width_m", template.get("median_width_m", 0.0))),
+		"shoulder_width_m": float(edge_data.get("shoulder_width_m", template.get("shoulder_width_m", 0.0))),
+		"section_semantics": section_semantics.duplicate(true),
 		"deck_thickness_m": deck_thickness,
 		"points": local_points,
 		"bridge": bridge,

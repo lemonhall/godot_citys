@@ -1,5 +1,7 @@
 extends RefCounted
 
+const CityRoadTemplateCatalog := preload("res://city_game/world/rendering/CityRoadTemplateCatalog.gd")
+
 const SEGMENT_COUNT_LIMIT := 2600
 const HIGHWAY_LENGTH_M := 420.0
 const ARTERIAL_LENGTH_M := 260.0
@@ -193,15 +195,26 @@ func _segment_to_edge(segment: Dictionary, index: int) -> Dictionary:
 	if not bool(segment.get("highway", false)):
 		jitter_scale = (sin(float(int(segment.get("seed", 0)) % 4096) * 0.011) * 0.5 + 0.5) * 42.0
 	var midpoint := start.lerp(end, 0.5) + normal * jitter_scale
+	var road_class := str(segment.get("road_class", "local"))
+	var template := CityRoadTemplateCatalog.get_template_for_class(road_class)
+	var section_semantics: Dictionary = template.get("section_semantics", {})
 	return {
 		"edge_id": "ref_road_%05d" % index,
 		"road_id": "ref_road_%05d" % index,
 		"from": "",
 		"to": "",
-		"class": str(segment.get("road_class", "local")),
+		"class": road_class,
+		"template_id": str(template.get("template_id", "local")),
 		"display_name": "Reference %05d" % index,
 		"seed": int(segment.get("seed", 0)),
-		"width_m": _width_for_class(str(segment.get("road_class", "local"))),
+		"width_m": float(template.get("width_m", 11.0)),
+		"lane_count_total": int(template.get("lane_count_total", 2)),
+		"lane_count_forward": int(template.get("lane_count_forward", 0)),
+		"lane_count_backward": int(template.get("lane_count_backward", 0)),
+		"lane_count_shared": int(template.get("lane_count_shared", 0)),
+		"median_width_m": float(template.get("median_width_m", 0.0)),
+		"shoulder_width_m": float(template.get("shoulder_width_m", 0.0)),
+		"section_semantics": section_semantics.duplicate(true),
 		"points": [start, midpoint, end],
 	}
 
@@ -262,13 +275,7 @@ func _min_degree_difference(a_deg: float, b_deg: float) -> float:
 	return diff
 
 func _width_for_class(road_class: String) -> float:
-	match road_class:
-		"expressway_elevated":
-			return 34.0
-		"arterial":
-			return 22.0
-		_:
-			return 11.0
+	return float(CityRoadTemplateCatalog.get_width_for_class(road_class))
 
 func _is_non_axis(segment: Dictionary) -> bool:
 	var start: Vector2 = segment.get("start", Vector2.ZERO)

@@ -3,7 +3,7 @@ extends RefCounted
 const CityRoadGraph := preload("res://city_game/world/model/CityRoadGraph.gd")
 const CityRoadTemplateCatalog := preload("res://city_game/world/rendering/CityRoadTemplateCatalog.gd")
 
-const SEGMENT_COUNT_LIMIT := 3400
+const SEGMENT_COUNT_LIMIT := 3800
 const HIGHWAY_LENGTH_M := 560.0
 const ARTERIAL_LENGTH_M := 320.0
 const LOCAL_LENGTH_M := 210.0
@@ -13,10 +13,13 @@ const HIGHWAY_BRANCH_PROBABILITY := 0.18
 const ARTERIAL_BRANCH_PROBABILITY := 0.38
 const LOCAL_BRANCH_PROBABILITY := 0.18
 const POPULATION_CENTER_MARGIN_M := 2200.0
-const MAIN_CENTER_RADIUS_M := 14200.0
-const SATELLITE_CENTER_RADIUS_M := 7600.0
-const CORRIDOR_WIDTH_M := 3400.0
+const MAIN_CENTER_RADIUS_M := 24500.0
+const SATELLITE_CENTER_RADIUS_M := 15000.0
+const CORRIDOR_WIDTH_M := 5200.0
 const CORRIDOR_SPINE_STEP_SCALE := 0.94
+const METRO_SPRAWL_RADIUS_X_M := 33800.0
+const METRO_SPRAWL_RADIUS_Y_M := 31200.0
+const METRO_SPRAWL_RADIAL_SCALE := 2.56
 
 var _config
 var _rng := RandomNumberGenerator.new()
@@ -286,11 +289,12 @@ func _sample_population(position: Vector2) -> float:
 	var corridor_bias := 0.0
 	for corridor_variant in _corridors:
 		corridor_bias = maxf(corridor_bias, _sample_corridor_density(position, corridor_variant))
+	var metro_sprawl := _sample_main_metro_sprawl(position)
 	var wave_a := 0.5 + 0.5 * sin(position.x / 4600.0 + float(_config.base_seed % 97) * 0.01)
 	var wave_b := 0.5 + 0.5 * cos(position.y / 5200.0 + float(_config.base_seed % 131) * 0.01)
 	var diagonal := 0.5 + 0.5 * sin((position.x + position.y) / 6800.0)
 	var noise_bias := (wave_a * 0.44 + wave_b * 0.33 + diagonal * 0.23) * 0.14
-	return clampf(center_bias * 0.88 + corridor_bias * 0.52 + noise_bias, 0.0, 1.0)
+	return clampf(center_bias * 0.78 + corridor_bias * 0.34 + metro_sprawl * 0.42 + noise_bias * 0.8, 0.0, 1.0)
 
 func _segment_to_edge(segment: Dictionary, index: int) -> Dictionary:
 	var start: Vector2 = segment.get("start", Vector2.ZERO)
@@ -671,19 +675,19 @@ func _build_population_centers() -> Array[Dictionary]:
 		"weight": 1.0,
 	})
 
-	var satellite_base_angles := [228.0, 316.0, 38.0, 112.0, 178.0, 6.0]
-	var satellite_base_distances := [26400.0, 24600.0, 27800.0, 22800.0, 29200.0, 23800.0]
-	var satellite_base_weights := [0.8, 0.68, 0.78, 0.66, 0.72, 0.64]
+	var satellite_base_angles := [224.0, 318.0, 44.0, 118.0]
+	var satellite_base_distances := [14200.0, 16800.0, 15800.0, 17600.0]
+	var satellite_base_weights := [0.78, 0.72, 0.76, 0.7]
 	for satellite_index in range(satellite_base_angles.size()):
-		var angle_deg: float = float(satellite_base_angles[satellite_index]) + lerpf(-15.0, 15.0, _seeded_unit("satellite_angle_%d" % satellite_index))
-		var distance_m: float = float(satellite_base_distances[satellite_index]) + lerpf(-1600.0, 1600.0, _seeded_unit("satellite_distance_%d" % satellite_index))
+		var angle_deg: float = float(satellite_base_angles[satellite_index]) + lerpf(-12.0, 12.0, _seeded_unit("satellite_angle_%d" % satellite_index))
+		var distance_m: float = float(satellite_base_distances[satellite_index]) + lerpf(-1400.0, 1400.0, _seeded_unit("satellite_distance_%d" % satellite_index))
 		var direction := Vector2(sin(deg_to_rad(angle_deg)), cos(deg_to_rad(angle_deg)))
 		var satellite_position := _clamp_center_to_world(main_center_position + direction * distance_m)
 		centers.append({
 			"center_id": "satellite_%d" % satellite_index,
 			"kind": "satellite",
 			"position": satellite_position,
-			"radius_m": SATELLITE_CENTER_RADIUS_M + lerpf(-900.0, 1400.0, _seeded_unit("satellite_radius_%d" % satellite_index)),
+			"radius_m": SATELLITE_CENTER_RADIUS_M + lerpf(-700.0, 1200.0, _seeded_unit("satellite_radius_%d" % satellite_index)),
 			"weight": satellite_base_weights[satellite_index],
 			"angle_deg": fposmod(angle_deg, 360.0),
 		})
@@ -728,6 +732,25 @@ func _build_corridors(population_centers: Array[Dictionary]) -> Array[Dictionary
 			})
 	return corridors
 
+func _sample_main_metro_sprawl(position: Vector2) -> float:
+	if _population_centers.is_empty():
+		return 0.0
+	var main_center: Dictionary = _population_centers[0]
+	var main_position: Vector2 = main_center.get("position", Vector2.ZERO)
+	var delta := position - main_position
+	var rect_ratio := maxf(
+		absf(delta.x) / METRO_SPRAWL_RADIUS_X_M,
+		absf(delta.y) / METRO_SPRAWL_RADIUS_Y_M
+	)
+	var rect_density := clampf(1.0 - rect_ratio, 0.0, 1.0)
+	rect_density = _smoothstep01(rect_density)
+	var radial_ratio := delta.length() / maxf(MAIN_CENTER_RADIUS_M * METRO_SPRAWL_RADIAL_SCALE, 1.0)
+	var radial_density := exp(-radial_ratio * radial_ratio * 0.72)
+	var warp_a := 0.5 + 0.5 * sin(delta.x / 6100.0 + delta.y / 8400.0 + float(_config.base_seed % 53) * 0.01)
+	var warp_b := 0.5 + 0.5 * cos(delta.y / 5600.0 - delta.x / 7900.0 + float(_config.base_seed % 71) * 0.01)
+	var warp := 0.82 + (warp_a * 0.55 + warp_b * 0.45) * 0.18
+	return clampf(maxf(rect_density * warp, radial_density * 0.86), 0.0, 1.0)
+
 func _segment_length_for_class(road_class: String) -> float:
 	match road_class:
 		"expressway_elevated":
@@ -758,6 +781,10 @@ func _sample_corridor_density(position: Vector2, corridor: Dictionary) -> float:
 	var segment_length := maxf(start.distance_to(finish), 1.0)
 	var taper := clampf(1.0 - minf(position.distance_to(start), position.distance_to(finish)) / (segment_length * 1.15), 0.35, 1.0)
 	return corridor_density * taper * float(corridor.get("weight", 0.7))
+
+func _smoothstep01(value: float) -> float:
+	var t := clampf(value, 0.0, 1.0)
+	return t * t * (3.0 - 2.0 * t)
 
 func _seeded_unit(scope_name: String) -> float:
 	return float(int(_config.derive_seed(scope_name)) % 10000) / 9999.0

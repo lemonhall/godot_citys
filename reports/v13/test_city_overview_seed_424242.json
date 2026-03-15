@@ -1,19 +1,19 @@
 {
 	"active_bounds": {
-		"height": 68454.078125,
-		"width": 57361.90234375,
-		"x": -29807.96484375,
-		"y": -35000.0
+		"height": 56700.64453125,
+		"width": 56220.3671875,
+		"x": -26546.048828125,
+		"y": -25161.953125
 	},
-	"building_chunk_count": 4660,
-	"building_footprint_count": 45827,
-	"building_pixel_count": 21293,
-	"corridor_count": 12,
+	"building_chunk_count": 4856,
+	"building_footprint_count": 45125,
+	"building_pixel_count": 26637,
+	"corridor_count": 6,
 	"image_height_px": 2048,
 	"image_width_px": 2048,
 	"metadata_path": "E:/development/godot_citys/reports/v13/test_city_overview_seed_424242.json",
 	"png_path": "E:/development/godot_citys/reports/v13/test_city_overview_seed_424242.png",
-	"population_center_count": 7,
-	"road_edge_count": 4200,
-	"road_pixel_count": 121294
+	"population_center_count": 5,
+	"road_edge_count": 3800,
+	"road_pixel_count": 158123
 }

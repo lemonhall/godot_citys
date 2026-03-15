@@ -1,0 +1,19 @@
+{
+	"active_bounds": {
+		"height": 27544.263671875,
+		"width": 41740.39453125,
+		"x": -19022.888671875,
+		"y": -11177.439453125
+	},
+	"building_chunk_count": 2461,
+	"building_footprint_count": 32147,
+	"building_pixel_count": 59215,
+	"corridor_count": 3,
+	"image_height_px": 2048,
+	"image_width_px": 2048,
+	"metadata_path": "E:/development/godot_citys/reports/v13/test_city_overview_seed_424242.json",
+	"png_path": "E:/development/godot_citys/reports/v13/test_city_overview_seed_424242.png",
+	"population_center_count": 4,
+	"road_edge_count": 2600,
+	"road_pixel_count": 156079
+}

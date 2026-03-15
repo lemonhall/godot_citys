@@ -125,69 +125,14 @@ func _build_district_graph(config):
 	return graph
 
 func _build_road_graph(config, district_graph):
-	var road_graph = CityRoadGraph.new()
-	var district_grid: Vector2i = config.get_district_grid_size()
-	var district_ids: Array[String] = district_graph.get_district_ids()
-
+	var road_graph := CityReferenceRoadGraphBuilder.new().build_graph(config)
 	for district in district_graph.districts:
 		var district_key: Vector2i = district.get("district_key", Vector2i.ZERO)
-		var road_anchor: Vector2 = _build_road_anchor(config, district.get("center", Vector2.ZERO), district_key)
 		road_graph.add_node({
 			"district_id": district["district_id"],
 			"district_key": district_key,
-			"center": road_anchor,
+			"center": district.get("center", Vector2.ZERO),
 		})
-
-	for x in district_grid.x:
-		for y in district_grid.y:
-			var source_id: String = district_ids[y + x * district_grid.y]
-			if x + 1 < district_grid.x:
-				var to_id_h: String = config.format_district_id(Vector2i(x + 1, y))
-				var horizontal_class: String = _resolve_road_class(district_grid, Vector2i(x, y), true)
-				var horizontal_edge := {
-					"edge_id": "road_h_%02d_%02d" % [x, y],
-					"road_id": "road_h_%02d_%02d" % [x, y],
-					"from": source_id,
-					"to": to_id_h,
-					"class": horizontal_class,
-					"display_name": _build_road_name(horizontal_class, true, y),
-					"seed": config.derive_seed("road_h", Vector2i(x, y)),
-					"points": _build_edge_points(
-						road_graph.get_node_by_id(source_id).get("center", Vector2.ZERO),
-						road_graph.get_node_by_id(to_id_h).get("center", Vector2.ZERO),
-						true,
-						config.derive_seed("road_h", Vector2i(x, y)),
-						horizontal_class
-					),
-				}
-				horizontal_edge.merge(_build_semantic_edge_fields(horizontal_class), true)
-				road_graph.add_edge(horizontal_edge)
-				_attach_edge_bounds(road_graph.edges[-1])
-			if y + 1 < district_grid.y:
-				var to_id_v: String = config.format_district_id(Vector2i(x, y + 1))
-				var vertical_class: String = _resolve_road_class(district_grid, Vector2i(x, y), false)
-				var vertical_edge := {
-					"edge_id": "road_v_%02d_%02d" % [x, y],
-					"road_id": "road_v_%02d_%02d" % [x, y],
-					"from": source_id,
-					"to": to_id_v,
-					"class": vertical_class,
-					"display_name": _build_road_name(vertical_class, false, x),
-					"seed": config.derive_seed("road_v", Vector2i(x, y)),
-					"points": _build_edge_points(
-						road_graph.get_node_by_id(source_id).get("center", Vector2.ZERO),
-						road_graph.get_node_by_id(to_id_v).get("center", Vector2.ZERO),
-						false,
-						config.derive_seed("road_v", Vector2i(x, y)),
-						vertical_class
-					),
-				}
-				vertical_edge.merge(_build_semantic_edge_fields(vertical_class), true)
-				road_graph.add_edge(vertical_edge)
-				_attach_edge_bounds(road_graph.edges[-1])
-	for district in district_graph.districts:
-		_append_district_collector_roads(config, road_graph, district)
-	CityReferenceRoadGraphBuilder.new().build_overlay(config, road_graph)
 	return road_graph
 
 func _build_or_load_road_graph(config, district_graph) -> Dictionary:

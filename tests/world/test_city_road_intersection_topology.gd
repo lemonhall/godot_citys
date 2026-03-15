@@ -19,12 +19,12 @@ func _run() -> void:
 	var world_data: Dictionary = CityWorldGenerator.new().generate_world(config)
 	var road_graph = world_data.get("road_graph")
 	var intersections: Array = road_graph.get_intersections_in_rect(Rect2(Vector2(-1200.0, -1200.0), Vector2(2400.0, 2400.0)))
-	var outskirts_anchor: Vector2 = road_graph.get_node_by_id(config.format_district_id(Vector2i(2, 2))).get("center", Vector2.ZERO)
-	var outskirts_intersections: Array = road_graph.get_intersections_in_rect(Rect2(outskirts_anchor - Vector2.ONE * 384.0, Vector2.ONE * 768.0))
+	var growth_stats: Dictionary = road_graph.get_growth_stats() if road_graph.has_method("get_growth_stats") else {}
+	var satellite_intersections: Array = _find_satellite_intersections(road_graph, growth_stats.get("population_centers", []))
 
 	if not T.require_true(self, intersections.size() > 0, "Road graph must expose center intersections for topology contract checks"):
 		return
-	if not T.require_true(self, outskirts_intersections.size() > 0, "Shared road graph must also expose outskirts intersections once topology contract is formalized"):
+	if not T.require_true(self, satellite_intersections.size() > 0, "Shared road graph must also expose satellite-center intersections once v13 topology contract is formalized"):
 		return
 
 	var saw_topology_contract := false
@@ -91,7 +91,7 @@ func _run() -> void:
 
 	if not T.require_true(self, saw_topology_contract, "At least one shared road graph intersection must expose the topology contract"):
 		return
-	if not T.require_true(self, _has_topology_contract(outskirts_intersections), "Outskirts intersections must expose the same topology contract as center intersections"):
+	if not T.require_true(self, _has_topology_contract(satellite_intersections), "Satellite-center intersections must expose the same topology contract as center intersections"):
 		return
 
 	T.pass_and_quit(self)
@@ -102,3 +102,14 @@ func _has_topology_contract(intersections: Array) -> bool:
 		if intersection.has("ordered_branches") and not (intersection.get("ordered_branches", []) as Array).is_empty():
 			return true
 	return false
+
+func _find_satellite_intersections(road_graph, population_centers: Array) -> Array:
+	for center_variant in population_centers:
+		var center: Dictionary = center_variant
+		if str(center.get("kind", "")) != "satellite":
+			continue
+		var position: Vector2 = center.get("position", Vector2.ZERO)
+		var intersections: Array = road_graph.get_intersections_in_rect(Rect2(position - Vector2.ONE * 1200.0, Vector2.ONE * 2400.0))
+		if not intersections.is_empty():
+			return intersections
+	return []

@@ -26,6 +26,7 @@
 - world-space 连续道路骨架、轻量地形高差与近景建筑碰撞（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - 更自然的本地道路场、道路缓冲区避让、多 archetype 占位建筑、折叠巡检 UI 与少量桥梁占位（[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
 - 参考式连续道路图、共享 2D 城市投影、小地图与导航路径可视化（[已由 ECN-0006 变更](../ecn/ECN-0006-reference-roadgraph-and-minimap.md)）
+- 多中心城市总体形态、卫星城连接干道、沿街建筑布局与 deterministic overview PNG 验收输出（[已由 ECN-0019 变更](../ecn/ECN-0019-city-morphology-and-png-acceptance.md)）
 - 面向 `60 FPS = 16.67ms/frame` 红线的道路表面性能专项：缓存、分层、异步准备与 surface page 架构预留（[已由 ECN-0007 变更](../ecn/ECN-0007-performance-redline-and-road-surface-pipeline.md)）
 - 面向 `60 FPS = 16.67ms/frame` 红线的 terrain streaming 性能专项：共享规则网格、height/normal page cache、异步准备与 terrain LOD/clipmap-lite 预留（[已由 ECN-0008 变更](../ecn/ECN-0008-terrain-streaming-performance-pipeline.md)）
 - 道路语义契约与交叉口拓扑：为 shared road graph、chunk 渲染、lane graph 和后续 signage / vehicle 系统提供同源 section / lane / intersection metadata，且不得退回 per-road runtime node graph（[已由 ECN-0018 变更](../ecn/ECN-0018-road-semantic-runtime-uplift.md)）
@@ -78,7 +79,7 @@
 **范围**：
 
 - 生成 district graph
-- 生成参考式全局 continuous road graph，并为 chunk 渲染、2D 城市投影与道路语义查询同时提供可查询的 world-space 连续道路骨架（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)，[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)，[已由 ECN-0006 变更](../ecn/ECN-0006-reference-roadgraph-and-minimap.md)，[已由 ECN-0018 变更](../ecn/ECN-0018-road-semantic-runtime-uplift.md)）
+- 生成参考式全局 continuous road graph，并为 chunk 渲染、2D 城市投影与道路语义查询同时提供可查询的 world-space 连续道路骨架（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)，[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)，[已由 ECN-0006 变更](../ecn/ECN-0006-reference-roadgraph-and-minimap.md)，[已由 ECN-0018 变更](../ecn/ECN-0018-road-semantic-runtime-uplift.md)，[已由 ECN-0019 变更](../ecn/ECN-0019-city-morphology-and-png-acceptance.md)）
 - 提供 block / parcel 的确定性、按 chunk 查询的元数据接口（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
 - 允许 chunk 在没有高模资源时先用占位表现
 
@@ -92,6 +93,7 @@
 - 世界生成 API 能在不实例化整座城市场景节点的前提下，返回完整 district / road 图，以及可按 chunk 查询的 block / parcel 元数据契约。
 - 自动化测试至少断言生成结果包含非空 district graph、完整道路边集合、完整 block / parcel 统计，以及 `get_blocks_for_chunk()` 这类惰性查询接口。
 - 自动化测试至少断言道路图存在非正交连续段、局部吸附/切分后形成真实交叉连接，而不是仅由规则 district 边与每 chunk 本地补路拼接得出。（[已由 ECN-0006 变更](../ecn/ECN-0006-reference-roadgraph-and-minimap.md)）
+- 自动化测试至少断言：整城道路图表现出“主城区 + 卫星城 + 连接干道”的多中心形态，且 edge count 明显低于 full-world district lattice 基线；`district graph` 可以存在，但不得继续作为正式可见道路主骨架。（[已由 ECN-0019 变更](../ecn/ECN-0019-city-morphology-and-png-acceptance.md)）
 - 反作弊条款：任何验收都不得仅靠扩大 `CityPrototype.tscn` 中的静态几何来宣称“城市已扩容”。
 
 ### REQ-0001-003 受边界约束的 chunk streaming
@@ -136,6 +138,7 @@
 - chunk ground、道路 y 值和建筑基座必须共享同一套连续高度采样，避免整城纯平面（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - 近景建筑必须提供可启停碰撞壳；mid/far LOD 不得保留不可见碰撞（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - 建筑与 roadside props 都必须满足道路缓冲区避让，不得长在路面上；chunk 建筑体量需要达到更高密度并提供多 archetype 变体（[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
+- chunk 建筑布局必须以沿街 frontage / streetfront candidate 为正式上游，而不是继续以 chunk-local 均匀候选格点为主、只把离路远近当作评分项。（[已由 ECN-0019 变更](../ecn/ECN-0019-city-morphology-and-png-acceptance.md)）
 - block 自动生成基础遮挡体或 `ArrayOccluder3D`
 - chunk 必须提供占位地表与碰撞壳，保证离开中心原型区后仍可连续步行/高速巡检（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
 - `WorldEnvironment` 必须提供低成本 sky/fog 氛围，避免城市漂浮在单色背景前（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
@@ -159,6 +162,7 @@
 - 自动化测试至少断言：terrain near / mid / far 至少存在两档不同分辨率或等价 LOD 表现，且跨 chunk / page 边界保持连续。
 - 自动化测试至少断言：近景建筑提供可启停碰撞壳，mid/far LOD 时不可见碰撞会停用。
 - 自动化测试至少断言：建筑与 roadside props 对道路保持最小缓冲区退距，且中心 chunk 建筑数量与 archetype 数量达到约定阈值。
+- 自动化测试至少断言：building layout 输出正式的 streetfront / frontage 统计，且主体 building 与最近道路保持沿街关系，而不是均匀散点噪声。（[已由 ECN-0019 变更](../ecn/ECN-0019-city-morphology-and-png-acceptance.md)）
 - 自动化测试至少断言：chunk 地表存在可见高差，而不是整块纯平面。
 - 自动化测试至少断言：至少存在少量桥梁/高架占位。
 - 自动化测试至少断言：演员离开中心起始区后，仍能落在 streamed chunk 的占位地表上，而不是掉穿世界。
@@ -197,6 +201,7 @@
 - 展示当前 chunk 的 visual variant 标识，便于人工检查重复度（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
 - 为主要 E2E 测试输出稳定可解析的 debug 文本
 - 为主要 E2E 测试输出稳定可解析的运行时报告，至少包含 `final_position` 与 `transition_count`（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)）
+- 提供 deterministic world overview evidence 输出，至少包含 PNG 与 sidecar metadata，用于人工验收整城 morphology。（[已由 ECN-0019 变更](../ecn/ECN-0019-city-morphology-and-png-acceptance.md)）
 - 将 `60 FPS = 16.67ms/frame` 作为项目级性能红线，在达线前对 rendering/streaming 相关改动持续保留 profiling 证据与回归护栏（[已由 ECN-0007 变更](../ecn/ECN-0007-performance-redline-and-road-surface-pipeline.md)）
 - terrain streaming 相关 profiling 必须额外输出 `ground_mesh_usec`、`terrain_prepare_usec`、`terrain_commit_usec`、`duplication_ratio` 或等价字段，避免热点迁移后观测面板失真（[已由 ECN-0008 变更](../ecn/ECN-0008-terrain-streaming-performance-pipeline.md)）
 
@@ -209,6 +214,7 @@
 
 - 自动化测试或脚本输出中必须能读取 `current_chunk_id`、`active_chunk_count`、至少一个 streaming 耗时指标，以及 `transition_count` / `final_position`。
 - terrain profiling 自动化输出中必须能读取 `ground_mesh_usec` 与至少一个 terrain prepare/commit/cache 指标。
+- world overview evidence 输出中必须能读取 `road_edge_count`、`population_center_count`、`corridor_count`、`building_footprint_count` 与 PNG 产物路径。
 - 反作弊条款：不得只在文档中写目标数字而没有实际运行时输出。
 
 ### REQ-0001-010 道路表面性能红线与专项治理
@@ -287,6 +293,30 @@
 - 自动化测试至少断言：chunk layout / surface / bridge 至少有一条正式 consumer 链消费 semantic contract。
 - fresh runtime / first-visit / chunk setup profiling 继续守住 `16.67ms/frame` 红线及本轮计划阈值。
 - 反作弊条款：不得通过把道路重新拆成 per-road / per-lane scene node、`Path3D` 树或大量独立 `MeshInstance3D` 来实现语义升级。
+
+### REQ-0001-013 城市总体形态与 PNG 验收输出
+
+**动机**：当前 shared road graph 即使能通过连续性、语义和性能测试，也仍可能在整城层面退化成 world-filling dense grid。没有世界级 morphology 证据，项目就会在“技术上通过、视觉上失真”的状态里持续漂移。
+
+**范围**：
+
+- world road graph 必须由多中心 density / corridor field 驱动，至少形成 1 个主城区与 2 个以上卫星城或次中心。
+- `district graph` 允许继续作为世界索引存在，但不得直接成为正式可见道路主骨架。
+- building layout 必须在 overview 层可体现出沿街附着关系，而不是全域均匀散点。
+- 提供 deterministic overview exporter，输出与当前 seed 一致的 `PNG + metadata`，直接来源于 `road_graph + building layout`。
+
+**非目标**：
+
+- 不要求 v13 一次性做完最终土地利用模拟或 parcel 级建筑法规。
+- 不要求 overview PNG 具备最终游戏内美术风格。
+- 不要求在本轮重构 addressable building / place index 主键体系。
+
+**验收口径**：
+
+- 固定 seed 下，自动化测试至少断言：`population_center_count >= 3`、`corridor_count >= 2`，且 `road_edge_count` 明显低于 full-world district lattice 基线。
+- 固定 seed 下，自动化测试至少断言：中心城与至少两个卫星窗口存在正式道路查询结果，而不是只有中心城有路、其余世界为空。
+- headless overview exporter 必须稳定输出 `PNG + metadata` 到固定路径；metadata 至少包含 `road_edge_count`、`population_center_count`、`corridor_count`、`building_footprint_count`、`road_pixel_count`、`building_pixel_count`。
+- 反作弊条款：不得继续保留 world-filling district lattice 作为正式可见道路主骨架；不得导出静态参考图、手工截图或与当前世界数据脱钩的示意图来冒充 overview evidence。
 
 ### REQ-0001-007 端到端 travel 验证
 

@@ -8,6 +8,7 @@ const BUILDING_MARGIN_M := 3.0
 const CANDIDATE_STEP_M := 22.0
 const MAX_BUILDINGS_PER_CHUNK := 20
 const INFILL_TARGET_EXTRA := 6
+const ROAD_ALIGNMENT_DELTA_MAX_DEG := 18.0
 
 const PALETTES := [
 	{
@@ -111,8 +112,10 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 	var road_layout_usec := Time.get_ticks_usec() - road_layout_started_usec
 	var road_segments: Array = road_layout.get("segments", [])
 	var buildings_started_usec := Time.get_ticks_usec()
-	var buildings: Array = _build_buildings(chunk_center, chunk_size_m, chunk_seed, world_seed, road_segments)
+	var building_result: Dictionary = _build_buildings(chunk_center, chunk_size_m, chunk_seed, world_seed, road_segments)
 	var buildings_usec := Time.get_ticks_usec() - buildings_started_usec
+	var buildings: Array = building_result.get("buildings", [])
+	var building_layout_stats: Dictionary = (building_result.get("layout_stats", {}) as Dictionary).duplicate(true)
 	var building_archetype_ids := _collect_building_archetypes(buildings)
 	var terrain_relief_started_usec := Time.get_ticks_usec()
 	var terrain_relief := _measure_terrain_relief(chunk_center, chunk_size_m, world_seed)
@@ -145,6 +148,7 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 		"bridge_min_clearance_m": float(road_layout.get("bridge_min_clearance_m", 0.0)),
 		"bridge_deck_thickness_m": float(road_layout.get("bridge_deck_thickness_m", 0.0)),
 		"terrain_relief_m": terrain_relief,
+		"building_layout_stats": building_layout_stats,
 		"build_profile_stats": {},
 		"signature": "",
 	}
@@ -161,10 +165,13 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 	}
 	return profile
 
-static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, world_seed: int, road_segments: Array) -> Array:
-	var candidates := _build_candidate_slots(chunk_center, chunk_size_m, chunk_seed, road_segments)
+static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, world_seed: int, road_segments: Array) -> Dictionary:
+	var candidate_keys: Dictionary = {}
+	var streetfront_candidates := _build_streetfront_candidates(chunk_center, chunk_size_m, chunk_seed, road_segments, candidate_keys)
+	var infill_candidates := _build_infill_candidates(chunk_center, chunk_size_m, chunk_seed, road_segments, candidate_keys)
 	var desired_count := mini(MAX_BUILDINGS_PER_CHUNK, 14 + int((chunk_seed >> 1) % 4))
 	var minimum_dense_target := mini(MAX_BUILDINGS_PER_CHUNK, 12)
+	var streetfront_cycle := _build_streetfront_archetype_cycle(chunk_seed)
 	var archetype_cycle := _build_archetype_cycle(chunk_seed)
 	var compact_cycle := _build_compact_archetype_cycle()
 	var building_rng := RandomNumberGenerator.new()
@@ -172,52 +179,130 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 	var occupied: Array = []
 	var half_extent := chunk_size_m * 0.5 - 10.0
 
-	for candidate_index in range(candidates.size()):
+	for candidate_index in range(streetfront_candidates.size()):
 		if buildings.size() >= desired_count:
 			break
-		var candidate: Dictionary = candidates[candidate_index]
-		var archetype: Dictionary = archetype_cycle[candidate_index % archetype_cycle.size()]
+		var candidate: Dictionary = streetfront_candidates[candidate_index]
+		var archetype: Dictionary = streetfront_cycle[candidate_index % streetfront_cycle.size()]
 		var building := _try_build_building(candidate, archetype, chunk_center, half_extent, world_seed, occupied, building_rng)
 		if building.is_empty():
 			continue
 		buildings.append(building)
-		occupied.append({
-			"center_2d": building.get("center_2d", Vector2.ZERO),
-			"radius": building.get("visual_footprint_radius_m", building.get("footprint_radius_m", 0.0)),
-		})
+		_append_occupied_entry(occupied, building)
 
 	if buildings.size() < desired_count:
-		for candidate_index in range(candidates.size()):
-			if buildings.size() >= mini(MAX_BUILDINGS_PER_CHUNK, desired_count + INFILL_TARGET_EXTRA):
+		for candidate_index in range(streetfront_candidates.size()):
+			if buildings.size() >= desired_count:
 				break
-			var candidate: Dictionary = candidates[candidate_index]
-			var filler_archetype: Dictionary = BUILDING_ARCHETYPES[(candidate_index + 3) % BUILDING_ARCHETYPES.size()]
+			var candidate: Dictionary = streetfront_candidates[candidate_index]
+			var compact_streetfront_archetype: Dictionary = compact_cycle[candidate_index % compact_cycle.size()]
+			var compact_streetfront := _try_build_building(candidate, compact_streetfront_archetype, chunk_center, half_extent, world_seed, occupied, building_rng, 0.74)
+			if compact_streetfront.is_empty():
+				continue
+			buildings.append(compact_streetfront)
+			_append_occupied_entry(occupied, compact_streetfront)
+
+	var streetfront_building_count := buildings.size()
+	var streetfront_ratio_cap := streetfront_building_count + int(floor(float(streetfront_building_count) * 0.428571))
+	var infill_total_cap := mini(
+		MAX_BUILDINGS_PER_CHUNK,
+		maxi(minimum_dense_target, streetfront_ratio_cap)
+	)
+
+	if buildings.size() < desired_count:
+		for candidate_index in range(infill_candidates.size()):
+			if buildings.size() >= mini(infill_total_cap, desired_count + INFILL_TARGET_EXTRA):
+				break
+			var candidate: Dictionary = infill_candidates[candidate_index]
+			var filler_archetype: Dictionary = archetype_cycle[candidate_index % archetype_cycle.size()]
 			var filler := _try_build_building(candidate, filler_archetype, chunk_center, half_extent, world_seed, occupied, building_rng, 0.82)
 			if filler.is_empty():
 				continue
 			buildings.append(filler)
-			occupied.append({
-				"center_2d": filler.get("center_2d", Vector2.ZERO),
-				"radius": filler.get("visual_footprint_radius_m", filler.get("footprint_radius_m", 0.0)),
-			})
+			_append_occupied_entry(occupied, filler)
 
-	if buildings.size() < minimum_dense_target:
-		for candidate_index in range(candidates.size()):
-			if buildings.size() >= minimum_dense_target:
+	if buildings.size() < mini(minimum_dense_target, infill_total_cap):
+		for candidate_index in range(infill_candidates.size()):
+			if buildings.size() >= mini(minimum_dense_target, infill_total_cap):
 				break
-			var candidate: Dictionary = candidates[candidate_index]
+			var candidate: Dictionary = infill_candidates[candidate_index]
 			var compact_archetype: Dictionary = compact_cycle[candidate_index % compact_cycle.size()]
 			var compact := _try_build_building(candidate, compact_archetype, chunk_center, half_extent, world_seed, occupied, building_rng, 0.68)
 			if compact.is_empty():
 				continue
 			buildings.append(compact)
-			occupied.append({
-				"center_2d": compact.get("center_2d", Vector2.ZERO),
-				"radius": compact.get("visual_footprint_radius_m", compact.get("footprint_radius_m", 0.0)),
-			})
-	return buildings
+			_append_occupied_entry(occupied, compact)
 
-static func _build_candidate_slots(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, road_segments: Array) -> Array:
+	return {
+		"buildings": buildings,
+		"layout_stats": _build_building_layout_stats(buildings, streetfront_candidates, infill_candidates),
+	}
+
+static func _build_streetfront_candidates(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, road_segments: Array, candidate_keys: Dictionary) -> Array:
+	var half_extent := chunk_size_m * 0.5 - 18.0
+	var candidates: Array = []
+	for segment_index in range(road_segments.size()):
+		var segment: Dictionary = road_segments[segment_index]
+		var road_class := str(segment.get("class", "local"))
+		if road_class == "expressway_elevated":
+			continue
+		var points: Array = segment.get("points", [])
+		if points.size() < 2:
+			continue
+		var road_width := float(segment.get("width", 12.0))
+		var step_m := _streetfront_step_for_class(road_class)
+		var setback_m := _streetfront_setback_for_class(road_class) + road_width * 0.5
+		var class_bias := 12.0
+		match road_class:
+			"arterial":
+				class_bias = 18.0
+			"service":
+				class_bias = 8.0
+		for point_index in range(points.size() - 1):
+			var start_point: Vector3 = points[point_index]
+			var end_point: Vector3 = points[point_index + 1]
+			var start_2d := Vector2(start_point.x, start_point.z)
+			var end_2d := Vector2(end_point.x, end_point.z)
+			var direction_2d := end_2d - start_2d
+			var segment_length := direction_2d.length()
+			if segment_length < 12.0:
+				continue
+			var tangent := direction_2d / segment_length
+			var normal := Vector2(-tangent.y, tangent.x)
+			var road_angle_rad := atan2(tangent.y, tangent.x)
+			var sample_count := maxi(int(floor(segment_length / step_m)), 1)
+			for sample_index in range(sample_count):
+				var sample_ratio := (float(sample_index) + 0.5) / float(sample_count)
+				var sample_point := start_2d.lerp(end_2d, sample_ratio)
+				for side_sign in [-1.0, 1.0]:
+					var center_2d := _clamp_to_chunk(sample_point + normal * side_sign * setback_m, half_extent)
+					var position_key := _candidate_position_key(center_2d)
+					if candidate_keys.has(position_key):
+						continue
+					var road_metrics := _nearest_road_metrics(center_2d, road_segments)
+					var clearance := float(road_metrics.get("clearance_m", 9999.0))
+					if clearance < setback_m * 0.7:
+						continue
+					var radial_bias := center_2d.length() / maxf(half_extent, 1.0)
+					var score := 118.0 + class_bias - absf(clearance - setback_m) * 0.65 - radial_bias * 10.0
+					var candidate := {
+						"center_2d": center_2d,
+						"clearance": clearance,
+						"road_angle_rad": road_angle_rad,
+						"score": score,
+						"seed": _streetfront_candidate_seed(chunk_seed, road_class, center_2d, side_sign),
+						"world_center": Vector2(chunk_center.x + center_2d.x, chunk_center.z + center_2d.y),
+						"candidate_kind": "streetfront",
+						"road_class": road_class,
+					}
+					candidate_keys[position_key] = true
+					candidates.append(candidate)
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a.get("score", 0.0)) > float(b.get("score", 0.0))
+	)
+	return candidates
+
+static func _build_infill_candidates(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, road_segments: Array, candidate_keys: Dictionary) -> Array:
 	var half_extent := chunk_size_m * 0.5 - 18.0
 	var candidates: Array = []
 	for x_step in range(int(floor((-half_extent) / CANDIDATE_STEP_M)), int(ceil(half_extent / CANDIDATE_STEP_M)) + 1):
@@ -228,12 +313,16 @@ static func _build_candidate_slots(chunk_center: Vector3, chunk_size_m: float, c
 				float(z_step) * CANDIDATE_STEP_M + cos(float((slot_seed >> 2) % 4096) * 0.013) * 5.5
 			)
 			center_2d = _clamp_to_chunk(center_2d, half_extent)
+			var position_key := _candidate_position_key(center_2d)
+			if candidate_keys.has(position_key):
+				continue
 			var road_metrics := _nearest_road_metrics(center_2d, road_segments, 8.0)
 			var clearance := float(road_metrics.get("clearance_m", 9999.0))
-			if clearance < 8.0:
+			if clearance < 10.0:
 				continue
 			var radial_bias := center_2d.length() / maxf(half_extent, 1.0)
-			var score := 54.0 - absf(clearance - 16.0) * 0.95 - radial_bias * 9.0 + sin(float(slot_seed % 2048) * 0.021) * 6.0
+			var score := 42.0 - absf(clearance - 22.0) * 1.1 - radial_bias * 11.0 + sin(float(slot_seed % 2048) * 0.021) * 4.0
+			candidate_keys[position_key] = true
 			candidates.append({
 				"center_2d": center_2d,
 				"clearance": clearance,
@@ -241,6 +330,8 @@ static func _build_candidate_slots(chunk_center: Vector3, chunk_size_m: float, c
 				"score": score,
 				"seed": slot_seed,
 				"world_center": Vector2(chunk_center.x + center_2d.x, chunk_center.z + center_2d.y),
+				"candidate_kind": "infill",
+				"road_class": "local",
 			})
 	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return float(a.get("score", 0.0)) > float(b.get("score", 0.0))
@@ -256,6 +347,8 @@ static func _try_build_building(candidate: Dictionary, archetype: Dictionary, ch
 	var footprint_scale := float(archetype.get("footprint_scale", 1.0))
 	var candidate_clearance := float(candidate.get("clearance", ROAD_CLEARANCE_M + 12.0))
 	var parcel_scale := clampf((candidate_clearance - ROAD_CLEARANCE_M) / 18.0, 0.72, 1.0)
+	if str(candidate.get("candidate_kind", "")) == "streetfront":
+		parcel_scale = minf(parcel_scale, 0.84)
 	var width := snappedf(building_rng.randf_range(min_size.x, max_size.x) * scale_multiplier * parcel_scale, 2.0)
 	var depth := snappedf(building_rng.randf_range(min_size.y, max_size.y) * scale_multiplier * parcel_scale, 2.0)
 	var height := snappedf(building_rng.randf_range(height_range.x, height_range.y) * lerpf(0.92, 1.08, building_rng.randf()), 2.0)
@@ -282,6 +375,7 @@ static func _try_build_building(candidate: Dictionary, archetype: Dictionary, ch
 	var world_center: Vector2 = candidate.get("world_center", Vector2(chunk_center.x + center_2d.x, chunk_center.z + center_2d.y))
 	var ground_y := CityTerrainSampler.sample_height(world_center.x, world_center.y, world_seed)
 	var palette: Dictionary = PALETTES[int(posmod(local_seed, PALETTES.size()))]
+	var road_alignment_delta_deg := _measure_street_alignment_delta_deg(yaw_rad, road_angle_rad)
 	return {
 		"name": "Building_%d_%s" % [abs(local_seed % 10000), str(archetype.get("id", "mass"))],
 		"archetype_id": str(archetype.get("id", "mass")),
@@ -295,11 +389,97 @@ static func _try_build_building(candidate: Dictionary, archetype: Dictionary, ch
 		"visual_footprint_radius_m": visual_footprint_radius,
 		"road_clearance_m": road_clearance,
 		"visual_road_clearance_m": visual_road_clearance,
+		"candidate_kind": str(candidate.get("candidate_kind", "infill")),
+		"road_alignment_delta_deg": road_alignment_delta_deg,
 		"detail_seed": local_seed,
 		"main_color": _tint_color(palette["base"], building_rng.randf_range(-0.08, 0.08)),
 		"accent_color": _tint_color(palette["accent"], building_rng.randf_range(-0.06, 0.10)),
 		"roof_color": _tint_color(palette["mid"], building_rng.randf_range(-0.08, 0.06)),
 	}
+
+static func _append_occupied_entry(occupied: Array, building: Dictionary) -> void:
+	occupied.append({
+		"center_2d": building.get("center_2d", Vector2.ZERO),
+		"radius": building.get("visual_footprint_radius_m", building.get("footprint_radius_m", 0.0)),
+	})
+
+static func _build_building_layout_stats(buildings: Array, streetfront_candidates: Array, infill_candidates: Array) -> Dictionary:
+	var streetfront_building_count := 0
+	var road_aligned_building_count := 0
+	for building_variant in buildings:
+		var building: Dictionary = building_variant
+		if str(building.get("candidate_kind", "")) == "streetfront":
+			streetfront_building_count += 1
+		if float(building.get("road_alignment_delta_deg", 180.0)) <= ROAD_ALIGNMENT_DELTA_MAX_DEG:
+			road_aligned_building_count += 1
+	var building_count := float(buildings.size())
+	return {
+		"building_count": buildings.size(),
+		"streetfront_candidate_count": streetfront_candidates.size(),
+		"infill_candidate_count": infill_candidates.size(),
+		"streetfront_building_count": streetfront_building_count,
+		"road_aligned_building_count": road_aligned_building_count,
+		"streetfront_building_ratio": 0.0 if building_count <= 0.0 else float(streetfront_building_count) / building_count,
+		"road_aligned_building_ratio": 0.0 if building_count <= 0.0 else float(road_aligned_building_count) / building_count,
+	}
+
+static func _streetfront_candidate_seed(chunk_seed: int, road_class: String, center_2d: Vector2, side_sign: float) -> int:
+	return int((
+		chunk_seed * 31
+		+ road_class.hash()
+		+ int(round(center_2d.x * 10.0)) * 73856093
+		+ int(round(center_2d.y * 10.0)) * 19349663
+		+ int(sign(side_sign)) * 83492791
+	) & 0x7fffffff)
+
+static func _candidate_position_key(center_2d: Vector2) -> String:
+	return "%d:%d" % [int(round(center_2d.x / 2.0)), int(round(center_2d.y / 2.0))]
+
+static func _streetfront_step_for_class(road_class: String) -> float:
+	match road_class:
+		"arterial":
+			return 36.0
+		"service":
+			return 24.0
+	return 26.0
+
+static func _streetfront_setback_for_class(road_class: String) -> float:
+	match road_class:
+		"arterial":
+			return 42.0
+		"service":
+			return 30.0
+	return 34.0
+
+static func _measure_street_alignment_delta_deg(yaw_rad: float, road_angle_rad: float) -> float:
+	var yaw_deg := rad_to_deg(yaw_rad)
+	var road_deg := rad_to_deg(road_angle_rad)
+	return minf(
+		_angle_delta_deg(yaw_deg, road_deg),
+		_angle_delta_deg(yaw_deg, road_deg + 90.0)
+	)
+
+static func _angle_delta_deg(a_deg: float, b_deg: float) -> float:
+	var delta := fmod(absf(a_deg - b_deg), 180.0)
+	if delta > 90.0:
+		delta = 180.0 - delta
+	return absf(delta)
+
+static func _build_streetfront_archetype_cycle(chunk_seed: int) -> Array:
+	var archetypes: Array = [
+		(BUILDING_ARCHETYPES[0] as Dictionary).duplicate(true),
+		(BUILDING_ARCHETYPES[4] as Dictionary).duplicate(true),
+		(BUILDING_ARCHETYPES[1] as Dictionary).duplicate(true),
+		(BUILDING_ARCHETYPES[2] as Dictionary).duplicate(true),
+	]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = chunk_seed ^ 0x4C7F13
+	for index in range(archetypes.size() - 1, 0, -1):
+		var swap_index := rng.randi_range(0, index)
+		var temp = archetypes[index]
+		archetypes[index] = archetypes[swap_index]
+		archetypes[swap_index] = temp
+	return archetypes
 
 static func _build_archetype_cycle(chunk_seed: int) -> Array:
 	var archetypes: Array = []

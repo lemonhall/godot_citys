@@ -42,20 +42,31 @@ func _run() -> void:
 		return
 	if not T.require_true(self, road_graph.has_method("get_edges_intersecting_rect"), "road_graph must expose get_edges_intersecting_rect() for chunk-local road queries"):
 		return
-	if not T.require_true(self, road_graph.get_edge_count() > 9660, "road_graph must expand beyond the coarse arterial grid with additional local road structure"):
+	if not T.require_true(self, road_graph.has_method("get_growth_stats"), "road_graph must expose get_growth_stats() for world morphology validation"):
+		return
+	if not T.require_true(self, road_graph.get_edge_count() < 5000, "v13 road_graph must stop using the full-world district lattice as the visible road backbone"):
+		return
+	var growth_stats: Dictionary = road_graph.get_growth_stats()
+	if not T.require_true(self, int(growth_stats.get("population_center_count", 0)) >= 3, "v13 world generation must expose at least one main center plus multiple satellite centers"):
+		return
+	if not T.require_true(self, int(growth_stats.get("satellite_center_count", 0)) >= 2, "v13 world generation must expose at least two satellite centers"):
+		return
+	if not T.require_true(self, int(growth_stats.get("corridor_count", 0)) >= 2, "v13 world generation must expose corridor links between centers"):
 		return
 	var center_edges: Array = road_graph.get_edges_intersecting_rect(Rect2(Vector2(-640.0, -640.0), Vector2(1280.0, 1280.0)))
 	if not T.require_true(self, center_edges.size() > 0, "road_graph must provide world-space edges around the city center window"):
 		return
 	if not T.require_true(self, (center_edges[0] as Dictionary).get("points", []).size() >= 3, "road_graph edges must carry curved world-space polyline points"):
 		return
-	var center_has_local := false
-	for edge in center_edges:
-		var road_class := str((edge as Dictionary).get("class", ""))
-		if road_class == "collector" or road_class == "local":
-			center_has_local = true
-			break
-	if not T.require_true(self, center_has_local, "road_graph center query must include local/collector roads, not only coarse arterials"):
+	var population_centers: Array = growth_stats.get("population_centers", [])
+	var windows_with_roads := 0
+	for center_variant in population_centers:
+		var center_record: Dictionary = center_variant
+		var position: Vector2 = center_record.get("position", Vector2.ZERO)
+		var sample_edges: Array = road_graph.get_edges_intersecting_rect(Rect2(position - Vector2.ONE * 900.0, Vector2.ONE * 1800.0))
+		if not sample_edges.is_empty():
+			windows_with_roads += 1
+	if not T.require_true(self, windows_with_roads >= 3, "Main center plus satellite centers must all own real local road windows"):
 		return
 
 	var block_layout = world_a["block_layout"]

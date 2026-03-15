@@ -28,6 +28,24 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(growth_stats.get("split_event_count", 0)) > 0, "Reference-style road graph must record intersection split events"):
 		return
+	if not T.require_true(self, int(growth_stats.get("population_center_count", 0)) >= 3, "Reference-style road graph must expose one main center plus multiple satellites in v13"):
+		return
+	if not T.require_true(self, int(growth_stats.get("satellite_center_count", 0)) >= 2, "Reference-style road graph must expose satellite centers in v13"):
+		return
+	if not T.require_true(self, int(growth_stats.get("corridor_count", 0)) >= 2, "Reference-style road graph must expose corridor links between centers in v13"):
+		return
+	var population_centers: Array = growth_stats.get("population_centers", [])
+	if not T.require_true(self, population_centers.size() >= 3, "Reference-style road graph must publish population center metadata for overview validation"):
+		return
+	var road_windows_with_edges := 0
+	for center_variant in population_centers:
+		var center_record: Dictionary = center_variant
+		var center_position: Vector2 = center_record.get("position", Vector2.ZERO)
+		var window_edges: Array = road_graph.get_edges_intersecting_rect(Rect2(center_position - Vector2.ONE * 900.0, Vector2.ONE * 1800.0))
+		if not window_edges.is_empty():
+			road_windows_with_edges += 1
+	if not T.require_true(self, road_windows_with_edges >= 3, "Main center plus satellite windows must all contain real road edges"):
+		return
 
 	var intersections: Array = road_graph.get_intersections_in_rect(Rect2(Vector2(-1200.0, -1200.0), Vector2(2400.0, 2400.0)))
 	if not T.require_true(self, intersections.size() > 0, "City center must expose real intersection nodes from the shared road graph"):

@@ -1169,7 +1169,7 @@ func build_minimap_snapshot() -> Dictionary:
 	_minimap_request_count += 1
 	var center_world_position := _get_minimap_center_world_position(_get_active_anchor_position())
 	var player_world_position := player.global_position if player != null else Vector3.ZERO
-	var player_heading := player.rotation.y if player != null else 0.0
+	var player_heading := _resolve_minimap_heading_rad()
 	var crowd_debug_enabled := _is_minimap_crowd_debug_enabled()
 	var cache_key := _build_minimap_cache_key(center_world_position, MINIMAP_WORLD_RADIUS_M)
 	if cache_key == _minimap_cache_key and not _minimap_snapshot_cache.is_empty():
@@ -1193,6 +1193,21 @@ func build_minimap_snapshot() -> Dictionary:
 	snapshot["pin_overlay"] = _build_current_minimap_pin_overlay(center_world_position, MINIMAP_WORLD_RADIUS_M)
 	snapshot["crowd_debug_layer"] = _minimap_projector.build_pedestrian_debug_layer(center_world_position, MINIMAP_WORLD_RADIUS_M, crowd_debug_enabled)
 	return snapshot
+
+func _resolve_minimap_heading_rad() -> float:
+	if player == null:
+		return 0.0
+	var heading := Vector3.ZERO
+	var vehicle_state := get_player_vehicle_state()
+	if bool(vehicle_state.get("driving", false)):
+		heading = vehicle_state.get("heading", Vector3.ZERO)
+	else:
+		heading = -player.global_transform.basis.z
+	heading.y = 0.0
+	if heading.length_squared() <= 0.0001:
+		heading = Vector3.FORWARD
+	heading = heading.normalized()
+	return atan2(heading.x, -heading.z)
 
 func build_minimap_route_overlay(start_position: Vector3, goal_position: Vector3) -> Dictionary:
 	if _minimap_projector == null:

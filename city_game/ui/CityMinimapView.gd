@@ -22,10 +22,11 @@ func _draw() -> void:
 	var route_overlay: Dictionary = _snapshot.get("route_overlay", {})
 	if not route_overlay.is_empty():
 		var route_points: PackedVector2Array = route_overlay.get("polyline", PackedVector2Array())
+		var route_style := _resolve_route_style(str(route_overlay.get("route_style_id", "destination")))
 		if route_points.size() >= 2:
-			draw_polyline(route_points, Color(1.0, 0.72, 0.18, 0.95), 3.0, true)
-		_draw_marker(route_overlay.get("start_marker", {}).get("position", Vector2.ZERO), Color(0.25, 0.9, 0.4, 1.0), 4.0)
-		_draw_marker(route_overlay.get("goal_marker", {}).get("position", Vector2.ZERO), Color(1.0, 0.35, 0.35, 1.0), 4.0)
+			draw_polyline(route_points, route_style.get("line", Color(1.0, 0.72, 0.18, 0.95)), 3.0, true)
+		_draw_marker(route_overlay.get("start_marker", {}).get("position", Vector2.ZERO), route_style.get("start", Color(0.25, 0.9, 0.4, 1.0)), 4.0)
+		_draw_marker(route_overlay.get("goal_marker", {}).get("position", Vector2.ZERO), route_style.get("goal", Color(1.0, 0.35, 0.35, 1.0)), 4.0)
 
 	var crowd_debug_layer: Dictionary = _snapshot.get("crowd_debug_layer", {})
 	if bool(crowd_debug_layer.get("visible", false)):
@@ -82,3 +83,23 @@ func _resolve_pin_color(pin_type: String) -> Color:
 		"destination":
 			return Color(0.48, 0.96, 0.54, 1.0)
 	return Color(0.92, 0.92, 0.92, 1.0)
+
+func _resolve_route_style(route_style_id: String) -> Dictionary:
+	match route_style_id:
+		"task_available":
+			return {
+				"line": Color(0.3, 0.92, 0.46, 0.95),
+				"start": Color(0.22, 0.82, 0.4, 1.0),
+				"goal": Color(0.44, 0.98, 0.58, 1.0),
+			}
+		"task_active":
+			return {
+				"line": Color(0.28, 0.56, 1.0, 0.96),
+				"start": Color(0.32, 0.78, 1.0, 1.0),
+				"goal": Color(0.4, 0.68, 1.0, 1.0),
+			}
+	return {
+		"line": Color(1.0, 0.72, 0.18, 0.95),
+		"start": Color(0.25, 0.9, 0.4, 1.0),
+		"goal": Color(1.0, 0.35, 0.35, 1.0),
+	}

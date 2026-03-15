@@ -1,10 +1,14 @@
 extends Control
 
 signal map_world_point_selected(world_position: Vector3)
+signal task_selected(task_id: String)
 
 const DRAG_START_THRESHOLD_PX := 6.0
 const ZOOM_STEP_RATIO := 0.82
 const MIN_VIEW_HALF_EXTENT_Y_M := 256.0
+const TASK_PANEL_WIDTH_PX := 320.0
+const TASK_PANEL_MARGIN_PX := 16.0
+const CityTaskBriefPanelScene := preload("res://city_game/ui/CityTaskBriefPanel.tscn")
 
 var _world_bounds := Rect2()
 var _pins: Array[Dictionary] = []
@@ -13,7 +17,9 @@ var _last_selection_contract: Dictionary = {}
 var _player_marker: Dictionary = {}
 var _map_open := false
 var _world_paused := false
+var _task_panel_state: Dictionary = {}
 var _road_graph = null
+var _task_brief_panel: Control = null
 var _road_polylines: Array[Dictionary] = []
 var _road_cache_size := Vector2.ZERO
 var _road_cache_view_rect := Rect2()
@@ -28,6 +34,7 @@ var _drag_anchor_center_world := Vector2.ZERO
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	_ensure_task_panel()
 	visible = false
 
 func setup(world_bounds: Rect2) -> void:
@@ -38,6 +45,8 @@ func setup(world_bounds: Rect2) -> void:
 func set_map_open(is_open: bool) -> void:
 	_map_open = is_open
 	visible = is_open
+	if _task_brief_panel != null:
+		_task_brief_panel.visible = is_open
 	if is_open:
 		_ensure_road_cache()
 	queue_redraw()
@@ -79,26 +88,41 @@ func set_player_marker(player_marker: Dictionary) -> void:
 	_player_marker = player_marker.duplicate(true)
 	queue_redraw()
 
+func set_task_panel_state(task_panel_state: Dictionary) -> void:
+	_task_panel_state = task_panel_state.duplicate(true)
+	if _task_brief_panel != null and _task_brief_panel.has_method("set_panel_state"):
+		_task_brief_panel.set_panel_state(_task_panel_state)
+	queue_redraw()
+
+func select_task(task_id: String) -> void:
+	if _task_brief_panel != null and _task_brief_panel.has_method("select_task"):
+		_task_brief_panel.select_task(task_id)
+		return
+	task_selected.emit(task_id)
+
 func select_world_point(world_position: Vector3) -> void:
 	map_world_point_selected.emit(world_position)
 
 func world_to_map(world_position: Vector3) -> Vector2:
 	var view_rect := _get_view_rect_world()
-	if view_rect.size.x <= 0.001 or view_rect.size.y <= 0.001 or size.x <= 0.001 or size.y <= 0.001:
+	var map_rect := _get_map_canvas_rect()
+	if view_rect.size.x <= 0.001 or view_rect.size.y <= 0.001 or map_rect.size.x <= 0.001 or map_rect.size.y <= 0.001:
 		return Vector2.ZERO
 	var normalized := Vector2(
 		(world_position.x - view_rect.position.x) / view_rect.size.x,
 		(world_position.z - view_rect.position.y) / view_rect.size.y
 	)
-	return Vector2(normalized.x * size.x, normalized.y * size.y)
+	return map_rect.position + Vector2(normalized.x * map_rect.size.x, normalized.y * map_rect.size.y)
 
 func map_to_world(map_position: Vector2) -> Vector3:
 	var view_rect := _get_view_rect_world()
-	if size.x <= 0.001 or size.y <= 0.001 or view_rect.size.x <= 0.001 or view_rect.size.y <= 0.001:
+	var map_rect := _get_map_canvas_rect()
+	if map_rect.size.x <= 0.001 or map_rect.size.y <= 0.001 or view_rect.size.x <= 0.001 or view_rect.size.y <= 0.001:
 		return Vector3.ZERO
+	var local_position := map_position - map_rect.position
 	var normalized := Vector2(
-		clampf(map_position.x / size.x, 0.0, 1.0),
-		clampf(map_position.y / size.y, 0.0, 1.0)
+		clampf(local_position.x / map_rect.size.x, 0.0, 1.0),
+		clampf(local_position.y / map_rect.size.y, 0.0, 1.0)
 	)
 	return Vector3(
 		view_rect.position.x + view_rect.size.x * normalized.x,
@@ -128,19 +152,25 @@ func get_render_state() -> Dictionary:
 		"view_center_world": _view_center_world,
 		"view_half_extent_x_m": view_half_extents.x,
 		"view_half_extent_y_m": view_half_extents.y,
+		"map_canvas_rect": _get_map_canvas_rect(),
 		"road_polyline_count": _road_polylines.size(),
 		"pin_count": _pins.size(),
 		"pin_types": pin_types,
 		"route_point_count": (_route_result.get("polyline", []) as Array).size(),
+		"route_style_id": str(_route_result.get("route_style_id", "destination")),
 		"last_selection_contract": _last_selection_contract.duplicate(true),
 		"player_marker": player_marker,
+		"task_panel": _task_panel_state.duplicate(true),
 	}
 
 func _gui_input(event: InputEvent) -> void:
 	if not _map_open:
 		return
+	var map_rect := _get_map_canvas_rect()
 	if event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
+		if not map_rect.has_point(button.position):
+			return
 		if button.button_index == MOUSE_BUTTON_WHEEL_UP and button.pressed:
 			_apply_zoom_at(button.position, ZOOM_STEP_RATIO)
 			accept_event()
@@ -163,6 +193,8 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 	elif event is InputEventMouseMotion:
 		var motion := event as InputEventMouseMotion
+		if not map_rect.has_point(motion.position) and not _drag_active:
+			return
 		if _drag_candidate_active or _drag_active:
 			var drag_delta := motion.position - _drag_anchor_map_position
 			if not _drag_active and drag_delta.length() >= DRAG_START_THRESHOLD_PX:
@@ -184,12 +216,15 @@ func _draw() -> void:
 		return
 	_ensure_road_cache()
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.05, 0.08, 0.1, 0.94), true)
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.84, 0.88, 0.91, 0.22), false, 2.0)
+	var map_rect := _get_map_canvas_rect()
+	draw_rect(map_rect, Color(0.09, 0.12, 0.16, 0.96), true)
+	draw_rect(map_rect, Color(0.84, 0.88, 0.91, 0.22), false, 2.0)
 	_draw_road_network()
 	_draw_route()
 	_draw_pins()
 	_draw_selection_marker()
 	_draw_player_marker()
+	draw_line(Vector2(map_rect.end.x + TASK_PANEL_MARGIN_PX * 0.5, 0.0), Vector2(map_rect.end.x + TASK_PANEL_MARGIN_PX * 0.5, size.y), Color(0.84, 0.88, 0.91, 0.15), 1.0)
 
 func _draw_road_network() -> void:
 	for polyline_variant in _road_polylines:
@@ -206,7 +241,8 @@ func _draw_route() -> void:
 		var point: Vector3 = point_variant
 		route_points.append(world_to_map(point))
 	if route_points.size() >= 2:
-		draw_polyline(route_points, Color(1.0, 0.72, 0.18, 0.92), 4.0, true)
+		var route_style := _resolve_route_style(str(_route_result.get("route_style_id", "destination")))
+		draw_polyline(route_points, route_style.get("line", Color(1.0, 0.72, 0.18, 0.92)), 4.0, true)
 
 func _draw_pins() -> void:
 	for pin_variant in _pins:
@@ -243,6 +279,7 @@ func _draw_player_marker() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
+		_layout_task_panel()
 		_invalidate_road_cache()
 		queue_redraw()
 
@@ -250,6 +287,12 @@ func _resolve_pin_color(pin_type: String) -> Color:
 	match pin_type:
 		"landmark":
 			return Color(0.38, 0.82, 0.98, 1.0)
+		"task_available":
+			return Color(0.34, 0.92, 0.48, 1.0)
+		"task_active":
+			return Color(0.34, 0.58, 1.0, 1.0)
+		"task_completed":
+			return Color(0.78, 0.82, 0.86, 1.0)
 		"task":
 			return Color(0.96, 0.44, 0.3, 1.0)
 		"debug":
@@ -278,6 +321,20 @@ func _resolve_road_style(road_class: String) -> Dictionary:
 	return {
 		"width": 1.4,
 		"color": Color(0.62, 0.68, 0.76, 0.5),
+	}
+
+func _resolve_route_style(route_style_id: String) -> Dictionary:
+	match route_style_id:
+		"task_available":
+			return {
+				"line": Color(0.28, 0.9, 0.44, 0.92),
+			}
+		"task_active":
+			return {
+				"line": Color(0.3, 0.58, 1.0, 0.94),
+			}
+	return {
+		"line": Color(1.0, 0.72, 0.18, 0.92),
 	}
 
 func _ensure_road_cache() -> void:
@@ -344,8 +401,9 @@ func _get_view_half_extents_world() -> Vector2:
 	if _world_bounds.size.x <= 0.001 or _world_bounds.size.y <= 0.001:
 		return Vector2.ZERO
 	var aspect_ratio := 1.0
-	if size.y > 0.001:
-		aspect_ratio = maxf(size.x / size.y, 1.0)
+	var map_rect := _get_map_canvas_rect()
+	if map_rect.size.y > 0.001:
+		aspect_ratio = maxf(map_rect.size.x / map_rect.size.y, 1.0)
 	return Vector2(_view_half_extent_y_m * aspect_ratio, _view_half_extent_y_m)
 
 func _get_view_rect_world() -> Rect2:
@@ -387,3 +445,39 @@ func _build_player_marker_render_state() -> Dictionary:
 	var render_state := _player_marker.duplicate(true)
 	render_state["position"] = world_to_map(world_position)
 	return render_state
+
+func _ensure_task_panel() -> void:
+	if _task_brief_panel != null:
+		return
+	var task_panel := CityTaskBriefPanelScene.instantiate() as Control
+	if task_panel == null:
+		return
+	task_panel.name = "TaskBriefPanel"
+	add_child(task_panel)
+	_task_brief_panel = task_panel
+	if _task_brief_panel.has_signal("task_selected") and not _task_brief_panel.is_connected("task_selected", Callable(self, "_on_task_panel_selected")):
+		_task_brief_panel.connect("task_selected", Callable(self, "_on_task_panel_selected"))
+	_layout_task_panel()
+	if _task_brief_panel.has_method("set_panel_state"):
+		_task_brief_panel.set_panel_state(_task_panel_state)
+	_task_brief_panel.visible = _map_open
+
+func _layout_task_panel() -> void:
+	if _task_brief_panel == null:
+		return
+	_task_brief_panel.anchor_left = 1.0
+	_task_brief_panel.anchor_right = 1.0
+	_task_brief_panel.anchor_top = 0.0
+	_task_brief_panel.anchor_bottom = 1.0
+	_task_brief_panel.offset_left = -TASK_PANEL_WIDTH_PX
+	_task_brief_panel.offset_right = 0.0
+	_task_brief_panel.offset_top = TASK_PANEL_MARGIN_PX
+	_task_brief_panel.offset_bottom = -TASK_PANEL_MARGIN_PX
+
+func _get_map_canvas_rect() -> Rect2:
+	var panel_width := minf(TASK_PANEL_WIDTH_PX + TASK_PANEL_MARGIN_PX, maxf(size.x * 0.42, 0.0))
+	var map_width := maxf(size.x - panel_width, 220.0)
+	return Rect2(Vector2.ZERO, Vector2(map_width, size.y))
+
+func _on_task_panel_selected(task_id: String) -> void:
+	task_selected.emit(task_id)

@@ -8,6 +8,8 @@ const CityChunkNavRuntime := preload("res://city_game/world/navigation/CityChunk
 const CityFastTravelResolver := preload("res://city_game/world/navigation/CityFastTravelResolver.gd")
 const CityAutodriveController := preload("res://city_game/world/navigation/CityAutodriveController.gd")
 const CityDestinationWorldMarker := preload("res://city_game/world/navigation/CityDestinationWorldMarker.gd")
+const CityTaskTriggerRuntime := preload("res://city_game/world/tasks/runtime/CityTaskTriggerRuntime.gd")
+const CityTaskWorldMarkerRuntime := preload("res://city_game/world/tasks/runtime/CityTaskWorldMarkerRuntime.gd")
 const CityPlaceIndexBuilder := preload("res://city_game/world/generation/CityPlaceIndexBuilder.gd")
 const CityResolvedTarget := preload("res://city_game/world/model/CityResolvedTarget.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
@@ -15,6 +17,8 @@ const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChu
 const CityMinimapProjector := preload("res://city_game/world/map/CityMinimapProjector.gd")
 const CityMapScreenScene := preload("res://city_game/ui/CityMapScreen.tscn")
 const CityMapPinRegistry := preload("res://city_game/world/map/CityMapPinRegistry.gd")
+const CityTaskBriefViewModel := preload("res://city_game/world/tasks/presentation/CityTaskBriefViewModel.gd")
+const CityTaskPinProjection := preload("res://city_game/world/tasks/presentation/CityTaskPinProjection.gd")
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
 const CityProjectile := preload("res://city_game/combat/CityProjectile.gd")
 const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
@@ -43,6 +47,9 @@ const FAST_TRAVEL_SHORTCUT_AIR_DROP_HEIGHT_M := 10.0
 const DESTINATION_WORLD_MARKER_RADIUS_M := 8.0
 const DESTINATION_WORLD_MARKER_CLEAR_DISTANCE_M := 10.5
 const DESTINATION_WORLD_MARKER_SURFACE_OFFSET_M := 0.12
+const ROUTE_STYLE_DESTINATION := "destination"
+const ROUTE_STYLE_TASK_AVAILABLE := "task_available"
+const ROUTE_STYLE_TASK_ACTIVE := "task_active"
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -69,6 +76,13 @@ var _map_screen: Control = null
 var _map_pin_registry = null
 var _full_map_open := false
 var _world_simulation_paused := false
+var _task_catalog = null
+var _task_slot_index = null
+var _task_runtime = null
+var _task_brief_view_model = null
+var _task_pin_projection = null
+var _task_trigger_runtime = null
+var _task_world_marker_runtime: Node3D = null
 var _paused_world_process_entries: Array[Dictionary] = []
 var _minimap_snapshot_cache: Dictionary = {}
 var _minimap_cache_key := ""
@@ -119,6 +133,11 @@ func _ready() -> void:
 	_world_data = world_generator.generate_world(_world_config)
 	_world_generation_usec = Time.get_ticks_usec() - generation_started_usec
 	_world_generation_profile = _world_data.get("generation_profile", {})
+	_task_catalog = _world_data.get("task_catalog")
+	_task_slot_index = _world_data.get("task_slot_index")
+	_task_runtime = _world_data.get("task_runtime")
+	_task_brief_view_model = CityTaskBriefViewModel.new()
+	_task_pin_projection = CityTaskPinProjection.new()
 	_chunk_streamer = CityChunkStreamer.new(_world_config, _world_data)
 	_navigation_runtime = CityChunkNavRuntime.new(_world_config, _world_data)
 	_fast_travel_resolver = CityFastTravelResolver.new(_world_config, _world_data)
@@ -127,6 +146,7 @@ func _ready() -> void:
 	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
 	_setup_map_ui()
 	_ensure_destination_world_marker()
+	_ensure_task_system_runtimes()
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
 		if chunk_renderer.has_method("set_pedestrians_visible"):
@@ -146,6 +166,7 @@ func _ready() -> void:
 	if hud != null and hud.has_method("set_fps_overlay_visible"):
 		hud.set_fps_overlay_visible(_fps_overlay_visible)
 	_sync_navigation_consumers(true)
+	_update_task_system(0.0)
 	_refresh_hud_status()
 
 func _process(delta: float) -> void:
@@ -159,6 +180,7 @@ func _process(delta: float) -> void:
 		return
 	var frame_started_usec := Time.get_ticks_usec()
 	update_streaming_for_position(player.global_position, delta)
+	_update_task_system(delta)
 	var impact_result := _resolve_player_vehicle_pedestrian_impact_impl()
 	if not impact_result.is_empty():
 		_pending_player_vehicle_impact_result = impact_result.duplicate(true)
@@ -329,6 +351,35 @@ func get_vehicle_runtime_snapshot() -> Dictionary:
 
 func get_navigation_runtime():
 	return _navigation_runtime
+
+func get_task_catalog():
+	return _task_catalog
+
+func get_task_slot_index():
+	return _task_slot_index
+
+func get_task_runtime():
+	return _task_runtime
+
+func get_task_runtime_snapshot() -> Dictionary:
+	if _task_runtime == null or not _task_runtime.has_method("get_state_snapshot"):
+		return {}
+	return _task_runtime.get_state_snapshot()
+
+func get_tracked_task_id() -> String:
+	if _task_runtime == null or not _task_runtime.has_method("get_tracked_task_id"):
+		return ""
+	return str(_task_runtime.get_tracked_task_id())
+
+func get_tracked_task_snapshot() -> Dictionary:
+	if _task_runtime == null or not _task_runtime.has_method("get_tracked_task_snapshot"):
+		return {}
+	return _task_runtime.get_tracked_task_snapshot()
+
+func get_task_world_marker_state() -> Dictionary:
+	if _task_world_marker_runtime == null or not _task_world_marker_runtime.has_method("get_state"):
+		return {}
+	return _task_world_marker_runtime.get_state()
 
 func is_player_driving_vehicle() -> bool:
 	return player != null and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle())
@@ -997,7 +1048,7 @@ func plan_macro_route(start_position: Vector3, goal_position: Vector3) -> Array:
 		return []
 	return _navigation_runtime.plan_route(start_position, goal_position)
 
-func plan_route_result(origin_target_or_world_position: Variant, destination_target_or_world_position: Variant, reroute_generation: int = 0) -> Dictionary:
+func plan_route_result(origin_target_or_world_position: Variant, destination_target_or_world_position: Variant, reroute_generation: int = 0, route_style_id: String = ROUTE_STYLE_DESTINATION) -> Dictionary:
 	if _navigation_runtime == null:
 		return {}
 	var origin_target: Dictionary = _resolve_route_target(origin_target_or_world_position)
@@ -1007,7 +1058,7 @@ func plan_route_result(origin_target_or_world_position: Variant, destination_tar
 	var route_result: Dictionary = _navigation_runtime.plan_route_result(origin_target, destination_target, reroute_generation)
 	if route_result.is_empty():
 		return {}
-	_apply_active_route_result(route_result, destination_target)
+	_apply_active_route_result(route_result, destination_target, false, route_style_id)
 	return route_result
 
 func get_active_route_result() -> Dictionary:
@@ -1059,8 +1110,9 @@ func select_map_destination_from_world_point(world_position: Vector3) -> Diction
 		"raw_world_anchor": clamped_world_position,
 		"resolved_target": resolved_target.duplicate(true),
 		"route_request_target": route_request_target.duplicate(true),
+		"route_style_id": ROUTE_STYLE_DESTINATION,
 	}
-	var route_result: Dictionary = plan_route_result(_get_route_refresh_anchor_position(), route_request_target, 0)
+	var route_result: Dictionary = plan_route_result(_get_route_refresh_anchor_position(), route_request_target, 0, ROUTE_STYLE_DESTINATION)
 	if route_result.is_empty():
 		return {}
 	_last_map_selection_contract = selection_contract.duplicate(true)
@@ -1088,6 +1140,31 @@ func register_task_pin(pin_id: String, world_position: Vector3, title: String, s
 	var pin: Dictionary = _map_pin_registry.register_task_pin(pin_id, world_position, title, subtitle, pin_type)
 	_sync_navigation_consumers(true)
 	return pin
+
+func select_task_for_tracking(task_id: String, selection_mode: String = "task_panel") -> Dictionary:
+	if _task_runtime == null or not _task_runtime.has_method("set_tracked_task"):
+		return {}
+	var snapshot: Dictionary = _task_runtime.set_tracked_task(task_id)
+	if snapshot.is_empty():
+		return {}
+	var route_target: Dictionary = snapshot.get("route_target", {})
+	if not route_target.is_empty():
+		var route_style_id := _resolve_task_route_style_id(snapshot)
+		var selection_contract := {
+			"selection_mode": selection_mode,
+			"task_id": task_id,
+			"resolved_target": route_target.duplicate(true),
+			"route_request_target": route_target.duplicate(true),
+			"route_style_id": route_style_id,
+		}
+		var route_result: Dictionary = plan_route_result(_get_route_refresh_anchor_position(), route_target, 0, route_style_id)
+		if route_result.is_empty():
+			return {}
+		_last_map_selection_contract = selection_contract.duplicate(true)
+		if _map_pin_registry != null and _map_pin_registry.has_method("upsert_destination_pin"):
+			_map_pin_registry.upsert_destination_pin(route_target)
+	_sync_navigation_consumers(true)
+	return snapshot
 
 func resolve_fast_travel_target(target_or_world_position: Variant) -> Dictionary:
 	if _fast_travel_resolver == null:
@@ -1259,7 +1336,7 @@ func _build_navigation_player_marker_state() -> Dictionary:
 func build_minimap_route_overlay(start_position: Vector3, goal_position: Vector3) -> Dictionary:
 	if _minimap_projector == null:
 		return {}
-	var route_result := plan_route_result(start_position, goal_position, 0)
+	var route_result := plan_route_result(start_position, goal_position, 0, ROUTE_STYLE_DESTINATION)
 	if route_result.is_empty():
 		return {}
 	var overlay := _build_current_minimap_route_overlay(_get_minimap_center_world_position(_get_active_anchor_position()), MINIMAP_WORLD_RADIUS_M)
@@ -1705,12 +1782,17 @@ func _get_minimap_center_world_position(anchor_world_position: Vector3) -> Vecto
 func _build_current_minimap_route_overlay(center_world_position: Vector3, world_radius_m: float) -> Dictionary:
 	if _minimap_projector == null or _minimap_route_world_positions.is_empty():
 		return {}
-	return _minimap_projector.build_route_overlay_from_world_positions(center_world_position, _minimap_route_world_positions, world_radius_m)
+	return _minimap_projector.build_route_overlay_from_world_positions(
+		center_world_position,
+		_minimap_route_world_positions,
+		world_radius_m,
+		str(_active_route_result.get("route_style_id", ROUTE_STYLE_DESTINATION))
+	)
 
 func _build_current_minimap_pin_overlay(center_world_position: Vector3, world_radius_m: float) -> Dictionary:
 	if _minimap_projector == null:
 		return {}
-	return _minimap_projector.build_pin_overlay(center_world_position, _get_map_pins(), world_radius_m)
+	return _minimap_projector.build_pin_overlay(center_world_position, _get_map_pins("minimap"), world_radius_m)
 
 func _setup_map_ui() -> void:
 	_map_pin_registry = CityMapPinRegistry.new()
@@ -1731,8 +1813,11 @@ func _setup_map_ui() -> void:
 		_map_screen.set_road_graph(_world_data.get("road_graph"))
 	if _map_screen.has_signal("map_world_point_selected") and not _map_screen.is_connected("map_world_point_selected", Callable(self, "_on_map_world_point_selected")):
 		_map_screen.connect("map_world_point_selected", Callable(self, "_on_map_world_point_selected"))
+	if _map_screen.has_signal("task_selected") and not _map_screen.is_connected("task_selected", Callable(self, "_on_task_selected")):
+		_map_screen.connect("task_selected", Callable(self, "_on_task_selected"))
 
 func _sync_navigation_consumers(force_minimap_refresh: bool = false) -> void:
+	_sync_task_presentation_state()
 	if _map_screen != null:
 		if _map_screen.has_method("set_map_open"):
 			_map_screen.set_map_open(_full_map_open)
@@ -1741,19 +1826,81 @@ func _sync_navigation_consumers(force_minimap_refresh: bool = false) -> void:
 		if _map_screen.has_method("set_player_marker"):
 			_map_screen.set_player_marker(_build_navigation_player_marker_state())
 		if _map_screen.has_method("set_pins"):
-			_map_screen.set_pins(_get_map_pins())
+			_map_screen.set_pins(_get_map_pins("full_map"))
 		if _map_screen.has_method("set_route_result"):
 			_map_screen.set_route_result(_active_route_result)
 		if _map_screen.has_method("set_last_selection_contract"):
 			_map_screen.set_last_selection_contract(_last_map_selection_contract)
+		if _map_screen.has_method("set_task_panel_state"):
+			_map_screen.set_task_panel_state(_build_task_panel_state())
 	if force_minimap_refresh and hud != null and hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
 		_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
 
-func _get_map_pins() -> Array[Dictionary]:
+func _get_map_pins(scope: String = "all") -> Array[Dictionary]:
 	if _map_pin_registry == null or not _map_pin_registry.has_method("get_pins"):
 		return []
-	return _map_pin_registry.get_pins()
+	return _map_pin_registry.get_pins(scope)
+
+func _build_task_panel_state() -> Dictionary:
+	if _task_brief_view_model == null or _task_runtime == null or not _task_brief_view_model.has_method("build"):
+		return {}
+	return _task_brief_view_model.build(_task_runtime)
+
+func _sync_task_presentation_state() -> void:
+	if _map_pin_registry != null and _map_pin_registry.has_method("replace_task_pins"):
+		var projected_pins: Array = []
+		var tracked_task_id := get_tracked_task_id()
+		if _task_pin_projection != null and _task_runtime != null and (_full_map_open or tracked_task_id != ""):
+			projected_pins = _task_pin_projection.build_pins(_task_runtime, false)
+		_map_pin_registry.replace_task_pins(projected_pins)
+
+func _on_task_selected(task_id: String) -> void:
+	select_task_for_tracking(task_id)
+
+func _ensure_task_system_runtimes() -> void:
+	if _task_trigger_runtime == null:
+		_task_trigger_runtime = CityTaskTriggerRuntime.new()
+		if _task_trigger_runtime.has_method("setup"):
+			_task_trigger_runtime.setup(_task_runtime)
+	if _task_world_marker_runtime != null and is_instance_valid(_task_world_marker_runtime):
+		return
+	_task_world_marker_runtime = get_node_or_null("TaskWorldMarkerRuntime") as Node3D
+	if _task_world_marker_runtime == null:
+		_task_world_marker_runtime = CityTaskWorldMarkerRuntime.new()
+		_task_world_marker_runtime.name = "TaskWorldMarkerRuntime"
+		add_child(_task_world_marker_runtime)
+	if _task_world_marker_runtime.has_method("setup"):
+		_task_world_marker_runtime.setup(_task_runtime, Callable(self, "_resolve_task_marker_world_position"))
+
+func _update_task_system(delta: float) -> void:
+	if player == null or _task_runtime == null:
+		return
+	_ensure_task_system_runtimes()
+	if _task_trigger_runtime != null and _task_trigger_runtime.has_method("update"):
+		var trigger_result: Dictionary = _task_trigger_runtime.update(_get_active_anchor_position(), get_player_vehicle_state(), float(_world_config.chunk_size_m) * 1.5)
+		_handle_task_trigger_result(trigger_result)
+	if _task_world_marker_runtime != null and _task_world_marker_runtime.has_method("refresh"):
+		_task_world_marker_runtime.refresh(_get_route_refresh_anchor_position(), float(_world_config.chunk_size_m) * 1.6)
+		if _task_world_marker_runtime.has_method("tick"):
+			_task_world_marker_runtime.tick(delta)
+
+func _handle_task_trigger_result(trigger_result: Dictionary) -> void:
+	if trigger_result.is_empty():
+		return
+	var started_task: Dictionary = trigger_result.get("started_task", {})
+	if not started_task.is_empty():
+		select_task_for_tracking(str(started_task.get("task_id", "")), "task_trigger")
+		return
+	var completed_task: Dictionary = trigger_result.get("completed_task", {})
+	if not completed_task.is_empty():
+		_clear_active_navigation_state(false)
+		_sync_navigation_consumers(true)
+
+func _resolve_task_marker_world_position(anchor: Vector3) -> Vector3:
+	var surface_position := _resolve_surface_world_position(anchor, DESTINATION_WORLD_MARKER_SURFACE_OFFSET_M)
+	surface_position.y += 0.03
+	return surface_position
 
 func _apply_world_simulation_pause(should_pause: bool) -> void:
 	if _world_simulation_paused == should_pause:
@@ -1844,22 +1991,37 @@ func _step_active_route_refresh(delta: float) -> void:
 	var rerouted: Dictionary = _navigation_runtime.reroute_from_world_position(refresh_anchor, _active_destination_target, int(_active_route_result.get("reroute_generation", 0)))
 	if rerouted.is_empty():
 		return
-	_apply_active_route_result(rerouted, {}, is_autodrive_active())
+	_apply_active_route_result(rerouted, {}, is_autodrive_active(), str(_active_route_result.get("route_style_id", ROUTE_STYLE_DESTINATION)))
 
-func _apply_active_route_result(route_result: Dictionary, destination_target: Dictionary = {}, accept_autodrive_reroute: bool = false) -> void:
+func _apply_active_route_result(route_result: Dictionary, destination_target: Dictionary = {}, accept_autodrive_reroute: bool = false, route_style_id: String = ROUTE_STYLE_DESTINATION) -> void:
 	if route_result.is_empty():
 		return
 	if not destination_target.is_empty():
 		_active_destination_target = destination_target.duplicate(true)
 		_destination_world_marker_dismissed_route_id = ""
 	_active_route_result = route_result.duplicate(true)
+	_active_route_result["route_style_id"] = _sanitize_route_style_id(route_style_id)
 	_minimap_route_world_positions = (route_result.get("polyline", []) as Array).duplicate(true)
 	_active_route_refresh_elapsed_sec = 0.0
 	_active_route_refresh_anchor = _get_route_refresh_anchor_position()
 	if accept_autodrive_reroute and _autodrive_controller != null and _autodrive_controller.has_method("accept_reroute") and _autodrive_controller.is_active():
-		_autodrive_controller.accept_reroute(route_result)
+		_autodrive_controller.accept_reroute(_active_route_result)
 	_update_destination_world_marker(0.0)
 	_sync_navigation_consumers(true)
+
+func _resolve_task_route_style_id(task_snapshot: Dictionary) -> String:
+	match str(task_snapshot.get("status", "available")):
+		"active":
+			return ROUTE_STYLE_TASK_ACTIVE
+		"available":
+			return ROUTE_STYLE_TASK_AVAILABLE
+	return ROUTE_STYLE_DESTINATION
+
+func _sanitize_route_style_id(route_style_id: String) -> String:
+	match route_style_id:
+		ROUTE_STYLE_TASK_AVAILABLE, ROUTE_STYLE_TASK_ACTIVE:
+			return route_style_id
+	return ROUTE_STYLE_DESTINATION
 
 func _get_route_refresh_anchor_position() -> Vector3:
 	var vehicle_state: Dictionary = get_player_vehicle_state()

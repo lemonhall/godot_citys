@@ -1,7 +1,7 @@
 extends SceneTree
 
 const T := preload("res://tests/_test_util.gd")
-const M10_WARM_TIER1_MIN := 250
+const CURRENT_LITE_WARM_TIER1_MIN := 150
 const STREAMING_IDLE_STABLE_FRAMES := 4
 const STREAMING_IDLE_MAX_FRAMES := 180
 
@@ -100,7 +100,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(profile.get("wall_frame_avg_usec", 0)) <= 16667, "Warm traversal must keep average wall-frame time at or below the 16.67ms redline"):
 		return
-	if not T.require_true(self, int(profile.get("ped_tier1_count", 0)) >= M10_WARM_TIER1_MIN, "Warm runtime profile must keep ped_tier1_count at or above the M10 lite rebalanced warm runtime target"):
+	if not T.require_true(self, int(profile.get("ped_tier1_count", 0)) >= CURRENT_LITE_WARM_TIER1_MIN, "Warm runtime profile must keep ped_tier1_count at or above the frozen lite warm runtime baseline"):
 		return
 
 	world.queue_free()

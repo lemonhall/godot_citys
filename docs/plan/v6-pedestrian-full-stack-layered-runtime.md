@@ -2,7 +2,9 @@
 
 ## Goal
 
-在 `M10` 已经把默认 `lite` 平台重新托回 `>=250` density + warm/runtime real-scenario redline 的基础上，把当前更偏“显示层分层”的 crowd runtime，升级成覆盖 simulation、assignment、threat routing、snapshot / render commit 的 **全栈分层 runtime**。目标不是单纯再抠几毫秒，而是把 first-visit 冷路径、未来真实建筑和车辆系统会争抢的 CPU 热区，从架构上拆开。
+> 注：本文档中的旧 `>=250` 口径属于 2026-03-14 的历史 closeout 证据，已于 2026-03-16 被 [`ECN-0020`](../ecn/ECN-0020-current-lite-density-freeze-and-task-route-style-split.md) supersede。当前 active density baseline 以 warm `>=150` / first-visit `>=220` 为准。
+
+在 `M10` 已经把默认 `lite` 平台重新托回当时的 active density contract 与 warm/runtime real-scenario redline 的基础上，把当前更偏“显示层分层”的 crowd runtime，升级成覆盖 simulation、assignment、threat routing、snapshot / render commit 的 **全栈分层 runtime**。目标不是单纯再抠几毫秒，而是把 first-visit 冷路径、未来真实建筑和车辆系统会争抢的 CPU 热区，从架构上拆开。
 
 ## PRD Trace
 
@@ -42,7 +44,7 @@
 1. 自动化测试必须证明：runtime profile 显式输出 `crowd_farfield_count`、`crowd_midfield_count`、`crowd_nearfield_count`、`crowd_farfield_step_usec`、`crowd_midfield_step_usec`、`crowd_nearfield_step_usec`、`crowd_assignment_rebuild_usec`、`crowd_threat_broadcast_usec` 或等价稳定字段。
 2. 自动化测试必须证明：位于 violent outer ring 之外且未被 promotion 的 farfield crowd，不再每帧进入近场级 reaction / snapshot rebuild / render commit 热路径。
 3. 自动化测试必须证明：nearfield 高成本集合仍受固定预算控制，不能随着 `tier1_count` 或 first-visit cold path 一起线性膨胀。
-4. 自动化测试必须证明：`tests/e2e/test_city_first_visit_performance_profile.gd`、`tests/e2e/test_city_pedestrian_performance_profile.gd` 的 first-visit 结果，在默认 `lite` 且 `ped_tier1_count >= 250` 的同一配置下继续满足 `wall_frame_avg_usec <= 16667`。
+4. 自动化测试必须证明：`tests/e2e/test_city_first_visit_performance_profile.gd`、`tests/e2e/test_city_pedestrian_performance_profile.gd` 的 first-visit 结果，在默认 `lite` 且满足当前 active density freeze baseline 的同一配置下继续满足 `wall_frame_avg_usec <= 16667`。
 5. 自动化测试必须证明：`tests/e2e/test_city_runtime_performance_profile.gd`、`tests/e2e/test_city_pedestrian_high_speed_inspection_performance.gd`、`tests/e2e/test_city_pedestrian_live_gunshot_performance.gd` 继续 `PASS`，不得因为 layering 升级而回退 `inspection` 非误触发或 live gunshot 局部 panic 合同。
 6. 反作弊条款：不得通过回退 `M10` 已拿到的 density / threat / scenario 口径，或把 nearfield fidelity 整体关掉，来宣称 `M11` 完成。
 

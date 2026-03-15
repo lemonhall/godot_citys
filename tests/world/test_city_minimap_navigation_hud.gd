@@ -33,6 +33,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, (route_overlay.get("polyline", PackedVector2Array()) as PackedVector2Array).size() >= 2, "Minimap route overlay must project the active route polyline"):
 		return
+	if not T.require_true(self, str(route_overlay.get("route_style_id", "")) == "destination", "Manual map destinations must keep the shared orange/yellow destination route style"):
+		return
 	if not T.require_true(self, hud.get_node_or_null("Root/RouteLabel") == null, "PrototypeHud must not mount the optional route text label once the route HUD is removed"):
 		return
 

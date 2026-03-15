@@ -166,16 +166,16 @@ func build_pin_overlay(center_world_position: Vector3, pins: Array, world_radius
 		"pin_types": pin_types,
 	}
 
-func build_route_overlay(center_world_position: Vector3, start_world_position: Vector3, goal_world_position: Vector3, route: Array, world_radius_m: float = DEFAULT_WORLD_RADIUS_M) -> Dictionary:
+func build_route_overlay(center_world_position: Vector3, start_world_position: Vector3, goal_world_position: Vector3, route: Array, world_radius_m: float = DEFAULT_WORLD_RADIUS_M, route_style_id: String = "destination") -> Dictionary:
 	var route_world_positions: Array[Vector3] = [start_world_position]
 	for step in route:
 		route_world_positions.append((step as Dictionary).get("target_position", goal_world_position))
-	return build_route_overlay_from_world_positions(center_world_position, route_world_positions, world_radius_m)
+	return build_route_overlay_from_world_positions(center_world_position, route_world_positions, world_radius_m, route_style_id)
 
-func build_route_overlay_from_world_positions(center_world_position: Vector3, route_world_positions: Array, world_radius_m: float = DEFAULT_WORLD_RADIUS_M) -> Dictionary:
-	return _project_route(route_world_positions, center_world_position, world_radius_m)
+func build_route_overlay_from_world_positions(center_world_position: Vector3, route_world_positions: Array, world_radius_m: float = DEFAULT_WORLD_RADIUS_M, route_style_id: String = "destination") -> Dictionary:
+	return _project_route(route_world_positions, center_world_position, world_radius_m, route_style_id)
 
-func _project_route(route_world_positions: Array, center_world_position: Vector3, world_radius_m: float) -> Dictionary:
+func _project_route(route_world_positions: Array, center_world_position: Vector3, world_radius_m: float, route_style_id: String) -> Dictionary:
 	var polyline: PackedVector2Array = PackedVector2Array()
 	for world_position in route_world_positions:
 		var point3: Vector3 = world_position
@@ -186,6 +186,7 @@ func _project_route(route_world_positions: Array, center_world_position: Vector3
 		"polyline": polyline,
 		"start_marker": {"position": polyline[0]},
 		"goal_marker": {"position": polyline[polyline.size() - 1]},
+		"route_style_id": route_style_id,
 	}
 
 func _project_point(world_point: Vector2, center_world_position: Vector3, world_radius_m: float) -> Vector2:

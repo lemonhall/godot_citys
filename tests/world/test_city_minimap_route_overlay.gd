@@ -27,6 +27,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, overlay.has("goal_marker"), "Minimap route overlay must expose goal_marker"):
 		return
+	if not T.require_true(self, str(overlay.get("route_style_id", "")) == "destination", "Default minimap route overlay helper must keep the destination route style"):
+		return
 
 	world.queue_free()
 	T.pass_and_quit(self)

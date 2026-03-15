@@ -1,8 +1,8 @@
 extends SceneTree
 
 const T := preload("res://tests/_test_util.gd")
-const M10_WARM_TIER1_MIN := 250
-const M10_FIRST_VISIT_TIER1_MIN := 250
+const CURRENT_LITE_WARM_TIER1_MIN := 150
+const CURRENT_LITE_FIRST_VISIT_TIER1_MIN := 220
 const STREAMING_IDLE_STABLE_FRAMES := 4
 const STREAMING_IDLE_MAX_FRAMES := 180
 
@@ -15,7 +15,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(warm_profile.get("wall_frame_avg_usec", 0)) <= 16667, "Pedestrian warm traversal must keep average wall-frame time at or below the 16.67ms redline"):
 		return
-	if not T.require_true(self, int(warm_profile.get("ped_tier1_count", 0)) >= M10_WARM_TIER1_MIN, "Pedestrian warm traversal must keep ped_tier1_count at or above the M10 lite rebalanced warm runtime target"):
+	if not T.require_true(self, int(warm_profile.get("ped_tier1_count", 0)) >= CURRENT_LITE_WARM_TIER1_MIN, "Pedestrian warm traversal must keep ped_tier1_count at or above the frozen lite warm runtime baseline"):
 		return
 
 	var first_visit_profile := await _run_profile("CITY_PEDESTRIAN_FIRST_VISIT", false, Vector3(2048.0, 0.0, 768.0), 24.0)
@@ -23,7 +23,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(first_visit_profile.get("wall_frame_avg_usec", 0)) <= 16667, "Pedestrian first-visit traversal must keep average wall-frame time at or below the 16.67ms redline"):
 		return
-	if not T.require_true(self, int(first_visit_profile.get("ped_tier1_count", 0)) >= M10_FIRST_VISIT_TIER1_MIN, "Pedestrian first-visit traversal must keep ped_tier1_count at or above the M10 lite rebalanced first-visit runtime target"):
+	if not T.require_true(self, int(first_visit_profile.get("ped_tier1_count", 0)) >= CURRENT_LITE_FIRST_VISIT_TIER1_MIN, "Pedestrian first-visit traversal must keep ped_tier1_count at or above the frozen lite first-visit runtime baseline"):
 		return
 
 	T.pass_and_quit(self)

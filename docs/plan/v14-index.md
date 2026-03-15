@@ -22,6 +22,7 @@ PRD 入口：[PRD-0007 Task And Mission System](../prd/PRD-0007-task-and-mission
 - 任务最小状态集冻结为 `available`、`active`、`completed`；`locked/failed` 不是 `v14` 里程碑前置。
 - `M` 打开的 full map 继续保持地图画布常驻；任务页签以“地图旁的 `Tasks` 面板/页签”实现，不强行做整页切换。
 - world task marker 必须复用当前火焰圈模型族：`available start = green`、`active objective = blue`、`destination = existing orange theme`。
+- tracked task route 必须与 manual destination route 明确分色：`destination = orange/yellow`、`task_available = green`、`task_active = blue`。
 - 玩家步行或正在驾驶的车辆进入 `start slot` 即可开始任务；默认不增加额外交互键。
 - `v14` 首版冻结为 session-local runtime；不把存档/跨 session 持久化塞进本轮。
 
@@ -75,7 +76,7 @@ PRD 入口：[PRD-0007 Task And Mission System](../prd/PRD-0007-task-and-mission
 
 ## ECN 索引
 
-- 当前无 `v14` 专属 ECN
+- [ECN-0020-current-lite-density-freeze-and-task-route-style-split.md](../ecn/ECN-0020-current-lite-density-freeze-and-task-route-style-split.md)：把任务 route 与手工 destination route 的颜色语义显式拆开，并同步记录当前默认 `lite` 人流平台冻结口径。
 
 ## 差异列表
 
@@ -83,3 +84,4 @@ PRD 入口：[PRD-0007 Task And Mission System](../prd/PRD-0007-task-and-mission
 - `completed` 任务的大地图默认显示策略仍保留细化空间；当前建议默认进页签，不默认铺图。
 - `v14` 首版只承诺单 active task、单 active objective，不包含复杂多阶段剧情系统。
 - `v14` 首版只承诺 session-local runtime，不包含正式存档。
+- 2026-03-16 起，task route 的 active 视觉合同正式冻结为：手工 destination 橙黄、tracked available task 绿色、tracked active task 蓝色；后续不得再把 task route 退回同色 destination。

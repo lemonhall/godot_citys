@@ -23,6 +23,8 @@ func register_task_pin(pin_id: String, world_position: Vector3, title: String, s
 	return register_pin({
 		"pin_id": pin_id,
 		"pin_type": pin_type,
+		"pin_source": "debug_task",
+		"visibility_scope": "all",
 		"world_position": world_position,
 		"title": title,
 		"subtitle": subtitle,
@@ -39,6 +41,8 @@ func upsert_destination_pin(target: Dictionary) -> Dictionary:
 	return register_pin({
 		"pin_id": "destination:active",
 		"pin_type": "destination",
+		"pin_source": "destination",
+		"visibility_scope": "all",
 		"world_position": target.get("world_anchor", Vector3.ZERO),
 		"title": str(target.get("display_name", "Destination")),
 		"subtitle": str(target.get("place_id", "")),
@@ -53,13 +57,32 @@ func register_pin(pin_data: Dictionary) -> Dictionary:
 	var pin_id := str(stored.get("pin_id", ""))
 	if pin_id == "":
 		return {}
+	stored["pin_source"] = str(stored.get("pin_source", "manual"))
+	stored["visibility_scope"] = str(stored.get("visibility_scope", "all"))
 	_pins_by_id[pin_id] = stored
 	return stored.duplicate(true)
 
-func get_pins() -> Array[Dictionary]:
+func replace_task_pins(task_pins: Array) -> void:
+	var to_remove: Array[String] = []
+	for pin_id_variant in _pins_by_id.keys():
+		var pin_id := str(pin_id_variant)
+		var pin: Dictionary = _pins_by_id[pin_id]
+		if str(pin.get("pin_source", "")) == "task_runtime":
+			to_remove.append(pin_id)
+	for pin_id in to_remove:
+		_pins_by_id.erase(pin_id)
+	for pin_variant in task_pins:
+		if not (pin_variant is Dictionary):
+			continue
+		register_pin(pin_variant as Dictionary)
+
+func get_pins(scope: String = "all") -> Array[Dictionary]:
 	var pins: Array[Dictionary] = []
 	for pin_variant in _pins_by_id.values():
-		pins.append((pin_variant as Dictionary).duplicate(true))
+		var pin: Dictionary = pin_variant
+		if not _is_pin_visible_in_scope(pin, scope):
+			continue
+		pins.append(pin.duplicate(true))
 	pins.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		var a_priority := int(a.get("priority", 0))
 		var b_priority := int(b.get("priority", 0))
@@ -68,6 +91,12 @@ func get_pins() -> Array[Dictionary]:
 		return a_priority < b_priority
 	)
 	return pins
+
+func _is_pin_visible_in_scope(pin: Dictionary, scope: String) -> bool:
+	if scope == "all":
+		return true
+	var visibility_scope := str(pin.get("visibility_scope", "all"))
+	return visibility_scope == "all" or visibility_scope == scope
 
 func get_state() -> Dictionary:
 	var pin_types: Array[String] = []

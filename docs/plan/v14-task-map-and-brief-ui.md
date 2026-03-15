@@ -26,6 +26,10 @@
   - `available` -> green
   - `active` -> blue
   - `completed` -> neutral white/gray
+- `tracked route -> visual theme` 当前冻结为：
+  - manual destination -> orange/yellow
+  - tracked available task -> green
+  - tracked active task -> blue
 - 数据层只传 `icon_id`，不把 emoji 字符写死进 runtime contract。
 
 ## Scope
@@ -50,8 +54,9 @@
 2. 自动化测试必须证明：地图上至少能区分 `available` 与 `active` task pins。
 3. 自动化测试必须证明：`Tasks` 面板数据来自 task runtime，而不是手工 hardcode UI。
 4. 自动化测试必须证明：在任务页签里选中任务会同步 tracked task，并驱动 destination / route target。
-5. 自动化测试必须证明：task pin 仍走 shared pin registry / map overlay 主链，而不是第二套 map state。
-6. 反作弊条款：不得通过把任务列表塞进 HUD debug panel、把地图完全隐藏、或把 task pin 做成静态背景纹理来宣称完成。
+5. 自动化测试必须证明：task-tracked route 在 minimap/full map 上不再复用 manual destination 的橙黄色 route style；`available` 必须走绿色系，`active` 必须走蓝色系。
+6. 自动化测试必须证明：task pin 仍走 shared pin registry / map overlay 主链，而不是第二套 map state。
+7. 反作弊条款：不得通过把任务列表塞进 HUD debug panel、把地图完全隐藏、把 task route 偷偷画回 destination 同色、或把 task pin 做成静态背景纹理来宣称完成。
 
 ## Files
 

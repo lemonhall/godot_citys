@@ -201,6 +201,7 @@
 - 任务开始后，当前 active objective 应能转成正式 `resolved_target`
 - map、minimap、world marker、task brief 共享同一 active task state
 - active objective 可驱动当前 route / destination
+- task-tracked route 不得继续复用 manual destination 的橙黄色语义；`available task` route 必须是绿色系，`active task` route 必须是蓝色系
 
 **非目标**：
 
@@ -211,6 +212,7 @@
 
 - 自动化测试至少断言：开始任务后，active objective 会产出正式 route target 或等价 tracked destination。
 - 自动化测试至少断言：map/minimap/world marker/task brief 消费的是同一 active task。
+- 自动化测试至少断言：task-tracked route 与 manual destination route 在 minimap/full map 上有正式区分的 `route_style_id`，不得继续混用同一颜色。
 - 自动化测试至少断言：完成 objective 后 active route 能按 contract 清理或切到下一步。
 - 反作弊条款：不得通过让任务页签维护私有 current target、或者让世界 marker 不走导航链来宣称完成。
 

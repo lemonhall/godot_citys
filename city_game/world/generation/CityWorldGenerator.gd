@@ -17,6 +17,10 @@ const CityDeferredPlaceQuery := preload("res://city_game/world/model/CityDeferre
 const CityPedestrianWorldBuilder := preload("res://city_game/world/pedestrians/generation/CityPedestrianWorldBuilder.gd")
 const CityVehicleWorldBuilder := preload("res://city_game/world/vehicles/generation/CityVehicleWorldBuilder.gd")
 const CityRoadTemplateCatalog := preload("res://city_game/world/rendering/CityRoadTemplateCatalog.gd")
+const CityTaskCatalog := preload("res://city_game/world/tasks/model/CityTaskCatalog.gd")
+const CityTaskSlotIndex := preload("res://city_game/world/tasks/model/CityTaskSlotIndex.gd")
+const CityTaskRuntime := preload("res://city_game/world/tasks/model/CityTaskRuntime.gd")
+const CityTaskCatalogBuilder := preload("res://city_game/world/tasks/generation/CityTaskCatalogBuilder.gd")
 
 var _last_generation_profile: Dictionary = {}
 
@@ -40,6 +44,9 @@ func generate_world(config) -> Dictionary:
 	var vehicle_started_usec := Time.get_ticks_usec()
 	var vehicle_query = _build_vehicle_query(config, district_graph, road_graph)
 	var vehicle_usec := Time.get_ticks_usec() - vehicle_started_usec
+	var task_started_usec := Time.get_ticks_usec()
+	var task_data := _build_task_data(config, block_layout, name_candidate_catalog, vehicle_query)
+	var task_usec := Time.get_ticks_usec() - task_started_usec
 	_last_generation_profile = {
 		"district_usec": district_usec,
 		"road_graph_usec": road_usec,
@@ -56,6 +63,7 @@ func generate_world(config) -> Dictionary:
 		"street_cluster_usec": 0,
 		"pedestrian_world_usec": pedestrian_usec,
 		"vehicle_world_usec": vehicle_usec,
+		"task_catalog_usec": task_usec,
 		"place_index_usec": 0,
 		"place_index_build_usec": 0,
 		"place_index_cache_hit": false,
@@ -71,6 +79,8 @@ func generate_world(config) -> Dictionary:
 		"street_cluster_count": 0,
 		"block_count": block_layout.get_block_count(),
 		"parcel_count": block_layout.get_parcel_count(),
+		"task_count": int(task_data.get("task_count", 0)),
+		"task_slot_count": int(task_data.get("task_slot_count", 0)),
 	}
 	var navigation_data_provider := CityNavigationDataProvider.new(
 		config,
@@ -92,6 +102,9 @@ func generate_world(config) -> Dictionary:
 		"name_candidate_catalog": name_candidate_catalog.duplicate(true),
 		"pedestrian_query": pedestrian_query,
 		"vehicle_query": vehicle_query,
+		"task_catalog": task_data.get("task_catalog"),
+		"task_slot_index": task_data.get("task_slot_index"),
+		"task_runtime": task_data.get("task_runtime"),
 		"place_index": place_index,
 		"place_query": place_query,
 		"route_target_index": place_index,
@@ -191,6 +204,22 @@ func _build_pedestrian_query(config, district_graph, road_graph):
 
 func _build_vehicle_query(config, district_graph, road_graph):
 	return CityVehicleWorldBuilder.new().build(config, district_graph, road_graph)
+
+func _build_task_data(config, block_layout, name_candidate_catalog: Dictionary, vehicle_query) -> Dictionary:
+	var built := CityTaskCatalogBuilder.new().build(config, block_layout, vehicle_query, name_candidate_catalog)
+	var task_catalog := CityTaskCatalog.new()
+	task_catalog.setup(built.get("definitions", []))
+	var task_slot_index := CityTaskSlotIndex.new()
+	task_slot_index.setup(config, built.get("slots", []))
+	var task_runtime := CityTaskRuntime.new()
+	task_runtime.setup(task_catalog, task_slot_index)
+	return {
+		"task_catalog": task_catalog,
+		"task_slot_index": task_slot_index,
+		"task_runtime": task_runtime,
+		"task_count": task_catalog.get_task_count(),
+		"task_slot_count": task_slot_index.get_slot_count(),
+	}
 
 func _build_or_load_place_index(config, road_graph, block_layout, street_cluster_catalog, name_candidate_catalog: Dictionary, vehicle_query) -> Dictionary:
 	var cache := CityPlaceIndexCache.new()

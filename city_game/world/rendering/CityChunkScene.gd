@@ -409,6 +409,11 @@ func spawn_pedestrian_death_visual(event: Dictionary) -> void:
 		return
 	_pedestrian_crowd.spawn_pedestrian_death_visual(event)
 
+func remove_nearfield_pedestrian_visual(pedestrian_id: String) -> bool:
+	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("remove_nearfield_pedestrian_visual"):
+		return false
+	return bool(_pedestrian_crowd.remove_nearfield_pedestrian_visual(pedestrian_id))
+
 func drain_pedestrian_death_visuals(target_parent: Node3D) -> Array[Dictionary]:
 	if _pedestrian_crowd == null or not _pedestrian_crowd.has_method("drain_death_visuals"):
 		return []

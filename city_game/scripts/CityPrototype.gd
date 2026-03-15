@@ -766,6 +766,11 @@ func _resolve_player_vehicle_pedestrian_impact_impl() -> Dictionary:
 	var speed_after_mps := float(vehicle_state.get("speed_mps", 0.0))
 	if player.has_method("apply_vehicle_impact_slowdown"):
 		speed_after_mps = float(player.apply_vehicle_impact_slowdown())
+	if player.has_method("trigger_camera_shake"):
+		player.trigger_camera_shake(
+			float(player.get("vehicle_impact_camera_shake_duration_sec")),
+			float(player.get("vehicle_impact_camera_shake_amplitude_m"))
+		)
 	impact_result["vehicle_speed_after_mps"] = speed_after_mps
 	return impact_result
 

@@ -58,6 +58,20 @@ func get_crowd_stats() -> Dictionary:
 		"tier1_transform_write_count": _last_tier1_transform_write_count,
 	}
 
+func remove_nearfield_pedestrian_visual(pedestrian_id: String) -> bool:
+	var removed := false
+	if _tier2_agents.has(pedestrian_id):
+		var tier2_agent := _tier2_agents[pedestrian_id] as Node3D
+		_release_nearfield_agent(tier2_agent)
+		_tier2_agents.erase(pedestrian_id)
+		removed = true
+	if _tier3_agents.has(pedestrian_id):
+		var tier3_agent := _tier3_agents[pedestrian_id] as CityPedestrianReactiveAgent
+		_release_nearfield_agent(tier3_agent)
+		_tier3_agents.erase(pedestrian_id)
+		removed = true
+	return removed
+
 func spawn_pedestrian_death_visual(event: Dictionary) -> void:
 	_ensure_nodes()
 	var death_visual := CityPedestrianVisualInstance.new()
@@ -232,6 +246,13 @@ func _apply_state_to_agent(agent_root: Node3D, state) -> void:
 	var world_position := _state_world_position(state)
 	var local_position := world_position - _chunk_center
 	agent_root.position = local_position
+
+func _release_nearfield_agent(agent: Node) -> void:
+	if agent == null or not is_instance_valid(agent):
+		return
+	if agent.get_parent() != null:
+		agent.get_parent().remove_child(agent)
+	agent.free()
 
 func _normalize_snapshot(snapshot: Dictionary) -> Dictionary:
 	if snapshot.is_empty():

@@ -778,6 +778,7 @@ func resolve_player_vehicle_pedestrian_impact(vehicle_state: Dictionary) -> Dict
 	if _pedestrian_tier_controller == null or not _pedestrian_tier_controller.has_method("resolve_vehicle_impact"):
 		return {}
 	var impact_result: Dictionary = _pedestrian_tier_controller.resolve_vehicle_impact(vehicle_state)
+	_remove_impacted_pedestrian_live_visual(impact_result)
 	_spawn_pedestrian_death_visuals(impact_result.get("death_events", []))
 	return impact_result
 
@@ -969,6 +970,19 @@ func _take_pooled_scene() -> Node3D:
 
 func _spawn_global_pedestrian_death_visual(event: Dictionary) -> void:
 	_spawn_global_pedestrian_death_visual_with_remaining(event, float(event.get("duration_sec", DEFAULT_DEATH_VISUAL_DURATION_SEC)), 0.0)
+
+func _remove_impacted_pedestrian_live_visual(impact_result: Dictionary) -> void:
+	if impact_result.is_empty():
+		return
+	var chunk_id := str(impact_result.get("chunk_id", ""))
+	var pedestrian_id := str(impact_result.get("pedestrian_id", ""))
+	if chunk_id == "" or pedestrian_id == "":
+		return
+	var chunk_scene: Node3D = _chunk_scenes.get(chunk_id) as Node3D
+	if chunk_scene == null or not is_instance_valid(chunk_scene):
+		return
+	if chunk_scene.has_method("remove_nearfield_pedestrian_visual"):
+		chunk_scene.remove_nearfield_pedestrian_visual(pedestrian_id)
 
 func _spawn_global_pedestrian_death_visual_with_remaining(event: Dictionary, remaining_sec: float, elapsed_sec: float = 0.0) -> void:
 	var death_root := _ensure_global_death_root()

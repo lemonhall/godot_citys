@@ -7,6 +7,7 @@ const CityChunkKey := preload("res://city_game/world/streaming/CityChunkKey.gd")
 const CityChunkNavRuntime := preload("res://city_game/world/navigation/CityChunkNavRuntime.gd")
 const CityFastTravelResolver := preload("res://city_game/world/navigation/CityFastTravelResolver.gd")
 const CityAutodriveController := preload("res://city_game/world/navigation/CityAutodriveController.gd")
+const CityDestinationWorldMarker := preload("res://city_game/world/navigation/CityDestinationWorldMarker.gd")
 const CityPlaceIndexBuilder := preload("res://city_game/world/generation/CityPlaceIndexBuilder.gd")
 const CityResolvedTarget := preload("res://city_game/world/model/CityResolvedTarget.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
@@ -38,6 +39,9 @@ const MANUAL_ROUTE_REFRESH_INTERVAL_SEC := 3.5
 const AUTODRIVE_ROUTE_REFRESH_INTERVAL_SEC := 3.5
 const ACTIVE_ROUTE_REFRESH_MIN_MOVEMENT_M := 48.0
 const ACTIVE_ROUTE_REFRESH_MIN_ORIGIN_DELTA_M := 36.0
+const DESTINATION_WORLD_MARKER_RADIUS_M := 8.0
+const DESTINATION_WORLD_MARKER_CLEAR_DISTANCE_M := 10.5
+const DESTINATION_WORLD_MARKER_SURFACE_OFFSET_M := 0.12
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -102,6 +106,8 @@ var _vehicle_visual_catalog: CityVehicleVisualCatalog = null
 var _abandoned_vehicle_visual_root: Node3D = null
 var _abandoned_vehicle_visuals: Array = []
 var _pending_player_vehicle_impact_result: Dictionary = {}
+var _destination_world_marker: Node3D = null
+var _destination_world_marker_dismissed_route_id := ""
 
 func _ready() -> void:
 	_configure_environment()
@@ -119,6 +125,7 @@ func _ready() -> void:
 	_minimap_projector = CityMinimapProjector.new(_world_config, _world_data)
 	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
 	_setup_map_ui()
+	_ensure_destination_world_marker()
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
 		if chunk_renderer.has_method("set_pedestrians_visible"):
@@ -145,6 +152,7 @@ func _process(delta: float) -> void:
 		return
 	_step_autodrive(delta)
 	_step_active_route_refresh(delta)
+	_update_destination_world_marker(delta)
 	_update_abandoned_vehicle_visuals(delta)
 	if player == null:
 		return
@@ -989,6 +997,16 @@ func plan_route_result(origin_target_or_world_position: Variant, destination_tar
 func get_active_route_result() -> Dictionary:
 	return _active_route_result.duplicate(true)
 
+func get_destination_world_marker_state() -> Dictionary:
+	_update_destination_world_marker(0.0)
+	if _destination_world_marker != null and _destination_world_marker.has_method("get_state"):
+		return _destination_world_marker.get_state()
+	return {
+		"visible": false,
+		"world_position": Vector3.ZERO,
+		"radius_m": DESTINATION_WORLD_MARKER_RADIUS_M,
+	}
+
 func get_route_cache_stats() -> Dictionary:
 	if _navigation_runtime == null or not _navigation_runtime.has_method("get_route_cache_stats"):
 		return {}
@@ -1802,12 +1820,14 @@ func _apply_active_route_result(route_result: Dictionary, destination_target: Di
 		return
 	if not destination_target.is_empty():
 		_active_destination_target = destination_target.duplicate(true)
+		_destination_world_marker_dismissed_route_id = ""
 	_active_route_result = route_result.duplicate(true)
 	_minimap_route_world_positions = (route_result.get("polyline", []) as Array).duplicate(true)
 	_active_route_refresh_elapsed_sec = 0.0
 	_active_route_refresh_anchor = _get_route_refresh_anchor_position()
 	if accept_autodrive_reroute and _autodrive_controller != null and _autodrive_controller.has_method("accept_reroute") and _autodrive_controller.is_active():
 		_autodrive_controller.accept_reroute(route_result)
+	_update_destination_world_marker(0.0)
 	_sync_navigation_consumers(true)
 
 func _get_route_refresh_anchor_position() -> Vector3:
@@ -1822,6 +1842,59 @@ func _resolve_target_identity(target: Dictionary) -> String:
 		return place_id
 	var anchor: Vector3 = target.get("routable_anchor", target.get("world_anchor", Vector3.ZERO))
 	return "raw:%d:%d:%d" % [int(round(anchor.x)), int(round(anchor.y)), int(round(anchor.z))]
+
+func _ensure_destination_world_marker() -> void:
+	if _destination_world_marker != null and is_instance_valid(_destination_world_marker):
+		return
+	_destination_world_marker = get_node_or_null("DestinationWorldMarker") as Node3D
+	if _destination_world_marker == null:
+		_destination_world_marker = CityDestinationWorldMarker.new()
+		_destination_world_marker.name = "DestinationWorldMarker"
+		add_child(_destination_world_marker)
+	if _destination_world_marker.has_method("set_marker_radius"):
+		_destination_world_marker.set_marker_radius(DESTINATION_WORLD_MARKER_RADIUS_M)
+	if _destination_world_marker.has_method("set_marker_visible"):
+		_destination_world_marker.set_marker_visible(false)
+
+func _update_destination_world_marker(delta: float) -> void:
+	_ensure_destination_world_marker()
+	if _destination_world_marker == null:
+		return
+	var route_id := str(_active_route_result.get("route_id", ""))
+	if route_id == "" or _active_destination_target.is_empty():
+		_destination_world_marker_dismissed_route_id = ""
+		if _destination_world_marker.has_method("set_marker_visible"):
+			_destination_world_marker.set_marker_visible(false)
+		return
+	var marker_position := _resolve_destination_world_marker_world_position()
+	if _has_reached_destination_world_marker(marker_position):
+		_destination_world_marker_dismissed_route_id = route_id
+	if route_id == _destination_world_marker_dismissed_route_id:
+		if _destination_world_marker.has_method("set_marker_visible"):
+			_destination_world_marker.set_marker_visible(false)
+		return
+	if _destination_world_marker.has_method("set_marker_radius"):
+		_destination_world_marker.set_marker_radius(DESTINATION_WORLD_MARKER_RADIUS_M)
+	if _destination_world_marker.has_method("set_marker_world_position"):
+		_destination_world_marker.set_marker_world_position(marker_position)
+	if _destination_world_marker.has_method("set_marker_visible"):
+		_destination_world_marker.set_marker_visible(true)
+	if _destination_world_marker.has_method("tick"):
+		_destination_world_marker.tick(delta)
+
+func _resolve_destination_world_marker_world_position() -> Vector3:
+	var anchor: Vector3 = _active_route_result.get(
+		"snapped_destination",
+		_active_destination_target.get("routable_anchor", _active_destination_target.get("world_anchor", Vector3.ZERO))
+	)
+	var surface_position := _resolve_surface_world_position(anchor, DESTINATION_WORLD_MARKER_SURFACE_OFFSET_M)
+	surface_position.y += 0.03
+	return surface_position
+
+func _has_reached_destination_world_marker(marker_position: Vector3) -> bool:
+	var subject_position := _get_route_refresh_anchor_position()
+	var planar_distance := Vector2(subject_position.x - marker_position.x, subject_position.z - marker_position.z).length()
+	return planar_distance <= DESTINATION_WORLD_MARKER_CLEAR_DISTANCE_M
 
 func _orient_player_to_heading(heading: Vector3) -> void:
 	if player == null:

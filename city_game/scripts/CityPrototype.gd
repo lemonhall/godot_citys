@@ -123,6 +123,10 @@ var _abandoned_vehicle_visuals: Array = []
 var _pending_player_vehicle_impact_result: Dictionary = {}
 var _destination_world_marker: Node3D = null
 var _destination_world_marker_dismissed_route_id := ""
+var _destination_world_marker_cached_route_id := ""
+var _destination_world_marker_cached_anchor := Vector3.INF
+var _destination_world_marker_cached_world_position := Vector3.ZERO
+var _destination_world_marker_surface_resolve_count := 0
 
 func _ready() -> void:
 	_configure_environment()
@@ -1074,6 +1078,14 @@ func get_destination_world_marker_state() -> Dictionary:
 		"radius_m": DESTINATION_WORLD_MARKER_RADIUS_M,
 	}
 
+func get_destination_world_marker_debug_state() -> Dictionary:
+	return {
+		"cached_route_id": _destination_world_marker_cached_route_id,
+		"cached_anchor": _destination_world_marker_cached_anchor,
+		"cached_world_position": _destination_world_marker_cached_world_position,
+		"surface_resolve_count": _destination_world_marker_surface_resolve_count,
+	}
+
 func get_route_cache_stats() -> Dictionary:
 	if _navigation_runtime == null or not _navigation_runtime.has_method("get_route_cache_stats"):
 		return {}
@@ -1999,6 +2011,7 @@ func _apply_active_route_result(route_result: Dictionary, destination_target: Di
 	if not destination_target.is_empty():
 		_active_destination_target = destination_target.duplicate(true)
 		_destination_world_marker_dismissed_route_id = ""
+	_invalidate_destination_world_marker_cache()
 	_active_route_result = route_result.duplicate(true)
 	_active_route_result["route_style_id"] = _sanitize_route_style_id(route_style_id)
 	_minimap_route_world_positions = (route_result.get("polyline", []) as Array).duplicate(true)
@@ -2085,12 +2098,19 @@ func _update_destination_world_marker(delta: float) -> void:
 		_destination_world_marker.tick(delta)
 
 func _resolve_destination_world_marker_world_position() -> Vector3:
+	var route_id := str(_active_route_result.get("route_id", ""))
 	var anchor: Vector3 = _active_route_result.get(
 		"snapped_destination",
 		_active_destination_target.get("routable_anchor", _active_destination_target.get("world_anchor", Vector3.ZERO))
 	)
+	if route_id != "" and route_id == _destination_world_marker_cached_route_id and anchor == _destination_world_marker_cached_anchor:
+		return _destination_world_marker_cached_world_position
 	var surface_position := _resolve_surface_world_position(anchor, DESTINATION_WORLD_MARKER_SURFACE_OFFSET_M)
 	surface_position.y += 0.03
+	_destination_world_marker_cached_route_id = route_id
+	_destination_world_marker_cached_anchor = anchor
+	_destination_world_marker_cached_world_position = surface_position
+	_destination_world_marker_surface_resolve_count += 1
 	return surface_position
 
 func _has_reached_destination_world_marker(marker_position: Vector3) -> bool:
@@ -2105,6 +2125,7 @@ func _clear_active_navigation_state(clear_selection_contract: bool = false) -> v
 	_active_route_refresh_elapsed_sec = 0.0
 	_active_route_refresh_anchor = _get_route_refresh_anchor_position()
 	_destination_world_marker_dismissed_route_id = ""
+	_invalidate_destination_world_marker_cache()
 	if clear_selection_contract:
 		_last_map_selection_contract.clear()
 	if player != null and player.has_method("clear_vehicle_autodrive_input"):
@@ -2116,6 +2137,11 @@ func _clear_active_navigation_state(clear_selection_contract: bool = false) -> v
 	if _destination_world_marker != null and _destination_world_marker.has_method("set_marker_visible"):
 		_destination_world_marker.set_marker_visible(false)
 	_sync_navigation_consumers(true)
+
+func _invalidate_destination_world_marker_cache() -> void:
+	_destination_world_marker_cached_route_id = ""
+	_destination_world_marker_cached_anchor = Vector3.INF
+	_destination_world_marker_cached_world_position = Vector3.ZERO
 
 func _orient_player_to_heading(heading: Vector3) -> void:
 	if player == null:

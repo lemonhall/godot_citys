@@ -34,6 +34,10 @@ const ACTOR_PAGE_PREWARM_RING_RADIUS_CHUNKS := 2
 const CHUNK_PAGE_PREWARM_RING_RADIUS_CHUNKS := 4
 const ABANDONED_HIJACK_VEHICLE_LIFETIME_SEC := 15.0
 const MINIMAP_WORLD_RADIUS_M := 1600.0
+const MANUAL_ROUTE_REFRESH_INTERVAL_SEC := 3.5
+const AUTODRIVE_ROUTE_REFRESH_INTERVAL_SEC := 3.5
+const ACTIVE_ROUTE_REFRESH_MIN_MOVEMENT_M := 48.0
+const ACTIVE_ROUTE_REFRESH_MIN_ORIGIN_DELTA_M := 36.0
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -53,6 +57,8 @@ var _minimap_projector
 var _minimap_route_world_positions: Array[Vector3] = []
 var _active_destination_target: Dictionary = {}
 var _active_route_result: Dictionary = {}
+var _active_route_refresh_elapsed_sec := 0.0
+var _active_route_refresh_anchor := Vector3.ZERO
 var _last_map_selection_contract: Dictionary = {}
 var _map_screen: Control = null
 var _map_pin_registry = null
@@ -138,6 +144,7 @@ func _process(delta: float) -> void:
 	if _world_simulation_paused:
 		return
 	_step_autodrive(delta)
+	_step_active_route_refresh(delta)
 	_update_abandoned_vehicle_visuals(delta)
 	if player == null:
 		return
@@ -976,10 +983,7 @@ func plan_route_result(origin_target_or_world_position: Variant, destination_tar
 	var route_result: Dictionary = _navigation_runtime.plan_route_result(origin_target, destination_target, reroute_generation)
 	if route_result.is_empty():
 		return {}
-	_active_destination_target = destination_target.duplicate(true)
-	_active_route_result = route_result.duplicate(true)
-	_minimap_route_world_positions = (route_result.get("polyline", []) as Array).duplicate(true)
-	_sync_navigation_consumers(true)
+	_apply_active_route_result(route_result, destination_target)
 	return route_result
 
 func get_active_route_result() -> Dictionary:
@@ -1751,10 +1755,50 @@ func _step_autodrive(_delta: float) -> void:
 			if player.has_method("clear_vehicle_autodrive_input"):
 				player.clear_vehicle_autodrive_input()
 		else:
-			_active_route_result = rerouted.duplicate(true)
-			_minimap_route_world_positions = (rerouted.get("polyline", []) as Array).duplicate(true)
-			_autodrive_controller.accept_reroute(rerouted)
-			_sync_navigation_consumers(true)
+			_apply_active_route_result(rerouted, {}, true)
+
+func _step_active_route_refresh(delta: float) -> void:
+	if _navigation_runtime == null or _active_destination_target.is_empty() or _active_route_result.is_empty():
+		_active_route_refresh_elapsed_sec = 0.0
+		return
+	if player == null or not player.has_method("is_driving_vehicle") or not bool(player.is_driving_vehicle()):
+		_active_route_refresh_elapsed_sec = 0.0
+		return
+	_active_route_refresh_elapsed_sec += maxf(delta, 0.0)
+	var refresh_interval_sec := AUTODRIVE_ROUTE_REFRESH_INTERVAL_SEC if is_autodrive_active() else MANUAL_ROUTE_REFRESH_INTERVAL_SEC
+	if _active_route_refresh_elapsed_sec < refresh_interval_sec:
+		return
+	var refresh_anchor := _get_route_refresh_anchor_position()
+	var moved_since_last_refresh := refresh_anchor.distance_to(_active_route_refresh_anchor)
+	var route_origin: Vector3 = _active_route_result.get("snapped_origin", refresh_anchor)
+	var moved_since_route_origin := refresh_anchor.distance_to(route_origin)
+	if moved_since_last_refresh < ACTIVE_ROUTE_REFRESH_MIN_MOVEMENT_M and moved_since_route_origin < ACTIVE_ROUTE_REFRESH_MIN_ORIGIN_DELTA_M:
+		return
+	_active_route_refresh_elapsed_sec = 0.0
+	_active_route_refresh_anchor = refresh_anchor
+	var rerouted: Dictionary = _navigation_runtime.reroute_from_world_position(refresh_anchor, _active_destination_target, int(_active_route_result.get("reroute_generation", 0)))
+	if rerouted.is_empty():
+		return
+	_apply_active_route_result(rerouted, {}, is_autodrive_active())
+
+func _apply_active_route_result(route_result: Dictionary, destination_target: Dictionary = {}, accept_autodrive_reroute: bool = false) -> void:
+	if route_result.is_empty():
+		return
+	if not destination_target.is_empty():
+		_active_destination_target = destination_target.duplicate(true)
+	_active_route_result = route_result.duplicate(true)
+	_minimap_route_world_positions = (route_result.get("polyline", []) as Array).duplicate(true)
+	_active_route_refresh_elapsed_sec = 0.0
+	_active_route_refresh_anchor = _get_route_refresh_anchor_position()
+	if accept_autodrive_reroute and _autodrive_controller != null and _autodrive_controller.has_method("accept_reroute") and _autodrive_controller.is_active():
+		_autodrive_controller.accept_reroute(route_result)
+	_sync_navigation_consumers(true)
+
+func _get_route_refresh_anchor_position() -> Vector3:
+	var vehicle_state: Dictionary = get_player_vehicle_state()
+	if not vehicle_state.is_empty() and bool(vehicle_state.get("driving", false)):
+		return vehicle_state.get("world_position", _get_active_anchor_position())
+	return _get_active_anchor_position()
 
 func _resolve_target_identity(target: Dictionary) -> String:
 	var place_id := str(target.get("place_id", ""))

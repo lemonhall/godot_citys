@@ -102,18 +102,26 @@
 
 - 新增 `CityPlaceIndex.gd`
 - 新增 `CityPlaceQuery.gd`
+- 新增 `CityResolvedTarget.gd`
 - 新增 `CityPlaceIndexBuilder.gd`
 - 新增 `CityAddressGrammar.gd`
 - 新增 `CityStreetClusterBuilder.gd`
 
 数据流：
 
-`road_graph + block_layout + vehicle_query -> street clustering -> address slot assignment -> landmark assignment -> place_index -> cache`
+`road_graph + block_layout + vehicle_query -> street clustering -> address slot assignment -> landmark assignment -> place_index -> route_target_index -> resolved_target -> cache`
+
+冻结约束：
+
+- `addressable_building` 的正式主键落在 `parcel/frontage slot`
+- `place_index` 磁盘缓存路径落在 `user://cache/world/place_index/place_index_<world_signature>.bin`
+- `resolved_target` 同时携带 `raw_world_anchor` 与 `routable_anchor`
 
 ### 2. 路线层
 
 - 新增 `CityRoutePlanner.gd`
 - 新增 `CityRouteContract.gd`
+- 新增 `CityRouteCache.gd`
 - 逐步让 `CityChunkNavRuntime` 从 chunk-Manhattan 迁移到 lane-based route result
 
 route result 最低字段：
@@ -129,6 +137,11 @@ route result 最低字段：
 - `estimated_time_s`
 - `reroute_generation`
 
+route cache 约束：
+
+- 只做 runtime memoization，不做磁盘路线库
+- key 至少包含 `origin/destination anchor id + graph version + reroute_generation`
+
 ### 3. 消费层
 
 - minimap：只负责 route overlay
@@ -136,6 +149,12 @@ route result 最低字段：
 - HUD：负责短指令与剩余距离
 - teleport：消费 resolved target
 - auto-drive：消费 route steps，输出车辆控制
+
+消费层冻结约束：
+
+- full map 必须暂停 3D 世界 simulation，但不冻结地图 UI 输入
+- pin registry 最低字段为 `pin_id / pin_type / world_position / title / subtitle / priority / icon_id / route_target_override`
+- auto-drive 只控制玩家当前驾驶的车辆，不承担 ambient traffic AI
 
 ### 4. 地址与命名规则
 
@@ -163,6 +182,7 @@ route result 最低字段：
 
 - 搜索命中多个结果时，优先返回 best match + 候选列表，不做静默随机跳转
 - off-road 点击地图时，区分 `teleport_raw_point` 和 `navigate_nearest_routable_point`
+- fast travel 必须从 `resolved_target` 推导 `safe_drop_anchor`，不能直接盲传 `raw_world_anchor`
 - route 不可达时，返回正式错误结果，不画假线
 - chunk 未加载时也必须能查名和求路，因为它们消费的是全局 place index / route graph
 
@@ -170,13 +190,18 @@ route result 最低字段：
 
 - deterministic world counts
 - street cluster stability
+- name candidate catalog band
 - address grammar parity / numbering
 - place query resolution
+- resolved target contract
 - lane-based route contract
 - reroute
+- route result cache
 - minimap overlay consumer
 - `M` 全屏地图 pause/select flow
+- map destination contract
 - pin overlay
 - fast travel
 - auto-drive
+- autodrive interrupt contract
 - 既有性能三件套

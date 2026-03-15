@@ -232,3 +232,8 @@
 - 命名风格默认是“完全虚构但沿用美式英语地址语法”，还是中英混合；当前默认按前者起草。
 - `auto-drive` 在 `v12` 是否只做 player-only 基础跟路线控制，还是额外承担复杂交通礼让；当前默认前者。
 - off-road 任意点击地图时，导航应默认 snap 到 nearest routable point，还是允许直接 raw-point teleport；当前建议两者并存，但 UI 默认导航走 snap。
+
+## Planning Freeze Notes
+
+- 在未通过 ECN 改口径之前，`v12` 的实际执行口径以 [v12-index.md](../plan/v12-index.md) 的“决策冻结”章节为准。
+- 当前冻结决策包括：名字风格先按“完全虚构 + 美式地址语法”推进、`addressable_building` 主键落在 `parcel/frontage slot`、导航默认走 `routable_anchor`、`auto-drive` 保持 player-only route consumer。

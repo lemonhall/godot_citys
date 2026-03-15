@@ -5,6 +5,11 @@ const CityRoadGraph := preload("res://city_game/world/model/CityRoadGraph.gd")
 const CityBlockLayout := preload("res://city_game/world/model/CityBlockLayout.gd")
 const CityReferenceRoadGraphBuilder := preload("res://city_game/world/generation/CityReferenceRoadGraphBuilder.gd")
 const CityRoadGraphCache := preload("res://city_game/world/generation/CityRoadGraphCache.gd")
+const CityStreetClusterBuilder := preload("res://city_game/world/generation/CityStreetClusterBuilder.gd")
+const CityNameCandidateCatalog := preload("res://city_game/world/generation/CityNameCandidateCatalog.gd")
+const CityPlaceIndexBuilder := preload("res://city_game/world/generation/CityPlaceIndexBuilder.gd")
+const CityPlaceIndexCache := preload("res://city_game/world/generation/CityPlaceIndexCache.gd")
+const CityPlaceQuery := preload("res://city_game/world/model/CityPlaceQuery.gd")
 const CityPedestrianWorldBuilder := preload("res://city_game/world/pedestrians/generation/CityPedestrianWorldBuilder.gd")
 const CityVehicleWorldBuilder := preload("res://city_game/world/vehicles/generation/CityVehicleWorldBuilder.gd")
 const CityRoadTemplateCatalog := preload("res://city_game/world/rendering/CityRoadTemplateCatalog.gd")
@@ -22,12 +27,23 @@ func generate_world(config) -> Dictionary:
 	var block_started_usec := Time.get_ticks_usec()
 	var block_layout = _build_block_layout(config)
 	var block_usec := Time.get_ticks_usec() - block_started_usec
+	var naming_started_usec := Time.get_ticks_usec()
+	var name_candidate_catalog: Dictionary = CityNameCandidateCatalog.new().build_catalog(int(config.base_seed))
+	var naming_usec := Time.get_ticks_usec() - naming_started_usec
+	var street_cluster_started_usec := Time.get_ticks_usec()
+	var street_cluster_catalog = _build_street_cluster_catalog(config, road_graph, block_layout, name_candidate_catalog)
+	var street_cluster_usec := Time.get_ticks_usec() - street_cluster_started_usec
 	var pedestrian_started_usec := Time.get_ticks_usec()
 	var pedestrian_query = _build_pedestrian_query(config, district_graph, road_graph)
 	var pedestrian_usec := Time.get_ticks_usec() - pedestrian_started_usec
 	var vehicle_started_usec := Time.get_ticks_usec()
 	var vehicle_query = _build_vehicle_query(config, district_graph, road_graph)
 	var vehicle_usec := Time.get_ticks_usec() - vehicle_started_usec
+	var place_index_result := _build_or_load_place_index(config, road_graph, block_layout, street_cluster_catalog, name_candidate_catalog, vehicle_query)
+	var place_index = place_index_result.get("place_index")
+	var place_query_started_usec := Time.get_ticks_usec()
+	var place_query = _build_place_query(road_graph, block_layout, street_cluster_catalog, vehicle_query, place_index)
+	var place_query_usec := Time.get_ticks_usec() - place_query_started_usec
 	_last_generation_profile = {
 		"district_usec": district_usec,
 		"road_graph_usec": road_usec,
@@ -40,11 +56,23 @@ func generate_world(config) -> Dictionary:
 		"road_graph_cache_size_bytes": int(road_result.get("cache_size_bytes", 0)),
 		"road_graph_cache_error": str(road_result.get("cache_error", "")),
 		"block_layout_usec": block_usec,
+		"name_candidate_catalog_usec": naming_usec,
+		"street_cluster_usec": street_cluster_usec,
 		"pedestrian_world_usec": pedestrian_usec,
 		"vehicle_world_usec": vehicle_usec,
+		"place_index_usec": int(place_index_result.get("total_usec", 0)),
+		"place_index_build_usec": int(place_index_result.get("build_usec", 0)),
+		"place_index_cache_hit": bool(place_index_result.get("cache_hit", false)),
+		"place_index_cache_load_usec": int(place_index_result.get("cache_load_usec", 0)),
+		"place_index_cache_write_usec": int(place_index_result.get("cache_write_usec", 0)),
+		"place_index_cache_path": str(place_index_result.get("cache_path", "")),
+		"place_index_cache_signature": str(place_index_result.get("cache_signature", "")),
+		"place_index_cache_size_bytes": int(place_index_result.get("cache_size_bytes", 0)),
+		"place_query_usec": place_query_usec,
 		"total_usec": Time.get_ticks_usec() - total_started_usec,
 		"district_count": district_graph.get_district_count(),
 		"road_edge_count": road_graph.get_edge_count(),
+		"street_cluster_count": street_cluster_catalog.get_cluster_count(),
 		"block_count": block_layout.get_block_count(),
 		"parcel_count": block_layout.get_parcel_count(),
 	}
@@ -53,8 +81,13 @@ func generate_world(config) -> Dictionary:
 		"district_graph": district_graph,
 		"road_graph": road_graph,
 		"block_layout": block_layout,
+		"street_cluster_catalog": street_cluster_catalog,
+		"name_candidate_catalog": name_candidate_catalog.duplicate(true),
 		"pedestrian_query": pedestrian_query,
 		"vehicle_query": vehicle_query,
+		"place_index": place_index,
+		"place_query": place_query,
+		"route_target_index": place_index,
 		"generation_profile": _last_generation_profile.duplicate(true),
 		"summary": _build_summary(config, district_graph, road_graph, block_layout),
 	}
@@ -198,11 +231,63 @@ func _build_block_layout(config):
 	layout.setup(config)
 	return layout
 
+func _build_street_cluster_catalog(config, road_graph, block_layout, name_candidate_catalog: Dictionary):
+	return CityStreetClusterBuilder.new().build_catalog(config, road_graph, block_layout, name_candidate_catalog)
+
 func _build_pedestrian_query(config, district_graph, road_graph):
 	return CityPedestrianWorldBuilder.new().build(config, district_graph, road_graph)
 
 func _build_vehicle_query(config, district_graph, road_graph):
 	return CityVehicleWorldBuilder.new().build(config, district_graph, road_graph)
+
+func _build_or_load_place_index(config, road_graph, block_layout, street_cluster_catalog, name_candidate_catalog: Dictionary, vehicle_query) -> Dictionary:
+	var cache := CityPlaceIndexCache.new()
+	var cache_signature := cache.build_world_signature(config)
+	var cache_load_started_usec := Time.get_ticks_usec()
+	var cached_result := cache.load_place_index(config)
+	var cache_load_usec := Time.get_ticks_usec() - cache_load_started_usec
+	if bool(cached_result.get("hit", false)):
+		return {
+			"place_index": cached_result.get("place_index"),
+			"total_usec": cache_load_usec,
+			"build_usec": 0,
+			"cache_hit": true,
+			"cache_load_usec": cache_load_usec,
+			"cache_write_usec": 0,
+			"cache_path": str(cached_result.get("path", "")),
+			"cache_signature": str(cached_result.get("world_signature", cache_signature)),
+			"cache_size_bytes": int(cached_result.get("size_bytes", 0)),
+		}
+
+	var build_started_usec := Time.get_ticks_usec()
+	var place_index = CityPlaceIndexBuilder.new().build_index(
+		config,
+		road_graph,
+		block_layout,
+		street_cluster_catalog,
+		name_candidate_catalog,
+		vehicle_query
+	)
+	var build_usec := Time.get_ticks_usec() - build_started_usec
+	var cache_write_started_usec := Time.get_ticks_usec()
+	var save_result := cache.save_place_index(config, place_index)
+	var cache_write_usec := Time.get_ticks_usec() - cache_write_started_usec
+	return {
+		"place_index": place_index,
+		"total_usec": build_usec + cache_write_usec,
+		"build_usec": build_usec,
+		"cache_hit": false,
+		"cache_load_usec": cache_load_usec,
+		"cache_write_usec": cache_write_usec,
+		"cache_path": str(save_result.get("path", "")),
+		"cache_signature": str(save_result.get("world_signature", cache_signature)),
+		"cache_size_bytes": int(save_result.get("size_bytes", 0)),
+	}
+
+func _build_place_query(road_graph, block_layout, street_cluster_catalog, vehicle_query, place_index):
+	var place_query := CityPlaceQuery.new()
+	place_query.setup(road_graph, block_layout, street_cluster_catalog, vehicle_query, place_index)
+	return place_query
 
 func _build_summary(config, district_graph, road_graph, block_layout) -> String:
 	return "%dkm x %dkm seed %d | %d districts | %d roads | %d blocks | %d parcels" % [

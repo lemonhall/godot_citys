@@ -5,9 +5,13 @@ const CityWorldGenerator := preload("res://city_game/world/generation/CityWorldG
 const CityChunkStreamer := preload("res://city_game/world/streaming/CityChunkStreamer.gd")
 const CityChunkKey := preload("res://city_game/world/streaming/CityChunkKey.gd")
 const CityChunkNavRuntime := preload("res://city_game/world/navigation/CityChunkNavRuntime.gd")
+const CityFastTravelResolver := preload("res://city_game/world/navigation/CityFastTravelResolver.gd")
+const CityAutodriveController := preload("res://city_game/world/navigation/CityAutodriveController.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
 const CityMinimapProjector := preload("res://city_game/world/map/CityMinimapProjector.gd")
+const CityMapScreenScene := preload("res://city_game/ui/CityMapScreen.tscn")
+const CityMapPinRegistry := preload("res://city_game/world/map/CityMapPinRegistry.gd")
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
 const CityProjectile := preload("res://city_game/combat/CityProjectile.gd")
 const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
@@ -27,6 +31,7 @@ const HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_FAST_USEC := 800000
 const ACTOR_PAGE_PREWARM_RING_RADIUS_CHUNKS := 2
 const CHUNK_PAGE_PREWARM_RING_RADIUS_CHUNKS := 4
 const ABANDONED_HIJACK_VEHICLE_LIFETIME_SEC := 15.0
+const MINIMAP_WORLD_RADIUS_M := 1600.0
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -39,9 +44,19 @@ var _world_config
 var _world_data: Dictionary = {}
 var _chunk_streamer
 var _navigation_runtime
+var _fast_travel_resolver
+var _autodrive_controller
 var _control_mode := CONTROL_MODE_PLAYER
 var _minimap_projector
 var _minimap_route_world_positions: Array[Vector3] = []
+var _active_destination_target: Dictionary = {}
+var _active_route_result: Dictionary = {}
+var _last_map_selection_contract: Dictionary = {}
+var _map_screen: Control = null
+var _map_pin_registry = null
+var _full_map_open := false
+var _world_simulation_paused := false
+var _paused_world_process_entries: Array[Dictionary] = []
 var _minimap_snapshot_cache: Dictionary = {}
 var _minimap_cache_key := ""
 var _minimap_cache_hits := 0
@@ -91,8 +106,11 @@ func _ready() -> void:
 	_world_generation_profile = (_world_data.get("generation_profile", {}) as Dictionary).duplicate(true)
 	_chunk_streamer = CityChunkStreamer.new(_world_config, _world_data)
 	_navigation_runtime = CityChunkNavRuntime.new(_world_config, _world_data)
+	_fast_travel_resolver = CityFastTravelResolver.new(_world_config, _world_data)
+	_autodrive_controller = CityAutodriveController.new()
 	_minimap_projector = CityMinimapProjector.new(_world_config, _world_data)
 	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
+	_setup_map_ui()
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
 		if chunk_renderer.has_method("set_pedestrians_visible"):
@@ -111,9 +129,13 @@ func _ready() -> void:
 	_prewarm_actor_pages_around_spawn()
 	if hud != null and hud.has_method("set_fps_overlay_visible"):
 		hud.set_fps_overlay_visible(_fps_overlay_visible)
+	_sync_navigation_consumers(true)
 	_refresh_hud_status()
 
 func _process(delta: float) -> void:
+	if _world_simulation_paused:
+		return
+	_step_autodrive(delta)
 	_update_abandoned_vehicle_visuals(delta)
 	if player == null:
 		return
@@ -134,11 +156,19 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		var key_event := event as InputEventKey
+		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_M:
+			toggle_full_map()
+			get_viewport().set_input_as_handled()
+			return
+		if _full_map_open:
+			return
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_F:
 			handle_vehicle_interaction()
 			return
 		if key_event.pressed and not key_event.echo and handle_debug_keypress(key_event.keycode, key_event.physical_keycode):
 			return
+	elif _full_map_open:
+		return
 	if DisplayServer.get_name() == "headless":
 		return
 
@@ -172,6 +202,8 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 		if should_refresh_minimap:
 			build_minimap_snapshot()
 			_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
+		if hud.has_method("set_navigation_state"):
+			hud.set_navigation_state(_build_navigation_state())
 		_last_hud_refresh_tick_usec = Time.get_ticks_usec()
 		_record_hud_refresh_sample(Time.get_ticks_usec() - refresh_started_usec)
 		return
@@ -217,6 +249,8 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 	if hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
 		_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
+	if hud.has_method("set_navigation_state"):
+		hud.set_navigation_state(_build_navigation_state())
 	if hud.has_method("set_crosshair_state"):
 		hud.set_crosshair_state(_build_crosshair_state())
 	if hud.has_method("set_fps_overlay_visible"):
@@ -628,6 +662,7 @@ func try_hijack_nearby_vehicle(max_distance_m: float = 6.5) -> Dictionary:
 		return {
 			"success": false,
 		}
+	stop_autodrive("interrupted")
 	if player.has_method("enter_vehicle_drive_mode"):
 		player.enter_vehicle_drive_mode(hijack_result)
 	update_streaming_for_position(_get_active_anchor_position(), 0.0)
@@ -640,6 +675,7 @@ func try_exit_player_vehicle(abandoned_vehicle_lifetime_sec: float = ABANDONED_H
 		return {
 			"success": false,
 		}
+	stop_autodrive("interrupted")
 	if not player.has_method("exit_vehicle_drive_mode"):
 		return {
 			"success": false,
@@ -673,6 +709,7 @@ func try_reenter_abandoned_vehicle(vehicle_id: String) -> Dictionary:
 		var vehicle_state: Dictionary = (entry.get("vehicle_state", {}) as Dictionary).duplicate(true)
 		_free_abandoned_vehicle_visual(entry)
 		_abandoned_vehicle_visuals.remove_at(entry_index)
+		stop_autodrive("interrupted")
 		player.enter_vehicle_drive_mode(vehicle_state)
 		update_streaming_for_position(_get_active_anchor_position(), 0.0)
 		_refresh_hud_status({}, true)
@@ -899,6 +936,172 @@ func plan_macro_route(start_position: Vector3, goal_position: Vector3) -> Array:
 		return []
 	return _navigation_runtime.plan_route(start_position, goal_position)
 
+func plan_route_result(origin_target_or_world_position: Variant, destination_target_or_world_position: Variant, reroute_generation: int = 0) -> Dictionary:
+	if _navigation_runtime == null:
+		return {}
+	var origin_target: Dictionary = _resolve_route_target(origin_target_or_world_position)
+	var destination_target: Dictionary = _resolve_route_target(destination_target_or_world_position)
+	if origin_target.is_empty() or destination_target.is_empty():
+		return {}
+	var route_result: Dictionary = _navigation_runtime.plan_route_result(origin_target, destination_target, reroute_generation)
+	if route_result.is_empty():
+		return {}
+	_active_destination_target = destination_target.duplicate(true)
+	_active_route_result = route_result.duplicate(true)
+	_minimap_route_world_positions = (route_result.get("polyline", []) as Array).duplicate(true)
+	_sync_navigation_consumers(true)
+	return route_result
+
+func get_active_route_result() -> Dictionary:
+	return _active_route_result.duplicate(true)
+
+func get_route_cache_stats() -> Dictionary:
+	if _navigation_runtime == null or not _navigation_runtime.has_method("get_route_cache_stats"):
+		return {}
+	return _navigation_runtime.get_route_cache_stats()
+
+func toggle_full_map() -> void:
+	set_full_map_open(not _full_map_open)
+
+func set_full_map_open(is_open: bool) -> void:
+	if _full_map_open == is_open:
+		return
+	_full_map_open = is_open
+	_apply_world_simulation_pause(is_open)
+	if DisplayServer.get_name() != "headless":
+		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if is_open else Input.MOUSE_MODE_CAPTURED)
+	_sync_navigation_consumers(true)
+
+func is_full_map_open() -> bool:
+	return _full_map_open
+
+func is_world_simulation_paused() -> bool:
+	return _world_simulation_paused
+
+func select_map_destination_from_world_point(world_position: Vector3) -> Dictionary:
+	var clamped_world_position := _clamp_world_position_to_bounds(world_position)
+	var resolved_target: Dictionary = _resolve_route_target(clamped_world_position)
+	if resolved_target.is_empty():
+		return {}
+	resolved_target["selection_mode"] = "map_world_point"
+	resolved_target["raw_world_anchor"] = clamped_world_position
+	var route_request_target := resolved_target.duplicate(true)
+	var selection_contract := {
+		"selection_mode": "map_world_point",
+		"raw_world_anchor": clamped_world_position,
+		"resolved_target": resolved_target.duplicate(true),
+		"route_request_target": route_request_target.duplicate(true),
+	}
+	var route_result: Dictionary = plan_route_result(_get_active_anchor_position(), route_request_target, 0)
+	if route_result.is_empty():
+		return {}
+	_last_map_selection_contract = selection_contract.duplicate(true)
+	if _map_pin_registry != null and _map_pin_registry.has_method("upsert_destination_pin"):
+		_map_pin_registry.upsert_destination_pin(resolved_target)
+	_sync_navigation_consumers(true)
+	return selection_contract.duplicate(true)
+
+func get_last_map_selection_contract() -> Dictionary:
+	return _last_map_selection_contract.duplicate(true)
+
+func get_map_screen_state() -> Dictionary:
+	if _map_screen == null or not _map_screen.has_method("get_render_state"):
+		return {}
+	return _map_screen.get_render_state()
+
+func get_pin_registry_state() -> Dictionary:
+	if _map_pin_registry == null or not _map_pin_registry.has_method("get_state"):
+		return {}
+	return _map_pin_registry.get_state()
+
+func register_task_pin(pin_id: String, world_position: Vector3, title: String, subtitle: String = "", pin_type: String = "task") -> Dictionary:
+	if _map_pin_registry == null or not _map_pin_registry.has_method("register_task_pin"):
+		return {}
+	var pin: Dictionary = _map_pin_registry.register_task_pin(pin_id, world_position, title, subtitle, pin_type)
+	_sync_navigation_consumers(true)
+	return pin
+
+func resolve_fast_travel_target(target_or_world_position: Variant) -> Dictionary:
+	if _fast_travel_resolver == null:
+		return {}
+	var resolved_target: Dictionary = _resolve_route_target(target_or_world_position)
+	if resolved_target.is_empty():
+		return {}
+	var route_result := _active_route_result
+	if route_result.is_empty() or str(route_result.get("destination_target_id", "")) != str(_resolve_target_identity(resolved_target)):
+		route_result = plan_route_result(_get_active_anchor_position(), resolved_target, 0)
+	return _fast_travel_resolver.resolve_target(resolved_target, route_result, _estimate_player_standing_height())
+
+func fast_travel_to_target(target_or_world_position: Variant) -> Dictionary:
+	var resolved_target: Dictionary = _resolve_route_target(target_or_world_position)
+	var fast_travel_target: Dictionary = resolve_fast_travel_target(resolved_target)
+	if player == null or resolved_target.is_empty() or fast_travel_target.is_empty():
+		return {
+			"success": false,
+		}
+	stop_autodrive("interrupted")
+	var safe_drop_anchor: Vector3 = fast_travel_target.get("safe_drop_anchor", player.global_position)
+	if player.has_method("teleport_to_world_position"):
+		player.teleport_to_world_position(safe_drop_anchor)
+	else:
+		player.global_position = safe_drop_anchor
+	_orient_player_to_heading(fast_travel_target.get("arrival_heading", Vector3.FORWARD))
+	if player.has_method("suspend_ground_stabilization"):
+		player.suspend_ground_stabilization(12)
+	_snap_player_to_active_surface()
+	update_streaming_for_position(_get_active_anchor_position(), 0.0)
+	_refresh_hud_status({}, true)
+	var result := fast_travel_target.duplicate(true)
+	result["success"] = true
+	return result
+
+func fast_travel_to_active_destination() -> Dictionary:
+	if _active_destination_target.is_empty():
+		return {
+			"success": false,
+		}
+	return fast_travel_to_target(_active_destination_target)
+
+func start_autodrive_to_active_destination() -> Dictionary:
+	if _autodrive_controller == null or _active_route_result.is_empty() or _active_destination_target.is_empty():
+		return {
+			"success": false,
+		}
+	if player == null or not player.has_method("is_driving_vehicle") or not bool(player.is_driving_vehicle()):
+		return {
+			"success": false,
+		}
+	var state: Dictionary = _autodrive_controller.arm(_active_route_result, _active_destination_target)
+	if str(state.get("state", "")) == "failed":
+		return {
+			"success": false,
+			"state": state.get("state", ""),
+			"failure_reason": state.get("failure_reason", ""),
+		}
+	_step_autodrive(0.0)
+	state = get_autodrive_state()
+	state["success"] = true
+	return state
+
+func stop_autodrive(reason: String = "interrupted") -> Dictionary:
+	if player != null and player.has_method("clear_vehicle_autodrive_input"):
+		player.clear_vehicle_autodrive_input()
+	if _autodrive_controller == null:
+		return {
+			"state": "inactive",
+		}
+	return _autodrive_controller.stop(reason)
+
+func get_autodrive_state() -> Dictionary:
+	if _autodrive_controller == null:
+		return {
+			"state": "inactive",
+		}
+	return _autodrive_controller.get_state()
+
+func is_autodrive_active() -> bool:
+	return _autodrive_controller != null and _autodrive_controller.has_method("is_active") and bool(_autodrive_controller.is_active())
+
 func build_runtime_report(subject_position = null) -> Dictionary:
 	var snapshot: Dictionary = get_streaming_snapshot()
 	var resolved_position := _get_active_anchor_position()
@@ -928,35 +1131,36 @@ func build_minimap_snapshot() -> Dictionary:
 	var player_world_position := player.global_position if player != null else Vector3.ZERO
 	var player_heading := player.rotation.y if player != null else 0.0
 	var crowd_debug_enabled := _is_minimap_crowd_debug_enabled()
-	var cache_key := _build_minimap_cache_key(center_world_position, 1600.0)
+	var cache_key := _build_minimap_cache_key(center_world_position, MINIMAP_WORLD_RADIUS_M)
 	if cache_key == _minimap_cache_key and not _minimap_snapshot_cache.is_empty():
 		_minimap_cache_hits += 1
 		var cached_snapshot := _minimap_snapshot_cache.duplicate(false)
-		cached_snapshot["player_marker"] = _minimap_projector.build_player_marker(center_world_position, player_world_position, player_heading, 1600.0)
-		cached_snapshot["route_overlay"] = _build_current_minimap_route_overlay(center_world_position, 1600.0)
-		cached_snapshot["crowd_debug_layer"] = _minimap_projector.build_pedestrian_debug_layer(center_world_position, 1600.0, crowd_debug_enabled)
+		cached_snapshot["player_marker"] = _minimap_projector.build_player_marker(center_world_position, player_world_position, player_heading, MINIMAP_WORLD_RADIUS_M)
+		cached_snapshot["route_overlay"] = _build_current_minimap_route_overlay(center_world_position, MINIMAP_WORLD_RADIUS_M)
+		cached_snapshot["pin_overlay"] = _build_current_minimap_pin_overlay(center_world_position, MINIMAP_WORLD_RADIUS_M)
+		cached_snapshot["crowd_debug_layer"] = _minimap_projector.build_pedestrian_debug_layer(center_world_position, MINIMAP_WORLD_RADIUS_M, crowd_debug_enabled)
 		return cached_snapshot
 
 	_minimap_cache_misses += 1
 	_minimap_rebuild_count += 1
 	var minimap_started_usec := Time.get_ticks_usec()
-	var snapshot: Dictionary = _minimap_projector.build_road_snapshot(center_world_position, 1600.0)
+	var snapshot: Dictionary = _minimap_projector.build_road_snapshot(center_world_position, MINIMAP_WORLD_RADIUS_M)
 	_minimap_cache_key = cache_key
 	_minimap_snapshot_cache = snapshot.duplicate(false)
 	_record_minimap_build_sample(Time.get_ticks_usec() - minimap_started_usec)
-	snapshot["player_marker"] = _minimap_projector.build_player_marker(center_world_position, player_world_position, player_heading, 1600.0)
-	snapshot["route_overlay"] = _build_current_minimap_route_overlay(center_world_position, 1600.0)
-	snapshot["crowd_debug_layer"] = _minimap_projector.build_pedestrian_debug_layer(center_world_position, 1600.0, crowd_debug_enabled)
+	snapshot["player_marker"] = _minimap_projector.build_player_marker(center_world_position, player_world_position, player_heading, MINIMAP_WORLD_RADIUS_M)
+	snapshot["route_overlay"] = _build_current_minimap_route_overlay(center_world_position, MINIMAP_WORLD_RADIUS_M)
+	snapshot["pin_overlay"] = _build_current_minimap_pin_overlay(center_world_position, MINIMAP_WORLD_RADIUS_M)
+	snapshot["crowd_debug_layer"] = _minimap_projector.build_pedestrian_debug_layer(center_world_position, MINIMAP_WORLD_RADIUS_M, crowd_debug_enabled)
 	return snapshot
 
 func build_minimap_route_overlay(start_position: Vector3, goal_position: Vector3) -> Dictionary:
 	if _minimap_projector == null:
 		return {}
-	var route: Array = plan_macro_route(start_position, goal_position)
-	_minimap_route_world_positions = [start_position]
-	for step in route:
-		_minimap_route_world_positions.append((step as Dictionary).get("target_position", goal_position))
-	var overlay := _build_current_minimap_route_overlay(_get_minimap_center_world_position(_get_active_anchor_position()), 1600.0)
+	var route_result := plan_route_result(start_position, goal_position, 0)
+	if route_result.is_empty():
+		return {}
+	var overlay := _build_current_minimap_route_overlay(_get_minimap_center_world_position(_get_active_anchor_position()), MINIMAP_WORLD_RADIUS_M)
 	if hud != null and hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
 	return overlay.duplicate(true)
@@ -1400,6 +1604,178 @@ func _build_current_minimap_route_overlay(center_world_position: Vector3, world_
 	if _minimap_projector == null or _minimap_route_world_positions.is_empty():
 		return {}
 	return _minimap_projector.build_route_overlay_from_world_positions(center_world_position, _minimap_route_world_positions, world_radius_m)
+
+func _build_current_minimap_pin_overlay(center_world_position: Vector3, world_radius_m: float) -> Dictionary:
+	if _minimap_projector == null:
+		return {}
+	return _minimap_projector.build_pin_overlay(center_world_position, _get_map_pins(), world_radius_m)
+
+func _setup_map_ui() -> void:
+	_map_pin_registry = CityMapPinRegistry.new()
+	if _map_pin_registry != null and _map_pin_registry.has_method("seed_landmark_pins"):
+		_map_pin_registry.seed_landmark_pins(_world_data.get("place_index"))
+	if hud == null or CityMapScreenScene == null:
+		return
+	var root_control := hud.get_node_or_null("Root") as Control
+	if root_control == null:
+		return
+	var map_screen := CityMapScreenScene.instantiate() as Control
+	if map_screen == null:
+		return
+	map_screen.name = "FullMap"
+	root_control.add_child(map_screen)
+	_map_screen = map_screen
+	if _map_screen.has_method("setup") and _world_config != null and _world_config.has_method("get_world_bounds"):
+		_map_screen.setup(_world_config.get_world_bounds())
+	if _map_screen.has_signal("map_world_point_selected") and not _map_screen.is_connected("map_world_point_selected", Callable(self, "_on_map_world_point_selected")):
+		_map_screen.connect("map_world_point_selected", Callable(self, "_on_map_world_point_selected"))
+
+func _sync_navigation_consumers(force_minimap_refresh: bool = false) -> void:
+	if _map_screen != null:
+		if _map_screen.has_method("set_map_open"):
+			_map_screen.set_map_open(_full_map_open)
+		if _map_screen.has_method("set_world_paused"):
+			_map_screen.set_world_paused(_world_simulation_paused)
+		if _map_screen.has_method("set_pins"):
+			_map_screen.set_pins(_get_map_pins())
+		if _map_screen.has_method("set_route_result"):
+			_map_screen.set_route_result(_active_route_result)
+		if _map_screen.has_method("set_last_selection_contract"):
+			_map_screen.set_last_selection_contract(_last_map_selection_contract)
+	if hud != null and hud.has_method("set_navigation_state"):
+		hud.set_navigation_state(_build_navigation_state())
+	if force_minimap_refresh and hud != null and hud.has_method("set_minimap_snapshot"):
+		hud.set_minimap_snapshot(build_minimap_snapshot())
+		_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
+
+func _get_map_pins() -> Array[Dictionary]:
+	if _map_pin_registry == null or not _map_pin_registry.has_method("get_pins"):
+		return []
+	return _map_pin_registry.get_pins()
+
+func _build_navigation_state() -> Dictionary:
+	if _active_route_result.is_empty():
+		return {}
+	var selected_maneuver := {}
+	for maneuver_variant in _active_route_result.get("maneuvers", []):
+		var maneuver: Dictionary = maneuver_variant
+		var turn_type := str(maneuver.get("turn_type", ""))
+		if turn_type == "arrive":
+			continue
+		selected_maneuver = maneuver
+		if turn_type != "depart":
+			break
+	var destination_name := str(_active_destination_target.get("display_name", ""))
+	if destination_name == "":
+		destination_name = str(_active_route_result.get("destination_target_id", ""))
+	return {
+		"route_id": str(_active_route_result.get("route_id", "")),
+		"destination_name": destination_name,
+		"distance_m": float(_active_route_result.get("distance_m", 0.0)),
+		"instruction_short": str(selected_maneuver.get("instruction_short", "")),
+		"turn_type": str(selected_maneuver.get("turn_type", "")),
+		"distance_to_next_m": float(selected_maneuver.get("distance_to_next_m", 0.0)),
+	}
+
+func _apply_world_simulation_pause(should_pause: bool) -> void:
+	if _world_simulation_paused == should_pause:
+		return
+	_world_simulation_paused = should_pause
+	if should_pause:
+		_paused_world_process_entries.clear()
+		for node in _collect_world_pause_nodes():
+			if node == null or not is_instance_valid(node):
+				continue
+			_paused_world_process_entries.append({
+				"node": node,
+				"process_mode": node.process_mode,
+			})
+			node.process_mode = Node.PROCESS_MODE_DISABLED
+		return
+	for entry_variant in _paused_world_process_entries:
+		var entry: Dictionary = entry_variant
+		var node := entry.get("node") as Node
+		if node == null or not is_instance_valid(node):
+			continue
+		node.process_mode = int(entry.get("process_mode", Node.PROCESS_MODE_INHERIT))
+	_paused_world_process_entries.clear()
+
+func _collect_world_pause_nodes() -> Array[Node]:
+	var nodes: Array[Node] = []
+	for candidate in [player, generated_city, chunk_renderer, _combat_root, _projectile_root, _grenade_root, _enemy_projectile_root, _enemy_root]:
+		var node := candidate as Node
+		if node != null:
+			nodes.append(node)
+	return nodes
+
+func _clamp_world_position_to_bounds(world_position: Vector3) -> Vector3:
+	if _world_config == null or not _world_config.has_method("get_world_bounds"):
+		return world_position
+	var bounds: Rect2 = _world_config.get_world_bounds()
+	return Vector3(
+		clampf(world_position.x, bounds.position.x, bounds.end.x),
+		world_position.y,
+		clampf(world_position.z, bounds.position.y, bounds.end.y)
+	)
+
+func _on_map_world_point_selected(world_position: Vector3) -> void:
+	select_map_destination_from_world_point(world_position)
+
+func _step_autodrive(_delta: float) -> void:
+	if _autodrive_controller == null or not _autodrive_controller.has_method("is_active") or not _autodrive_controller.is_active():
+		return
+	if player == null:
+		stop_autodrive("failed")
+		return
+	var manual_input_requested := player.has_method("has_manual_vehicle_input_request") and bool(player.has_manual_vehicle_input_request())
+	var update_state: Dictionary = _autodrive_controller.update(get_player_vehicle_state(), manual_input_requested)
+	var control: Dictionary = update_state.get("control", {})
+	var state := str(update_state.get("state", "inactive"))
+	if player.has_method("set_vehicle_autodrive_input") and state == "following_route":
+		player.set_vehicle_autodrive_input(
+			float(control.get("throttle", 0.0)),
+			float(control.get("steer", 0.0)),
+			bool(control.get("brake", false))
+		)
+	else:
+		if player.has_method("clear_vehicle_autodrive_input"):
+			player.clear_vehicle_autodrive_input()
+	if bool(update_state.get("request_reroute", false)) and _navigation_runtime != null and not _active_destination_target.is_empty():
+		var rerouted: Dictionary = _navigation_runtime.reroute_from_world_position(_get_active_anchor_position(), _active_destination_target, int(_active_route_result.get("reroute_generation", 0)))
+		if rerouted.is_empty():
+			_autodrive_controller.fail("reroute_failed")
+			if player.has_method("clear_vehicle_autodrive_input"):
+				player.clear_vehicle_autodrive_input()
+		else:
+			_active_route_result = rerouted.duplicate(true)
+			_minimap_route_world_positions = (rerouted.get("polyline", []) as Array).duplicate(true)
+			_autodrive_controller.accept_reroute(rerouted)
+			_sync_navigation_consumers(true)
+
+func _resolve_target_identity(target: Dictionary) -> String:
+	var place_id := str(target.get("place_id", ""))
+	if place_id != "":
+		return place_id
+	var anchor: Vector3 = target.get("routable_anchor", target.get("world_anchor", Vector3.ZERO))
+	return "raw:%d:%d:%d" % [int(round(anchor.x)), int(round(anchor.y)), int(round(anchor.z))]
+
+func _orient_player_to_heading(heading: Vector3) -> void:
+	if player == null:
+		return
+	var planar_heading := heading
+	planar_heading.y = 0.0
+	if planar_heading.length_squared() <= 0.0001:
+		return
+	player.rotation.y = _yaw_from_vehicle_heading(planar_heading.normalized())
+
+func _resolve_route_target(target_or_world_position: Variant) -> Dictionary:
+	if target_or_world_position is Dictionary:
+		return (target_or_world_position as Dictionary).duplicate(true)
+	if target_or_world_position is Vector3:
+		var place_query = _world_data.get("place_query")
+		if place_query != null and place_query.has_method("resolve_world_point"):
+			return place_query.resolve_world_point(target_or_world_position)
+	return {}
 
 func _is_minimap_crowd_debug_enabled() -> bool:
 	return hud != null and hud.has_method("is_debug_expanded") and bool(hud.is_debug_expanded())

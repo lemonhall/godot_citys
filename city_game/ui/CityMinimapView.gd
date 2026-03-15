@@ -31,6 +31,10 @@ func _draw() -> void:
 	if bool(crowd_debug_layer.get("visible", false)):
 		_draw_crowd_debug_layer(crowd_debug_layer)
 
+	var pin_overlay: Dictionary = _snapshot.get("pin_overlay", {})
+	if not pin_overlay.is_empty():
+		_draw_pin_overlay(pin_overlay)
+
 	var player_marker: Dictionary = _snapshot.get("player_marker", {})
 	var player_position: Vector2 = player_marker.get("position", Vector2(map_size * 0.5, map_size * 0.5))
 	_draw_player_marker(player_position, float(player_marker.get("heading_rad", 0.0)))
@@ -51,6 +55,11 @@ func _draw_player_marker(marker_position: Vector2, heading_rad: float) -> void:
 	var points := build_player_marker_polygon(marker_position, heading_rad)
 	draw_colored_polygon(points, Color(0.3, 0.88, 1.0, 1.0))
 
+func _draw_pin_overlay(pin_overlay: Dictionary) -> void:
+	for marker_variant in pin_overlay.get("markers", []):
+		var marker: Dictionary = marker_variant
+		_draw_marker(marker.get("position", Vector2.ZERO), _resolve_pin_color(str(marker.get("pin_type", ""))), 3.2)
+
 func _draw_crowd_debug_layer(layer: Dictionary) -> void:
 	for polyline_variant in layer.get("sidewalk_polylines", []):
 		var sidewalk_points: PackedVector2Array = polyline_variant
@@ -63,3 +72,13 @@ func _draw_crowd_debug_layer(layer: Dictionary) -> void:
 	for marker_variant in layer.get("spawn_markers", []):
 		var marker: Dictionary = marker_variant
 		_draw_marker(marker.get("position", Vector2.ZERO), Color(1.0, 0.48, 0.48, 0.92), 2.4)
+
+func _resolve_pin_color(pin_type: String) -> Color:
+	match pin_type:
+		"landmark":
+			return Color(0.38, 0.82, 0.98, 1.0)
+		"task":
+			return Color(0.96, 0.44, 0.3, 1.0)
+		"destination":
+			return Color(0.48, 0.96, 0.54, 1.0)
+	return Color(0.92, 0.92, 0.92, 1.0)

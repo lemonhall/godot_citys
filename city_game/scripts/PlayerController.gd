@@ -116,6 +116,12 @@ var _vehicle_drive_input_override := {
 	"brake": false,
 }
 var _vehicle_drive_input_override_active := false
+var _vehicle_autodrive_input_override := {
+	"throttle": 0.0,
+	"steer": 0.0,
+	"brake": false,
+}
+var _vehicle_autodrive_input_override_active := false
 var _vehicle_visual_catalog: CityVehicleVisualCatalog = null
 var _drive_vehicle_visual_root: Node3D = null
 var _drive_vehicle_model_root: Node3D = null
@@ -259,6 +265,7 @@ func set_control_enabled(enabled: bool) -> void:
 		velocity.x = 0.0
 		velocity.z = 0.0
 		_driving_vehicle_speed_mps = 0.0
+		clear_vehicle_autodrive_input()
 	_clear_transient_weapon_state()
 
 func is_control_enabled() -> bool:
@@ -377,6 +384,30 @@ func clear_vehicle_drive_input() -> void:
 		"brake": false,
 	}
 
+func set_vehicle_autodrive_input(throttle: float, steer: float, brake: bool = false) -> void:
+	_vehicle_autodrive_input_override_active = true
+	_vehicle_autodrive_input_override = {
+		"throttle": clampf(throttle, -1.0, 1.0),
+		"steer": clampf(steer, -1.0, 1.0),
+		"brake": brake,
+	}
+
+func clear_vehicle_autodrive_input() -> void:
+	_vehicle_autodrive_input_override_active = false
+	_vehicle_autodrive_input_override = {
+		"throttle": 0.0,
+		"steer": 0.0,
+		"brake": false,
+	}
+
+func has_manual_vehicle_input_request() -> bool:
+	if _vehicle_drive_input_override_active:
+		return true
+	var raw_input := _read_raw_vehicle_drive_input()
+	return absf(float(raw_input.get("throttle", 0.0))) > 0.01 \
+		or absf(float(raw_input.get("steer", 0.0))) > 0.01 \
+		or bool(raw_input.get("brake", false))
+
 func apply_vehicle_impact_slowdown(speed_cap_mps: float = -1.0) -> float:
 	if not _driving_vehicle:
 		return 0.0
@@ -395,6 +426,7 @@ func enter_vehicle_drive_mode(vehicle_state: Dictionary) -> void:
 	_wall_climb_normal = Vector3.ZERO
 	_wall_climb_contact_point = Vector3.ZERO
 	clear_vehicle_drive_input()
+	clear_vehicle_autodrive_input()
 	var heading: Vector3 = vehicle_state.get("heading", Vector3.FORWARD)
 	heading.y = 0.0
 	if heading.length_squared() <= 0.0001:
@@ -407,7 +439,8 @@ func enter_vehicle_drive_mode(vehicle_state: Dictionary) -> void:
 	if player_visual != null:
 		player_visual.visible = false
 	_mount_drive_vehicle_visual(vehicle_state)
-	suspend_ground_stabilization(4)
+	if not _stabilize_ground_contact():
+		suspend_ground_stabilization(4)
 
 func exit_vehicle_drive_mode(exit_lateral_offset_m: float = 2.35) -> Dictionary:
 	if not _driving_vehicle:
@@ -426,6 +459,7 @@ func exit_vehicle_drive_mode(exit_lateral_offset_m: float = 2.35) -> Dictionary:
 	_driving_vehicle_state = {}
 	_driving_vehicle_speed_mps = 0.0
 	clear_vehicle_drive_input()
+	clear_vehicle_autodrive_input()
 	velocity = Vector3.ZERO
 	_traversal_mode = TRAVERSAL_MODE_GROUNDED
 	_wall_climb_normal = Vector3.ZERO
@@ -708,6 +742,11 @@ func _process_vehicle_drive(delta: float) -> void:
 func _read_vehicle_drive_input() -> Dictionary:
 	if _vehicle_drive_input_override_active:
 		return _vehicle_drive_input_override.duplicate(true)
+	if _vehicle_autodrive_input_override_active:
+		return _vehicle_autodrive_input_override.duplicate(true)
+	return _read_raw_vehicle_drive_input()
+
+func _read_raw_vehicle_drive_input() -> Dictionary:
 	var throttle := 0.0
 	if Input.is_key_pressed(KEY_W) or Input.is_action_pressed("ui_up"):
 		throttle += 1.0

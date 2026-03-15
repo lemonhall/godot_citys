@@ -127,6 +127,38 @@ func build_player_marker(center_world_position: Vector3, player_world_position: 
 		"heading_rad": player_heading_rad,
 	}
 
+func build_pin_overlay(center_world_position: Vector3, pins: Array, world_radius_m: float = DEFAULT_WORLD_RADIUS_M) -> Dictionary:
+	var visible_rect := Rect2(
+		Vector2(center_world_position.x - world_radius_m, center_world_position.z - world_radius_m),
+		Vector2(world_radius_m * 2.0, world_radius_m * 2.0)
+	)
+	var markers: Array[Dictionary] = []
+	var pin_types: Array[String] = []
+	var pin_type_seen: Dictionary = {}
+	for pin_variant in pins:
+		var pin: Dictionary = pin_variant
+		var world_position: Vector3 = pin.get("world_position", Vector3.ZERO)
+		if not visible_rect.has_point(Vector2(world_position.x, world_position.z)):
+			continue
+		var pin_type := str(pin.get("pin_type", ""))
+		if pin_type != "" and not pin_type_seen.has(pin_type):
+			pin_type_seen[pin_type] = true
+			pin_types.append(pin_type)
+		markers.append({
+			"pin_id": str(pin.get("pin_id", "")),
+			"pin_type": pin_type,
+			"title": str(pin.get("title", "")),
+			"subtitle": str(pin.get("subtitle", "")),
+			"priority": int(pin.get("priority", 0)),
+			"icon_id": str(pin.get("icon_id", "")),
+			"position": _project_point(Vector2(world_position.x, world_position.z), center_world_position, world_radius_m),
+		})
+	return {
+		"markers": markers,
+		"pin_count": markers.size(),
+		"pin_types": pin_types,
+	}
+
 func build_route_overlay(center_world_position: Vector3, start_world_position: Vector3, goal_world_position: Vector3, route: Array, world_radius_m: float = DEFAULT_WORLD_RADIUS_M) -> Dictionary:
 	var route_world_positions: Array[Vector3] = [start_world_position]
 	for step in route:

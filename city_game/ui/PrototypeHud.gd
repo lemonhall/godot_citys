@@ -6,6 +6,7 @@ var _status_text := "Booting city skeleton..."
 var _debug_text := ""
 var _debug_expanded := false
 var _minimap_snapshot: Dictionary = {}
+var _navigation_state: Dictionary = {}
 var _fps_overlay_state := {
 	"visible": false,
 	"fps": 0.0,
@@ -23,6 +24,7 @@ var _crosshair_state: Dictionary = {
 func _ready() -> void:
 	_ensure_crosshair_view()
 	_ensure_fps_label()
+	_ensure_route_label()
 	var toggle_button := get_node_or_null("Root/ToggleButton") as Button
 	if toggle_button != null and not toggle_button.pressed.is_connected(_on_toggle_pressed):
 		toggle_button.pressed.connect(_on_toggle_pressed)
@@ -40,6 +42,10 @@ func set_minimap_snapshot(snapshot: Dictionary) -> void:
 	_minimap_snapshot = snapshot.duplicate(false)
 	_apply_minimap_state()
 
+func set_navigation_state(state: Dictionary) -> void:
+	_navigation_state = state.duplicate(true)
+	_apply_navigation_state()
+
 func set_crosshair_state(state: Dictionary) -> void:
 	_crosshair_state = state.duplicate(true)
 	_apply_crosshair_state()
@@ -49,6 +55,9 @@ func get_minimap_state() -> Dictionary:
 		"expanded": _debug_expanded,
 		"snapshot": _minimap_snapshot.duplicate(true),
 	}
+
+func get_navigation_state() -> Dictionary:
+	return _navigation_state.duplicate(true)
 
 func set_fps_overlay_visible(is_visible: bool) -> void:
 	_fps_overlay_state["visible"] = is_visible
@@ -82,6 +91,7 @@ func _apply_state() -> void:
 	_apply_status_state()
 	_apply_debug_text_state()
 	_apply_minimap_state()
+	_apply_navigation_state()
 	_apply_crosshair_state()
 	_apply_fps_overlay_state()
 
@@ -107,6 +117,26 @@ func _apply_minimap_state() -> void:
 	var minimap_view := get_node_or_null("Root/MinimapFrame/MinimapView")
 	if minimap_view != null and minimap_view.has_method("set_snapshot"):
 		minimap_view.set_snapshot(_minimap_snapshot)
+
+func _apply_navigation_state() -> void:
+	var route_label := get_node_or_null("Root/RouteLabel") as Label
+	if route_label == null:
+		return
+	var instruction_text := str(_navigation_state.get("instruction_short", ""))
+	var distance_to_next_m := float(_navigation_state.get("distance_to_next_m", 0.0))
+	var destination_name := str(_navigation_state.get("destination_name", ""))
+	route_label.visible = instruction_text != "" or destination_name != ""
+	if not route_label.visible:
+		route_label.text = ""
+		return
+	var lines := PackedStringArray()
+	if instruction_text != "":
+		lines.append("Route: %s" % instruction_text)
+	if distance_to_next_m > 0.0:
+		lines.append("In %.0fm" % distance_to_next_m)
+	if destination_name != "":
+		lines.append(destination_name)
+	route_label.text = "\n".join(lines)
 
 func _apply_crosshair_state() -> void:
 	var crosshair_view := get_node_or_null("Root/Crosshair")
@@ -148,6 +178,25 @@ func _ensure_fps_label() -> void:
 	fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	fps_label.visible = false
 	root.add_child(fps_label)
+
+func _ensure_route_label() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("RouteLabel") != null:
+		return
+	var route_label := Label.new()
+	route_label.name = "RouteLabel"
+	route_label.anchor_left = 1.0
+	route_label.anchor_right = 1.0
+	route_label.offset_left = -320.0
+	route_label.offset_top = 268.0
+	route_label.offset_right = -24.0
+	route_label.offset_bottom = 340.0
+	route_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	route_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	route_label.visible = false
+	root.add_child(route_label)
 
 func _resolve_fps_color_state(fps: float) -> Dictionary:
 	if fps < 30.0:

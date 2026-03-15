@@ -41,6 +41,12 @@ func get_lane_by_id(lane_id: String) -> Dictionary:
 		return {}
 	return (_lanes_by_id[lane_id] as Dictionary).duplicate(true)
 
+func get_lanes() -> Array[Dictionary]:
+	var results: Array[Dictionary] = []
+	for lane_variant in lanes:
+		results.append((lane_variant as Dictionary).duplicate(true))
+	return results
+
 func get_lane_ids_for_road(road_id: String) -> Array[String]:
 	if not _lane_ids_by_road.has(road_id):
 		return []
@@ -60,6 +66,16 @@ func get_intersection_turn_contract(intersection_id: String) -> Dictionary:
 
 func get_intersection_turn_contract_count() -> int:
 	return _intersection_turn_contracts.size()
+
+func get_intersection_turn_contracts() -> Array[Dictionary]:
+	var results: Array[Dictionary] = []
+	for intersection_id_variant in _intersection_turn_contracts.keys():
+		var intersection_id := str(intersection_id_variant)
+		results.append((_intersection_turn_contracts[intersection_id] as Dictionary).duplicate(true))
+	results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return str(a.get("intersection_id", "")) < str(b.get("intersection_id", ""))
+	)
+	return results
 
 func get_lanes_intersecting_rect(rect: Rect2, allowed_types: Array = []) -> Array[Dictionary]:
 	var results: Array[Dictionary] = []

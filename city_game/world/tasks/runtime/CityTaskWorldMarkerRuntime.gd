@@ -70,12 +70,21 @@ func get_state() -> Dictionary:
 
 func _build_marker_contract(slot: Dictionary, theme_id: String) -> Dictionary:
 	var anchor: Vector3 = slot.get("world_anchor", Vector3.ZERO)
+	var slot_id := str(slot.get("slot_id", ""))
+	var resolved_radius := float(slot.get("trigger_radius_m", 0.0))
+	var task_id := str(slot.get("task_id", ""))
+	var contract_key := _make_marker_contract_key(task_id, theme_id, resolved_radius, anchor)
+	var cached_contract: Dictionary = _marker_states_by_slot_id.get(slot_id, {})
+	if _can_reuse_marker_contract(cached_contract, contract_key):
+		return cached_contract.duplicate(true)
 	var marker_position := _resolve_marker_world_position(anchor)
 	return {
-		"slot_id": str(slot.get("slot_id", "")),
-		"task_id": str(slot.get("task_id", "")),
+		"slot_id": slot_id,
+		"task_id": task_id,
+		"contract_key": contract_key,
 		"theme_id": theme_id,
-		"radius_m": float(slot.get("trigger_radius_m", 0.0)),
+		"radius_m": resolved_radius,
+		"world_anchor": anchor,
 		"world_position": marker_position,
 		"family_id": FAMILY_ID,
 	}
@@ -96,12 +105,15 @@ func _sync_markers(desired_markers: Dictionary) -> void:
 	for slot_id_variant in desired_markers.keys():
 		var slot_id := str(slot_id_variant)
 		var contract: Dictionary = desired_markers[slot_id]
+		var previous_contract: Dictionary = _marker_states_by_slot_id.get(slot_id, {})
 		var marker := _markers_by_slot_id.get(slot_id) as Node3D
 		if marker == null or not is_instance_valid(marker):
 			marker = CityWorldRingMarker.new()
 			marker.name = "TaskWorldRing_%s" % slot_id.replace(":", "_")
 			add_child(marker)
 			_markers_by_slot_id[slot_id] = marker
+		if not previous_contract.is_empty() and previous_contract == contract:
+			continue
 		if marker.has_method("set_marker_theme"):
 			marker.set_marker_theme(str(contract.get("theme_id", "destination")))
 		if marker.has_method("set_marker_radius"):
@@ -116,3 +128,18 @@ func _resolve_marker_world_position(world_anchor: Vector3) -> Vector3:
 	if _ground_resolver.is_valid():
 		return _ground_resolver.call(world_anchor)
 	return world_anchor
+
+func _can_reuse_marker_contract(cached_contract: Dictionary, contract_key: String) -> bool:
+	if cached_contract.is_empty():
+		return false
+	return str(cached_contract.get("contract_key", "")) == contract_key and cached_contract.has("world_position")
+
+func _make_marker_contract_key(task_id: String, theme_id: String, radius_m: float, world_anchor: Vector3) -> String:
+	return "%s|%s|%.3f|%.3f|%.3f|%.3f" % [
+		task_id,
+		theme_id,
+		radius_m,
+		world_anchor.x,
+		world_anchor.y,
+		world_anchor.z,
+	]

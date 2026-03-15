@@ -74,8 +74,12 @@ func _ready() -> void:
 	visible = false
 
 func set_marker_theme(theme_id: String) -> void:
-	_theme_id = theme_id if THEME_PALETTES.has(theme_id) else "destination"
-	_apply_theme()
+	var resolved_theme := theme_id if THEME_PALETTES.has(theme_id) else "destination"
+	if _theme_id == resolved_theme and _outer_ring != null:
+		return
+	_theme_id = resolved_theme
+	if _outer_ring != null:
+		_apply_theme()
 
 func set_marker_radius(radius_m: float) -> void:
 	var resolved_radius := maxf(radius_m, 1.5)

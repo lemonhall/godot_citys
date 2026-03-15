@@ -774,6 +774,13 @@ func resolve_explosion_impact(world_position: Vector3, lethal_radius_m: float, t
 	_spawn_pedestrian_death_visuals(impact_result.get("death_events", []))
 	return impact_result
 
+func resolve_player_vehicle_pedestrian_impact(vehicle_state: Dictionary) -> Dictionary:
+	if _pedestrian_tier_controller == null or not _pedestrian_tier_controller.has_method("resolve_vehicle_impact"):
+		return {}
+	var impact_result: Dictionary = _pedestrian_tier_controller.resolve_vehicle_impact(vehicle_state)
+	_spawn_pedestrian_death_visuals(impact_result.get("death_events", []))
+	return impact_result
+
 func resolve_vehicle_projectile_hit(start_position: Vector3, end_position: Vector3, damage: float = 1.0, velocity: Vector3 = Vector3.ZERO) -> Dictionary:
 	if _vehicle_tier_controller == null or not _vehicle_tier_controller.has_method("resolve_projectile_hit"):
 		return {}
@@ -961,9 +968,9 @@ func _take_pooled_scene() -> Node3D:
 	return _scene_pool.pop_back()
 
 func _spawn_global_pedestrian_death_visual(event: Dictionary) -> void:
-	_spawn_global_pedestrian_death_visual_with_remaining(event, float(event.get("duration_sec", DEFAULT_DEATH_VISUAL_DURATION_SEC)))
+	_spawn_global_pedestrian_death_visual_with_remaining(event, float(event.get("duration_sec", DEFAULT_DEATH_VISUAL_DURATION_SEC)), 0.0)
 
-func _spawn_global_pedestrian_death_visual_with_remaining(event: Dictionary, remaining_sec: float) -> void:
+func _spawn_global_pedestrian_death_visual_with_remaining(event: Dictionary, remaining_sec: float, elapsed_sec: float = 0.0) -> void:
 	var death_root := _ensure_global_death_root()
 	var death_visual := CityPedestrianVisualInstance.new()
 	death_visual.name = "%s_dead_global_%d" % [
@@ -972,9 +979,12 @@ func _spawn_global_pedestrian_death_visual_with_remaining(event: Dictionary, rem
 	]
 	death_root.add_child(death_visual)
 	death_visual.apply_state(_build_global_death_visual_state(event), Vector3.ZERO)
+	death_visual.apply_death_motion(event, elapsed_sec, Vector3.ZERO)
 	_global_death_visuals.append({
+		"event": event.duplicate(true),
 		"node": death_visual,
 		"remaining_sec": remaining_sec,
+		"elapsed_sec": elapsed_sec,
 	})
 
 func _migrate_chunk_death_visuals(chunk_scene: Node3D) -> void:
@@ -988,7 +998,11 @@ func _migrate_chunk_death_visuals(chunk_scene: Node3D) -> void:
 		var event: Dictionary = record.get("event", {})
 		if event.is_empty():
 			continue
-		_spawn_global_pedestrian_death_visual_with_remaining(event, float(record.get("remaining_sec", DEFAULT_DEATH_VISUAL_DURATION_SEC)))
+		_spawn_global_pedestrian_death_visual_with_remaining(
+			event,
+			float(record.get("remaining_sec", DEFAULT_DEATH_VISUAL_DURATION_SEC)),
+			float(record.get("elapsed_sec", 0.0))
+		)
 
 func _ensure_global_death_root() -> Node3D:
 	if _global_death_root != null and is_instance_valid(_global_death_root):
@@ -1008,13 +1022,17 @@ func _update_global_death_visuals(delta: float) -> void:
 	for visual_index in range(_global_death_visuals.size() - 1, -1, -1):
 		var visual_record: Dictionary = _global_death_visuals[visual_index]
 		var remaining_sec := maxf(float(visual_record.get("remaining_sec", 0.0)) - delta, 0.0)
+		var elapsed_sec := float(visual_record.get("elapsed_sec", 0.0)) + delta
 		var visual_node := visual_record.get("node") as Node3D
 		if remaining_sec <= 0.0:
 			if visual_node != null and is_instance_valid(visual_node):
 				visual_node.queue_free()
 			_global_death_visuals.remove_at(visual_index)
 			continue
+		if visual_node != null and is_instance_valid(visual_node) and visual_node.has_method("apply_death_motion"):
+			visual_node.apply_death_motion(visual_record.get("event", {}), elapsed_sec, Vector3.ZERO)
 		visual_record["remaining_sec"] = remaining_sec
+		visual_record["elapsed_sec"] = elapsed_sec
 		_global_death_visuals[visual_index] = visual_record
 
 func _clear_global_death_visuals() -> void:
@@ -1034,6 +1052,7 @@ func _append_chunk_death_visual_record(chunk_id: String, event: Dictionary) -> v
 	records.append({
 		"event": event.duplicate(true),
 		"remaining_sec": float(event.get("duration_sec", DEFAULT_DEATH_VISUAL_DURATION_SEC)),
+		"elapsed_sec": 0.0,
 	})
 	_chunk_death_visual_records[chunk_id] = records
 
@@ -1046,9 +1065,11 @@ func _update_chunk_death_visual_records(delta: float) -> void:
 		for record_variant in _chunk_death_visual_records[chunk_id]:
 			var record: Dictionary = record_variant
 			var remaining_sec := maxf(float(record.get("remaining_sec", 0.0)) - delta, 0.0)
+			var elapsed_sec := float(record.get("elapsed_sec", 0.0)) + delta
 			if remaining_sec <= 0.0:
 				continue
 			record["remaining_sec"] = remaining_sec
+			record["elapsed_sec"] = elapsed_sec
 			surviving_records.append(record)
 		if surviving_records.is_empty():
 			_chunk_death_visual_records.erase(chunk_id)

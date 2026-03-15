@@ -16,6 +16,7 @@ const PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M := 32.0
 const PLAYER_ASSIGNMENT_REBUILD_SPEED_DELTA_MPS := 0.1
 const FARFIELD_ASSIGNMENT_REBUILD_DISTANCE_M := 96.0
 const LAYERED_ASSIGNMENT_REBUILD_DISTANCE_M := 96.0
+const VEHICLE_IMPACT_FLEE_SPEED_MULTIPLIER := 4.0
 
 var _config = null
 var _budget := CityPedestrianBudget.new()
@@ -244,6 +245,69 @@ func resolve_explosion_impact(world_position: Vector3, lethal_radius_m: float, t
 		"lethal_radius_m": lethal_radius_m,
 		"threat_radius_m": resolved_threat_radius_m,
 		"death_events": death_events,
+	}
+
+func resolve_vehicle_impact(vehicle_state: Dictionary) -> Dictionary:
+	if vehicle_state.is_empty():
+		return {}
+	var impact_speed_mps := float(vehicle_state.get("speed_mps", 0.0))
+	if impact_speed_mps < float(_budget_contract.get("vehicle_impact_speed_threshold_mps", 6.0)):
+		return {}
+	var forward: Vector3 = vehicle_state.get("heading", Vector3.FORWARD)
+	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		forward = Vector3.FORWARD
+	forward = forward.normalized()
+	var lateral := Vector3(-forward.z, 0.0, forward.x).normalized()
+	var vehicle_position: Vector3 = vehicle_state.get("world_position", Vector3.ZERO)
+	var hit_radius_m := float(_budget_contract.get("vehicle_impact_hit_radius_m", 1.4))
+	var front_reach_m := float(_budget_contract.get("vehicle_impact_front_reach_m", 4.6))
+	var best_hit := {}
+	for state in _get_vehicle_impact_candidates():
+		if not state.is_alive():
+			continue
+		var hit := _vehicle_impact_hit_for_state(state, vehicle_position, forward, lateral, hit_radius_m, front_reach_m)
+		if hit.is_empty():
+			continue
+		if best_hit.is_empty() or float(hit.get("forward_distance_m", INF)) < float(best_hit.get("forward_distance_m", INF)):
+			best_hit = hit
+	if best_hit.is_empty():
+		return {}
+	var hit_state: CityPedestrianState = best_hit.get("state")
+	var impact_position: Vector3 = best_hit.get("impact_position", hit_state.world_position)
+	hit_state.mark_dead("vehicle_impact", vehicle_position)
+	_pedestrian_streamer.invalidate_active_state_cache()
+	var death_event := _build_death_event_for_state(hit_state, vehicle_position)
+	var launch_distance_m := clampf(
+		impact_speed_mps * 0.35,
+		float(_budget_contract.get("vehicle_impact_launch_distance_min_m", 3.5)),
+		float(_budget_contract.get("vehicle_impact_launch_distance_max_m", 7.0))
+	)
+	var landing_position := hit_state.world_position + forward * launch_distance_m
+	death_event["impact_source"] = "player_vehicle"
+	death_event["impact_vehicle_id"] = str(vehicle_state.get("vehicle_id", ""))
+	death_event["impact_heading"] = forward
+	death_event["impact_speed_mps"] = impact_speed_mps
+	death_event["launch_origin"] = hit_state.world_position
+	death_event["landing_position"] = landing_position
+	death_event["launch_distance_m"] = launch_distance_m
+	death_event["launch_duration_sec"] = float(_budget_contract.get("vehicle_impact_launch_duration_sec", 0.42))
+	var panic_summary := _apply_vehicle_impact_panic(impact_position, hit_state.pedestrian_id)
+	_mark_assignment_rebuild_required()
+	return {
+		"pedestrian_id": hit_state.pedestrian_id,
+		"chunk_id": hit_state.chunk_id,
+		"life_state": hit_state.life_state,
+		"impact_position": impact_position,
+		"impact_speed_mps": impact_speed_mps,
+		"death_events": [death_event],
+		"panic_radius_m": float(_budget_contract.get("vehicle_impact_panic_radius_m", 16.0)),
+		"panic_response_ratio": float(_budget_contract.get("vehicle_impact_panic_response_ratio", 0.6)),
+		"panic_candidate_count": int(panic_summary.get("candidate_count", 0)),
+		"panic_responder_count": int(panic_summary.get("responder_count", 0)),
+		"panic_candidate_ids": panic_summary.get("candidate_ids", []).duplicate(),
+		"panic_responder_ids": panic_summary.get("responder_ids", []).duplicate(),
+		"calm_witness_id": str(panic_summary.get("calm_witness_id", "")),
 	}
 
 func update_active_chunks(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0) -> Dictionary:
@@ -1066,3 +1130,133 @@ func _build_death_event_for_state(state: CityPedestrianState, source_position: V
 		"source_position": source_position,
 		"death_cause": state.death_cause,
 	}
+
+func _get_vehicle_impact_candidates() -> Array[CityPedestrianState]:
+	var candidates: Array[CityPedestrianState] = []
+	var seen_ids: Dictionary = {}
+	for state in _tier3_state_refs:
+		if _append_projectile_hit_candidate(candidates, seen_ids, state):
+			continue
+	for state in _tier2_state_refs:
+		if _append_projectile_hit_candidate(candidates, seen_ids, state):
+			continue
+	return candidates
+
+func _vehicle_impact_hit_for_state(
+	state: CityPedestrianState,
+	vehicle_position: Vector3,
+	forward: Vector3,
+	lateral: Vector3,
+	hit_radius_m: float,
+	front_reach_m: float
+) -> Dictionary:
+	var planar_delta := Vector3(
+		state.world_position.x - vehicle_position.x,
+		0.0,
+		state.world_position.z - vehicle_position.z
+	)
+	var forward_distance_m := planar_delta.dot(forward)
+	if forward_distance_m < -0.8 or forward_distance_m > front_reach_m:
+		return {}
+	var lateral_distance_m := absf(planar_delta.dot(lateral))
+	var allowed_lateral_m := maxf(hit_radius_m + state.radius_m, 0.6)
+	if lateral_distance_m > allowed_lateral_m:
+		return {}
+	return {
+		"state": state,
+		"impact_position": state.world_position,
+		"forward_distance_m": forward_distance_m,
+	}
+
+func _apply_vehicle_impact_panic(source_position: Vector3, victim_id: String) -> Dictionary:
+	var candidate_states := _collect_vehicle_impact_panic_candidates(source_position, victim_id)
+	candidate_states.sort_custom(func(a: CityPedestrianState, b: CityPedestrianState) -> bool:
+		var a_rank := posmod(int(a.seed_value), 1000)
+		var b_rank := posmod(int(b.seed_value), 1000)
+		if a_rank == b_rank:
+			return a.pedestrian_id < b.pedestrian_id
+		return a_rank < b_rank
+	)
+	var responder_count := int(round(float(candidate_states.size()) * float(_budget_contract.get("vehicle_impact_panic_response_ratio", 0.6))))
+	if candidate_states.size() > 0:
+		responder_count = clampi(responder_count, 1, candidate_states.size())
+	var responder_ids: Array[String] = []
+	var candidate_ids: Array[String] = []
+	var calm_witness_id := ""
+	for candidate_index in range(candidate_states.size()):
+		var state := candidate_states[candidate_index]
+		candidate_ids.append(state.pedestrian_id)
+		if candidate_index < responder_count:
+			responder_ids.append(state.pedestrian_id)
+			state.apply_reaction(_build_vehicle_impact_flee_command(state, source_position))
+			continue
+		if calm_witness_id == "":
+			calm_witness_id = state.pedestrian_id
+		state.clear_reaction()
+	return {
+		"candidate_count": candidate_states.size(),
+		"candidate_ids": candidate_ids,
+		"responder_count": responder_ids.size(),
+		"responder_ids": responder_ids,
+		"calm_witness_id": calm_witness_id,
+	}
+
+func _collect_vehicle_impact_panic_candidates(source_position: Vector3, victim_id: String) -> Array[CityPedestrianState]:
+	var candidates: Array[CityPedestrianState] = []
+	var seen_ids: Dictionary = {}
+	var radius_m := float(_budget_contract.get("vehicle_impact_panic_radius_m", 16.0))
+	for state_ref_group in [_tier3_state_refs, _tier2_state_refs]:
+		for state_variant in state_ref_group:
+			var state: CityPedestrianState = state_variant
+			if state == null or not state.is_alive():
+				continue
+			if state.pedestrian_id == victim_id or seen_ids.has(state.pedestrian_id):
+				continue
+			if state.world_position.distance_to(source_position) > radius_m:
+				continue
+			seen_ids[state.pedestrian_id] = true
+			candidates.append(state)
+	return candidates
+
+func _build_vehicle_impact_flee_command(state: CityPedestrianState, source_position: Vector3) -> Dictionary:
+	var flee_duration_sec := _resolve_vehicle_impact_flee_duration_sec(state)
+	var flee_direction := _resolve_vehicle_impact_escape_direction(state, source_position)
+	var flee_distance_m := maxf(state.speed_mps * VEHICLE_IMPACT_FLEE_SPEED_MULTIPLIER * flee_duration_sec, 0.1)
+	return {
+		"reaction_state": "flee",
+		"priority": 84,
+		"duration_sec": flee_duration_sec,
+		"flee_duration_sec": flee_duration_sec,
+		"source_position": source_position,
+		"flee_anchor_position": source_position,
+		"flee_direction": flee_direction,
+		"flee_target_position": state.world_position + flee_direction * flee_distance_m,
+	}
+
+func _resolve_vehicle_impact_flee_duration_sec(state: CityPedestrianState) -> float:
+	var min_duration_sec := maxi(int(round(float(_budget_contract.get("flee_duration_min_sec", 20.0)))), 1)
+	var max_duration_sec := maxi(int(round(float(_budget_contract.get("flee_duration_max_sec", float(min_duration_sec))))), min_duration_sec)
+	return float(min_duration_sec + posmod(int(state.seed_value), (max_duration_sec - min_duration_sec) + 1))
+
+func _resolve_vehicle_impact_escape_direction(state: CityPedestrianState, source_position: Vector3) -> Vector3:
+	var away_vector := Vector3(
+		state.world_position.x - source_position.x,
+		0.0,
+		state.world_position.z - source_position.z
+	)
+	if away_vector.length_squared() <= 0.0001:
+		away_vector = state.heading if state.heading.length_squared() > 0.0001 else Vector3.FORWARD
+	away_vector = away_vector.normalized()
+	var max_scatter_angle_deg := float(_budget_contract.get("flee_scatter_angle_deg", 42.0))
+	var scatter_angles := [
+		-max_scatter_angle_deg,
+		-max_scatter_angle_deg * 0.35,
+		max_scatter_angle_deg * 0.35,
+		max_scatter_angle_deg,
+	]
+	var scatter_index := posmod(int(state.seed_value), scatter_angles.size())
+	var escape_direction := away_vector.rotated(Vector3.UP, deg_to_rad(float(scatter_angles[scatter_index])))
+	escape_direction.y = 0.0
+	if escape_direction.length_squared() <= 0.0001:
+		return away_vector
+	return escape_direction.normalized()

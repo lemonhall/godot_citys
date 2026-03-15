@@ -63,6 +63,7 @@ const WEAPON_MODE_GRENADE := "grenade"
 @export var vehicle_drive_turn_rate_idle_deg := 46.0
 @export var vehicle_drive_camera_local_position := Vector3(0.0, 3.25, 8.4)
 @export var vehicle_drive_camera_fov := 72.0
+@export var vehicle_impact_speed_cap_mps := 8.5
 
 @onready var camera_rig: Node3D = $CameraRig
 @onready var camera: Camera3D = $CameraRig/Camera3D
@@ -373,6 +374,13 @@ func clear_vehicle_drive_input() -> void:
 		"steer": 0.0,
 		"brake": false,
 	}
+
+func apply_vehicle_impact_slowdown(speed_cap_mps: float = -1.0) -> float:
+	if not _driving_vehicle:
+		return 0.0
+	var resolved_speed_cap_mps := speed_cap_mps if speed_cap_mps >= 0.0 else vehicle_impact_speed_cap_mps
+	_driving_vehicle_speed_mps = minf(_driving_vehicle_speed_mps, maxf(resolved_speed_cap_mps, 0.0))
+	return _driving_vehicle_speed_mps
 
 func enter_vehicle_drive_mode(vehicle_state: Dictionary) -> void:
 	if vehicle_state.is_empty():

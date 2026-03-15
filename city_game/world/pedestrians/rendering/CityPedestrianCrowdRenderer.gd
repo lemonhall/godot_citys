@@ -67,13 +67,16 @@ func spawn_pedestrian_death_visual(event: Dictionary) -> void:
 	]
 	_death_root.add_child(death_visual)
 	death_visual.apply_state(_build_death_visual_state(event), _chunk_center)
+	death_visual.apply_death_motion(event, 0.0, _chunk_center)
 	var remaining_sec := float(event.get("duration_sec", DEATH_VISUAL_DURATION_SEC))
 	death_visual.set_meta("death_event", event.duplicate(true))
 	death_visual.set_meta("death_remaining_sec", remaining_sec)
+	death_visual.set_meta("death_elapsed_sec", 0.0)
 	_death_visuals.append({
 		"event": event.duplicate(true),
 		"node": death_visual,
 		"remaining_sec": remaining_sec,
+		"elapsed_sec": 0.0,
 	})
 
 func drain_death_visuals(target_parent: Node3D) -> Array[Dictionary]:
@@ -82,6 +85,7 @@ func drain_death_visuals(target_parent: Node3D) -> Array[Dictionary]:
 		return transferred_records
 	var remaining_sec_by_node: Dictionary = {}
 	var event_by_node: Dictionary = {}
+	var elapsed_sec_by_node: Dictionary = {}
 	for visual_record_variant in _death_visuals:
 		var visual_record: Dictionary = visual_record_variant
 		var source_node := visual_record.get("node") as Node3D
@@ -89,6 +93,7 @@ func drain_death_visuals(target_parent: Node3D) -> Array[Dictionary]:
 			continue
 		remaining_sec_by_node[source_node] = float(visual_record.get("remaining_sec", DEATH_VISUAL_DURATION_SEC))
 		event_by_node[source_node] = (visual_record.get("event", {}) as Dictionary).duplicate(true)
+		elapsed_sec_by_node[source_node] = float(visual_record.get("elapsed_sec", 0.0))
 	if _death_root == null:
 		_death_visuals.clear()
 		return transferred_records
@@ -102,6 +107,7 @@ func drain_death_visuals(target_parent: Node3D) -> Array[Dictionary]:
 		elif event_by_node.has(source_node):
 			event = (event_by_node[source_node] as Dictionary).duplicate(true)
 		var remaining_sec := float(source_node.get_meta("death_remaining_sec", remaining_sec_by_node.get(source_node, DEATH_VISUAL_DURATION_SEC)))
+		var elapsed_sec := float(source_node.get_meta("death_elapsed_sec", elapsed_sec_by_node.get(source_node, 0.0)))
 		var migrated_node: Node3D = null
 		if not event.is_empty():
 			var death_visual := CityPedestrianVisualInstance.new()
@@ -111,6 +117,7 @@ func drain_death_visuals(target_parent: Node3D) -> Array[Dictionary]:
 			]
 			target_parent.add_child(death_visual)
 			death_visual.apply_state(_build_death_visual_state(event), Vector3.ZERO)
+			death_visual.apply_death_motion(event, elapsed_sec, Vector3.ZERO)
 			migrated_node = death_visual
 		elif source_node != null and is_instance_valid(source_node):
 			source_node.reparent(target_parent, true)
@@ -122,6 +129,7 @@ func drain_death_visuals(target_parent: Node3D) -> Array[Dictionary]:
 		transferred_records.append({
 			"node": migrated_node,
 			"remaining_sec": remaining_sec,
+			"elapsed_sec": elapsed_sec,
 		})
 	_death_visuals.clear()
 	return transferred_records
@@ -132,6 +140,7 @@ func _process(delta: float) -> void:
 	for visual_index in range(_death_visuals.size() - 1, -1, -1):
 		var visual_record: Dictionary = _death_visuals[visual_index]
 		var remaining_sec := maxf(float(visual_record.get("remaining_sec", 0.0)) - delta, 0.0)
+		var elapsed_sec := float(visual_record.get("elapsed_sec", 0.0)) + delta
 		var visual_node := visual_record.get("node") as Node3D
 		if remaining_sec <= 0.0:
 			if visual_node != null and is_instance_valid(visual_node):
@@ -139,8 +148,12 @@ func _process(delta: float) -> void:
 			_death_visuals.remove_at(visual_index)
 			continue
 		if visual_node != null and is_instance_valid(visual_node):
+			if visual_node.has_method("apply_death_motion"):
+				visual_node.apply_death_motion(visual_record.get("event", {}), elapsed_sec, _chunk_center)
 			visual_node.set_meta("death_remaining_sec", remaining_sec)
+			visual_node.set_meta("death_elapsed_sec", elapsed_sec)
 		visual_record["remaining_sec"] = remaining_sec
+		visual_record["elapsed_sec"] = elapsed_sec
 		_death_visuals[visual_index] = visual_record
 
 func _ensure_nodes() -> void:

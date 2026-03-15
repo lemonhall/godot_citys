@@ -78,6 +78,7 @@ var _last_minimap_hud_refresh_tick_usec := -MINIMAP_HUD_REFRESH_INTERVAL_USEC
 var _vehicle_visual_catalog: CityVehicleVisualCatalog = null
 var _abandoned_vehicle_visual_root: Node3D = null
 var _abandoned_vehicle_visuals: Array = []
+var _pending_player_vehicle_impact_result: Dictionary = {}
 
 func _ready() -> void:
 	_configure_environment()
@@ -118,6 +119,9 @@ func _process(delta: float) -> void:
 		return
 	var frame_started_usec := Time.get_ticks_usec()
 	update_streaming_for_position(player.global_position, delta)
+	var impact_result := _resolve_player_vehicle_pedestrian_impact_impl()
+	if not impact_result.is_empty():
+		_pending_player_vehicle_impact_result = impact_result.duplicate(true)
 	var frame_duration_usec := Time.get_ticks_usec() - frame_started_usec
 	_record_frame_step_sample(frame_duration_usec)
 	if delta > 0.0:
@@ -581,6 +585,13 @@ func resolve_vehicle_explosion(world_position: Vector3, radius_m: float) -> Dict
 		return {}
 	return chunk_renderer.resolve_vehicle_explosion(world_position, radius_m)
 
+func resolve_player_vehicle_pedestrian_impact() -> Dictionary:
+	if not _pending_player_vehicle_impact_result.is_empty():
+		var cached_result := _pending_player_vehicle_impact_result.duplicate(true)
+		_pending_player_vehicle_impact_result.clear()
+		return cached_result
+	return _resolve_player_vehicle_pedestrian_impact_impl()
+
 func find_hijackable_vehicle_candidate(max_distance_m: float = 6.5) -> Dictionary:
 	if chunk_renderer == null or not chunk_renderer.has_method("find_hijackable_vehicle_candidate"):
 		return {}
@@ -740,6 +751,23 @@ func _prune_abandoned_vehicle_visuals() -> void:
 		if visual_root != null and is_instance_valid(visual_root):
 			survivors.append(entry)
 	_abandoned_vehicle_visuals = survivors
+
+func _resolve_player_vehicle_pedestrian_impact_impl() -> Dictionary:
+	if player == null or not player.has_method("is_driving_vehicle") or not bool(player.is_driving_vehicle()):
+		return {}
+	if chunk_renderer == null or not chunk_renderer.has_method("resolve_player_vehicle_pedestrian_impact"):
+		return {}
+	var vehicle_state := get_player_vehicle_state()
+	if vehicle_state.is_empty():
+		return {}
+	var impact_result: Dictionary = chunk_renderer.resolve_player_vehicle_pedestrian_impact(vehicle_state)
+	if impact_result.is_empty():
+		return {}
+	var speed_after_mps := float(vehicle_state.get("speed_mps", 0.0))
+	if player.has_method("apply_vehicle_impact_slowdown"):
+		speed_after_mps = float(player.apply_vehicle_impact_slowdown())
+	impact_result["vehicle_speed_after_mps"] = speed_after_mps
+	return impact_result
 
 func _update_abandoned_vehicle_visuals(delta: float) -> void:
 	if _abandoned_vehicle_visuals.is_empty():
@@ -1011,7 +1039,6 @@ func reset_performance_profile() -> void:
 	_minimap_cache_hits = 0
 	_minimap_cache_misses = 0
 	_minimap_rebuild_count = 0
-	_invalidate_minimap_cache()
 	if chunk_renderer != null and chunk_renderer.has_method("reset_streaming_profile_stats"):
 		chunk_renderer.reset_streaming_profile_stats()
 

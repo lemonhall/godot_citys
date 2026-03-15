@@ -35,6 +35,21 @@ func get_animation_player() -> AnimationPlayer:
 func get_model_id() -> String:
 	return str(_selected_entry.get("model_id", ""))
 
+func apply_death_motion(event: Dictionary, elapsed_sec: float, chunk_center: Vector3 = Vector3.ZERO) -> void:
+	if event.is_empty():
+		return
+	var launch_origin: Vector3 = event.get("launch_origin", event.get("world_position", Vector3.ZERO))
+	var landing_position: Vector3 = event.get("landing_position", launch_origin)
+	var launch_duration_sec := float(event.get("launch_duration_sec", 0.0))
+	if launch_duration_sec <= 0.0:
+		return
+	var progress := clampf(elapsed_sec / launch_duration_sec, 0.0, 1.0)
+	var current_world_position := launch_origin.lerp(landing_position, progress)
+	var launch_distance_m := float(event.get("launch_distance_m", launch_origin.distance_to(landing_position)))
+	var arc_peak_m := clampf(maxf(launch_distance_m * 0.18, 0.55), 0.55, 1.35)
+	current_world_position.y += sin(progress * PI) * arc_peak_m
+	position = current_world_position - chunk_center
+
 func _ensure_visual_entry(catalog: CityPedestrianVisualCatalog, entry: Dictionary) -> void:
 	var next_model_id := str(entry.get("model_id", ""))
 	var current_model_id := str(_selected_entry.get("model_id", ""))

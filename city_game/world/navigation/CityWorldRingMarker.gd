@@ -55,6 +55,30 @@ const THEME_PALETTES := {
 	},
 }
 
+const THEME_VISUAL_PROFILES := {
+	"destination": {
+		"show_cross_ring": true,
+		"show_flames": true,
+		"dash_rotation_speed": 0.38,
+		"cross_rotation_speed": -0.24,
+		"animate_flames": true,
+	},
+	"task_available_start": {
+		"show_cross_ring": false,
+		"show_flames": false,
+		"dash_rotation_speed": 0.0,
+		"cross_rotation_speed": 0.0,
+		"animate_flames": false,
+	},
+	"task_active_objective": {
+		"show_cross_ring": false,
+		"show_flames": false,
+		"dash_rotation_speed": 0.0,
+		"cross_rotation_speed": 0.0,
+		"animate_flames": false,
+	},
+}
+
 var _radius_m := DEFAULT_RADIUS_M
 var _elapsed_sec := 0.0
 var _theme_id := "destination"
@@ -100,6 +124,7 @@ func tick(delta: float) -> void:
 	if not visible:
 		return
 	_elapsed_sec += maxf(delta, 0.0)
+	var visual_profile := _get_theme_visual_profile()
 	var outer_pulse := 1.0 + sin(_elapsed_sec * 1.8) * 0.025
 	var inner_pulse := 1.0 + sin(_elapsed_sec * 2.6 + 0.6) * 0.05
 	if _outer_ring != null:
@@ -109,17 +134,20 @@ func tick(delta: float) -> void:
 	if _core_disc != null:
 		var core_pulse := 1.0 + sin(_elapsed_sec * 3.1) * 0.08
 		_core_disc.scale = Vector3(core_pulse, 1.0, core_pulse)
-	if _dash_ring_root != null:
-		_dash_ring_root.rotation.y += delta * 0.38
-	if _cross_ring_root != null:
-		_cross_ring_root.rotation.y -= delta * 0.24
-	for flame_index in range(_flame_columns.size()):
-		var flame := _flame_columns[flame_index]
-		if flame == null:
-			continue
-		var flame_pulse := 0.92 + sin(_elapsed_sec * (3.2 + float(flame_index) * 0.45) + float(flame_index) * 0.7) * 0.18
-		flame.scale = Vector3(1.0, flame_pulse, 1.0)
-		flame.position.y = FLAME_HEIGHT_M * flame_pulse * 0.5
+	var dash_rotation_speed := float(visual_profile.get("dash_rotation_speed", 0.38))
+	if _dash_ring_root != null and not is_zero_approx(dash_rotation_speed):
+		_dash_ring_root.rotation.y += delta * dash_rotation_speed
+	var cross_rotation_speed := float(visual_profile.get("cross_rotation_speed", -0.24))
+	if _cross_ring_root != null and _cross_ring_root.visible and not is_zero_approx(cross_rotation_speed):
+		_cross_ring_root.rotation.y += delta * cross_rotation_speed
+	if bool(visual_profile.get("animate_flames", true)):
+		for flame_index in range(_flame_columns.size()):
+			var flame := _flame_columns[flame_index]
+			if flame == null or not flame.visible:
+				continue
+			var flame_pulse := 0.92 + sin(_elapsed_sec * (3.2 + float(flame_index) * 0.45) + float(flame_index) * 0.7) * 0.18
+			flame.scale = Vector3(1.0, flame_pulse, 1.0)
+			flame.position.y = FLAME_HEIGHT_M * flame_pulse * 0.5
 
 func get_state() -> Dictionary:
 	return {
@@ -129,7 +157,11 @@ func get_state() -> Dictionary:
 		"theme_id": _theme_id,
 		"family_id": FAMILY_ID,
 		"dash_segment_count": _dash_segments.size(),
+		"visible_dash_segment_count": _count_visible_segments(_dash_segments, _dash_ring_root == null or _dash_ring_root.visible),
+		"cross_segment_count": _cross_segments.size(),
+		"visible_cross_segment_count": _count_visible_segments(_cross_segments, _cross_ring_root == null or _cross_ring_root.visible),
 		"flame_column_count": _flame_columns.size(),
+		"visible_flame_column_count": _count_visible_mesh_instances(_flame_columns),
 	}
 
 func _ensure_visuals() -> void:
@@ -153,6 +185,7 @@ func _ensure_visuals() -> void:
 
 func _apply_theme() -> void:
 	var theme: Dictionary = THEME_PALETTES.get(_theme_id, THEME_PALETTES["destination"])
+	var visual_profile := _get_theme_visual_profile()
 	_apply_mesh_theme(_outer_ring, theme, "outer")
 	_apply_mesh_theme(_inner_ring, theme, "inner")
 	_apply_mesh_theme(_core_disc, theme, "core")
@@ -162,6 +195,14 @@ func _apply_theme() -> void:
 		_apply_material(segment, theme.get("cross_base", Color.WHITE), theme.get("cross_emission", Color.WHITE), 0.88)
 	for flame in _flame_columns:
 		_apply_material(flame, theme.get("flame_base", Color.WHITE), theme.get("flame_emission", Color.WHITE), 1.35)
+	var show_cross_ring := bool(visual_profile.get("show_cross_ring", true))
+	if _cross_ring_root != null:
+		_cross_ring_root.visible = show_cross_ring
+	var show_flames := bool(visual_profile.get("show_flames", true))
+	for flame in _flame_columns:
+		if flame == null:
+			continue
+		flame.visible = show_flames
 
 func _apply_mesh_theme(mesh_instance: MeshInstance3D, theme: Dictionary, prefix: String) -> void:
 	if mesh_instance == null:
@@ -267,3 +308,22 @@ func _make_material(base_color: Color, emission_color: Color, emission_energy: f
 	material.emission = emission_color
 	material.emission_energy_multiplier = emission_energy
 	return material
+
+func _get_theme_visual_profile() -> Dictionary:
+	return THEME_VISUAL_PROFILES.get(_theme_id, THEME_VISUAL_PROFILES["destination"])
+
+func _count_visible_segments(segments: Array[MeshInstance3D], layer_visible: bool) -> int:
+	if not layer_visible:
+		return 0
+	var visible_count := 0
+	for segment in segments:
+		if segment != null and segment.visible:
+			visible_count += 1
+	return visible_count
+
+func _count_visible_mesh_instances(mesh_instances: Array[MeshInstance3D]) -> int:
+	var visible_count := 0
+	for mesh_instance in mesh_instances:
+		if mesh_instance != null and mesh_instance.visible:
+			visible_count += 1
+	return visible_count

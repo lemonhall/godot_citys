@@ -2023,6 +2023,9 @@ func _sanitize_route_style_id(route_style_id: String) -> String:
 			return route_style_id
 	return ROUTE_STYLE_DESTINATION
 
+func _is_task_route_style_id(route_style_id: String) -> bool:
+	return route_style_id == ROUTE_STYLE_TASK_AVAILABLE or route_style_id == ROUTE_STYLE_TASK_ACTIVE
+
 func _get_route_refresh_anchor_position() -> Vector3:
 	var vehicle_state: Dictionary = get_player_vehicle_state()
 	if not vehicle_state.is_empty() and bool(vehicle_state.get("driving", false)):
@@ -2056,6 +2059,11 @@ func _update_destination_world_marker(delta: float) -> void:
 	var route_id := str(_active_route_result.get("route_id", ""))
 	if route_id == "" or _active_destination_target.is_empty():
 		_destination_world_marker_dismissed_route_id = ""
+		if _destination_world_marker.has_method("set_marker_visible"):
+			_destination_world_marker.set_marker_visible(false)
+		return
+	var route_style_id := str(_active_route_result.get("route_style_id", ROUTE_STYLE_DESTINATION))
+	if _is_task_route_style_id(route_style_id):
 		if _destination_world_marker.has_method("set_marker_visible"):
 			_destination_world_marker.set_marker_visible(false)
 		return

@@ -10,6 +10,7 @@ var _world_bounds := Rect2()
 var _pins: Array[Dictionary] = []
 var _route_result: Dictionary = {}
 var _last_selection_contract: Dictionary = {}
+var _player_marker: Dictionary = {}
 var _map_open := false
 var _world_paused := false
 var _road_graph = null
@@ -74,6 +75,10 @@ func set_last_selection_contract(selection_contract: Dictionary) -> void:
 	_last_selection_contract = selection_contract.duplicate(true)
 	queue_redraw()
 
+func set_player_marker(player_marker: Dictionary) -> void:
+	_player_marker = player_marker.duplicate(true)
+	queue_redraw()
+
 func select_world_point(world_position: Vector3) -> void:
 	map_world_point_selected.emit(world_position)
 
@@ -113,6 +118,7 @@ func get_render_state() -> Dictionary:
 			continue
 		pin_type_seen[pin_type] = true
 		pin_types.append(pin_type)
+	var player_marker := _build_player_marker_render_state()
 	return {
 		"visible": visible,
 		"map_open": _map_open,
@@ -127,6 +133,7 @@ func get_render_state() -> Dictionary:
 		"pin_types": pin_types,
 		"route_point_count": (_route_result.get("polyline", []) as Array).size(),
 		"last_selection_contract": _last_selection_contract.duplicate(true),
+		"player_marker": player_marker,
 	}
 
 func _gui_input(event: InputEvent) -> void:
@@ -182,6 +189,7 @@ func _draw() -> void:
 	_draw_route()
 	_draw_pins()
 	_draw_selection_marker()
+	_draw_player_marker()
 
 func _draw_road_network() -> void:
 	for polyline_variant in _road_polylines:
@@ -215,6 +223,23 @@ func _draw_selection_marker() -> void:
 	var world_position: Vector3 = selection_target.get("world_anchor", Vector3.ZERO)
 	var marker_position := world_to_map(world_position)
 	draw_arc(marker_position, 12.0, 0.0, TAU, 24, Color(0.92, 0.98, 0.98, 0.95), 2.0)
+
+func build_player_marker_polygon(marker_position: Vector2, heading_rad: float) -> PackedVector2Array:
+	var forward := Vector2(sin(heading_rad), -cos(heading_rad))
+	var right := Vector2(-forward.y, forward.x)
+	return PackedVector2Array([
+		marker_position + forward * 9.0,
+		marker_position - forward * 6.0 + right * 5.0,
+		marker_position - forward * 6.0 - right * 5.0,
+	])
+
+func _draw_player_marker() -> void:
+	var player_marker := _build_player_marker_render_state()
+	if player_marker.is_empty():
+		return
+	var marker_position: Vector2 = player_marker.get("position", Vector2.ZERO)
+	var points := build_player_marker_polygon(marker_position, float(player_marker.get("heading_rad", 0.0)))
+	draw_colored_polygon(points, Color(0.3, 0.88, 1.0, 1.0))
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
@@ -354,3 +379,11 @@ func _apply_zoom_at(map_position: Vector2, zoom_ratio: float) -> void:
 	_view_center_world = _clamp_view_center_world(_view_center_world + world_delta)
 	_invalidate_road_cache()
 	queue_redraw()
+
+func _build_player_marker_render_state() -> Dictionary:
+	if _player_marker.is_empty():
+		return {}
+	var world_position: Vector3 = _player_marker.get("world_position", Vector3.ZERO)
+	var render_state := _player_marker.duplicate(true)
+	render_state["position"] = world_to_map(world_position)
+	return render_state

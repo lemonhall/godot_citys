@@ -1186,8 +1186,9 @@ func build_minimap_snapshot() -> Dictionary:
 		return {}
 	_minimap_request_count += 1
 	var center_world_position := _get_minimap_center_world_position(_get_active_anchor_position())
-	var player_world_position := player.global_position if player != null else Vector3.ZERO
-	var player_heading := _resolve_minimap_heading_rad()
+	var player_marker_state := _build_navigation_player_marker_state()
+	var player_world_position: Vector3 = player_marker_state.get("world_position", Vector3.ZERO)
+	var player_heading := float(player_marker_state.get("heading_rad", 0.0))
 	var crowd_debug_enabled := _is_minimap_crowd_debug_enabled()
 	var cache_key := _build_minimap_cache_key(center_world_position, MINIMAP_WORLD_RADIUS_M)
 	if cache_key == _minimap_cache_key and not _minimap_snapshot_cache.is_empty():
@@ -1226,6 +1227,14 @@ func _resolve_minimap_heading_rad() -> float:
 		heading = Vector3.FORWARD
 	heading = heading.normalized()
 	return atan2(heading.x, -heading.z)
+
+func _build_navigation_player_marker_state() -> Dictionary:
+	if player == null:
+		return {}
+	return {
+		"world_position": player.global_position,
+		"heading_rad": _resolve_minimap_heading_rad(),
+	}
 
 func build_minimap_route_overlay(start_position: Vector3, goal_position: Vector3) -> Dictionary:
 	if _minimap_projector == null:
@@ -1709,6 +1718,8 @@ func _sync_navigation_consumers(force_minimap_refresh: bool = false) -> void:
 			_map_screen.set_map_open(_full_map_open)
 		if _map_screen.has_method("set_world_paused"):
 			_map_screen.set_world_paused(_world_simulation_paused)
+		if _map_screen.has_method("set_player_marker"):
+			_map_screen.set_player_marker(_build_navigation_player_marker_state())
 		if _map_screen.has_method("set_pins"):
 			_map_screen.set_pins(_get_map_pins())
 		if _map_screen.has_method("set_route_result"):
@@ -1868,7 +1879,8 @@ func _update_destination_world_marker(delta: float) -> void:
 		return
 	var marker_position := _resolve_destination_world_marker_world_position()
 	if _has_reached_destination_world_marker(marker_position):
-		_destination_world_marker_dismissed_route_id = route_id
+		_clear_active_navigation_state(true)
+		return
 	if route_id == _destination_world_marker_dismissed_route_id:
 		if _destination_world_marker.has_method("set_marker_visible"):
 			_destination_world_marker.set_marker_visible(false)
@@ -1895,6 +1907,25 @@ func _has_reached_destination_world_marker(marker_position: Vector3) -> bool:
 	var subject_position := _get_route_refresh_anchor_position()
 	var planar_distance := Vector2(subject_position.x - marker_position.x, subject_position.z - marker_position.z).length()
 	return planar_distance <= DESTINATION_WORLD_MARKER_CLEAR_DISTANCE_M
+
+func _clear_active_navigation_state(clear_selection_contract: bool = false) -> void:
+	_active_destination_target.clear()
+	_active_route_result.clear()
+	_minimap_route_world_positions.clear()
+	_active_route_refresh_elapsed_sec = 0.0
+	_active_route_refresh_anchor = _get_route_refresh_anchor_position()
+	_destination_world_marker_dismissed_route_id = ""
+	if clear_selection_contract:
+		_last_map_selection_contract.clear()
+	if player != null and player.has_method("clear_vehicle_autodrive_input"):
+		player.clear_vehicle_autodrive_input()
+	if is_autodrive_active():
+		stop_autodrive("arrived")
+	if _map_pin_registry != null and _map_pin_registry.has_method("upsert_destination_pin"):
+		_map_pin_registry.upsert_destination_pin({})
+	if _destination_world_marker != null and _destination_world_marker.has_method("set_marker_visible"):
+		_destination_world_marker.set_marker_visible(false)
+	_sync_navigation_consumers(true)
 
 func _orient_player_to_heading(heading: Vector3) -> void:
 	if player == null:

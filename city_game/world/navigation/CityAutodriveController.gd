@@ -79,6 +79,7 @@ func update(vehicle_state: Dictionary, manual_input_requested: bool) -> Dictiona
 		_state = STATE_FOLLOWING_ROUTE
 
 	var vehicle_position: Vector3 = vehicle_state.get("world_position", Vector3.ZERO)
+	_align_polyline_progress(vehicle_position, polyline)
 	while _current_polyline_index < polyline.size() - 1:
 		var current_waypoint: Vector3 = polyline[_current_polyline_index]
 		if vehicle_position.distance_to(current_waypoint) > WAYPOINT_REACHED_DISTANCE_M:
@@ -129,6 +130,29 @@ func _distance_to_route(vehicle_position: Vector3, polyline: Array, target_index
 		var closest := Geometry2D.get_closest_point_to_segment(vehicle_point, Vector2(a.x, a.z), Vector2(b.x, b.z))
 		min_distance = minf(min_distance, vehicle_point.distance_to(closest))
 	return 0.0 if min_distance == INF else min_distance
+
+func _align_polyline_progress(vehicle_position: Vector3, polyline: Array) -> void:
+	if polyline.size() < 2:
+		return
+	var nearest_segment_index := _find_nearest_segment_index(vehicle_position, polyline)
+	if nearest_segment_index < 0:
+		return
+	_current_polyline_index = clampi(maxi(_current_polyline_index, nearest_segment_index + 1), 1, polyline.size() - 1)
+
+func _find_nearest_segment_index(vehicle_position: Vector3, polyline: Array) -> int:
+	var vehicle_point := Vector2(vehicle_position.x, vehicle_position.z)
+	var nearest_segment_index := -1
+	var nearest_distance := INF
+	for point_index in range(polyline.size() - 1):
+		var a: Vector3 = polyline[point_index]
+		var b: Vector3 = polyline[point_index + 1]
+		var closest := Geometry2D.get_closest_point_to_segment(vehicle_point, Vector2(a.x, a.z), Vector2(b.x, b.z))
+		var distance := vehicle_point.distance_to(closest)
+		if distance >= nearest_distance:
+			continue
+		nearest_distance = distance
+		nearest_segment_index = point_index
+	return nearest_segment_index
 
 func _build_update_result(control: Dictionary, request_reroute: bool) -> Dictionary:
 	var state := get_state()

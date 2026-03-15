@@ -1026,7 +1026,7 @@ func select_map_destination_from_world_point(world_position: Vector3) -> Diction
 		"resolved_target": resolved_target.duplicate(true),
 		"route_request_target": route_request_target.duplicate(true),
 	}
-	var route_result: Dictionary = plan_route_result(_get_active_anchor_position(), route_request_target, 0)
+	var route_result: Dictionary = plan_route_result(_get_route_refresh_anchor_position(), route_request_target, 0)
 	if route_result.is_empty():
 		return {}
 	_last_map_selection_contract = selection_contract.duplicate(true)
@@ -1063,7 +1063,7 @@ func resolve_fast_travel_target(target_or_world_position: Variant) -> Dictionary
 		return {}
 	var route_result := _active_route_result
 	if route_result.is_empty() or str(route_result.get("destination_target_id", "")) != str(_resolve_target_identity(resolved_target)):
-		route_result = plan_route_result(_get_active_anchor_position(), resolved_target, 0)
+		route_result = plan_route_result(_get_route_refresh_anchor_position(), resolved_target, 0)
 	return _fast_travel_resolver.resolve_target(resolved_target, route_result, _estimate_player_standing_height())
 
 func fast_travel_to_target(target_or_world_position: Variant) -> Dictionary:
@@ -1105,7 +1105,13 @@ func start_autodrive_to_active_destination() -> Dictionary:
 		return {
 			"success": false,
 		}
-	var state: Dictionary = _autodrive_controller.arm(_active_route_result, _active_destination_target)
+	var route_to_arm := _active_route_result
+	if _navigation_runtime != null:
+		var rerouted: Dictionary = _navigation_runtime.reroute_from_world_position(_get_route_refresh_anchor_position(), _active_destination_target, int(_active_route_result.get("reroute_generation", 0)))
+		if not rerouted.is_empty():
+			_apply_active_route_result(rerouted)
+			route_to_arm = rerouted
+	var state: Dictionary = _autodrive_controller.arm(route_to_arm, _active_destination_target)
 	if str(state.get("state", "")) == "failed":
 		return {
 			"success": false,
@@ -1748,14 +1754,6 @@ func _step_autodrive(_delta: float) -> void:
 	else:
 		if player.has_method("clear_vehicle_autodrive_input"):
 			player.clear_vehicle_autodrive_input()
-	if bool(update_state.get("request_reroute", false)) and _navigation_runtime != null and not _active_destination_target.is_empty():
-		var rerouted: Dictionary = _navigation_runtime.reroute_from_world_position(_get_active_anchor_position(), _active_destination_target, int(_active_route_result.get("reroute_generation", 0)))
-		if rerouted.is_empty():
-			_autodrive_controller.fail("reroute_failed")
-			if player.has_method("clear_vehicle_autodrive_input"):
-				player.clear_vehicle_autodrive_input()
-		else:
-			_apply_active_route_result(rerouted, {}, true)
 
 func _step_active_route_refresh(delta: float) -> void:
 	if _navigation_runtime == null or _active_destination_target.is_empty() or _active_route_result.is_empty():
@@ -1764,8 +1762,11 @@ func _step_active_route_refresh(delta: float) -> void:
 	if player == null or not player.has_method("is_driving_vehicle") or not bool(player.is_driving_vehicle()):
 		_active_route_refresh_elapsed_sec = 0.0
 		return
+	if is_autodrive_active():
+		_active_route_refresh_elapsed_sec = 0.0
+		return
 	_active_route_refresh_elapsed_sec += maxf(delta, 0.0)
-	var refresh_interval_sec := AUTODRIVE_ROUTE_REFRESH_INTERVAL_SEC if is_autodrive_active() else MANUAL_ROUTE_REFRESH_INTERVAL_SEC
+	var refresh_interval_sec := MANUAL_ROUTE_REFRESH_INTERVAL_SEC
 	if _active_route_refresh_elapsed_sec < refresh_interval_sec:
 		return
 	var refresh_anchor := _get_route_refresh_anchor_position()

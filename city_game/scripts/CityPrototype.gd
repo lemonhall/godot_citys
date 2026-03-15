@@ -39,6 +39,7 @@ const MANUAL_ROUTE_REFRESH_INTERVAL_SEC := 3.5
 const AUTODRIVE_ROUTE_REFRESH_INTERVAL_SEC := 3.5
 const ACTIVE_ROUTE_REFRESH_MIN_MOVEMENT_M := 48.0
 const ACTIVE_ROUTE_REFRESH_MIN_ORIGIN_DELTA_M := 36.0
+const FAST_TRAVEL_SHORTCUT_AIR_DROP_HEIGHT_M := 10.0
 const DESTINATION_WORLD_MARKER_RADIUS_M := 8.0
 const DESTINATION_WORLD_MARKER_CLEAR_DISTANCE_M := 10.5
 const DESTINATION_WORLD_MARKER_SURFACE_OFFSET_M := 0.12
@@ -177,6 +178,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			toggle_full_map()
 			get_viewport().set_input_as_handled()
 			return
+		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_T:
+			if _handle_fast_travel_shortcut():
+				get_viewport().set_input_as_handled()
+				return
 		if _full_map_open:
 			return
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_F:
@@ -204,6 +209,17 @@ func _handle_autodrive_shortcut() -> bool:
 		_refresh_hud_status({}, true)
 		return true
 	return false
+
+func _handle_fast_travel_shortcut() -> bool:
+	if _active_destination_target.is_empty():
+		return false
+	var result: Dictionary = fast_travel_to_active_destination(FAST_TRAVEL_SHORTCUT_AIR_DROP_HEIGHT_M, false)
+	if not bool(result.get("success", false)):
+		return false
+	if _full_map_open:
+		set_full_map_open(false)
+	_refresh_hud_status({}, true)
+	return true
 
 func handle_debug_keypress(keycode: int, physical_keycode: int = 0) -> bool:
 	if keycode == KEY_C:
@@ -1084,7 +1100,7 @@ func resolve_fast_travel_target(target_or_world_position: Variant) -> Dictionary
 		route_result = plan_route_result(_get_route_refresh_anchor_position(), resolved_target, 0)
 	return _fast_travel_resolver.resolve_target(resolved_target, route_result, _estimate_player_standing_height())
 
-func fast_travel_to_target(target_or_world_position: Variant) -> Dictionary:
+func fast_travel_to_target(target_or_world_position: Variant, air_drop_height_m: float = 0.0, snap_to_surface: bool = true) -> Dictionary:
 	var resolved_target: Dictionary = _resolve_route_target(target_or_world_position)
 	var fast_travel_target: Dictionary = resolve_fast_travel_target(resolved_target)
 	if player == null or resolved_target.is_empty() or fast_travel_target.is_empty():
@@ -1093,26 +1109,30 @@ func fast_travel_to_target(target_or_world_position: Variant) -> Dictionary:
 		}
 	stop_autodrive("interrupted")
 	var safe_drop_anchor: Vector3 = fast_travel_target.get("safe_drop_anchor", player.global_position)
+	var teleport_world_position := safe_drop_anchor + Vector3.UP * maxf(air_drop_height_m, 0.0)
 	if player.has_method("teleport_to_world_position"):
-		player.teleport_to_world_position(safe_drop_anchor)
+		player.teleport_to_world_position(teleport_world_position)
 	else:
-		player.global_position = safe_drop_anchor
+		player.global_position = teleport_world_position
 	_orient_player_to_heading(fast_travel_target.get("arrival_heading", Vector3.FORWARD))
 	if player.has_method("suspend_ground_stabilization"):
 		player.suspend_ground_stabilization(12)
-	_snap_player_to_active_surface()
+	if snap_to_surface:
+		_snap_player_to_active_surface()
 	update_streaming_for_position(_get_active_anchor_position(), 0.0)
 	_refresh_hud_status({}, true)
 	var result := fast_travel_target.duplicate(true)
+	result["teleport_world_position"] = teleport_world_position
+	result["air_drop_height_m"] = maxf(air_drop_height_m, 0.0)
 	result["success"] = true
 	return result
 
-func fast_travel_to_active_destination() -> Dictionary:
+func fast_travel_to_active_destination(air_drop_height_m: float = 0.0, snap_to_surface: bool = true) -> Dictionary:
 	if _active_destination_target.is_empty():
 		return {
 			"success": false,
 		}
-	return fast_travel_to_target(_active_destination_target)
+	return fast_travel_to_target(_active_destination_target, air_drop_height_m, snap_to_surface)
 
 func start_autodrive_to_active_destination() -> Dictionary:
 	if _autodrive_controller == null or _active_route_result.is_empty() or _active_destination_target.is_empty():

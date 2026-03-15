@@ -13,6 +13,8 @@ const TRAVERSAL_MODE_WALL_CLIMB := "wall_climb"
 const TRAVERSAL_MODE_GROUND_SLAM := "ground_slam"
 const WEAPON_MODE_RIFLE := "rifle"
 const WEAPON_MODE_GRENADE := "grenade"
+const SPORTS_CAR_MODEL_ID := "sports_car_a"
+const SPORTS_CAR_SPEED_MULTIPLIER := 2.0
 
 @export var walk_speed := 8.0
 @export var sprint_speed := 18.5
@@ -722,7 +724,11 @@ func _process_vehicle_drive(delta: float) -> void:
 	var throttle := float(drive_input.get("throttle", 0.0))
 	var steer := float(drive_input.get("steer", 0.0))
 	var brake := bool(drive_input.get("brake", false))
-	var speed_ratio := clampf(absf(_driving_vehicle_speed_mps) / maxf(vehicle_drive_forward_speed, 0.001), 0.0, 1.0)
+	var drive_tuning := _resolve_active_vehicle_drive_tuning()
+	var forward_speed := float(drive_tuning.get("forward_speed", vehicle_drive_forward_speed))
+	var reverse_speed := float(drive_tuning.get("reverse_speed", vehicle_drive_reverse_speed))
+	var accel := float(drive_tuning.get("accel", vehicle_drive_accel))
+	var speed_ratio := clampf(absf(_driving_vehicle_speed_mps) / maxf(forward_speed, 0.001), 0.0, 1.0)
 	var turn_rate_deg := lerpf(vehicle_drive_turn_rate_idle_deg, vehicle_drive_turn_rate_deg, speed_ratio)
 	if absf(_driving_vehicle_speed_mps) > 0.05 or absf(throttle) > 0.0:
 		var drive_direction_sign := 1.0 if _driving_vehicle_speed_mps >= 0.0 else -1.0
@@ -730,12 +736,12 @@ func _process_vehicle_drive(delta: float) -> void:
 	if brake:
 		_driving_vehicle_speed_mps = move_toward(_driving_vehicle_speed_mps, 0.0, vehicle_drive_brake_decel * delta)
 	elif throttle > 0.0:
-		_driving_vehicle_speed_mps = move_toward(_driving_vehicle_speed_mps, vehicle_drive_forward_speed * throttle, vehicle_drive_accel * delta)
+		_driving_vehicle_speed_mps = move_toward(_driving_vehicle_speed_mps, forward_speed * throttle, accel * delta)
 	elif throttle < 0.0:
 		if _driving_vehicle_speed_mps > 1.0:
 			_driving_vehicle_speed_mps = move_toward(_driving_vehicle_speed_mps, 0.0, vehicle_drive_brake_decel * delta)
 		else:
-			_driving_vehicle_speed_mps = move_toward(_driving_vehicle_speed_mps, -vehicle_drive_reverse_speed * absf(throttle), vehicle_drive_accel * delta)
+			_driving_vehicle_speed_mps = move_toward(_driving_vehicle_speed_mps, -reverse_speed * absf(throttle), accel * delta)
 	else:
 		_driving_vehicle_speed_mps = move_toward(_driving_vehicle_speed_mps, 0.0, vehicle_drive_coast_decel * delta)
 	if not is_on_floor():
@@ -819,6 +825,16 @@ func _ensure_drive_vehicle_visual_root() -> void:
 
 func _yaw_from_drive_heading(heading: Vector3) -> float:
 	return atan2(-heading.x, -heading.z)
+
+func _resolve_active_vehicle_drive_tuning() -> Dictionary:
+	var speed_multiplier := 1.0
+	if str(_driving_vehicle_state.get("model_id", "")) == SPORTS_CAR_MODEL_ID:
+		speed_multiplier = SPORTS_CAR_SPEED_MULTIPLIER
+	return {
+		"forward_speed": vehicle_drive_forward_speed * speed_multiplier,
+		"reverse_speed": vehicle_drive_reverse_speed * speed_multiplier,
+		"accel": vehicle_drive_accel * speed_multiplier,
+	}
 
 func _merge_vehicle_mouse_steer(drive_input: Dictionary) -> Dictionary:
 	var merged := drive_input.duplicate(true)

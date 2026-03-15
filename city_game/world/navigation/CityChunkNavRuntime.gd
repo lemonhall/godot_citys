@@ -4,6 +4,8 @@ const CityChunkNavBuilder := preload("res://city_game/world/navigation/CityChunk
 const CityMacroRouteGraph := preload("res://city_game/world/navigation/CityMacroRouteGraph.gd")
 const CityRoutePlanner := preload("res://city_game/world/navigation/CityRoutePlanner.gd")
 const CityRouteCache := preload("res://city_game/world/navigation/CityRouteCache.gd")
+const CityPlaceIndexBuilder := preload("res://city_game/world/generation/CityPlaceIndexBuilder.gd")
+const CityResolvedTarget := preload("res://city_game/world/model/CityResolvedTarget.gd")
 
 var _config
 var _world_data: Dictionary = {}
@@ -94,13 +96,9 @@ func debug_plan_route(origin_target: Dictionary, destination_target: Dictionary)
 	return _route_planner.debug_plan_route(origin_target, destination_target)
 
 func _resolve_raw_world_target(world_position: Vector3) -> Dictionary:
-	if _place_query != null and _place_query.has_method("resolve_world_point"):
-		return _place_query.resolve_world_point(world_position)
-	return {
-		"place_id": "",
-		"world_anchor": world_position,
-		"routable_anchor": world_position,
-	}
+	var vehicle_query = _world_data.get("vehicle_query")
+	var routable_anchor := CityPlaceIndexBuilder.snap_world_anchor_to_driving_lane(vehicle_query, world_position)
+	return CityResolvedTarget.build_raw_world_point(world_position, routable_anchor)
 
 func _resolve_target_cache_id(target: Dictionary) -> String:
 	var place_id := str(target.get("place_id", ""))
@@ -117,8 +115,6 @@ func _plan_route_with_origin_fallbacks(origin_target: Dictionary, destination_ta
 	return {}
 
 func _build_origin_fallback_targets(origin_target: Dictionary) -> Array[Dictionary]:
-	if _place_query == null or not _place_query.has_method("resolve_world_point"):
-		return []
 	var base_world_anchor: Vector3 = origin_target.get("raw_world_anchor", origin_target.get("world_anchor", origin_target.get("routable_anchor", Vector3.ZERO)))
 	var seen_cache_ids: Dictionary = {}
 	var fallback_targets: Array[Dictionary] = []
@@ -134,7 +130,7 @@ func _build_origin_fallback_targets(origin_target: Dictionary) -> Array[Dictiona
 			Vector3(-radius, 0.0, -radius),
 		]:
 			var offset: Vector3 = offset_variant
-			var candidate_target: Dictionary = _place_query.resolve_world_point(base_world_anchor + offset)
+			var candidate_target: Dictionary = _resolve_raw_world_target(base_world_anchor + offset)
 			if candidate_target.is_empty():
 				continue
 			var cache_id := _resolve_target_cache_id(candidate_target)

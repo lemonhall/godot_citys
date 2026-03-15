@@ -2,12 +2,28 @@ extends Control
 
 signal map_world_point_selected(world_position: Vector3)
 
+const DRAG_START_THRESHOLD_PX := 6.0
+const ZOOM_STEP_RATIO := 0.82
+const MIN_VIEW_HALF_EXTENT_Y_M := 256.0
+
 var _world_bounds := Rect2()
 var _pins: Array[Dictionary] = []
 var _route_result: Dictionary = {}
 var _last_selection_contract: Dictionary = {}
 var _map_open := false
 var _world_paused := false
+var _road_graph = null
+var _road_polylines: Array[Dictionary] = []
+var _road_cache_size := Vector2.ZERO
+var _road_cache_view_rect := Rect2()
+var _road_cache_dirty := true
+var _view_center_world := Vector2.ZERO
+var _view_half_extent_y_m := 0.0
+var _default_view_half_extent_y_m := 0.0
+var _drag_candidate_active := false
+var _drag_active := false
+var _drag_anchor_map_position := Vector2.ZERO
+var _drag_anchor_center_world := Vector2.ZERO
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -15,11 +31,14 @@ func _ready() -> void:
 
 func setup(world_bounds: Rect2) -> void:
 	_world_bounds = world_bounds
+	_reset_view_state()
 	queue_redraw()
 
 func set_map_open(is_open: bool) -> void:
 	_map_open = is_open
 	visible = is_open
+	if is_open:
+		_ensure_road_cache()
 	queue_redraw()
 
 func is_map_open() -> bool:
@@ -29,10 +48,22 @@ func set_world_paused(paused: bool) -> void:
 	_world_paused = paused
 	queue_redraw()
 
+func set_road_graph(road_graph) -> void:
+	_road_graph = road_graph
+	_invalidate_road_cache()
+	queue_redraw()
+
 func set_pins(pins: Array) -> void:
 	_pins.clear()
 	for pin_variant in pins:
 		_pins.append((pin_variant as Dictionary).duplicate(true))
+	_pins.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var a_priority := int(a.get("priority", 0))
+		var b_priority := int(b.get("priority", 0))
+		if a_priority == b_priority:
+			return str(a.get("pin_id", "")) < str(b.get("pin_id", ""))
+		return a_priority < b_priority
+	)
 	queue_redraw()
 
 func set_route_result(route_result: Dictionary) -> void:
@@ -47,28 +78,32 @@ func select_world_point(world_position: Vector3) -> void:
 	map_world_point_selected.emit(world_position)
 
 func world_to_map(world_position: Vector3) -> Vector2:
-	if _world_bounds.size.x <= 0.001 or _world_bounds.size.y <= 0.001:
+	var view_rect := _get_view_rect_world()
+	if view_rect.size.x <= 0.001 or view_rect.size.y <= 0.001 or size.x <= 0.001 or size.y <= 0.001:
 		return Vector2.ZERO
 	var normalized := Vector2(
-		clampf((world_position.x - _world_bounds.position.x) / _world_bounds.size.x, 0.0, 1.0),
-		clampf((world_position.z - _world_bounds.position.y) / _world_bounds.size.y, 0.0, 1.0)
+		(world_position.x - view_rect.position.x) / view_rect.size.x,
+		(world_position.z - view_rect.position.y) / view_rect.size.y
 	)
 	return Vector2(normalized.x * size.x, normalized.y * size.y)
 
 func map_to_world(map_position: Vector2) -> Vector3:
-	if size.x <= 0.001 or size.y <= 0.001:
+	var view_rect := _get_view_rect_world()
+	if size.x <= 0.001 or size.y <= 0.001 or view_rect.size.x <= 0.001 or view_rect.size.y <= 0.001:
 		return Vector3.ZERO
 	var normalized := Vector2(
 		clampf(map_position.x / size.x, 0.0, 1.0),
 		clampf(map_position.y / size.y, 0.0, 1.0)
 	)
 	return Vector3(
-		_world_bounds.position.x + _world_bounds.size.x * normalized.x,
+		view_rect.position.x + view_rect.size.x * normalized.x,
 		0.0,
-		_world_bounds.position.y + _world_bounds.size.y * normalized.y
+		view_rect.position.y + view_rect.size.y * normalized.y
 	)
 
 func get_render_state() -> Dictionary:
+	_ensure_road_cache()
+	var view_half_extents := _get_view_half_extents_world()
 	var pin_types: Array[String] = []
 	var pin_type_seen: Dictionary = {}
 	for pin_variant in _pins:
@@ -82,7 +117,12 @@ func get_render_state() -> Dictionary:
 		"visible": visible,
 		"map_open": _map_open,
 		"world_paused": _world_paused,
+		"size": size,
 		"world_bounds": _world_bounds,
+		"view_center_world": _view_center_world,
+		"view_half_extent_x_m": view_half_extents.x,
+		"view_half_extent_y_m": view_half_extents.y,
+		"road_polyline_count": _road_polylines.size(),
 		"pin_count": _pins.size(),
 		"pin_types": pin_types,
 		"route_point_count": (_route_result.get("polyline", []) as Array).size(),
@@ -94,18 +134,63 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
-		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
-			select_world_point(map_to_world(button.position))
+		if button.button_index == MOUSE_BUTTON_WHEEL_UP and button.pressed:
+			_apply_zoom_at(button.position, ZOOM_STEP_RATIO)
+			accept_event()
+			return
+		if button.button_index == MOUSE_BUTTON_WHEEL_DOWN and button.pressed:
+			_apply_zoom_at(button.position, 1.0 / ZOOM_STEP_RATIO)
+			accept_event()
+			return
+		if button.button_index == MOUSE_BUTTON_LEFT:
+			if button.pressed:
+				_drag_candidate_active = true
+				_drag_active = false
+				_drag_anchor_map_position = button.position
+				_drag_anchor_center_world = _view_center_world
+			elif _drag_candidate_active or _drag_active:
+				if not _drag_active:
+					select_world_point(map_to_world(button.position))
+				_drag_candidate_active = false
+				_drag_active = false
+			accept_event()
+	elif event is InputEventMouseMotion:
+		var motion := event as InputEventMouseMotion
+		if _drag_candidate_active or _drag_active:
+			var drag_delta := motion.position - _drag_anchor_map_position
+			if not _drag_active and drag_delta.length() >= DRAG_START_THRESHOLD_PX:
+				_drag_active = true
+			if _drag_active:
+				var view_half_extents := _get_view_half_extents_world()
+				if size.x > 0.001 and size.y > 0.001:
+					var world_delta := Vector2(
+						drag_delta.x * (view_half_extents.x * 2.0 / size.x),
+						drag_delta.y * (view_half_extents.y * 2.0 / size.y)
+					)
+					_view_center_world = _clamp_view_center_world(_drag_anchor_center_world - world_delta)
+					_invalidate_road_cache()
+					queue_redraw()
 			accept_event()
 
 func _draw() -> void:
 	if not _map_open:
 		return
+	_ensure_road_cache()
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.05, 0.08, 0.1, 0.94), true)
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.84, 0.88, 0.91, 0.22), false, 2.0)
+	_draw_road_network()
 	_draw_route()
 	_draw_pins()
 	_draw_selection_marker()
+
+func _draw_road_network() -> void:
+	for polyline_variant in _road_polylines:
+		var road_polyline: Dictionary = polyline_variant
+		var points: PackedVector2Array = road_polyline.get("points", PackedVector2Array())
+		if points.size() < 2:
+			continue
+		var road_style := _resolve_road_style(str(road_polyline.get("road_class", "")))
+		draw_polyline(points, road_style.get("color", Color(0.76, 0.8, 0.86, 0.45)), float(road_style.get("width", 1.0)), true)
 
 func _draw_route() -> void:
 	var route_points: PackedVector2Array = PackedVector2Array()
@@ -131,6 +216,11 @@ func _draw_selection_marker() -> void:
 	var marker_position := world_to_map(world_position)
 	draw_arc(marker_position, 12.0, 0.0, TAU, 24, Color(0.92, 0.98, 0.98, 0.95), 2.0)
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_RESIZED:
+		_invalidate_road_cache()
+		queue_redraw()
+
 func _resolve_pin_color(pin_type: String) -> Color:
 	match pin_type:
 		"landmark":
@@ -142,3 +232,125 @@ func _resolve_pin_color(pin_type: String) -> Color:
 		"destination":
 			return Color(0.48, 0.96, 0.54, 1.0)
 	return Color(0.92, 0.92, 0.92, 1.0)
+
+func _resolve_road_style(road_class: String) -> Dictionary:
+	match road_class:
+		"arterial", "secondary", "expressway_elevated":
+			return {
+				"width": 2.4,
+				"color": Color(0.86, 0.9, 0.96, 0.78),
+			}
+		"collector":
+			return {
+				"width": 1.8,
+				"color": Color(0.72, 0.78, 0.85, 0.62),
+			}
+		"service":
+			return {
+				"width": 1.2,
+				"color": Color(0.54, 0.6, 0.68, 0.44),
+			}
+	return {
+		"width": 1.4,
+		"color": Color(0.62, 0.68, 0.76, 0.5),
+	}
+
+func _ensure_road_cache() -> void:
+	if not _map_open or not _road_cache_dirty:
+		return
+	var view_rect := _get_view_rect_world()
+	if size.x <= 0.001 or size.y <= 0.001 or view_rect.size.x <= 0.001 or view_rect.size.y <= 0.001:
+		return
+	_road_polylines.clear()
+	if _road_graph != null and _road_graph.has_method("get_edges_intersecting_rect"):
+		for edge_variant in _road_graph.get_edges_intersecting_rect(view_rect):
+			var edge: Dictionary = edge_variant
+			var projected_points := PackedVector2Array()
+			for point_variant in edge.get("points", []):
+				var world_point: Vector2 = point_variant
+				projected_points.append(world_to_map(Vector3(world_point.x, 0.0, world_point.y)))
+			if projected_points.size() < 2:
+				continue
+			_road_polylines.append({
+				"road_class": str(edge.get("class", "")),
+				"points": projected_points,
+				"edge_id": str(edge.get("edge_id", "")),
+			})
+	_road_polylines.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var a_order := _resolve_road_draw_order(str(a.get("road_class", "")))
+		var b_order := _resolve_road_draw_order(str(b.get("road_class", "")))
+		if a_order == b_order:
+			return str(a.get("edge_id", "")) < str(b.get("edge_id", ""))
+		return a_order < b_order
+	)
+	_road_cache_size = size
+	_road_cache_view_rect = view_rect
+	_road_cache_dirty = false
+
+func _invalidate_road_cache() -> void:
+	_road_cache_dirty = true
+
+func _resolve_road_draw_order(road_class: String) -> int:
+	match road_class:
+		"service":
+			return 0
+		"local":
+			return 1
+		"collector":
+			return 2
+		"arterial", "secondary":
+			return 3
+		"expressway_elevated":
+			return 4
+	return 1
+
+func _reset_view_state() -> void:
+	if _world_bounds.size.x <= 0.001 or _world_bounds.size.y <= 0.001:
+		_view_center_world = Vector2.ZERO
+		_view_half_extent_y_m = 0.0
+		_default_view_half_extent_y_m = 0.0
+		return
+	_view_center_world = _world_bounds.get_center()
+	_default_view_half_extent_y_m = _world_bounds.size.y * 0.5
+	_view_half_extent_y_m = _default_view_half_extent_y_m
+	_invalidate_road_cache()
+
+func _get_view_half_extents_world() -> Vector2:
+	if _world_bounds.size.x <= 0.001 or _world_bounds.size.y <= 0.001:
+		return Vector2.ZERO
+	var aspect_ratio := 1.0
+	if size.y > 0.001:
+		aspect_ratio = maxf(size.x / size.y, 1.0)
+	return Vector2(_view_half_extent_y_m * aspect_ratio, _view_half_extent_y_m)
+
+func _get_view_rect_world() -> Rect2:
+	var half_extents := _get_view_half_extents_world()
+	return Rect2(_view_center_world - half_extents, half_extents * 2.0)
+
+func _clamp_view_center_world(center_world: Vector2) -> Vector2:
+	if _world_bounds.size.x <= 0.001 or _world_bounds.size.y <= 0.001:
+		return center_world
+	var half_extents := _get_view_half_extents_world()
+	var clamped := center_world
+	var world_center := _world_bounds.get_center()
+	var x_margin := minf(half_extents.x, _world_bounds.size.x * 0.5)
+	var y_margin := minf(half_extents.y, _world_bounds.size.y * 0.5)
+	var min_x := _world_bounds.position.x + x_margin
+	var max_x := _world_bounds.end.x - x_margin
+	var min_y := _world_bounds.position.y + y_margin
+	var max_y := _world_bounds.end.y - y_margin
+	clamped.x = world_center.x if min_x > max_x else clampf(clamped.x, min_x, max_x)
+	clamped.y = world_center.y if min_y > max_y else clampf(clamped.y, min_y, max_y)
+	return clamped
+
+func _apply_zoom_at(map_position: Vector2, zoom_ratio: float) -> void:
+	if size.x <= 0.001 or size.y <= 0.001 or _world_bounds.size.x <= 0.001 or _world_bounds.size.y <= 0.001:
+		return
+	var world_before := map_to_world(map_position)
+	var minimum_half_extent := minf(MIN_VIEW_HALF_EXTENT_Y_M, _default_view_half_extent_y_m)
+	_view_half_extent_y_m = clampf(_view_half_extent_y_m * zoom_ratio, minimum_half_extent, _default_view_half_extent_y_m)
+	var world_after := map_to_world(map_position)
+	var world_delta := Vector2(world_before.x - world_after.x, world_before.z - world_after.z)
+	_view_center_world = _clamp_view_center_world(_view_center_world + world_delta)
+	_invalidate_road_cache()
+	queue_redraw()

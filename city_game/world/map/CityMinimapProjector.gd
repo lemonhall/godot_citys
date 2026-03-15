@@ -153,6 +153,13 @@ func build_pin_overlay(center_world_position: Vector3, pins: Array, world_radius
 			"icon_id": str(pin.get("icon_id", "")),
 			"position": _project_point(Vector2(world_position.x, world_position.z), center_world_position, world_radius_m),
 		})
+	markers.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var a_priority := int(a.get("priority", 0))
+		var b_priority := int(b.get("priority", 0))
+		if a_priority == b_priority:
+			return str(a.get("pin_id", "")) < str(b.get("pin_id", ""))
+		return a_priority < b_priority
+	)
 	return {
 		"markers": markers,
 		"pin_count": markers.size(),

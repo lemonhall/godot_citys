@@ -28,6 +28,7 @@ func _run() -> void:
 	await process_frame
 
 	var map_state: Dictionary = world.get_map_screen_state()
+	var full_map := world.get_node_or_null("Hud/Root/FullMap") as Control
 	if not T.require_true(self, world.is_full_map_open(), "Full map must report open after set_full_map_open(true)"):
 		return
 	if not T.require_true(self, world.is_world_simulation_paused(), "Opening the full map must pause 3D world simulation"):
@@ -37,6 +38,10 @@ func _run() -> void:
 	if not T.require_true(self, bool(map_state.get("world_paused", false)), "Map screen state must surface the paused-world contract"):
 		return
 	if not T.require_true(self, (map_state.get("world_bounds", Rect2()) as Rect2).size.length() > 0.0, "Full map must cover the formal world bounds, not a chunk-local view"):
+		return
+	if not T.require_true(self, full_map != null, "Opening the full map must mount a dedicated FullMap control under the HUD"):
+		return
+	if not T.require_true(self, full_map.size.x >= 400.0 and full_map.size.y >= 300.0, "Full map must receive a real fullscreen layout instead of collapsing to a zero-height strip"):
 		return
 
 	var player := world.get_node_or_null("Player")

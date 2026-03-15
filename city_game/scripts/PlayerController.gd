@@ -5,6 +5,7 @@ const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/render
 signal primary_fire_requested
 signal grenade_throw_requested
 signal weapon_mode_changed(weapon_mode: String)
+signal aim_down_sights_changed(is_active: bool)
 
 const TRAVERSAL_MODE_GROUNDED := "grounded"
 const TRAVERSAL_MODE_AIRBORNE := "airborne"
@@ -485,10 +486,13 @@ func set_primary_fire_active(active: bool) -> void:
 		request_primary_fire()
 
 func set_aim_down_sights_active(active: bool) -> void:
+	var next_active := active and _control_enabled and _weapon_mode == WEAPON_MODE_RIFLE
 	if _driving_vehicle:
-		_aim_down_sights_active = false
+		next_active = false
+	if _aim_down_sights_active == next_active:
 		return
-	_aim_down_sights_active = active and _control_enabled and _weapon_mode == WEAPON_MODE_RIFLE
+	_aim_down_sights_active = next_active
+	aim_down_sights_changed.emit(_aim_down_sights_active)
 
 func is_aim_down_sights_active() -> bool:
 	return _aim_down_sights_active
@@ -1148,12 +1152,15 @@ func _build_grenade_preview_state() -> Dictionary:
 	}
 
 func _clear_transient_weapon_state() -> void:
+	var ads_was_active := _aim_down_sights_active
 	_primary_fire_active = false
 	_aim_down_sights_active = false
 	_grenade_hold_requested = false
 	_grenade_ready_active = false
 	_update_grenade_hold_visual()
 	_update_grenade_preview()
+	if ads_was_active:
+		aim_down_sights_changed.emit(false)
 
 func _trigger_ground_slam_impact(impact_speed: float) -> void:
 	_slam_impact_count += 1

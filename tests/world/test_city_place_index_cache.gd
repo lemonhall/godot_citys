@@ -18,7 +18,6 @@ func _run() -> void:
 	var cache = cache_script.new()
 	var world_a: Dictionary = generator.generate_world(config)
 	var world_b: Dictionary = generator.generate_world(config)
-	var profile_b: Dictionary = world_b.get("generation_profile", {})
 
 	if not T.require_true(self, world_a.has("place_index"), "World generation must expose place_index before cache assertions can run"):
 		return
@@ -34,6 +33,13 @@ func _run() -> void:
 		return
 	if not T.require_true(self, cache.build_cache_path(config, str(cache_contract.get("world_signature", ""))) == cache_path, "Place index cache helper must reproduce the frozen cache path"):
 		return
+	var place_index_b = world_b.get("place_index")
+	if not T.require_true(self, place_index_b != null and place_index_b.has_method("get_cache_contract"), "Lazy place_index must still expose get_cache_contract() on the second world generation"):
+		return
+	var cache_contract_b: Dictionary = place_index_b.get_cache_contract()
+	if not T.require_true(self, str(cache_contract_b.get("path", "")) != "", "Second world generation must materialize the place index cache contract on demand"):
+		return
+	var profile_b: Dictionary = world_b.get("generation_profile", {})
 	if not T.require_true(self, bool(profile_b.get("place_index_cache_hit", false)), "Second world generation must hit the place index cache instead of rebuilding every time"):
 		return
 

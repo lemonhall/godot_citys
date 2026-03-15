@@ -58,12 +58,15 @@ func register_pin(pin_data: Dictionary) -> Dictionary:
 
 func get_pins() -> Array[Dictionary]:
 	var pins: Array[Dictionary] = []
-	var pin_ids: Array[String] = []
-	for pin_id_variant in _pins_by_id.keys():
-		pin_ids.append(str(pin_id_variant))
-	pin_ids.sort()
-	for pin_id in pin_ids:
-		pins.append((_pins_by_id[pin_id] as Dictionary).duplicate(true))
+	for pin_variant in _pins_by_id.values():
+		pins.append((pin_variant as Dictionary).duplicate(true))
+	pins.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var a_priority := int(a.get("priority", 0))
+		var b_priority := int(b.get("priority", 0))
+		if a_priority == b_priority:
+			return str(a.get("pin_id", "")) < str(b.get("pin_id", ""))
+		return a_priority < b_priority
+	)
 	return pins
 
 func get_state() -> Dictionary:

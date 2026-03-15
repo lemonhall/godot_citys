@@ -15,7 +15,6 @@ func _run() -> void:
 	var config = config_script.new()
 	var generator = generator_script.new()
 	var world_data: Dictionary = generator.generate_world(config)
-	var generation_profile: Dictionary = world_data.get("generation_profile", {})
 
 	if not T.require_true(self, world_data.has("street_cluster_catalog"), "World generation must expose street_cluster_catalog for v12 M1 counts freeze"):
 		return
@@ -37,6 +36,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(world_counts.get("parcel_count", 0)) == 1201216, "World counts must preserve the frozen parcel count"):
 		return
+	var generation_profile: Dictionary = world_data.get("generation_profile", {})
 	if not T.require_true(self, int(generation_profile.get("street_cluster_count", 0)) == cluster_count, "Generation profile must surface the canonical street cluster count"):
 		return
 

@@ -23,8 +23,12 @@ func _run() -> void:
 		return
 
 	var initial_registry_state: Dictionary = world.get_pin_registry_state()
-	var initial_types: Array = initial_registry_state.get("pin_types", [])
-	if not T.require_true(self, initial_types.has("landmark"), "Pin registry must seed landmark pins from the place index"):
+	if not T.require_true(self, int(initial_registry_state.get("pin_count", -1)) == 0, "Pin registry must stay empty by default so idle minimap rendering matches the pre-navigation HUD"):
+		return
+
+	var initial_minimap_snapshot: Dictionary = world.build_minimap_snapshot()
+	var initial_pin_overlay: Dictionary = initial_minimap_snapshot.get("pin_overlay", {})
+	if not T.require_true(self, int(initial_pin_overlay.get("pin_count", -1)) == 0, "Idle minimap must not render default landmark pins before the player creates any navigation state"):
 		return
 
 	var player := world.get_node_or_null("Player")
@@ -35,15 +39,13 @@ func _run() -> void:
 
 	var registry_state: Dictionary = world.get_pin_registry_state()
 	var pin_types: Array = registry_state.get("pin_types", [])
-	if not T.require_true(self, pin_types.has("landmark") and pin_types.has("task"), "Pin registry must allow landmark and task pins to coexist"):
+	if not T.require_true(self, pin_types.has("task"), "Pin registry must surface task pins after explicit registration"):
 		return
 
 	world.set_full_map_open(true)
 	await process_frame
 	var map_state: Dictionary = world.get_map_screen_state()
 	if not T.require_true(self, (map_state.get("pin_types", []) as Array).has("task"), "Full map must render task pins from the shared pin registry"):
-		return
-	if not T.require_true(self, (map_state.get("pin_types", []) as Array).has("landmark"), "Full map must keep landmark pins visible alongside task pins"):
 		return
 
 	var minimap_snapshot: Dictionary = world.build_minimap_snapshot()

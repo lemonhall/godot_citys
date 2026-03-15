@@ -25,12 +25,15 @@ func _run() -> void:
 		return
 
 	var resolved_target: Dictionary = selection_contract.get("resolved_target", {})
+	var route_result: Dictionary = world.get_active_route_result()
 	var travel_target: Dictionary = world.resolve_fast_travel_target(resolved_target)
 	if not T.require_true(self, not travel_target.is_empty(), "Fast travel target resolution must return a non-empty fast-travel contract"):
 		return
 	for required_key in ["safe_drop_anchor", "arrival_heading", "source_target_id"]:
 		if not T.require_true(self, travel_target.has(required_key), "Fast travel target contract must expose %s" % required_key):
 			return
+	if not T.require_true(self, str(travel_target.get("source_target_id", "")) == str(route_result.get("destination_target_id", "")), "Fast travel target identity must match the active route destination identity for raw-world map selections"):
+		return
 
 	var safe_drop_anchor: Vector3 = travel_target.get("safe_drop_anchor", Vector3.ZERO)
 	if not T.require_true(self, safe_drop_anchor.distance_to(resolved_target.get("routable_anchor", Vector3.ZERO)) <= 18.0, "Fast travel must drop near the routable anchor instead of the raw clicked point"):

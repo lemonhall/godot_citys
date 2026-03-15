@@ -32,7 +32,7 @@ func _resolve_source_target_id(resolved_target: Dictionary) -> String:
 	if place_id != "":
 		return place_id
 	var anchor: Vector3 = resolved_target.get("routable_anchor", resolved_target.get("world_anchor", Vector3.ZERO))
-	return "raw:%d:%d" % [int(round(anchor.x)), int(round(anchor.z))]
+	return "raw:%d:%d:%d" % [int(round(anchor.x)), int(round(anchor.y)), int(round(anchor.z))]
 
 func _resolve_arrival_heading(route_result: Dictionary, resolved_target: Dictionary, anchor: Vector3) -> Vector3:
 	var polyline: Array = route_result.get("polyline", [])

@@ -7,6 +7,8 @@ const CityChunkKey := preload("res://city_game/world/streaming/CityChunkKey.gd")
 const CityChunkNavRuntime := preload("res://city_game/world/navigation/CityChunkNavRuntime.gd")
 const CityFastTravelResolver := preload("res://city_game/world/navigation/CityFastTravelResolver.gd")
 const CityAutodriveController := preload("res://city_game/world/navigation/CityAutodriveController.gd")
+const CityPlaceIndexBuilder := preload("res://city_game/world/generation/CityPlaceIndexBuilder.gd")
+const CityResolvedTarget := preload("res://city_game/world/model/CityResolvedTarget.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
 const CityMinimapProjector := preload("res://city_game/world/map/CityMinimapProjector.gd")
@@ -103,7 +105,7 @@ func _ready() -> void:
 	var generation_started_usec := Time.get_ticks_usec()
 	_world_data = world_generator.generate_world(_world_config)
 	_world_generation_usec = Time.get_ticks_usec() - generation_started_usec
-	_world_generation_profile = (_world_data.get("generation_profile", {}) as Dictionary).duplicate(true)
+	_world_generation_profile = _world_data.get("generation_profile", {})
 	_chunk_streamer = CityChunkStreamer.new(_world_config, _world_data)
 	_navigation_runtime = CityChunkNavRuntime.new(_world_config, _world_data)
 	_fast_travel_resolver = CityFastTravelResolver.new(_world_config, _world_data)
@@ -165,12 +167,28 @@ func _unhandled_input(event: InputEvent) -> void:
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_F:
 			handle_vehicle_interaction()
 			return
+		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_G:
+			if _handle_autodrive_shortcut():
+				return
 		if key_event.pressed and not key_event.echo and handle_debug_keypress(key_event.keycode, key_event.physical_keycode):
 			return
 	elif _full_map_open:
 		return
 	if DisplayServer.get_name() == "headless":
 		return
+
+func _handle_autodrive_shortcut() -> bool:
+	if player == null or not player.has_method("is_driving_vehicle") or not bool(player.is_driving_vehicle()):
+		return false
+	if is_autodrive_active():
+		stop_autodrive("interrupted")
+		_refresh_hud_status({}, true)
+		return true
+	var start_result: Dictionary = start_autodrive_to_active_destination()
+	if bool(start_result.get("success", false)):
+		_refresh_hud_status({}, true)
+		return true
+	return false
 
 func handle_debug_keypress(keycode: int, physical_keycode: int = 0) -> bool:
 	if keycode == KEY_C:
@@ -202,8 +220,8 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 		if should_refresh_minimap:
 			build_minimap_snapshot()
 			_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
-		if hud.has_method("set_navigation_state"):
-			hud.set_navigation_state(_build_navigation_state())
+		if hud.has_method("set_crosshair_state"):
+			hud.set_crosshair_state(_build_crosshair_state())
 		_last_hud_refresh_tick_usec = Time.get_ticks_usec()
 		_record_hud_refresh_sample(Time.get_ticks_usec() - refresh_started_usec)
 		return
@@ -249,8 +267,6 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 	if hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
 		_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
-	if hud.has_method("set_navigation_state"):
-		hud.set_navigation_state(_build_navigation_state())
 	if hud.has_method("set_crosshair_state"):
 		hud.set_crosshair_state(_build_crosshair_state())
 	if hud.has_method("set_fps_overlay_visible"):
@@ -558,12 +574,26 @@ func _connect_player_combat() -> void:
 		var grenade_throw_callable := Callable(self, "_on_player_grenade_throw_requested")
 		if not player.grenade_throw_requested.is_connected(grenade_throw_callable):
 			player.grenade_throw_requested.connect(grenade_throw_callable)
+	if player.has_signal("weapon_mode_changed"):
+		var weapon_mode_callable := Callable(self, "_on_player_weapon_mode_changed")
+		if not player.weapon_mode_changed.is_connected(weapon_mode_callable):
+			player.weapon_mode_changed.connect(weapon_mode_callable)
+	if player.has_signal("aim_down_sights_changed"):
+		var ads_callable := Callable(self, "_on_player_aim_down_sights_changed")
+		if not player.aim_down_sights_changed.is_connected(ads_callable):
+			player.aim_down_sights_changed.connect(ads_callable)
 
 func _on_player_primary_fire_requested() -> void:
 	fire_player_projectile()
 
 func _on_player_grenade_throw_requested() -> void:
 	throw_player_grenade()
+
+func _on_player_weapon_mode_changed(_weapon_mode: String) -> void:
+	_refresh_hud_status({}, true)
+
+func _on_player_aim_down_sights_changed(_is_active: bool) -> void:
+	_refresh_hud_status({}, true)
 
 func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 	_ensure_combat_roots()
@@ -916,7 +946,7 @@ func update_streaming_for_position(world_position: Vector3, delta: float = 0.0) 
 	var should_refresh_hud := _should_refresh_hud()
 	var allow_headless_hud_refresh := should_refresh_hud and (
 		not is_headless
-		or (not _has_streaming_backpressure() and _update_streaming_sample_count == 0)
+		or not _has_streaming_backpressure()
 	)
 	var needs_snapshot := debug_expanded or (allow_headless_hud_refresh and not is_headless)
 	var hud_snapshot := {}
@@ -1612,8 +1642,6 @@ func _build_current_minimap_pin_overlay(center_world_position: Vector3, world_ra
 
 func _setup_map_ui() -> void:
 	_map_pin_registry = CityMapPinRegistry.new()
-	if _map_pin_registry != null and _map_pin_registry.has_method("seed_landmark_pins"):
-		_map_pin_registry.seed_landmark_pins(_world_data.get("place_index"))
 	if hud == null or CityMapScreenScene == null:
 		return
 	var root_control := hud.get_node_or_null("Root") as Control
@@ -1627,6 +1655,8 @@ func _setup_map_ui() -> void:
 	_map_screen = map_screen
 	if _map_screen.has_method("setup") and _world_config != null and _world_config.has_method("get_world_bounds"):
 		_map_screen.setup(_world_config.get_world_bounds())
+	if _map_screen.has_method("set_road_graph"):
+		_map_screen.set_road_graph(_world_data.get("road_graph"))
 	if _map_screen.has_signal("map_world_point_selected") and not _map_screen.is_connected("map_world_point_selected", Callable(self, "_on_map_world_point_selected")):
 		_map_screen.connect("map_world_point_selected", Callable(self, "_on_map_world_point_selected"))
 
@@ -1642,8 +1672,6 @@ func _sync_navigation_consumers(force_minimap_refresh: bool = false) -> void:
 			_map_screen.set_route_result(_active_route_result)
 		if _map_screen.has_method("set_last_selection_contract"):
 			_map_screen.set_last_selection_contract(_last_map_selection_contract)
-	if hud != null and hud.has_method("set_navigation_state"):
-		hud.set_navigation_state(_build_navigation_state())
 	if force_minimap_refresh and hud != null and hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
 		_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
@@ -1652,30 +1680,6 @@ func _get_map_pins() -> Array[Dictionary]:
 	if _map_pin_registry == null or not _map_pin_registry.has_method("get_pins"):
 		return []
 	return _map_pin_registry.get_pins()
-
-func _build_navigation_state() -> Dictionary:
-	if _active_route_result.is_empty():
-		return {}
-	var selected_maneuver := {}
-	for maneuver_variant in _active_route_result.get("maneuvers", []):
-		var maneuver: Dictionary = maneuver_variant
-		var turn_type := str(maneuver.get("turn_type", ""))
-		if turn_type == "arrive":
-			continue
-		selected_maneuver = maneuver
-		if turn_type != "depart":
-			break
-	var destination_name := str(_active_destination_target.get("display_name", ""))
-	if destination_name == "":
-		destination_name = str(_active_route_result.get("destination_target_id", ""))
-	return {
-		"route_id": str(_active_route_result.get("route_id", "")),
-		"destination_name": destination_name,
-		"distance_m": float(_active_route_result.get("distance_m", 0.0)),
-		"instruction_short": str(selected_maneuver.get("instruction_short", "")),
-		"turn_type": str(selected_maneuver.get("turn_type", "")),
-		"distance_to_next_m": float(selected_maneuver.get("distance_to_next_m", 0.0)),
-	}
 
 func _apply_world_simulation_pause(should_pause: bool) -> void:
 	if _world_simulation_paused == should_pause:
@@ -1772,9 +1776,10 @@ func _resolve_route_target(target_or_world_position: Variant) -> Dictionary:
 	if target_or_world_position is Dictionary:
 		return (target_or_world_position as Dictionary).duplicate(true)
 	if target_or_world_position is Vector3:
-		var place_query = _world_data.get("place_query")
-		if place_query != null and place_query.has_method("resolve_world_point"):
-			return place_query.resolve_world_point(target_or_world_position)
+		var raw_world_position: Vector3 = target_or_world_position
+		var vehicle_query = _world_data.get("vehicle_query")
+		var routable_anchor := CityPlaceIndexBuilder.snap_world_anchor_to_driving_lane(vehicle_query, raw_world_position)
+		return CityResolvedTarget.build_raw_world_point(raw_world_position, routable_anchor)
 	return {}
 
 func _is_minimap_crowd_debug_enabled() -> bool:

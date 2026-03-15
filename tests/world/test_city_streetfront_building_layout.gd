@@ -4,6 +4,7 @@ const T := preload("res://tests/_test_util.gd")
 const CityWorldConfig := preload("res://city_game/world/model/CityWorldConfig.gd")
 const CityWorldGenerator := preload("res://city_game/world/generation/CityWorldGenerator.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
+const CityRoadGraph := preload("res://city_game/world/model/CityRoadGraph.gd")
 
 func _init() -> void:
 	call_deferred("_run")
@@ -30,6 +31,24 @@ func _run() -> void:
 	if not T.require_true(self, float(layout_stats.get("streetfront_building_ratio", -1.0)) >= 0.7, "v13 building layout must place most buildings from streetfront candidates"):
 		return
 	if not T.require_true(self, float(layout_stats.get("road_aligned_building_ratio", -1.0)) >= 0.7, "v13 building layout must keep most buildings aligned to nearby street directions"):
+		return
+
+	var empty_road_graph := CityRoadGraph.new()
+	var empty_profile: Dictionary = CityChunkProfileBuilder.build_profile({
+		"chunk_id": "chunk_empty",
+		"chunk_key": Vector2i.ZERO,
+		"chunk_center": Vector3.ZERO,
+		"chunk_size_m": float(config.chunk_size_m),
+		"chunk_seed": config.derive_seed("render_chunk", Vector2i.ZERO),
+		"world_seed": config.base_seed,
+		"road_graph": empty_road_graph,
+	})
+	var empty_layout_stats: Dictionary = empty_profile.get("building_layout_stats", {})
+	if not T.require_true(self, int(empty_profile.get("building_count", -1)) == 0, "Chunks without any road segments must not generate fallback buildings in v13"):
+		return
+	if not T.require_true(self, int(empty_layout_stats.get("streetfront_candidate_count", -1)) == 0, "No-road chunks must not fabricate streetfront candidates"):
+		return
+	if not T.require_true(self, int(empty_layout_stats.get("infill_candidate_count", -1)) == 0, "No-road chunks must not fabricate infill candidates"):
 		return
 
 	T.pass_and_quit(self)

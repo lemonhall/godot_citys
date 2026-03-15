@@ -47,5 +47,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(metadata.get("building_footprint_count", 0)) > 0, "Overview PNG metadata must report exported building footprints"):
 		return
+	var active_bounds: Dictionary = metadata.get("active_bounds", {})
+	if not T.require_true(self, float(active_bounds.get("width", 0.0)) >= 56000.0, "Overview active bounds must cover a world-scale road footprint, not only a small central patch"):
+		return
+	if not T.require_true(self, float(active_bounds.get("height", 0.0)) >= 56000.0, "Overview active bounds must expand across most of the 70km world depth in v13"):
+		return
 
 	T.pass_and_quit(self)

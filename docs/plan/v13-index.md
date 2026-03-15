@@ -21,9 +21,10 @@ ECN 入口：[ECN-0019 City Morphology and PNG Acceptance](../ecn/ECN-0019-city-
 
 | 里程碑 | 范围 | DoD | 验证命令/测试 | 状态 |
 |---|---|---|---|---|
-| M1 多中心道路骨架接管 | `CityWorldGenerator` 不再产出 world-filling district lattice，`CityReferenceRoadGraphBuilder` 直接生成多中心连续路网 | fixed seed 下 `road_graph` 明显低于 full-grid 边数基线；growth stats 显式报告 `population_center_count >= 3` 与 corridor 统计；中心城与至少两个卫星窗口都有正式道路 | `tests/world/test_city_world_generator.gd`、`tests/world/test_city_reference_road_graph.gd`、`tests/world/test_city_road_network_continuity.gd` | done |
-| M2 沿街 building layout | chunk building 主体来自 streetfront candidate，而不是规则格点均匀打点 | building layout 输出 streetfront 统计；中心 chunk 仍保持密度，但大多数 building 与最近道路保持沿街取向与合理退距 | `tests/world/test_city_building_collision.gd`、`tests/world/test_city_streetfront_building_layout.gd` | done |
-| M3 PNG 世界级验收链 | deterministic overview PNG + metadata | headless 导出 `PNG + metadata`；metadata 含 morphology 统计；导出结果可供人工 review；反作弊条款写硬 | `tests/world/test_city_overview_png_export.gd` + overview artifact | done |
+| M1 多中心道路骨架接管 | `CityWorldGenerator` 不再产出 world-filling district lattice，`CityReferenceRoadGraphBuilder` 直接生成多中心连续路网 | fixed seed 下 `road_graph` 明显低于 full-grid 边数基线；growth stats 显式报告 `population_center_count >= 3` 与 corridor 统计；中心城与至少两个卫星窗口都有正式道路；主城到卫星城 trunk corridor 连续不断 | `tests/world/test_city_world_generator.gd`、`tests/world/test_city_reference_road_graph.gd`、`tests/world/test_city_road_network_continuity.gd` | done |
+| M2 沿街 building layout | chunk building 主体来自 streetfront candidate，而不是规则格点均匀打点 | building layout 输出 streetfront 统计；中心 chunk 仍保持密度，但大多数 building 与最近道路保持沿街取向与合理退距；`no-road chunk => 0 building` | `tests/world/test_city_building_collision.gd`、`tests/world/test_city_streetfront_building_layout.gd` | done |
+| M3 PNG 世界级验收链 | deterministic overview PNG + metadata | headless 导出 `PNG + metadata`；metadata 含 morphology 统计；导出结果可供人工 review；`active_bounds` 达到世界级尺度；反作弊条款写硬 | `tests/world/test_city_overview_png_export.gd` + overview artifact | done |
+| M4 导航 contract 收口 | 地图点选在扩大后的路网上仍能稳定出正式 route contract | 可见城市区附近点选返回非空 `selection_contract` 与 route polyline；degree=2 continuation 不再切断导航图 | `tests/world/test_city_map_destination_contract.gd`、`tests/world/test_city_route_query_contract.gd`、`tests/e2e/test_city_map_destination_selection_flow.gd`、`tests/e2e/test_city_navigation_flow.gd` | done |
 
 ## 计划索引
 
@@ -33,10 +34,10 @@ ECN 入口：[ECN-0019 City Morphology and PNG Acceptance](../ecn/ECN-0019-city-
 
 | Req ID | v13 Plan | 单元/集成测试 | E2E / 验证命令 | 证据 | 状态 |
 |---|---|---|---|---|---|
-| REQ-0001-002 | `v13-city-morphology-and-overview-png.md` | `tests/world/test_city_world_generator.gd`、`tests/world/test_city_reference_road_graph.gd`、`tests/world/test_city_road_network_continuity.gd` | `--script res://tests/world/test_city_world_generator.gd` | overview metadata: `population_center_count=4`、`corridor_count=3`、`road_edge_count=2600` | done |
-| REQ-0001-004 | `v13-city-morphology-and-overview-png.md` | `tests/world/test_city_building_collision.gd`、`tests/world/test_city_streetfront_building_layout.gd` | `--script res://tests/world/test_city_building_collision.gd` | streetfront ratio `0.7333`；center chunk building count `>= 12` | done |
+| REQ-0001-002 | `v13-city-morphology-and-overview-png.md` | `tests/world/test_city_world_generator.gd`、`tests/world/test_city_reference_road_graph.gd`、`tests/world/test_city_road_network_continuity.gd` | `--script res://tests/world/test_city_world_generator.gd` | overview metadata: `population_center_count=7`、`corridor_count=12`、`road_edge_count=4200` | done |
+| REQ-0001-004 | `v13-city-morphology-and-overview-png.md` | `tests/world/test_city_building_collision.gd`、`tests/world/test_city_streetfront_building_layout.gd` | `--script res://tests/world/test_city_streetfront_building_layout.gd` | streetfront ratio 仍达标；`no-road chunk => 0 building` 已锁死 | done |
 | REQ-0001-006 | `v13-city-morphology-and-overview-png.md` | `tests/world/test_city_overview_png_export.gd` | `--script res://tests/world/test_city_overview_png_export.gd` | `E:\development\godot_citys\reports\v13\test_city_overview_seed_424242.png` + sidecar JSON | done |
-| REQ-0001-013 | `v13-city-morphology-and-overview-png.md` | `tests/world/test_city_overview_png_export.gd`、`tests/world/test_city_road_intersection_topology.gd` | `--script res://tests/world/test_city_overview_png_export.gd` | deterministic morphology PNG 已生成，可进入人工看图验收 | done |
+| REQ-0001-013 | `v13-city-morphology-and-overview-png.md` | `tests/world/test_city_overview_png_export.gd`、`tests/world/test_city_road_intersection_topology.gd` | `--script res://tests/world/test_city_overview_png_export.gd` | `active_bounds = (-29807.96, -35000.0, 57361.90, 68454.08)`；deterministic morphology PNG 已更新 | done |
 
 ## ECN 索引
 
@@ -47,14 +48,30 @@ ECN 入口：[ECN-0019 City Morphology and PNG Acceptance](../ecn/ECN-0019-city-
 - PNG：`E:\development\godot_citys\reports\v13\test_city_overview_seed_424242.png`
 - Metadata：`E:\development\godot_citys\reports\v13\test_city_overview_seed_424242.json`
 - Metadata 摘要：
-  - `population_center_count = 4`
-  - `corridor_count = 3`
-  - `road_edge_count = 2600`
-  - `road_pixel_count = 156079`
-  - `building_pixel_count = 31718`
-  - `building_footprint_count = 20170`
-  - `active_bounds = (-19022.89, -11177.44, 41740.39, 27544.26)`
+  - `population_center_count = 7`
+  - `corridor_count = 12`
+  - `road_edge_count = 4200`
+  - `road_pixel_count = 121294`
+  - `building_pixel_count = 21293`
+  - `building_footprint_count = 45827`
+  - `active_bounds = (-29807.96, -35000.0, 57361.90, 68454.08)`
+
+## 性能护栏复验
+
+- `test_city_chunk_setup_profile_breakdown.gd`
+  - `total_usec = 2923`
+  - `buildings_usec = 1712`
+  - `ground_usec = 899`
+- `test_city_runtime_performance_profile.gd`
+  - `wall_frame_avg_usec = 9132`
+  - `update_streaming_avg_usec = 7331`
+  - `streaming_mount_setup_avg_usec = 2534`
+- `test_city_first_visit_performance_profile.gd`
+  - `wall_frame_avg_usec = 12582`
+  - `update_streaming_avg_usec = 11736`
+  - `streaming_mount_setup_avg_usec = 3702`
 
 ## 差异列表
 
 - 代码与自动化 contract 已收口，但 `v13` 的最终 closeout 仍取决于人工 PNG 看图验收；如果你认为主城/卫星城/建筑纹理仍不自然，下一轮继续围绕同一 PNG 验收链迭代。
+- 当前这轮优先满足的是“路网更大 + 无路不长楼 + trunk 连续 + 导航 contract 不回退”；更细的土地利用、山脉木屋、无路区散点建筑留到后续版本。

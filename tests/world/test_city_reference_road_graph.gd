@@ -34,6 +34,9 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(growth_stats.get("corridor_count", 0)) >= 2, "Reference-style road graph must expose corridor links between centers in v13"):
 		return
+	var corridors: Array = growth_stats.get("corridors", [])
+	if not T.require_true(self, corridors.size() >= 2, "Reference-style road graph must publish corridor metadata for continuity validation"):
+		return
 	var population_centers: Array = growth_stats.get("population_centers", [])
 	if not T.require_true(self, population_centers.size() >= 3, "Reference-style road graph must publish population center metadata for overview validation"):
 		return
@@ -46,6 +49,21 @@ func _run() -> void:
 			road_windows_with_edges += 1
 	if not T.require_true(self, road_windows_with_edges >= 3, "Main center plus satellite windows must all contain real road edges"):
 		return
+	for corridor_variant in corridors:
+		var corridor: Dictionary = corridor_variant
+		if str(corridor.get("corridor_kind", "")) != "main_satellite":
+			continue
+		var samples_with_roads := 0
+		var start: Vector2 = corridor.get("start", Vector2.ZERO)
+		var finish: Vector2 = corridor.get("end", Vector2.ZERO)
+		for sample_index in range(1, 6):
+			var ratio := float(sample_index) / 6.0
+			var sample_point := start.lerp(finish, ratio)
+			var corridor_window := Rect2(sample_point - Vector2.ONE * 1200.0, Vector2.ONE * 2400.0)
+			if not road_graph.get_edges_intersecting_rect(corridor_window).is_empty():
+				samples_with_roads += 1
+		if not T.require_true(self, samples_with_roads >= 5, "Each published corridor must stay continuously occupied by road coverage between main and satellite centers"):
+			return
 
 	var intersections: Array = road_graph.get_intersections_in_rect(Rect2(Vector2(-1200.0, -1200.0), Vector2(2400.0, 2400.0)))
 	if not T.require_true(self, intersections.size() > 0, "City center must expose real intersection nodes from the shared road graph"):

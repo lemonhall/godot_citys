@@ -37,6 +37,9 @@
   - 由主干连接走廊形成的可辨认连接关系；
   - 大面积非建成空白区，而不是全域均匀铺路。
 - `v13` 的 building layout 必须显式引入沿街候选与 frontage 取向统计，不能继续只靠 chunk 内独立打点。
+- `v13` 当前阶段补充一个硬约束：
+  - `no-road chunk => no-building`，不得再在无路区域伪造 fallback infill 建筑；
+  - 导航点选如果点在可见城市区附近，必须能吸附到真实 driving lane 并产出正式 route contract。
 - 新增 deterministic 全图导出链：
   - headless 输出当前 seed 的世界级 PNG；
   - 同时输出 sidecar metadata（JSON 或等价结构）；
@@ -56,13 +59,17 @@
 - 受影响的测试：
   - `tests/world/test_city_world_generator.gd`
   - `tests/world/test_city_reference_road_graph.gd`
+  - `tests/world/test_city_streetfront_building_layout.gd`
   - 新增 morphology / streetfront / PNG exporter 验证
   - `tests/world/test_city_building_collision.gd`
+  - `tests/world/test_city_map_destination_contract.gd`
 - 受影响的代码文件：
   - `city_game/world/generation/CityWorldGenerator.gd`
   - `city_game/world/generation/CityReferenceRoadGraphBuilder.gd`
   - `city_game/world/generation/CityRoadGraphCache.gd`
   - `city_game/world/rendering/CityChunkProfileBuilder.gd`
+  - `city_game/world/generation/CityPlaceIndexBuilder.gd`
+  - `city_game/world/vehicles/generation/CityVehicleWorldBuilder.gd`
   - 新增 PNG overview exporter 相关文件
   - `city_game/ui/CityMapScreen.gd`（如需默认聚焦有效城市范围）
 

@@ -17,7 +17,9 @@
 
 - 让 `CityReferenceRoadGraphBuilder` 正式接管 world road graph 生成，不再把 `district edge + collector` 当主路网。
 - 引入多中心 population / corridor field，让 road growth 自然形成主城区、卫星城和连接干道。
-- 让 `CityChunkProfileBuilder` 把 building 候选改为 streetfront-first。
+- 让 `CityChunkProfileBuilder` 把 building 候选改为 streetfront-first，并在 `no-road chunk` 上严格输出 `0 building`。
+- 为主城到卫星城的 trunk corridor 建立连续性护栏，不能再出现主干中途断开。
+- 修复地图点选导航在可见城市区附近点选却无法生成 route contract 的回归。
 - 新增 deterministic overview exporter，输出 `PNG + metadata` 供人工验收。
 - 更新 PRD/ECN/测试，让“像不像一座城”成为正式 contract，而不是聊天里的补充意见。
 
@@ -36,6 +38,9 @@
   - 反作弊条款：不得继续保留 world-filling `district edge + collector` lattice 作为正式可见道路主骨架
 - 固定 seed `424242` 下，中心窗口与至少两个卫星窗口都能查询到正式 `local / arterial / expressway` 道路。
 - chunk building layout 必须输出 streetfront 统计，且 streetfront 驱动的 building 数量占比达到正式阈值。
+- `no-road chunk => building_count == 0`，不得继续产出 fallback infill 建筑。
+- trunk corridor 沿线采样窗口必须连续命中真实道路，不得只在主城和卫星城两头有路。
+- map 点选在可见城市区附近必须返回非空 `selection_contract` 与 route polyline。
 - headless overview exporter 必须稳定输出 `PNG + metadata` 到固定路径，metadata 必须包含：
   - `road_edge_count`
   - `population_center_count`
@@ -43,6 +48,8 @@
   - `building_footprint_count`
   - `road_pixel_count`
   - `building_pixel_count`
+  - `active_bounds.width >= 56000`
+  - `active_bounds.height >= 56000`
 - 反作弊条款：PNG 必须直接来源于当前世界数据，不能写死参考图、不能只截中心 `5x5` chunk、不能只画道路不画建筑。
 
 ## Files
@@ -54,11 +61,16 @@
 - Modify: `city_game/world/generation/CityWorldGenerator.gd`
 - Modify: `city_game/world/generation/CityReferenceRoadGraphBuilder.gd`
 - Modify: `city_game/world/generation/CityRoadGraphCache.gd`
+- Modify: `city_game/world/generation/CityPlaceIndexBuilder.gd`
 - Modify: `city_game/world/rendering/CityChunkProfileBuilder.gd`
+- Modify: `city_game/world/vehicles/generation/CityVehicleWorldBuilder.gd`
 - Create: overview PNG exporter implementation / test files
 - Modify: `tests/world/test_city_world_generator.gd`
 - Modify: `tests/world/test_city_reference_road_graph.gd`
 - Modify: `tests/world/test_city_building_collision.gd`
+- Modify: `tests/world/test_city_streetfront_building_layout.gd`
+- Modify: `tests/world/test_city_overview_png_export.gd`
+- Modify: `tests/world/test_city_map_destination_contract.gd`
 - Create: morphology / PNG exporter tests
 
 ## Steps
@@ -76,6 +88,9 @@
    - `res://tests/world/test_city_world_generator.gd`
    - `res://tests/world/test_city_reference_road_graph.gd`
    - `res://tests/world/test_city_building_collision.gd`
+   - `res://tests/world/test_city_streetfront_building_layout.gd`
+   - `res://tests/world/test_city_overview_png_export.gd`
+   - `res://tests/world/test_city_map_destination_contract.gd`
    - 新增 morphology / PNG exporter tests
 5. 必要重构（仍绿）：
    - 清理旧的 dense-grid-only helper
@@ -87,5 +102,6 @@
 ## Risks
 
 - 如果多中心 field 只做“多几个随机波峰”，仍可能长成另一种均匀噪声，而不是可辨识的主城/卫星城结构。
-- 如果 building layout 仍主要靠 chunk 栅格筛选，即使 road graph 修好，PNG 里的建筑分布也会继续显得假。
+- 如果 building layout 仍主要靠 chunk 栅格筛选或在无路区偷偷补楼，即使 road graph 修好，PNG 里的建筑分布也会继续显得假。
 - 如果 exporter 没有 sidecar metadata，后续容易再次回到“只看截图主观感觉”的验收方式。
+- 如果 trunk corridor 被切成 degree=2 小段但没有 lane continuation contract，地图点选与导航会再次出现“点到路上也不出线”的假连通。

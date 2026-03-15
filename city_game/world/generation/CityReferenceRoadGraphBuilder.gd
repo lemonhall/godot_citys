@@ -3,19 +3,20 @@ extends RefCounted
 const CityRoadGraph := preload("res://city_game/world/model/CityRoadGraph.gd")
 const CityRoadTemplateCatalog := preload("res://city_game/world/rendering/CityRoadTemplateCatalog.gd")
 
-const SEGMENT_COUNT_LIMIT := 2600
-const HIGHWAY_LENGTH_M := 420.0
-const ARTERIAL_LENGTH_M := 260.0
-const LOCAL_LENGTH_M := 170.0
-const SNAP_DISTANCE_M := 56.0
+const SEGMENT_COUNT_LIMIT := 3400
+const HIGHWAY_LENGTH_M := 560.0
+const ARTERIAL_LENGTH_M := 320.0
+const LOCAL_LENGTH_M := 210.0
+const SNAP_DISTANCE_M := 72.0
 const MIN_INTERSECTION_DEVIATION_DEG := 24.0
 const HIGHWAY_BRANCH_PROBABILITY := 0.18
-const ARTERIAL_BRANCH_PROBABILITY := 0.32
-const LOCAL_BRANCH_PROBABILITY := 0.16
-const POPULATION_CENTER_MARGIN_M := 2600.0
-const MAIN_CENTER_RADIUS_M := 8800.0
-const SATELLITE_CENTER_RADIUS_M := 4600.0
-const CORRIDOR_WIDTH_M := 2100.0
+const ARTERIAL_BRANCH_PROBABILITY := 0.38
+const LOCAL_BRANCH_PROBABILITY := 0.18
+const POPULATION_CENTER_MARGIN_M := 2200.0
+const MAIN_CENTER_RADIUS_M := 14200.0
+const SATELLITE_CENTER_RADIUS_M := 7600.0
+const CORRIDOR_WIDTH_M := 3400.0
+const CORRIDOR_SPINE_STEP_SCALE := 0.94
 
 var _config
 var _rng := RandomNumberGenerator.new()
@@ -48,6 +49,7 @@ func build_overlay(config, road_graph) -> void:
 		"satellite_center_count": maxi(_population_centers.size() - 1, 0),
 		"corridor_count": _corridors.size(),
 		"population_centers": _population_centers.duplicate(true),
+		"corridors": _corridors.duplicate(true),
 	}
 	_candidate_order = 0
 
@@ -103,11 +105,7 @@ func _build_seed_segments() -> Array[Dictionary]:
 	var seed_keys: Dictionary = {}
 	for corridor_variant in _corridors:
 		var corridor: Dictionary = corridor_variant
-		var start: Vector2 = corridor.get("start", Vector2.ZERO)
-		var end: Vector2 = corridor.get("end", Vector2.ZERO)
-		var bearing_deg := _bearing_from_vector((end - start).normalized())
-		_append_seed_candidate(seeds, seed_keys, _make_candidate(start, bearing_deg, HIGHWAY_LENGTH_M, "expressway_elevated", true, 0))
-		_append_seed_candidate(seeds, seed_keys, _make_candidate(end, fposmod(bearing_deg + 180.0, 360.0), HIGHWAY_LENGTH_M, "expressway_elevated", true, 0))
+		_append_corridor_spine_seeds(seeds, seed_keys, corridor)
 
 	for center_index in range(_population_centers.size()):
 		var center: Dictionary = _population_centers[center_index]
@@ -124,6 +122,36 @@ func _build_seed_segments() -> Array[Dictionary]:
 			)
 	return seeds
 
+func _append_corridor_spine_seeds(seeds: Array[Dictionary], seed_keys: Dictionary, corridor: Dictionary) -> void:
+	var start: Vector2 = corridor.get("start", Vector2.ZERO)
+	var finish: Vector2 = corridor.get("end", Vector2.ZERO)
+	var road_class := str(corridor.get("road_class", "arterial"))
+	var trunk_highway := road_class == "expressway_elevated"
+	var segment_length_m := _segment_length_for_class(road_class)
+	var direction := finish - start
+	var total_length := direction.length()
+	if total_length <= 1.0 or segment_length_m <= 1.0:
+		return
+	var direction_normalized := direction / total_length
+	var step_length := maxf(segment_length_m * CORRIDOR_SPINE_STEP_SCALE, 96.0)
+	var step_count := maxi(int(ceil(total_length / step_length)), 1)
+	var previous_point := start
+	for step_index in range(step_count):
+		var traveled := minf(total_length, float(step_index + 1) * step_length)
+		var next_point := start + direction_normalized * traveled
+		_append_seed_candidate(
+			seeds,
+			seed_keys,
+			_make_candidate_between_points(previous_point, next_point, road_class, trunk_highway, step_index)
+		)
+		previous_point = next_point
+	if previous_point.distance_to(finish) > 1.0:
+		_append_seed_candidate(
+			seeds,
+			seed_keys,
+			_make_candidate_between_points(previous_point, finish, road_class, trunk_highway, step_count)
+		)
+
 func _make_candidate(start: Vector2, direction_deg: float, length_m: float, road_class: String, highway: bool, t: int) -> Dictionary:
 	_candidate_order += 1
 	var angle := deg_to_rad(direction_deg)
@@ -132,6 +160,23 @@ func _make_candidate(start: Vector2, direction_deg: float, length_m: float, road
 		"start": start,
 		"end": end,
 		"direction_deg": direction_deg,
+		"road_class": road_class,
+		"highway": highway,
+		"t": t,
+		"order": _candidate_order,
+		"severed": false,
+		"seed": _rng.randi(),
+	}
+
+func _make_candidate_between_points(start: Vector2, finish: Vector2, road_class: String, highway: bool, t: int) -> Dictionary:
+	var direction := finish - start
+	if direction.length_squared() <= 0.0001:
+		return {}
+	_candidate_order += 1
+	return {
+		"start": start,
+		"end": finish,
+		"direction_deg": _bearing_from_vector(direction.normalized()),
 		"road_class": road_class,
 		"highway": highway,
 		"t": t,
@@ -245,7 +290,7 @@ func _sample_population(position: Vector2) -> float:
 	var wave_b := 0.5 + 0.5 * cos(position.y / 5200.0 + float(_config.base_seed % 131) * 0.01)
 	var diagonal := 0.5 + 0.5 * sin((position.x + position.y) / 6800.0)
 	var noise_bias := (wave_a * 0.44 + wave_b * 0.33 + diagonal * 0.23) * 0.14
-	return clampf(center_bias * 0.82 + corridor_bias * 0.34 + noise_bias, 0.0, 1.0)
+	return clampf(center_bias * 0.88 + corridor_bias * 0.52 + noise_bias, 0.0, 1.0)
 
 func _segment_to_edge(segment: Dictionary, index: int) -> Dictionary:
 	var start: Vector2 = segment.get("start", Vector2.ZERO)
@@ -615,8 +660,8 @@ func _append_seed_candidate(seeds: Array[Dictionary], seed_keys: Dictionary, can
 func _build_population_centers() -> Array[Dictionary]:
 	var centers: Array[Dictionary] = []
 	var main_center_position := Vector2(
-		lerpf(-620.0, 620.0, _seeded_unit("main_center_x")),
-		lerpf(-540.0, 540.0, _seeded_unit("main_center_y"))
+		lerpf(-1200.0, 1200.0, _seeded_unit("main_center_x")),
+		lerpf(-1100.0, 1100.0, _seeded_unit("main_center_y"))
 	)
 	centers.append({
 		"center_id": "main_core",
@@ -626,20 +671,21 @@ func _build_population_centers() -> Array[Dictionary]:
 		"weight": 1.0,
 	})
 
-	var satellite_base_angles := [248.0, 18.0, 108.0]
-	var satellite_base_distances := [14800.0, 11800.0, 17200.0]
-	var satellite_base_weights := [0.76, 0.58, 0.72]
+	var satellite_base_angles := [228.0, 316.0, 38.0, 112.0, 178.0, 6.0]
+	var satellite_base_distances := [26400.0, 24600.0, 27800.0, 22800.0, 29200.0, 23800.0]
+	var satellite_base_weights := [0.8, 0.68, 0.78, 0.66, 0.72, 0.64]
 	for satellite_index in range(satellite_base_angles.size()):
 		var angle_deg: float = float(satellite_base_angles[satellite_index]) + lerpf(-15.0, 15.0, _seeded_unit("satellite_angle_%d" % satellite_index))
-		var distance_m: float = float(satellite_base_distances[satellite_index]) + lerpf(-1300.0, 1300.0, _seeded_unit("satellite_distance_%d" % satellite_index))
+		var distance_m: float = float(satellite_base_distances[satellite_index]) + lerpf(-1600.0, 1600.0, _seeded_unit("satellite_distance_%d" % satellite_index))
 		var direction := Vector2(sin(deg_to_rad(angle_deg)), cos(deg_to_rad(angle_deg)))
 		var satellite_position := _clamp_center_to_world(main_center_position + direction * distance_m)
 		centers.append({
 			"center_id": "satellite_%d" % satellite_index,
 			"kind": "satellite",
 			"position": satellite_position,
-			"radius_m": SATELLITE_CENTER_RADIUS_M + lerpf(-520.0, 680.0, _seeded_unit("satellite_radius_%d" % satellite_index)),
+			"radius_m": SATELLITE_CENTER_RADIUS_M + lerpf(-900.0, 1400.0, _seeded_unit("satellite_radius_%d" % satellite_index)),
 			"weight": satellite_base_weights[satellite_index],
+			"angle_deg": fposmod(angle_deg, 360.0),
 		})
 	return centers
 
@@ -653,13 +699,42 @@ func _build_corridors(population_centers: Array[Dictionary]) -> Array[Dictionary
 		var satellite_center: Dictionary = population_centers[center_index]
 		var satellite_position: Vector2 = satellite_center.get("position", Vector2.ZERO)
 		corridors.append({
-			"corridor_id": "corridor_%d" % center_index,
+			"corridor_id": "trunk_corridor_%d" % center_index,
+			"corridor_kind": "main_satellite",
 			"start": main_position,
 			"end": satellite_position,
-			"width_m": CORRIDOR_WIDTH_M + center_index * 140.0,
-			"weight": 0.82 if center_index == 1 else 0.7,
+			"width_m": CORRIDOR_WIDTH_M + center_index * 180.0,
+			"weight": 0.86 if center_index <= 2 else 0.74,
+			"road_class": "expressway_elevated",
 		})
+	var satellites: Array[Dictionary] = []
+	for center_index in range(1, population_centers.size()):
+		satellites.append((population_centers[center_index] as Dictionary).duplicate(true))
+	satellites.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a.get("angle_deg", 0.0)) < float(b.get("angle_deg", 0.0))
+	)
+	if satellites.size() >= 3:
+		for satellite_index in range(0, satellites.size(), 2):
+			var current_satellite: Dictionary = satellites[satellite_index]
+			var next_satellite: Dictionary = satellites[(satellite_index + 1) % satellites.size()]
+			corridors.append({
+				"corridor_id": "ring_corridor_%d" % satellite_index,
+				"corridor_kind": "satellite_ring",
+				"start": current_satellite.get("position", Vector2.ZERO),
+				"end": next_satellite.get("position", Vector2.ZERO),
+				"width_m": CORRIDOR_WIDTH_M * 0.72,
+				"weight": 0.6,
+				"road_class": "arterial",
+			})
 	return corridors
+
+func _segment_length_for_class(road_class: String) -> float:
+	match road_class:
+		"expressway_elevated":
+			return HIGHWAY_LENGTH_M
+		"arterial":
+			return ARTERIAL_LENGTH_M
+	return LOCAL_LENGTH_M
 
 func _resolve_center_rotation_deg(center_index: int) -> float:
 	return lerpf(-22.0, 22.0, _seeded_unit("center_rotation_%d" % center_index)) + center_index * 11.0

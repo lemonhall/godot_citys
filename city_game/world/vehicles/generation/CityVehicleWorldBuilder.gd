@@ -26,6 +26,7 @@ func _build_lane_graph(config, vehicle_config: CityVehicleConfig, road_graph) ->
 	for road_edge in road_graph.edges:
 		_add_drivable_lanes(vehicle_config, lane_graph, road_edge)
 	_add_intersection_turn_contracts(config, lane_graph, road_graph)
+	_add_endpoint_continuation_turn_contracts(lane_graph, road_graph)
 	return lane_graph
 
 func _add_drivable_lanes(vehicle_config: CityVehicleConfig, lane_graph: CityVehicleLaneGraph, edge: Dictionary) -> void:
@@ -182,6 +183,63 @@ func _add_intersection_turn_contracts(config, lane_graph: CityVehicleLaneGraph, 
 			"lane_connections": lane_connections,
 		})
 
+func _add_endpoint_continuation_turn_contracts(lane_graph: CityVehicleLaneGraph, road_graph) -> void:
+	if road_graph == null:
+		return
+	var endpoint_nodes: Dictionary = {}
+	for edge_variant in road_graph.edges:
+		var edge: Dictionary = edge_variant
+		var points: Array = edge.get("points", [])
+		if points.size() < 2:
+			continue
+		var start: Vector2 = points[0]
+		var finish: Vector2 = points[points.size() - 1]
+		_register_endpoint_branch(endpoint_nodes, start, _resolve_edge_target_point(points, true), edge)
+		_register_endpoint_branch(endpoint_nodes, finish, _resolve_edge_target_point(points, false), edge)
+	for endpoint_entry_variant in endpoint_nodes.values():
+		var endpoint_entry: Dictionary = endpoint_entry_variant
+		var position: Vector2 = endpoint_entry.get("position", Vector2.ZERO)
+		var ordered_branches := _ordered_branches_from_map(endpoint_entry.get("branch_map", {}))
+		if ordered_branches.size() != 2:
+			continue
+		var connection_semantics := _build_branch_connection_semantics(ordered_branches)
+		var branch_lane_map: Dictionary = {}
+		var branch_lanes: Array[Dictionary] = []
+		for branch_variant in ordered_branches:
+			var branch: Dictionary = branch_variant
+			var branch_index := int(branch.get("branch_index", -1))
+			var branch_lane_sets := _collect_branch_lane_sets(lane_graph, str(branch.get("edge_id", "")), position, float(branch.get("bearing_deg", 0.0)))
+			branch_lane_map[str(branch_index)] = branch_lane_sets
+			branch_lanes.append({
+				"branch_index": branch_index,
+				"edge_id": str(branch.get("edge_id", "")),
+				"inbound_lane_ids": (branch_lane_sets.get("inbound_lane_ids", []) as Array).duplicate(true),
+				"outbound_lane_ids": (branch_lane_sets.get("outbound_lane_ids", []) as Array).duplicate(true),
+			})
+		var lane_connections: Array[Dictionary] = []
+		for connection_variant in connection_semantics:
+			var connection: Dictionary = connection_variant
+			var from_branch_index := int(connection.get("from_branch_index", -1))
+			var to_branch_index := int(connection.get("to_branch_index", -1))
+			var from_branch_lanes: Dictionary = branch_lane_map.get(str(from_branch_index), {})
+			var to_branch_lanes: Dictionary = branch_lane_map.get(str(to_branch_index), {})
+			lane_connections.append({
+				"from_branch_index": from_branch_index,
+				"to_branch_index": to_branch_index,
+				"turn_type": str(connection.get("turn_type", "")),
+				"from_lane_ids": (from_branch_lanes.get("inbound_lane_ids", []) as Array).duplicate(true),
+				"to_lane_ids": (to_branch_lanes.get("outbound_lane_ids", []) as Array).duplicate(true),
+			})
+		lane_graph.add_intersection_turn_contract({
+			"intersection_id": "continuation_%s" % _continuation_position_key(position),
+			"position": position,
+			"intersection_type": "continuation",
+			"ordered_branches": ordered_branches.duplicate(true),
+			"branch_connection_semantics": connection_semantics.duplicate(true),
+			"branch_lanes": branch_lanes,
+			"lane_connections": lane_connections,
+		})
+
 func _collect_branch_lane_sets(lane_graph: CityVehicleLaneGraph, road_id: String, intersection_position: Vector2, branch_bearing_deg: float) -> Dictionary:
 	var inbound_lane_ids: Array[String] = []
 	var outbound_lane_ids: Array[String] = []
@@ -207,6 +265,109 @@ func _collect_branch_lane_sets(lane_graph: CityVehicleLaneGraph, road_id: String
 		"inbound_lane_ids": inbound_lane_ids,
 		"outbound_lane_ids": outbound_lane_ids,
 	}
+
+func _register_endpoint_branch(endpoint_nodes: Dictionary, position: Vector2, target: Vector2, edge: Dictionary) -> void:
+	var key := _continuation_position_key(position)
+	if not endpoint_nodes.has(key):
+		endpoint_nodes[key] = {
+			"position": position,
+			"branch_map": {},
+		}
+	var endpoint_entry: Dictionary = endpoint_nodes[key]
+	var branch_map: Dictionary = endpoint_entry.get("branch_map", {})
+	_add_branch_candidate(
+		branch_map,
+		position,
+		target,
+		str(edge.get("edge_id", edge.get("road_id", ""))),
+		str(edge.get("class", "local")),
+		str(edge.get("template_id", "local"))
+	)
+	endpoint_entry["branch_map"] = branch_map
+	endpoint_nodes[key] = endpoint_entry
+
+func _resolve_edge_target_point(points: Array, from_start: bool) -> Vector2:
+	if from_start:
+		var origin: Vector2 = points[0]
+		for point_index in range(1, points.size()):
+			var candidate: Vector2 = points[point_index]
+			if origin.distance_to(candidate) > 1.5:
+				return candidate
+		return points[points.size() - 1]
+	var finish: Vector2 = points[points.size() - 1]
+	for reverse_offset in range(1, points.size()):
+		var reverse_index := points.size() - 1 - reverse_offset
+		var candidate: Vector2 = points[reverse_index]
+		if finish.distance_to(candidate) > 1.5:
+			return candidate
+	return points[0]
+
+func _add_branch_candidate(branch_map: Dictionary, position: Vector2, target: Vector2, edge_id: String, road_class: String, template_id: String) -> void:
+	var direction := target - position
+	if direction.length_squared() <= 0.0001:
+		return
+	var bearing_deg := _bearing_from_vector(direction.normalized())
+	var branch_key := str(int(posmod(int(round(bearing_deg * 4.0)), 1440)))
+	var candidate := {
+		"edge_id": edge_id,
+		"road_class": road_class,
+		"template_id": template_id,
+		"bearing_deg": bearing_deg,
+		"branch_length_m": direction.length(),
+	}
+	if not branch_map.has(branch_key) or float(candidate.get("branch_length_m", 0.0)) > float((branch_map[branch_key] as Dictionary).get("branch_length_m", 0.0)):
+		branch_map[branch_key] = candidate
+
+func _ordered_branches_from_map(branch_map: Dictionary) -> Array[Dictionary]:
+	var ordered_candidates: Array[Dictionary] = []
+	for branch_variant in branch_map.values():
+		ordered_candidates.append((branch_variant as Dictionary).duplicate(true))
+	ordered_candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var a_bearing := float(a.get("bearing_deg", 0.0))
+		var b_bearing := float(b.get("bearing_deg", 0.0))
+		if absf(a_bearing - b_bearing) <= 0.001:
+			return str(a.get("edge_id", "")) < str(b.get("edge_id", ""))
+		return a_bearing < b_bearing
+	)
+	var ordered_branches: Array[Dictionary] = []
+	for branch_index in range(ordered_candidates.size()):
+		var candidate: Dictionary = ordered_candidates[branch_index]
+		ordered_branches.append({
+			"branch_index": branch_index,
+			"edge_id": str(candidate.get("edge_id", "")),
+			"road_class": str(candidate.get("road_class", "")),
+			"template_id": str(candidate.get("template_id", "")),
+			"bearing_deg": float(candidate.get("bearing_deg", 0.0)),
+		})
+	return ordered_branches
+
+func _build_branch_connection_semantics(ordered_branches: Array[Dictionary]) -> Array[Dictionary]:
+	var connections: Array[Dictionary] = []
+	for from_index in range(ordered_branches.size()):
+		var from_branch: Dictionary = ordered_branches[from_index]
+		var inbound_bearing := fposmod(float(from_branch.get("bearing_deg", 0.0)) + 180.0, 360.0)
+		for to_index in range(ordered_branches.size()):
+			var to_branch: Dictionary = ordered_branches[to_index]
+			var to_bearing := float(to_branch.get("bearing_deg", 0.0))
+			var turn_delta := fposmod(to_bearing - inbound_bearing, 360.0)
+			connections.append({
+				"from_branch_index": from_index,
+				"to_branch_index": to_index,
+				"turn_type": _classify_turn_type(from_index, to_index, turn_delta),
+			})
+	return connections
+
+func _classify_turn_type(from_branch_index: int, to_branch_index: int, turn_delta: float) -> String:
+	if from_branch_index == to_branch_index:
+		return "u_turn"
+	if turn_delta <= 30.0 or turn_delta >= 330.0:
+		return "straight"
+	if turn_delta < 180.0:
+		return "right_turn"
+	return "left_turn"
+
+func _continuation_position_key(position: Vector2) -> String:
+	return "%d:%d" % [int(round(position.x / 4.0)), int(round(position.y / 4.0))]
 
 func _find_nearest_lane_info(position: Vector2, points: Array) -> Dictionary:
 	var best_distance := INF

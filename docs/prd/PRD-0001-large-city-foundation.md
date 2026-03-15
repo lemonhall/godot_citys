@@ -139,6 +139,7 @@
 - 近景建筑必须提供可启停碰撞壳；mid/far LOD 不得保留不可见碰撞（[已由 ECN-0004 变更](../ecn/ECN-0004-road-network-terrain-and-collision.md)）
 - 建筑与 roadside props 都必须满足道路缓冲区避让，不得长在路面上；chunk 建筑体量需要达到更高密度并提供多 archetype 变体（[已由 ECN-0005 变更](../ecn/ECN-0005-organic-road-density-and-inspection-ui.md)）
 - chunk 建筑布局必须以沿街 frontage / streetfront candidate 为正式上游，而不是继续以 chunk-local 均匀候选格点为主、只把离路远近当作评分项。（[已由 ECN-0019 变更](../ecn/ECN-0019-city-morphology-and-png-acceptance.md)）
+- 在 `v13` 当前阶段，`no-road chunk` 不得再生成 fallback building；无路区建筑/山地木屋等属于后续版本能力。（[已由 ECN-0019 变更](../ecn/ECN-0019-city-morphology-and-png-acceptance.md)）
 - block 自动生成基础遮挡体或 `ArrayOccluder3D`
 - chunk 必须提供占位地表与碰撞壳，保证离开中心原型区后仍可连续步行/高速巡检（[已由 ECN-0001 变更](../ecn/ECN-0001-large-city-scale-and-inspection.md)，[已由 ECN-0002 变更](../ecn/ECN-0002-fast-inspection-mode.md)）
 - `WorldEnvironment` 必须提供低成本 sky/fog 氛围，避免城市漂浮在单色背景前（[已由 ECN-0003 变更](../ecn/ECN-0003-visual-continuity-and-atmosphere.md)）
@@ -163,6 +164,7 @@
 - 自动化测试至少断言：近景建筑提供可启停碰撞壳，mid/far LOD 时不可见碰撞会停用。
 - 自动化测试至少断言：建筑与 roadside props 对道路保持最小缓冲区退距，且中心 chunk 建筑数量与 archetype 数量达到约定阈值。
 - 自动化测试至少断言：building layout 输出正式的 streetfront / frontage 统计，且主体 building 与最近道路保持沿街关系，而不是均匀散点噪声。（[已由 ECN-0019 变更](../ecn/ECN-0019-city-morphology-and-png-acceptance.md)）
+- 自动化测试至少断言：`no-road chunk => building_count == 0`，不得继续在无路区域伪造 fallback infill 建筑。（[已由 ECN-0019 变更](../ecn/ECN-0019-city-morphology-and-png-acceptance.md)）
 - 自动化测试至少断言：chunk 地表存在可见高差，而不是整块纯平面。
 - 自动化测试至少断言：至少存在少量桥梁/高架占位。
 - 自动化测试至少断言：演员离开中心起始区后，仍能落在 streamed chunk 的占位地表上，而不是掉穿世界。
@@ -315,7 +317,9 @@
 
 - 固定 seed 下，自动化测试至少断言：`population_center_count >= 3`、`corridor_count >= 2`，且 `road_edge_count` 明显低于 full-world district lattice 基线。
 - 固定 seed 下，自动化测试至少断言：中心城与至少两个卫星窗口存在正式道路查询结果，而不是只有中心城有路、其余世界为空。
+- 固定 seed 下，自动化测试至少断言：主城到卫星城的 trunk corridor 沿线采样窗口连续命中正式道路，不得出现“道路只在两头、中间断开”的假连通。
 - headless overview exporter 必须稳定输出 `PNG + metadata` 到固定路径；metadata 至少包含 `road_edge_count`、`population_center_count`、`corridor_count`、`building_footprint_count`、`road_pixel_count`、`building_pixel_count`。
+- fixed seed 下，overview metadata 的有效城市范围必须覆盖世界级尺度，不能再退化回中心区小补丁图。
 - 反作弊条款：不得继续保留 world-filling district lattice 作为正式可见道路主骨架；不得导出静态参考图、手工截图或与当前世界数据脱钩的示意图来冒充 overview evidence。
 
 ### REQ-0001-007 端到端 travel 验证

@@ -9,6 +9,9 @@ const CANDIDATE_STEP_M := 22.0
 const MAX_BUILDINGS_PER_CHUNK := 20
 const INFILL_TARGET_EXTRA := 6
 const ROAD_ALIGNMENT_DELTA_MAX_DEG := 18.0
+const INFILL_CLEARANCE_MIN_M := 10.0
+const INFILL_CLEARANCE_TARGET_M := 22.0
+const INFILL_CLEARANCE_MAX_M := 84.0
 
 const PALETTES := [
 	{
@@ -166,6 +169,11 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 	return profile
 
 static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, world_seed: int, road_segments: Array) -> Dictionary:
+	if road_segments.is_empty():
+		return {
+			"buildings": [],
+			"layout_stats": _build_building_layout_stats([], [], []),
+		}
 	var candidate_keys: Dictionary = {}
 	var streetfront_candidates := _build_streetfront_candidates(chunk_center, chunk_size_m, chunk_seed, road_segments, candidate_keys)
 	var infill_candidates := _build_infill_candidates(chunk_center, chunk_size_m, chunk_seed, road_segments, candidate_keys)
@@ -303,6 +311,8 @@ static func _build_streetfront_candidates(chunk_center: Vector3, chunk_size_m: f
 	return candidates
 
 static func _build_infill_candidates(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, road_segments: Array, candidate_keys: Dictionary) -> Array:
+	if road_segments.is_empty():
+		return []
 	var half_extent := chunk_size_m * 0.5 - 18.0
 	var candidates: Array = []
 	for x_step in range(int(floor((-half_extent) / CANDIDATE_STEP_M)), int(ceil(half_extent / CANDIDATE_STEP_M)) + 1):
@@ -318,10 +328,10 @@ static func _build_infill_candidates(chunk_center: Vector3, chunk_size_m: float,
 				continue
 			var road_metrics := _nearest_road_metrics(center_2d, road_segments, 8.0)
 			var clearance := float(road_metrics.get("clearance_m", 9999.0))
-			if clearance < 10.0:
+			if clearance < INFILL_CLEARANCE_MIN_M or clearance > INFILL_CLEARANCE_MAX_M:
 				continue
 			var radial_bias := center_2d.length() / maxf(half_extent, 1.0)
-			var score := 42.0 - absf(clearance - 22.0) * 1.1 - radial_bias * 11.0 + sin(float(slot_seed % 2048) * 0.021) * 4.0
+			var score := 42.0 - absf(clearance - INFILL_CLEARANCE_TARGET_M) * 1.1 - radial_bias * 11.0 + sin(float(slot_seed % 2048) * 0.021) * 4.0
 			candidate_keys[position_key] = true
 			candidates.append({
 				"center_2d": center_2d,

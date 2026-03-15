@@ -5,7 +5,7 @@ const CityPlaceIndex := preload("res://city_game/world/model/CityPlaceIndex.gd")
 
 const SOURCE_VERSION := CityPlaceIndex.SOURCE_VERSION
 const LANDMARK_TARGET_COUNT := 4096
-const ROUTABLE_SEARCH_RADIUS_OPTIONS := [128.0, 256.0, 512.0, 1024.0]
+const ROUTABLE_SEARCH_RADIUS_OPTIONS := [128.0, 256.0, 512.0, 1024.0, 2048.0, 4096.0]
 
 func build_index(config, road_graph, block_layout, street_cluster_catalog, name_candidate_catalog: Dictionary, vehicle_query) -> CityPlaceIndex:
 	var entries: Array[Dictionary] = []

@@ -2,7 +2,7 @@ extends Node3D
 
 const FAMILY_ID := "city_world_ring_marker"
 const DEFAULT_RADIUS_M := 8.0
-const OUTER_RING_HEIGHT_M := 0.07
+const OUTER_SHELL_HEIGHT_M := 3.2
 const INNER_RING_HEIGHT_M := 0.05
 const CORE_DISC_HEIGHT_M := 0.03
 const FLAME_HEIGHT_M := 2.6
@@ -59,6 +59,7 @@ const THEME_VISUAL_PROFILES := {
 	"destination": {
 		"effect_driver_id": "gpu_unified_shader",
 		"use_shader_layers": true,
+		"show_dash_ring": false,
 		"show_cross_ring": false,
 		"show_flames": false,
 		"animate_geometry_pulse": false,
@@ -69,6 +70,7 @@ const THEME_VISUAL_PROFILES := {
 	"task_available_start": {
 		"effect_driver_id": "gpu_unified_shader",
 		"use_shader_layers": true,
+		"show_dash_ring": false,
 		"show_cross_ring": false,
 		"show_flames": false,
 		"animate_geometry_pulse": false,
@@ -79,6 +81,7 @@ const THEME_VISUAL_PROFILES := {
 	"task_active_objective": {
 		"effect_driver_id": "gpu_unified_shader",
 		"use_shader_layers": true,
+		"show_dash_ring": false,
 		"show_cross_ring": false,
 		"show_flames": false,
 		"animate_geometry_pulse": false,
@@ -101,11 +104,16 @@ uniform float band_width = 0.12;
 uniform float sweep_speed = 0.9;
 uniform float sweep_density = 12.0;
 uniform float fill_bias = 0.18;
+uniform float shell_height = 0.08;
+uniform float vertical_shell_strength = 0.0;
+uniform float flame_turbulence = 0.28;
 
 varying vec3 local_pos;
+varying vec3 local_normal;
 
 void vertex() {
 	local_pos = VERTEX;
+	local_normal = NORMAL;
 }
 
 float ring_band(float radial, float center, float width) {
@@ -116,16 +124,24 @@ float ring_band(float radial, float center, float width) {
 void fragment() {
 	float radius = max(ring_radius, 0.001);
 	float radial = clamp(length(local_pos.xz) / radius, 0.0, 1.4);
+	float shell_h = max(shell_height, 0.001);
+	float y01 = clamp((local_pos.y + shell_h * 0.5) / shell_h, 0.0, 1.0);
+	float side_factor = 1.0 - abs(normalize(local_normal).y);
 	float primary_band = ring_band(radial, band_center, band_width);
 	float secondary_band = ring_band(radial, max(band_center - 0.18, 0.16), band_width * 1.35) * 0.62;
 	float shimmer = 0.5 + 0.5 * sin(TIME * sweep_speed * 3.4 + radial * sweep_density);
 	float core_fill = smoothstep(1.0, fill_bias, radial) * 0.42;
-	float glow = clamp(primary_band + secondary_band + core_fill + shimmer * (0.18 + primary_band * 0.34), 0.0, 1.8);
+	float flame_noise = 0.5 + 0.28 * sin(atan(local_pos.z, local_pos.x) * 9.0 + TIME * sweep_speed * 4.6 + y01 * 7.0)
+		+ 0.22 * sin(atan(local_pos.z, local_pos.x) * 15.0 - TIME * sweep_speed * 3.2 + y01 * 11.0);
+	float flame_head = clamp(1.0 - y01 + flame_noise * flame_turbulence, 0.0, 1.0);
+	float shell_glow = primary_band * side_factor * smoothstep(0.08, 0.28, flame_head) * (0.42 + (1.0 - y01) * 0.9) * vertical_shell_strength;
+	float floor_glow = (primary_band + secondary_band + core_fill + shimmer * (0.18 + primary_band * 0.34)) * mix(1.0, clamp(1.0 - y01 * 0.92, 0.06, 1.0), vertical_shell_strength);
+	float glow = clamp(max(floor_glow, shell_glow * 1.4), 0.0, 1.9);
 	float pulse = 0.78 + 0.22 * sin(TIME * sweep_speed * 2.2 + radial * 9.0 + band_center * 6.0);
 	vec3 mixed_color = mix(base_color.rgb, glow_color.rgb, clamp(glow, 0.0, 1.0));
 	ALBEDO = mixed_color;
 	EMISSION = glow_color.rgb * emission_energy * (0.42 + glow * 1.95) * pulse;
-	ALPHA = clamp((base_color.a * 0.36 + glow * 0.58) * pulse, 0.0, 1.0);
+	ALPHA = clamp((base_color.a * 0.34 + glow * 0.58 + shell_glow * 0.28) * pulse, 0.0, 1.0);
 }
 """
 
@@ -216,6 +232,7 @@ func get_state() -> Dictionary:
 		"effect_driver_id": effect_driver_id,
 		"family_id": FAMILY_ID,
 		"shader_layer_count": _count_shader_layers(),
+		"outer_shell_height_m": _get_outer_shell_height_m(),
 		"dash_segment_count": _dash_segments.size(),
 		"visible_dash_segment_count": _count_visible_segments(_dash_segments, _dash_ring_root == null or _dash_ring_root.visible),
 		"cross_segment_count": _cross_segments.size(),
@@ -227,7 +244,7 @@ func get_state() -> Dictionary:
 func _ensure_visuals() -> void:
 	if _outer_ring != null:
 		return
-	_outer_ring = _create_disc("OuterRing", OUTER_RING_HEIGHT_M)
+	_outer_ring = _create_disc("OuterRing", OUTER_SHELL_HEIGHT_M)
 	_inner_ring = _create_disc("InnerRing", INNER_RING_HEIGHT_M)
 	_inner_ring.position.y = 0.025
 	_core_disc = _create_disc("CoreDisc", CORE_DISC_HEIGHT_M)
@@ -262,6 +279,9 @@ func _apply_theme() -> void:
 			_inner_ring.scale = Vector3.ONE
 		if _core_disc != null:
 			_core_disc.scale = Vector3.ONE
+	var show_dash_ring := bool(visual_profile.get("show_dash_ring", true))
+	if _dash_ring_root != null:
+		_dash_ring_root.visible = show_dash_ring
 	var show_cross_ring := bool(visual_profile.get("show_cross_ring", true))
 	if _cross_ring_root != null:
 		_cross_ring_root.visible = show_cross_ring
@@ -301,6 +321,8 @@ func _apply_radius() -> void:
 	_set_disc_radius(_outer_ring, _radius_m)
 	_set_disc_radius(_inner_ring, _radius_m * 0.68)
 	_set_disc_radius(_core_disc, _radius_m * 0.22)
+	if _outer_ring != null:
+		_outer_ring.position.y = _get_outer_shell_height_m() * 0.5 + 0.02
 	_layout_dash_ring(_dash_ring_root, _dash_segments, _radius_m * 0.86)
 	_layout_dash_ring(_cross_ring_root, _cross_segments, _radius_m * 0.48)
 	for flame_index in range(_flame_columns.size()):
@@ -397,23 +419,29 @@ func _apply_ring_shader_material(mesh_instance: MeshInstance3D, base_color: Colo
 	material.set_shader_parameter("emission_energy", emission_energy)
 	match layer_id:
 		"outer":
-			material.set_shader_parameter("band_center", 0.9)
-			material.set_shader_parameter("band_width", 0.09)
+			material.set_shader_parameter("band_center", 0.94)
+			material.set_shader_parameter("band_width", 0.11)
 			material.set_shader_parameter("sweep_speed", 0.82)
 			material.set_shader_parameter("sweep_density", 12.0)
 			material.set_shader_parameter("fill_bias", 0.16)
+			material.set_shader_parameter("vertical_shell_strength", 1.0)
+			material.set_shader_parameter("flame_turbulence", 0.4)
 		"inner":
 			material.set_shader_parameter("band_center", 0.74)
 			material.set_shader_parameter("band_width", 0.12)
 			material.set_shader_parameter("sweep_speed", 1.05)
 			material.set_shader_parameter("sweep_density", 14.5)
 			material.set_shader_parameter("fill_bias", 0.22)
+			material.set_shader_parameter("vertical_shell_strength", 0.0)
+			material.set_shader_parameter("flame_turbulence", 0.24)
 		_:
 			material.set_shader_parameter("band_center", 0.48)
 			material.set_shader_parameter("band_width", 0.2)
 			material.set_shader_parameter("sweep_speed", 1.28)
 			material.set_shader_parameter("sweep_density", 9.5)
 			material.set_shader_parameter("fill_bias", 0.52)
+			material.set_shader_parameter("vertical_shell_strength", 0.0)
+			material.set_shader_parameter("flame_turbulence", 0.18)
 	mesh_instance.material_override = material
 	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_sync_ring_shader_geometry(mesh_instance)
@@ -433,6 +461,7 @@ func _sync_ring_shader_geometry(mesh_instance: MeshInstance3D) -> void:
 		return
 	var material := mesh_instance.material_override as ShaderMaterial
 	material.set_shader_parameter("ring_radius", mesh.top_radius)
+	material.set_shader_parameter("shell_height", mesh.height)
 
 func _get_theme_visual_profile() -> Dictionary:
 	return THEME_VISUAL_PROFILES.get(_theme_id, THEME_VISUAL_PROFILES["destination"])
@@ -459,3 +488,11 @@ func _count_shader_layers() -> int:
 		if mesh_instance != null and mesh_instance.material_override is ShaderMaterial:
 			shader_layer_count += 1
 	return shader_layer_count
+
+func _get_outer_shell_height_m() -> float:
+	if _outer_ring == null:
+		return 0.0
+	var mesh := _outer_ring.mesh as CylinderMesh
+	if mesh == null:
+		return 0.0
+	return mesh.height

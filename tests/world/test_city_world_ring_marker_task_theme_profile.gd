@@ -17,23 +17,23 @@ func _run() -> void:
 
 	ring.set_marker_theme("destination")
 	var destination_state: Dictionary = ring.get_state()
-	if not T.require_true(self, int(destination_state.get("visible_flame_column_count", 0)) > 0, "Manual destination marker must keep the higher-fidelity flame columns"):
+	if not T.require_true(self, int(destination_state.get("visible_flame_column_count", -1)) == 0, "Unified world marker profile should keep destination flames disabled just like task markers"):
 		return
-	if not T.require_true(self, int(destination_state.get("visible_cross_segment_count", 0)) > 0, "Manual destination marker must keep the cross-ring detail"):
+	if not T.require_true(self, int(destination_state.get("visible_cross_segment_count", -1)) == 0, "Unified world marker profile should keep destination cross-ring detail aligned with task markers"):
 		return
 
 	ring.set_marker_theme("task_available_start")
 	var available_task_state: Dictionary = ring.get_state()
-	if not T.require_true(self, int(available_task_state.get("visible_flame_column_count", 1)) == 0, "Available task markers should disable flame columns to keep the task cue lightweight"):
+	if not T.require_true(self, int(available_task_state.get("visible_flame_column_count", -1)) == int(destination_state.get("visible_flame_column_count", -2)), "Available task marker should share the same flame visibility profile as destination markers"):
 		return
-	if not T.require_true(self, int(available_task_state.get("visible_cross_segment_count", 1)) == 0, "Available task markers should disable the cross-ring layer to reduce per-frame marker churn"):
+	if not T.require_true(self, int(available_task_state.get("visible_cross_segment_count", -1)) == int(destination_state.get("visible_cross_segment_count", -2)), "Available task marker should share the same cross-ring visibility profile as destination markers"):
 		return
 
 	ring.set_marker_theme("task_active_objective")
 	var active_task_state: Dictionary = ring.get_state()
-	if not T.require_true(self, int(active_task_state.get("visible_flame_column_count", 1)) == 0, "Active task markers should disable flame columns to keep the objective cue lightweight"):
+	if not T.require_true(self, int(active_task_state.get("visible_flame_column_count", -1)) == int(destination_state.get("visible_flame_column_count", -2)), "Active task marker should share the same flame visibility profile as destination markers"):
 		return
-	if not T.require_true(self, int(active_task_state.get("visible_cross_segment_count", 1)) == 0, "Active task markers should disable the cross-ring layer to reduce per-frame marker churn"):
+	if not T.require_true(self, int(active_task_state.get("visible_cross_segment_count", -1)) == int(destination_state.get("visible_cross_segment_count", -2)), "Active task marker should share the same cross-ring visibility profile as destination markers"):
 		return
 
 	ring.queue_free()

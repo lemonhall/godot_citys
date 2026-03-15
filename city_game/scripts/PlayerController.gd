@@ -64,6 +64,8 @@ const WEAPON_MODE_GRENADE := "grenade"
 @export var vehicle_drive_coast_decel := 13.0
 @export var vehicle_drive_turn_rate_deg := 94.0
 @export var vehicle_drive_turn_rate_idle_deg := 46.0
+@export var vehicle_mouse_steer_sensitivity := 0.012
+@export var vehicle_mouse_steer_release_speed := 4.0
 @export var vehicle_drive_camera_local_position := Vector3(0.0, 3.25, 8.4)
 @export var vehicle_drive_camera_fov := 72.0
 @export var vehicle_impact_speed_cap_mps := 8.5
@@ -123,6 +125,7 @@ var _vehicle_autodrive_input_override := {
 	"brake": false,
 }
 var _vehicle_autodrive_input_override_active := false
+var _vehicle_mouse_steer := 0.0
 var _vehicle_visual_catalog: CityVehicleVisualCatalog = null
 var _drive_vehicle_visual_root: Node3D = null
 var _drive_vehicle_model_root: Node3D = null
@@ -166,6 +169,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			var drive_button := event as InputEventMouseButton
 			if drive_button.pressed:
 				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+		elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			var drive_motion := event as InputEventMouseMotion
+			apply_vehicle_mouse_steer_delta(drive_motion.relative.x)
 		elif event.is_action_pressed("ui_cancel"):
 			if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 				Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -401,6 +407,13 @@ func clear_vehicle_autodrive_input() -> void:
 		"brake": false,
 	}
 
+func apply_vehicle_mouse_steer_delta(relative_x: float) -> void:
+	if not _driving_vehicle:
+		return
+	if absf(relative_x) <= 0.001:
+		return
+	_vehicle_mouse_steer = clampf(_vehicle_mouse_steer - relative_x * vehicle_mouse_steer_sensitivity, -1.0, 1.0)
+
 func has_manual_vehicle_input_request() -> bool:
 	if _vehicle_drive_input_override_active:
 		return true
@@ -428,6 +441,7 @@ func enter_vehicle_drive_mode(vehicle_state: Dictionary) -> void:
 	_wall_climb_contact_point = Vector3.ZERO
 	clear_vehicle_drive_input()
 	clear_vehicle_autodrive_input()
+	_clear_vehicle_mouse_steer()
 	var heading: Vector3 = vehicle_state.get("heading", Vector3.FORWARD)
 	heading.y = 0.0
 	if heading.length_squared() <= 0.0001:
@@ -461,6 +475,7 @@ func exit_vehicle_drive_mode(exit_lateral_offset_m: float = 2.35) -> Dictionary:
 	_driving_vehicle_speed_mps = 0.0
 	clear_vehicle_drive_input()
 	clear_vehicle_autodrive_input()
+	_clear_vehicle_mouse_steer()
 	velocity = Vector3.ZERO
 	_traversal_mode = TRAVERSAL_MODE_GROUNDED
 	_wall_climb_normal = Vector3.ZERO
@@ -742,13 +757,14 @@ func _process_vehicle_drive(delta: float) -> void:
 			apply_floor_snap()
 			velocity.y = -0.01
 			move_and_slide()
+	_decay_vehicle_mouse_steer(delta)
 
 func _read_vehicle_drive_input() -> Dictionary:
 	if _vehicle_drive_input_override_active:
-		return _vehicle_drive_input_override.duplicate(true)
+		return _merge_vehicle_mouse_steer(_vehicle_drive_input_override)
 	if _vehicle_autodrive_input_override_active:
 		return _vehicle_autodrive_input_override.duplicate(true)
-	return _read_raw_vehicle_drive_input()
+	return _merge_vehicle_mouse_steer(_read_raw_vehicle_drive_input())
 
 func _read_raw_vehicle_drive_input() -> Dictionary:
 	var throttle := 0.0
@@ -803,6 +819,22 @@ func _ensure_drive_vehicle_visual_root() -> void:
 
 func _yaw_from_drive_heading(heading: Vector3) -> float:
 	return atan2(-heading.x, -heading.z)
+
+func _merge_vehicle_mouse_steer(drive_input: Dictionary) -> Dictionary:
+	var merged := drive_input.duplicate(true)
+	if absf(_vehicle_mouse_steer) <= 0.0001:
+		return merged
+	merged["steer"] = clampf(float(merged.get("steer", 0.0)) + _vehicle_mouse_steer, -1.0, 1.0)
+	return merged
+
+func _decay_vehicle_mouse_steer(delta: float) -> void:
+	if absf(_vehicle_mouse_steer) <= 0.0001:
+		_vehicle_mouse_steer = 0.0
+		return
+	_vehicle_mouse_steer = move_toward(_vehicle_mouse_steer, 0.0, vehicle_mouse_steer_release_speed * maxf(delta, 0.0))
+
+func _clear_vehicle_mouse_steer() -> void:
+	_vehicle_mouse_steer = 0.0
 
 func _read_move_input() -> Vector2:
 	var horizontal := 0.0

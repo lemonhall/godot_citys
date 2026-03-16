@@ -10,11 +10,13 @@ func _run() -> void:
 	var scene := load(CAFE_SCENE_PATH)
 	if not T.require_true(self, scene != null and scene is PackedScene, "Cafe service scene must load as PackedScene"):
 		return
-	var root := (scene as PackedScene).instantiate()
-	if not T.require_true(self, root is Node3D, "Cafe service scene must instantiate as Node3D"):
+	var scene_root := (scene as PackedScene).instantiate()
+	if not T.require_true(self, scene_root is Node3D, "Cafe service scene must instantiate as Node3D"):
 		return
+	root.add_child(scene_root)
+	await process_frame
 
-	var generated_building := root.get_node_or_null("GeneratedBuilding")
+	var generated_building := scene_root.get_node_or_null("GeneratedBuilding")
 	if not T.require_true(self, generated_building is StaticBody3D, "Cafe service scene must keep GeneratedBuilding StaticBody3D root"):
 		return
 
@@ -68,7 +70,27 @@ func _run() -> void:
 	if not T.require_true(self, anchor_ids.has("door_entry"), "Cafe anchors must expose a doorway anchor"):
 		return
 
-	root.free()
+	if not T.require_true(self, generated_building.has_node("Staff/Barista"), "Cafe service scene must place a barista staff actor in the interior"):
+		return
+	var barista := generated_building.get_node("Staff/Barista") as Node3D
+	if not T.require_true(self, barista != null, "Cafe barista actor must resolve as Node3D"):
+		return
+	if not T.require_true(self, str(barista.get_meta("city_service_actor_role", "")) == "barista", "Cafe barista actor must expose barista role metadata"):
+		return
+	if not T.require_true(self, absf(barista.rotation_degrees.y) <= 0.1, "Cafe barista actor must face the customer area instead of turning its back to the room"):
+		return
+	var animation_player := _find_animation_player(barista)
+	if not T.require_true(self, animation_player != null, "Cafe barista actor must contain an AnimationPlayer"):
+		return
+	if not T.require_true(self, animation_player.has_animation("CharacterArmature|Idle"), "Cafe barista actor must expose CharacterArmature|Idle"):
+		return
+	if not T.require_true(self, animation_player.is_playing(), "Cafe barista actor must start playing an idle animation"):
+		return
+	if not T.require_true(self, animation_player.current_animation == "CharacterArmature|Idle", "Cafe barista actor must hold the idle clip by default"):
+		return
+
+	scene_root.queue_free()
+	await process_frame
 	T.pass_and_quit(self)
 
 func _count_nodes_of_type(root: Node, target_type: Variant) -> int:
@@ -83,3 +105,17 @@ func _count_nodes_of_type(root: Node, target_type: Variant) -> int:
 			continue
 		count += _count_nodes_of_type(child_node, target_type)
 	return count
+
+func _find_animation_player(root_node: Node) -> AnimationPlayer:
+	if root_node == null:
+		return null
+	if root_node is AnimationPlayer:
+		return root_node as AnimationPlayer
+	for child in root_node.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		var found := _find_animation_player(child_node)
+		if found != null:
+			return found
+	return null

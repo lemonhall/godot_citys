@@ -1,4 +1,7 @@
-[gd_scene format=3 uid="uid://dn3pht3yfupjf"]
+[gd_scene load_steps=5 format=3 uid="uid://dn3pht3yfupjf"]
+
+[ext_resource type="PackedScene" path="res://city_game/assets/pedestrians/civilians/suit.glb" id="1_suit"]
+[ext_resource type="Script" path="res://city_game/world/serviceability/CityIdleServicePedestrian.gd" id="2_idle_service"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
 size = Vector3(32.8, 0.2, 40.8)
@@ -560,3 +563,15 @@ metadata/city_service_anchor_role = "seat"
 position = Vector3(0, -7.8, 16.8)
 metadata/city_service_anchor_id = "door_entry"
 metadata/city_service_anchor_role = "entry"
+
+[node name="Staff" type="Node3D" parent="GeneratedBuilding"]
+
+[node name="Barista" type="Node3D" parent="GeneratedBuilding/Staff"]
+position = Vector3(-1.3, -7.8, -15.5)
+rotation_degrees = Vector3(0, 0, 0)
+script = ExtResource("2_idle_service")
+metadata/city_service_actor_id = "barista_01"
+metadata/city_service_actor_role = "barista"
+metadata/city_service_actor_model = "suit"
+
+[node name="Model" parent="GeneratedBuilding/Staff/Barista" instance=ExtResource("1_suit")]

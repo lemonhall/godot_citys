@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://dn3pht3yfupjf"]
 
 [ext_resource type="PackedScene" uid="uid://waa4ck73hwwf" path="res://city_game/assets/pedestrians/civilians/suit.glb" id="1_suit"]
-[ext_resource type="Script" path="res://city_game/world/serviceability/CityIdleServicePedestrian.gd" id="2_idle_service"]
+[ext_resource type="Script" uid="uid://c5n5j6fqnb0bq" path="res://city_game/world/serviceability/CityIdleServicePedestrian.gd" id="2_idle_service"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
 size = Vector3(32.8, 0.2, 40.8)
@@ -400,7 +400,7 @@ material_override = SubResource("StandardMaterial3D_menu")
 mesh = SubResource("BoxMesh_menu_board")
 
 [node name="MenuText" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=357974637]
-transform = Transform3D(3.8, 0, 0, 0, 3.8, 0, 0, 0, 3.8, -4.3, -1.5, -20.02)
+transform = Transform3D(3.8, 0, 0, 0, 3.8, 0, 0, 0, 3.8, -10.45697, -1.5, -20.02)
 mesh = SubResource("TextMesh_menu_text")
 surface_material_override/0 = SubResource("StandardMaterial3D_sign")
 
@@ -575,7 +575,6 @@ script = ExtResource("2_idle_service")
 actor_id = "barista_01"
 display_name = "咖啡师"
 interaction_kind = "dialogue"
-interaction_radius_m = 5.0
 dialogue_id = "cafe_barista_opening"
 opening_line = "你想喝点什么？"
 metadata/city_service_actor_id = "barista_01"

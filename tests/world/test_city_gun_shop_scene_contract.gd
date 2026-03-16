@@ -94,6 +94,43 @@ func _run() -> void:
 		if not T.require_true(self, anchor_ids.has(required_anchor_id), "Gun shop anchors must expose %s" % required_anchor_id):
 			return
 
+	if not T.require_true(self, generated_building.has_node("Staff/Gunsmith"), "Gun shop scene must place a gunsmith staff actor behind the counter"):
+		return
+	var gunsmith := generated_building.get_node("Staff/Gunsmith") as Node3D
+	if not T.require_true(self, gunsmith != null, "Gun shop gunsmith actor must resolve as Node3D"):
+		return
+	if not T.require_true(self, str(gunsmith.get_meta("city_service_actor_role", "")) == "gunsmith", "Gun shop gunsmith actor must expose gunsmith role metadata"):
+		return
+	if not T.require_true(self, gunsmith.has_method("get_interaction_contract"), "Gun shop gunsmith actor must expose a formal interactable NPC contract"):
+		return
+	var interaction_contract: Dictionary = gunsmith.get_interaction_contract()
+	if not T.require_true(self, str(interaction_contract.get("actor_id", "")) == "gunsmith_01", "Gun shop gunsmith actor contract must preserve the formal actor_id"):
+		return
+	if not T.require_true(self, str(interaction_contract.get("interaction_kind", "")) == "dialogue", "Gun shop gunsmith actor contract must opt into dialogue interaction"):
+		return
+	if not T.require_true(self, float(interaction_contract.get("interaction_radius_m", 0.0)) >= 4.9, "Gun shop gunsmith actor contract must expose the frozen 5m interaction radius"):
+		return
+	if not T.require_true(self, str(interaction_contract.get("dialogue_id", "")) == "gun_shop_opening", "Gun shop gunsmith actor contract must expose the stable gun_shop_opening dialogue id"):
+		return
+	if not T.require_true(self, str(interaction_contract.get("opening_line", "")).find("都很致命，想要哪一把") >= 0, "Gun shop gunsmith actor contract must expose the opening line text"):
+		return
+	if not T.require_true(self, absf(gunsmith.rotation_degrees.y) <= 0.1, "Gun shop gunsmith actor must face the customer area instead of turning away from the counter front"):
+		return
+	var model_root := gunsmith.get_node_or_null("Model") as Node3D
+	if not T.require_true(self, model_root != null, "Gun shop gunsmith actor must keep a Model root"):
+		return
+	if not T.require_true(self, str(model_root.scene_file_path) == "res://city_game/assets/pedestrians/civilians/man.glb", "Gun shop gunsmith actor must instantiate the curated man.glb asset"):
+		return
+	var animation_player := _find_animation_player(gunsmith)
+	if not T.require_true(self, animation_player != null, "Gun shop gunsmith actor must contain an AnimationPlayer"):
+		return
+	if not T.require_true(self, animation_player.has_animation("HumanArmature|Man_Idle"), "Gun shop gunsmith actor must expose HumanArmature|Man_Idle"):
+		return
+	if not T.require_true(self, animation_player.is_playing(), "Gun shop gunsmith actor must start playing an idle animation"):
+		return
+	if not T.require_true(self, animation_player.current_animation == "HumanArmature|Man_Idle", "Gun shop gunsmith actor must hold the idle clip by default"):
+		return
+
 	scene_root.queue_free()
 	await process_frame
 	T.pass_and_quit(self)
@@ -110,3 +147,17 @@ func _count_nodes_of_type(root: Node, target_type: Variant) -> int:
 			continue
 		count += _count_nodes_of_type(child_node, target_type)
 	return count
+
+func _find_animation_player(root_node: Node) -> AnimationPlayer:
+	if root_node == null:
+		return null
+	if root_node is AnimationPlayer:
+		return root_node as AnimationPlayer
+	for child in root_node.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		var found := _find_animation_player(child_node)
+		if found != null:
+			return found
+	return null

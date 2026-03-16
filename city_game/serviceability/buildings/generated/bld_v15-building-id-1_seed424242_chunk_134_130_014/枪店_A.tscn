@@ -1,21 +1,23 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://s3t76mdg7jux"]
 
-[ext_resource type="Script" path="res://city_game/assets/weapons/CityWeaponDisplayProp.gd" id="1_weapon_prop"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/handguns/9mm Pistol.glb" id="2_weapon_9mm_pistol"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/handguns/Pistol.glb" id="3_weapon_pistol"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/handguns/Pistol (1).glb" id="4_weapon_pistol_alt"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/handguns/Revolver.glb" id="5_weapon_revolver"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/handguns/Flare Gun.glb" id="6_weapon_flare_gun"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Assault Rifle.glb" id="7_weapon_assault_rifle"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Assault Rifle (1).glb" id="8_weapon_assault_rifle_alt"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Shotgun.glb" id="9_weapon_shotgun"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Shotgun Sawed Off.glb" id="10_weapon_shotgun_sawed_off"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Shotgun Short Stock.glb" id="11_weapon_shotgun_short_stock"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Sniper Rifle.glb" id="12_weapon_sniper_rifle"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Sniper Rifle (1).glb" id="13_weapon_sniper_rifle_alt"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Submachine Gun.glb" id="14_weapon_submachine_gun"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Submachine Gun (1).glb" id="15_weapon_submachine_gun_alt"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/explosives/Grenade.glb" id="16_weapon_grenade"]
+[ext_resource type="Script" uid="uid://d2x8abewv2wf4" path="res://city_game/assets/weapons/CityWeaponDisplayProp.gd" id="1_weapon_prop"]
+[ext_resource type="PackedScene" uid="uid://dmwqfi314mtj5" path="res://city_game/assets/weapons/source/handguns/9mm Pistol.glb" id="2_weapon_9mm_pistol"]
+[ext_resource type="PackedScene" uid="uid://bsivfgkavonc5" path="res://city_game/assets/weapons/source/handguns/Pistol.glb" id="3_weapon_pistol"]
+[ext_resource type="PackedScene" uid="uid://c0iqf0wlibi6i" path="res://city_game/assets/weapons/source/handguns/Pistol (1).glb" id="4_weapon_pistol_alt"]
+[ext_resource type="PackedScene" uid="uid://cvp3owep4ul7s" path="res://city_game/assets/weapons/source/handguns/Revolver.glb" id="5_weapon_revolver"]
+[ext_resource type="PackedScene" uid="uid://bf3mcesvxs34b" path="res://city_game/assets/weapons/source/handguns/Flare Gun.glb" id="6_weapon_flare_gun"]
+[ext_resource type="PackedScene" uid="uid://bj4eli4r3k6jn" path="res://city_game/assets/weapons/source/long_guns/Assault Rifle.glb" id="7_weapon_assault_rifle"]
+[ext_resource type="PackedScene" uid="uid://4m3nuforxjak" path="res://city_game/assets/weapons/source/long_guns/Assault Rifle (1).glb" id="8_weapon_assault_rifle_alt"]
+[ext_resource type="PackedScene" uid="uid://badkvg2wa4jn3" path="res://city_game/assets/weapons/source/long_guns/Shotgun.glb" id="9_weapon_shotgun"]
+[ext_resource type="PackedScene" uid="uid://j1vdche7wluj" path="res://city_game/assets/weapons/source/long_guns/Shotgun Sawed Off.glb" id="10_weapon_shotgun_sawed_off"]
+[ext_resource type="PackedScene" uid="uid://dqj2l5e6q5rww" path="res://city_game/assets/weapons/source/long_guns/Shotgun Short Stock.glb" id="11_weapon_shotgun_short_stock"]
+[ext_resource type="PackedScene" uid="uid://cxuyriiuy88rm" path="res://city_game/assets/weapons/source/long_guns/Sniper Rifle.glb" id="12_weapon_sniper_rifle"]
+[ext_resource type="PackedScene" uid="uid://bh8843yi0jquc" path="res://city_game/assets/weapons/source/long_guns/Sniper Rifle (1).glb" id="13_weapon_sniper_rifle_alt"]
+[ext_resource type="PackedScene" uid="uid://bd3syhg8hbjf2" path="res://city_game/assets/weapons/source/long_guns/Submachine Gun.glb" id="14_weapon_submachine_gun"]
+[ext_resource type="PackedScene" uid="uid://liphyhlvuje7" path="res://city_game/assets/weapons/source/long_guns/Submachine Gun (1).glb" id="15_weapon_submachine_gun_alt"]
+[ext_resource type="PackedScene" uid="uid://dlholl8n4vycb" path="res://city_game/assets/weapons/source/explosives/Grenade.glb" id="16_weapon_grenade"]
+[ext_resource type="PackedScene" uid="uid://blqbjtbfgpaxe" path="res://city_game/assets/pedestrians/civilians/man.glb" id="17_gunsmith_model"]
+[ext_resource type="Script" uid="uid://c5n5j6fqnb0bq" path="res://city_game/world/serviceability/CityIdleServicePedestrian.gd" id="18_idle_service"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
 size = Vector3(23.4, 0.2, 31.4)
@@ -39,7 +41,7 @@ size = Vector3(0.5, 2.6, 0.6)
 size = Vector3(5.2, 4.2, 0.08)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_door_transom"]
-size = Vector3(4.2, 2.0, 0.08)
+size = Vector3(4.2, 2, 0.08)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_counter"]
 size = Vector3(8.8, 1.2, 2.4)
@@ -50,36 +52,23 @@ size = Vector3(4.6, 1.3, 2.8)
 [sub_resource type="BoxShape3D" id="BoxShape3D_rear_plinth"]
 size = Vector3(10.4, 0.8, 3.2)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
-albedo_color = Color(0.294118, 0.223529, 0.176471, 1)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wall"]
-albedo_color = Color(0.717647, 0.690196, 0.647059, 1)
-
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_trim"]
 albedo_color = Color(0.164706, 0.152941, 0.14902, 1)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_metal"]
-albedo_color = Color(0.333333, 0.364706, 0.388235, 1)
+[sub_resource type="BoxMesh" id="BoxMesh_rear_plinth"]
+size = Vector3(10.4, 0.8, 3.2)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_glass"]
-albedo_color = Color(0.321569, 0.415686, 0.470588, 0.65)
-transparency = 1
+[sub_resource type="BoxMesh" id="BoxMesh_side_base_cover"]
+size = Vector3(2.4, 0.9, 13)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_accent"]
-albedo_color = Color(0.498039, 0.180392, 0.160784, 1)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sign"]
-albedo_color = Color(0.913725, 0.803922, 0.560784, 1)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pegboard"]
-albedo_color = Color(0.129412, 0.14902, 0.172549, 1)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_carpet"]
-albedo_color = Color(0.278431, 0.113725, 0.101961, 1)
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
+albedo_color = Color(0.294118, 0.223529, 0.176471, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_floor"]
 size = Vector3(23.4, 0.2, 31.4)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wall"]
+albedo_color = Color(0.717647, 0.690196, 0.647059, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_side_wall"]
 size = Vector3(0.6, 17.6, 31.4)
@@ -96,14 +85,21 @@ size = Vector3(16.2, 9.8, 0.6)
 [sub_resource type="BoxMesh" id="BoxMesh_door_jamb"]
 size = Vector3(0.5, 2.6, 0.6)
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_glass"]
+transparency = 1
+albedo_color = Color(0.321569, 0.415686, 0.470588, 0.65)
+
+[sub_resource type="BoxMesh" id="BoxMesh_door_transom"]
+size = Vector3(4.2, 2, 0.08)
+
 [sub_resource type="BoxMesh" id="BoxMesh_window"]
 size = Vector3(5.2, 4.2, 0.08)
 
-[sub_resource type="BoxMesh" id="BoxMesh_door_transom"]
-size = Vector3(4.2, 2.0, 0.08)
-
 [sub_resource type="BoxMesh" id="BoxMesh_door_leaf"]
 size = Vector3(1.6, 4.4, 0.12)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_accent"]
+albedo_color = Color(0.498039, 0.180392, 0.160784, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_awning"]
 size = Vector3(13.6, 0.3, 2.4)
@@ -116,6 +112,24 @@ text = "ELMAESTEAD ARMS"
 pixel_size = 0.045
 depth = 0.06
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sign"]
+albedo_color = Color(0.913725, 0.803922, 0.560784, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_carpet"]
+albedo_color = Color(0.278431, 0.113725, 0.101961, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_runner"]
+size = Vector3(5, 0.04, 10)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_metal"]
+albedo_color = Color(0.333333, 0.364706, 0.388235, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_display_case"]
+size = Vector3(4.6, 1.3, 2.8)
+
+[sub_resource type="BoxMesh" id="BoxMesh_display_glass"]
+size = Vector3(4.2, 0.55, 2.4)
+
 [sub_resource type="BoxMesh" id="BoxMesh_counter"]
 size = Vector3(8.8, 1.2, 2.4)
 
@@ -126,13 +140,10 @@ size = Vector3(0.8, 0.45, 0.5)
 size = Vector3(6.2, 1.1, 1.8)
 
 [sub_resource type="BoxMesh" id="BoxMesh_center_table"]
-size = Vector3(4.8, 1.0, 2.2)
+size = Vector3(4.8, 1, 2.2)
 
-[sub_resource type="BoxMesh" id="BoxMesh_display_case"]
-size = Vector3(4.6, 1.3, 2.8)
-
-[sub_resource type="BoxMesh" id="BoxMesh_display_glass"]
-size = Vector3(4.2, 0.55, 2.4)
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pegboard"]
+albedo_color = Color(0.129412, 0.14902, 0.172549, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_rack_panel"]
 size = Vector3(0.25, 6.8, 18)
@@ -150,26 +161,19 @@ size = Vector3(10.2, 0.18, 1)
 size = Vector3(1.1, 0.8, 0.8)
 
 [sub_resource type="TextMesh" id="TextMesh_wall_label"]
-text = "AMMO\nOPTICS\nCLEANING"
+text = "AMMO
+OPTICS
+CLEANING"
 pixel_size = 0.03
 depth = 0.03
 
-[sub_resource type="BoxMesh" id="BoxMesh_runner"]
-size = Vector3(5, 0.04, 10)
-
-[sub_resource type="BoxMesh" id="BoxMesh_rear_plinth"]
-size = Vector3(10.4, 0.8, 3.2)
-
-[sub_resource type="BoxMesh" id="BoxMesh_side_base_cover"]
-size = Vector3(2.4, 0.9, 13)
-
-[node name="ServiceBuildingRoot" type="Node3D"]
+[node name="ServiceBuildingRoot" type="Node3D" unique_id=391526271]
 metadata/city_service_scene_root = true
 metadata/city_building_id = "bld:v15-building-id-1:seed424242:chunk_134_130:014"
 metadata/city_building_display_name = "58954803 Elmaestead Lane [chunk_134_130#014]"
 metadata/city_service_scene_kind = "gun_shop"
 
-[node name="GeneratedBuilding" type="StaticBody3D" parent="."]
+[node name="GeneratedBuilding" type="StaticBody3D" parent="." unique_id=1307144266]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 9, 0)
 metadata/city_building_id = "bld:v15-building-id-1:seed424242:chunk_134_130:014"
 metadata/city_generated_building = true
@@ -200,312 +204,302 @@ metadata/city_inspection_payload = {
 "world_position": Vector3(38.008076, -11.756198, 52.926785)
 }
 
-[node name="CollisionFloor" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionFloor" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1872945559]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -8.9, 0)
 shape = SubResource("BoxShape3D_floor")
 
-[node name="CollisionLeftWall" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionLeftWall" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=686184339]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.7, 0, 0)
 shape = SubResource("BoxShape3D_side_wall")
 
-[node name="CollisionRightWall" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionRightWall" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1500975749]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.7, 0, 0)
 shape = SubResource("BoxShape3D_side_wall")
 
-[node name="CollisionBackWall" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionBackWall" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=963423970]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -15.7)
 shape = SubResource("BoxShape3D_back_wall")
 
-[node name="CollisionFrontColumnLeft" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionFrontColumnLeft" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=842362883]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9.9, 0, 15.7)
 shape = SubResource("BoxShape3D_front_column")
 
-[node name="CollisionFrontColumnRight" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionFrontColumnRight" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1142029707]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.9, 0, 15.7)
 shape = SubResource("BoxShape3D_front_column")
 
-[node name="CollisionFrontTop" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionFrontTop" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1809994505]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.9, 15.7)
 shape = SubResource("BoxShape3D_front_top")
 
-[node name="CollisionDoorJambLeft" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionDoorJambLeft" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1240612255]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, -7, 15.7)
 shape = SubResource("BoxShape3D_door_jamb")
 
-[node name="CollisionDoorJambRight" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionDoorJambRight" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1972631257]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, -7, 15.7)
 shape = SubResource("BoxShape3D_door_jamb")
 
-[node name="CollisionWindowLeft" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionWindowLeft" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=2025554959]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.9, -5.9, 15.96)
 shape = SubResource("BoxShape3D_window")
 
-[node name="CollisionWindowRight" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionWindowRight" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1217314614]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.9, -5.9, 15.96)
 shape = SubResource("BoxShape3D_window")
 
-[node name="CollisionDoorTransom" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionDoorTransom" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=565616291]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.7, 15.96)
 shape = SubResource("BoxShape3D_door_transom")
 
-[node name="CollisionCounter" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionCounter" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1526982878]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.1, -8.3, -10.8)
 shape = SubResource("BoxShape3D_counter")
 
-[node name="CollisionFrontDisplayLeft" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionFrontDisplayLeft" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1682136492]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.8, -8.25, 8.2)
 shape = SubResource("BoxShape3D_display_case")
 
-[node name="CollisionFrontDisplayRight" type="CollisionShape3D" parent="GeneratedBuilding"]
+[node name="CollisionFrontDisplayRight" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=375808865]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.8, -8.25, 8.2)
 shape = SubResource("BoxShape3D_display_case")
 
-[node name="TerrainMitigation" type="Node3D" parent="GeneratedBuilding"]
+[node name="TerrainMitigation" type="Node3D" parent="GeneratedBuilding" unique_id=1001249711]
 
-[node name="RearPlinthCollision" type="CollisionShape3D" parent="GeneratedBuilding/TerrainMitigation"]
+[node name="RearPlinthCollision" type="CollisionShape3D" parent="GeneratedBuilding/TerrainMitigation" unique_id=1414191709]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -8.5, -14.1)
 shape = SubResource("BoxShape3D_rear_plinth")
 
-[node name="RearPlinth" type="MeshInstance3D" parent="GeneratedBuilding/TerrainMitigation"]
+[node name="RearPlinth" type="MeshInstance3D" parent="GeneratedBuilding/TerrainMitigation" unique_id=2105958099]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -8.5, -14.1)
 material_override = SubResource("StandardMaterial3D_trim")
 mesh = SubResource("BoxMesh_rear_plinth")
 
-[node name="LeftBaseCover" type="MeshInstance3D" parent="GeneratedBuilding/TerrainMitigation"]
+[node name="LeftBaseCover" type="MeshInstance3D" parent="GeneratedBuilding/TerrainMitigation" unique_id=2098536670]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.2, -8.45, 2.2)
 material_override = SubResource("StandardMaterial3D_trim")
 mesh = SubResource("BoxMesh_side_base_cover")
 
-[node name="RightBaseCover" type="MeshInstance3D" parent="GeneratedBuilding/TerrainMitigation"]
+[node name="RightBaseCover" type="MeshInstance3D" parent="GeneratedBuilding/TerrainMitigation" unique_id=175471578]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.2, -8.45, 2.2)
 material_override = SubResource("StandardMaterial3D_trim")
 mesh = SubResource("BoxMesh_side_base_cover")
 
-[node name="Shell" type="Node3D" parent="GeneratedBuilding"]
+[node name="Shell" type="Node3D" parent="GeneratedBuilding" unique_id=830434354]
 
-[node name="Floor" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="Floor" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=1741308314]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -8.9, 0)
 material_override = SubResource("StandardMaterial3D_floor")
 mesh = SubResource("BoxMesh_floor")
 
-[node name="Ceiling" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="Ceiling" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=510646868]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8.7, 0)
 material_override = SubResource("StandardMaterial3D_trim")
 mesh = SubResource("BoxMesh_floor")
 
-[node name="LeftWall" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="LeftWall" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=994848800]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.7, 0, 0)
 material_override = SubResource("StandardMaterial3D_wall")
 mesh = SubResource("BoxMesh_side_wall")
 
-[node name="RightWall" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="RightWall" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=53224878]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.7, 0, 0)
 material_override = SubResource("StandardMaterial3D_wall")
 mesh = SubResource("BoxMesh_side_wall")
 
-[node name="BackWall" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="BackWall" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=207090879]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -15.7)
 material_override = SubResource("StandardMaterial3D_wall")
 mesh = SubResource("BoxMesh_back_wall")
 
-[node name="FrontColumnLeft" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="FrontColumnLeft" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=442632417]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9.9, 0, 15.7)
 material_override = SubResource("StandardMaterial3D_wall")
 mesh = SubResource("BoxMesh_front_column")
 
-[node name="FrontColumnRight" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="FrontColumnRight" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=209019651]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9.9, 0, 15.7)
 material_override = SubResource("StandardMaterial3D_wall")
 mesh = SubResource("BoxMesh_front_column")
 
-[node name="FrontTop" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="FrontTop" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=661882514]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.9, 15.7)
 material_override = SubResource("StandardMaterial3D_wall")
 mesh = SubResource("BoxMesh_front_top")
 
-[node name="DoorJambLeft" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="DoorJambLeft" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=1178916939]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, -7, 15.7)
 material_override = SubResource("StandardMaterial3D_trim")
 mesh = SubResource("BoxMesh_door_jamb")
 
-[node name="DoorJambRight" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="DoorJambRight" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=495563471]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, -7, 15.7)
 material_override = SubResource("StandardMaterial3D_trim")
 mesh = SubResource("BoxMesh_door_jamb")
 
-[node name="DoorTransom" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="DoorTransom" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=335893429]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.7, 15.96)
 material_override = SubResource("StandardMaterial3D_glass")
 mesh = SubResource("BoxMesh_door_transom")
 
-[node name="WindowLeft" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="WindowLeft" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=1506899925]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.9, -5.9, 15.96)
 material_override = SubResource("StandardMaterial3D_glass")
 mesh = SubResource("BoxMesh_window")
 
-[node name="WindowRight" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="WindowRight" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=1178747346]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.9, -5.9, 15.96)
 material_override = SubResource("StandardMaterial3D_glass")
 mesh = SubResource("BoxMesh_window")
 
-[node name="DoorLeafLeft" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="DoorLeafLeft" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=1493365124]
 transform = Transform3D(0.819152, 0, -0.573576, 0, 1, 0, 0.573576, 0, 0.819152, -0.78, -6.9, 15.55)
 material_override = SubResource("StandardMaterial3D_trim")
 mesh = SubResource("BoxMesh_door_leaf")
 
-[node name="DoorLeafRight" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="DoorLeafRight" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=905945622]
 transform = Transform3D(0.819152, 0, 0.573576, 0, 1, 0, -0.573576, 0, 0.819152, 0.78, -6.9, 15.55)
 material_override = SubResource("StandardMaterial3D_trim")
 mesh = SubResource("BoxMesh_door_leaf")
 
-[node name="Awning" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="Awning" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=159053240]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.1, 14.35)
 material_override = SubResource("StandardMaterial3D_accent")
 mesh = SubResource("BoxMesh_awning")
 
-[node name="SignPlate" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
+[node name="SignPlate" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=1239158426]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, 15.18)
 material_override = SubResource("StandardMaterial3D_trim")
 mesh = SubResource("BoxMesh_sign_plate")
 
-[node name="ShopSign" type="MeshInstance3D" parent="GeneratedBuilding/Shell"]
-transform = Transform3D(4.8, 0, 0, 0, 4.8, 0, 0, 0, 4.8, -5.35, 0.45, 15.3)
+[node name="ShopSign" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=544740206]
+transform = Transform3D(4.8, 0, 0, 0, 4.8, 0, 0, 0, 4.8, -5.35, 0.4499998, 16.682926)
 mesh = SubResource("TextMesh_shop_sign")
 surface_material_override/0 = SubResource("StandardMaterial3D_sign")
 
-[node name="Interior" type="Node3D" parent="GeneratedBuilding"]
+[node name="Interior" type="Node3D" parent="GeneratedBuilding" unique_id=144621927]
 
-[node name="FloorRunner" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
+[node name="FloorRunner" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=2036171223]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -8.78, 3)
 material_override = SubResource("StandardMaterial3D_carpet")
 mesh = SubResource("BoxMesh_runner")
 
-[node name="FrontDisplayLeft" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
+[node name="FrontDisplayLeft" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=2075201135]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.8, -8.25, 8.2)
 material_override = SubResource("StandardMaterial3D_metal")
 mesh = SubResource("BoxMesh_display_case")
 
-[node name="Glass" type="MeshInstance3D" parent="GeneratedBuilding/Interior/FrontDisplayLeft"]
+[node name="Glass" type="MeshInstance3D" parent="GeneratedBuilding/Interior/FrontDisplayLeft" unique_id=1776022894]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.38, 0)
 material_override = SubResource("StandardMaterial3D_glass")
 mesh = SubResource("BoxMesh_display_glass")
 
-[node name="FrontDisplayRight" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
+[node name="FrontDisplayRight" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=332464951]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.8, -8.25, 8.2)
 material_override = SubResource("StandardMaterial3D_metal")
 mesh = SubResource("BoxMesh_display_case")
 
-[node name="Glass" type="MeshInstance3D" parent="GeneratedBuilding/Interior/FrontDisplayRight"]
+[node name="Glass" type="MeshInstance3D" parent="GeneratedBuilding/Interior/FrontDisplayRight" unique_id=1800264726]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.38, 0)
 material_override = SubResource("StandardMaterial3D_glass")
 mesh = SubResource("BoxMesh_display_glass")
 
-[node name="Counter" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
+[node name="Counter" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=1967621916]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.1, -8.3, -10.8)
 material_override = SubResource("StandardMaterial3D_floor")
 mesh = SubResource("BoxMesh_counter")
 
-[node name="Register" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
+[node name="Register" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=1813159153]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.7, -7.47, -10.15)
 material_override = SubResource("StandardMaterial3D_trim")
 mesh = SubResource("BoxMesh_register")
 
-[node name="Workbench" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
+[node name="Workbench" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=599442423]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, -8.35, -11.8)
 material_override = SubResource("StandardMaterial3D_floor")
 mesh = SubResource("BoxMesh_workbench")
 
-[node name="CenterTable" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
+[node name="CenterTable" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=1862557956]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -8.4, -0.8)
 material_override = SubResource("StandardMaterial3D_floor")
 mesh = SubResource("BoxMesh_center_table")
 
-[node name="WeaponDisplays" type="Node3D" parent="GeneratedBuilding/Interior"]
+[node name="WeaponDisplays" type="Node3D" parent="GeneratedBuilding/Interior" unique_id=874550628]
 
-[node name="AssaultRifleDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(-10.45, -2.18, -6.6)
+[node name="AssaultRifleDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=1258583062]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.45, -2.18, -6.6)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("7_weapon_assault_rifle")
 target_length_m = 0.84
 display_scale_multiplier = 3.5
 weapon_class = "assault_rifle"
-target_axis = "z"
 
-[node name="AssaultRifleAltDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(-10.45, -2.18, -1.8)
+[node name="AssaultRifleAltDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=812188283]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.45, -2.18, -1.8)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("8_weapon_assault_rifle_alt")
 target_length_m = 0.89
 display_scale_multiplier = 3.5
 weapon_class = "assault_rifle_alt"
-target_axis = "z"
 
-[node name="ShotgunDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(-10.45, -2.18, 3)
+[node name="ShotgunDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=1442484461]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.45, -2.18, 3)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("9_weapon_shotgun")
 target_length_m = 1.003
 display_scale_multiplier = 3.5
 weapon_class = "shotgun"
-target_axis = "z"
 
-[node name="ShotgunSawedOffDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(-10.45, -4.88, -6.2)
+[node name="ShotgunSawedOffDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=1709007539]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.45, -4.88, -6.2)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("10_weapon_shotgun_sawed_off")
 target_length_m = 0.67
 display_scale_multiplier = 3.5
 weapon_class = "shotgun_sawed_off"
-target_axis = "z"
 
-[node name="ShotgunShortStockDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(-10.45, -4.88, -0.6)
+[node name="ShotgunShortStockDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=1414023456]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.45, -4.88, -0.6)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("11_weapon_shotgun_short_stock")
 target_length_m = 0.82
 display_scale_multiplier = 3.5
 weapon_class = "shotgun_short_stock"
-target_axis = "z"
 
-[node name="SniperRifleDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(10.45, -2.18, -6.6)
+[node name="SniperRifleDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=110136962]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.45, -2.18, -6.6)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("12_weapon_sniper_rifle")
 target_length_m = 1.204
 display_scale_multiplier = 3.5
 weapon_class = "sniper_rifle"
-target_axis = "z"
 
-[node name="SniperRifleAltDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(10.45, -2.18, -0.8)
+[node name="SniperRifleAltDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=993841860]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.45, -2.18, -0.8)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("13_weapon_sniper_rifle_alt")
 target_length_m = 1.255
 display_scale_multiplier = 3.5
 weapon_class = "sniper_rifle_alt"
-target_axis = "z"
 
-[node name="SubmachineGunDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(10.45, -4.88, 3)
+[node name="SubmachineGunDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=1480105380]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.45, -4.88, 3)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("14_weapon_submachine_gun")
 target_length_m = 0.68
 display_scale_multiplier = 3.5
 weapon_class = "submachine_gun"
-target_axis = "z"
 
-[node name="SubmachineGunAltDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(10.45, -4.88, 6.7)
+[node name="SubmachineGunAltDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=754800480]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.45, -4.88, 6.7)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("15_weapon_submachine_gun_alt")
 target_length_m = 0.62
 display_scale_multiplier = 3.5
 weapon_class = "submachine_gun_alt"
-target_axis = "z"
 
-[node name="Pistol9mmDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(-6.8, -7.55, 8.15)
-rotation = Vector3(0, 0.42, 0)
+[node name="Pistol9mmDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=1193007608]
+transform = Transform3D(0.9130889, 0, 0.40776044, 0, 1, 0, -0.40776044, 0, 0.9130889, -6.8, -7.55, 8.15)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("2_weapon_9mm_pistol")
 target_length_m = 0.202
@@ -513,9 +507,8 @@ display_scale_multiplier = 3.5
 weapon_class = "pistol_9mm"
 target_axis = "x"
 
-[node name="PistolCompactDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(-4.7, -7.55, 8.05)
-rotation = Vector3(0, -0.18, 0)
+[node name="PistolCompactDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=297875515]
+transform = Transform3D(0.9838437, 0, -0.17902958, 0, 1, 0, 0.17902958, 0, 0.9838437, -4.7, -7.55, 8.05)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("3_weapon_pistol")
 target_length_m = 0.216
@@ -523,9 +516,8 @@ display_scale_multiplier = 3.5
 weapon_class = "pistol_compact"
 target_axis = "x"
 
-[node name="PistolCompactAltDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(4.7, -7.55, 8.05)
-rotation = Vector3(0, 0.18, 0)
+[node name="PistolCompactAltDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=803598383]
+transform = Transform3D(0.9838437, 0, 0.17902958, 0, 1, 0, -0.17902958, 0, 0.9838437, 4.7, -7.55, 8.05)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("4_weapon_pistol_alt")
 target_length_m = 0.229
@@ -533,9 +525,8 @@ display_scale_multiplier = 3.5
 weapon_class = "pistol_compact_alt"
 target_axis = "x"
 
-[node name="RevolverDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(6.9, -7.55, 8.15)
-rotation = Vector3(0, -0.44, 0)
+[node name="RevolverDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=1556590176]
+transform = Transform3D(0.90475166, 0, -0.42593947, 0, 1, 0, 0.42593947, 0, 0.90475166, 6.9, -7.55, 8.15)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("5_weapon_revolver")
 target_length_m = 0.292
@@ -543,9 +534,8 @@ display_scale_multiplier = 3.5
 weapon_class = "revolver"
 target_axis = "x"
 
-[node name="FlareGunDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(-6, -7.72, -11.55)
-rotation = Vector3(0, 0.34, 0)
+[node name="FlareGunDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=566969074]
+transform = Transform3D(0.9427547, 0, 0.3334871, 0, 1, 0, -0.3334871, 0, 0.9427547, -6, -7.72, -11.55)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("6_weapon_flare_gun")
 target_length_m = 0.254
@@ -553,8 +543,8 @@ display_scale_multiplier = 3.5
 weapon_class = "flare_gun"
 target_axis = "x"
 
-[node name="GrenadeDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
-position = Vector3(0, -7.86, -0.8)
+[node name="GrenadeDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays" unique_id=1132468344]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -7.86, -0.8)
 script = ExtResource("1_weapon_prop")
 source_scene = ExtResource("16_weapon_grenade")
 target_length_m = 0.089
@@ -562,129 +552,148 @@ display_scale_multiplier = 3.5
 weapon_class = "grenade"
 target_axis = "y"
 
-[node name="LeftRack" type="Node3D" parent="GeneratedBuilding/Interior"]
+[node name="LeftRack" type="Node3D" parent="GeneratedBuilding/Interior" unique_id=1438401203]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.8, 0, -1.4)
 
-[node name="Panel" type="MeshInstance3D" parent="GeneratedBuilding/Interior/LeftRack"]
+[node name="Panel" type="MeshInstance3D" parent="GeneratedBuilding/Interior/LeftRack" unique_id=300501233]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -5.4, 0)
 material_override = SubResource("StandardMaterial3D_pegboard")
 mesh = SubResource("BoxMesh_rack_panel")
 
-[node name="ShelfUpper" type="MeshInstance3D" parent="GeneratedBuilding/Interior/LeftRack"]
+[node name="ShelfUpper" type="MeshInstance3D" parent="GeneratedBuilding/Interior/LeftRack" unique_id=1984975874]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.33, -2.6, 0)
 material_override = SubResource("StandardMaterial3D_metal")
 mesh = SubResource("BoxMesh_rack_shelf")
 
-[node name="ShelfLower" type="MeshInstance3D" parent="GeneratedBuilding/Interior/LeftRack"]
+[node name="ShelfLower" type="MeshInstance3D" parent="GeneratedBuilding/Interior/LeftRack" unique_id=1680213851]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.33, -5.3, 0)
 material_override = SubResource("StandardMaterial3D_metal")
 mesh = SubResource("BoxMesh_rack_shelf")
 
-[node name="RightRack" type="Node3D" parent="GeneratedBuilding/Interior"]
+[node name="RightRack" type="Node3D" parent="GeneratedBuilding/Interior" unique_id=114110663]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.8, 0, -1.4)
 
-[node name="Panel" type="MeshInstance3D" parent="GeneratedBuilding/Interior/RightRack"]
+[node name="Panel" type="MeshInstance3D" parent="GeneratedBuilding/Interior/RightRack" unique_id=1546108992]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -5.4, 0)
 material_override = SubResource("StandardMaterial3D_pegboard")
 mesh = SubResource("BoxMesh_rack_panel")
 
-[node name="ShelfUpper" type="MeshInstance3D" parent="GeneratedBuilding/Interior/RightRack"]
+[node name="ShelfUpper" type="MeshInstance3D" parent="GeneratedBuilding/Interior/RightRack" unique_id=2109815533]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.33, -2.6, 0)
 material_override = SubResource("StandardMaterial3D_metal")
 mesh = SubResource("BoxMesh_rack_shelf")
 
-[node name="ShelfLower" type="MeshInstance3D" parent="GeneratedBuilding/Interior/RightRack"]
+[node name="ShelfLower" type="MeshInstance3D" parent="GeneratedBuilding/Interior/RightRack" unique_id=1959050286]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.33, -5.3, 0)
 material_override = SubResource("StandardMaterial3D_metal")
 mesh = SubResource("BoxMesh_rack_shelf")
 
-[node name="BackAmmoWall" type="Node3D" parent="GeneratedBuilding/Interior"]
+[node name="BackAmmoWall" type="Node3D" parent="GeneratedBuilding/Interior" unique_id=946422025]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -15.12)
 
-[node name="Panel" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall"]
+[node name="Panel" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall" unique_id=975818010]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.4, 0)
 material_override = SubResource("StandardMaterial3D_pegboard")
 mesh = SubResource("BoxMesh_ammo_wall_panel")
 
-[node name="AmmoShelfUpper" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall"]
+[node name="AmmoShelfUpper" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall" unique_id=1249155901]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.2, -0.42)
 material_override = SubResource("StandardMaterial3D_metal")
 mesh = SubResource("BoxMesh_ammo_shelf")
 
-[node name="AmmoShelfLower" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall"]
+[node name="AmmoShelfLower" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall" unique_id=1327215410]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.3, -0.42)
 material_override = SubResource("StandardMaterial3D_metal")
 mesh = SubResource("BoxMesh_ammo_shelf")
 
-[node name="AmmoCrateA" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall"]
+[node name="AmmoCrateA" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall" unique_id=1175856153]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.2, -0.7, -0.82)
 material_override = SubResource("StandardMaterial3D_accent")
 mesh = SubResource("BoxMesh_ammo_crate")
 
-[node name="AmmoCrateB" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall"]
+[node name="AmmoCrateB" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall" unique_id=1965363388]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.7, -0.82)
 material_override = SubResource("StandardMaterial3D_sign")
 mesh = SubResource("BoxMesh_ammo_crate")
 
-[node name="AmmoCrateC" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall"]
+[node name="AmmoCrateC" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall" unique_id=2110544940]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.2, -0.7, -0.82)
 material_override = SubResource("StandardMaterial3D_accent")
 mesh = SubResource("BoxMesh_ammo_crate")
 
-[node name="WallLabel" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall"]
-transform = Transform3D(3.6, 0, 0, 0, 3.6, 0, 0, 0, 3.6, -4.45, -3.25, -0.3)
+[node name="WallLabel" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BackAmmoWall" unique_id=1939027973]
+transform = Transform3D(3.6, 0, 0, 0, 3.6, 0, 0, 0, 3.6, -6.227831, -3.25, 0.24138546)
 mesh = SubResource("TextMesh_wall_label")
 surface_material_override/0 = SubResource("StandardMaterial3D_sign")
 
-[node name="Lighting" type="Node3D" parent="GeneratedBuilding"]
+[node name="Lighting" type="Node3D" parent="GeneratedBuilding" unique_id=785418853]
 
-[node name="FrontLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting"]
+[node name="FrontLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting" unique_id=1733272655]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.1, 8.8)
 light_color = Color(1, 0.890196, 0.768627, 1)
 light_energy = 2.5
-omni_range = 16
+omni_range = 16.0
 
-[node name="CenterLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting"]
+[node name="CenterLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting" unique_id=209865754]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.6, 0.2)
 light_color = Color(1, 0.862745, 0.729412, 1)
 light_energy = 2.7
-omni_range = 18
+omni_range = 18.0
 
-[node name="BackLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting"]
+[node name="BackLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting" unique_id=2058964609]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.6, -1.8, -10.8)
 light_color = Color(1, 0.847059, 0.701961, 1)
 light_energy = 2.6
-omni_range = 16
+omni_range = 16.0
 
-[node name="CounterLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting"]
+[node name="CounterLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting" unique_id=1499064548]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.1, -2.1, -9.7)
 light_color = Color(1, 0.823529, 0.670588, 1)
 light_energy = 2.8
-omni_range = 15
+omni_range = 15.0
 
-[node name="ServiceAnchors" type="Node3D" parent="GeneratedBuilding"]
+[node name="ServiceAnchors" type="Node3D" parent="GeneratedBuilding" unique_id=764679181]
 
-[node name="DoorEntryAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors"]
+[node name="DoorEntryAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors" unique_id=989558889]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -8.9, 13.4)
 metadata/city_service_anchor_id = "door_entry"
 metadata/city_service_anchor_role = "entry"
 
-[node name="CounterAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors"]
+[node name="CounterAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors" unique_id=1664124683]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.1, -8.9, -8.6)
 metadata/city_service_anchor_id = "counter"
 metadata/city_service_anchor_role = "counter"
 
-[node name="BrowseLeftAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors"]
+[node name="BrowseLeftAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors" unique_id=567755115]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.2, -8.9, -1.4)
 metadata/city_service_anchor_id = "browse_left"
 metadata/city_service_anchor_role = "browse"
 
-[node name="BrowseRightAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors"]
+[node name="BrowseRightAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors" unique_id=1337807930]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.2, -8.9, -1.4)
 metadata/city_service_anchor_id = "browse_right"
 metadata/city_service_anchor_role = "browse"
 
-[node name="WorkbenchAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors"]
+[node name="WorkbenchAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors" unique_id=1290138350]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, -8.9, -10.4)
 metadata/city_service_anchor_id = "workbench"
 metadata/city_service_anchor_role = "service"
+
+[node name="Staff" type="Node3D" parent="GeneratedBuilding" unique_id=1147464569]
+
+[node name="Gunsmith" type="Node3D" parent="GeneratedBuilding/Staff" unique_id=2031919657]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.2, -8.9, -12.35)
+script = ExtResource("18_idle_service")
+idle_animation_name = "HumanArmature|Man_Idle"
+source_height_m = 4.841252
+source_ground_offset_m = 0.003359
+actor_id = "gunsmith_01"
+display_name = "枪店店员"
+interaction_kind = "dialogue"
+dialogue_id = "gun_shop_opening"
+opening_line = "都很致命，想要哪一把？"
+metadata/city_service_actor_id = "gunsmith_01"
+metadata/city_service_actor_role = "gunsmith"
+metadata/city_service_actor_model = "man"
+
+[node name="Model" parent="GeneratedBuilding/Staff/Gunsmith" unique_id=273903602 instance=ExtResource("17_gunsmith_model")]

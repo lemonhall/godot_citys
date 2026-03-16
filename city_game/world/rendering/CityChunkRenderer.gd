@@ -24,6 +24,8 @@ const PLAYER_CONTEXT_TELEPORT_DISTANCE_M := 32.0
 const FARFIELD_RENDER_DEFER_SPEED_MPS := 8.0
 const DEFAULT_DEATH_VISUAL_DURATION_SEC := 3.0
 
+static var _shared_scene_landmark_far_proxy_scene_cache: Dictionary = {}
+
 var _config
 var _world_data: Dictionary = {}
 var _surface_page_provider = CityRoadSurfacePageProvider.new()
@@ -133,6 +135,9 @@ var _chunk_death_visual_records: Dictionary = {}
 var _pedestrian_visual_catalog: CityPedestrianVisualCatalog = null
 var _building_override_entries: Dictionary = {}
 var _scene_landmark_entries_by_chunk_id: Dictionary = {}
+var _scene_landmark_far_proxy_root: Node3D = null
+var _scene_landmark_far_proxy_entries_by_landmark_id: Dictionary = {}
+var _scene_landmark_far_proxy_nodes_by_landmark_id: Dictionary = {}
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
@@ -171,6 +176,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_pedestrian_visual_catalog = null
 	_building_override_entries.clear()
 	_scene_landmark_entries_by_chunk_id.clear()
+	_clear_scene_landmark_far_proxies()
 	if _world_data.has("pedestrian_query"):
 		CityPedestrianVisualInstance.prewarm_shared_catalog()
 		_pedestrian_visual_catalog = CityPedestrianVisualCatalog.new()
@@ -189,18 +195,33 @@ func set_building_override_entries(entries: Dictionary) -> void:
 
 func set_scene_landmark_entries(entries: Dictionary) -> void:
 	_scene_landmark_entries_by_chunk_id.clear()
+	_scene_landmark_far_proxy_entries_by_landmark_id.clear()
 	# Landmark manifests are cached at sync time, but the scene itself only loads on chunk mount.
 	var normalized_entries: Dictionary = entries.duplicate(true)
 	for entry_variant in normalized_entries.values():
 		if not (entry_variant is Dictionary):
 			continue
 		var entry: Dictionary = entry_variant
+		var landmark_id := str(entry.get("landmark_id", "")).strip_edges()
 		var chunk_id := str(entry.get("anchor_chunk_id", "")).strip_edges()
 		if chunk_id == "":
 			continue
 		var chunk_entries: Array = _scene_landmark_entries_by_chunk_id.get(chunk_id, [])
 		chunk_entries.append(entry.duplicate(true))
 		_scene_landmark_entries_by_chunk_id[chunk_id] = chunk_entries
+		if landmark_id == "":
+			continue
+		var far_visibility_variant = entry.get("far_visibility", {})
+		if not (far_visibility_variant is Dictionary):
+			continue
+		var far_visibility: Dictionary = far_visibility_variant
+		if not bool(far_visibility.get("enabled", false)):
+			continue
+		var proxy_scene_path := str(far_visibility.get("proxy_scene_path", "")).strip_edges()
+		if proxy_scene_path == "":
+			continue
+		_scene_landmark_far_proxy_entries_by_landmark_id[landmark_id] = entry.duplicate(true)
+	_prune_scene_landmark_far_proxies()
 
 func get_building_override_entry(building_id: String) -> Dictionary:
 	if building_id == "":
@@ -218,6 +239,15 @@ func find_building_override_node(building_id: String) -> Node:
 		if override_node != null:
 			return override_node
 	return null
+
+func find_scene_landmark_far_proxy_node(landmark_id: String) -> Node:
+	if landmark_id == "":
+		return null
+	var node := _scene_landmark_far_proxy_nodes_by_landmark_id.get(landmark_id) as Node
+	if node == null or not is_instance_valid(node):
+		_scene_landmark_far_proxy_nodes_by_landmark_id.erase(landmark_id)
+		return null
+	return node
 
 func _process(delta: float) -> void:
 	_process_streaming_queues_once_per_frame()
@@ -270,6 +300,7 @@ func _notification(what: int) -> void:
 	_pedestrian_visual_catalog = null
 	_clear_global_death_visuals()
 	_chunk_death_visual_records.clear()
+	_clear_scene_landmark_far_proxies()
 
 func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0, player_context: Dictionary = {}) -> void:
 	if _config == null:
@@ -350,6 +381,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta
 	_prune_terrain_job_waiters(target_chunk_ids)
 	_process_streaming_queues_once_per_frame()
 	_update_lod_states(player_position)
+	_sync_scene_landmark_far_proxies(player_position)
 	_update_pedestrian_crowd(player_position, delta)
 	_update_vehicle_traffic(player_position, delta)
 
@@ -1260,6 +1292,165 @@ func _distance_to_entry(player_position: Vector3, entry: Dictionary) -> float:
 	var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)
 	var chunk_center := _chunk_center_from_key(chunk_key)
 	return player_position.distance_to(chunk_center)
+
+func _sync_scene_landmark_far_proxies(player_position: Vector3) -> void:
+	if _scene_landmark_far_proxy_entries_by_landmark_id.is_empty():
+		_clear_scene_landmark_far_proxies()
+		return
+	for landmark_id_variant in _scene_landmark_far_proxy_entries_by_landmark_id.keys():
+		var landmark_id := str(landmark_id_variant)
+		var entry: Dictionary = (_scene_landmark_far_proxy_entries_by_landmark_id.get(landmark_id, {}) as Dictionary).duplicate(true)
+		var existing_proxy := find_scene_landmark_far_proxy_node(landmark_id) as Node3D
+		if not _should_show_scene_landmark_far_proxy(player_position, entry):
+			if existing_proxy != null:
+				existing_proxy.visible = false
+			continue
+		var proxy_node := _ensure_scene_landmark_far_proxy_node(entry)
+		if proxy_node == null:
+			continue
+		_apply_scene_landmark_far_proxy_transform(proxy_node, entry)
+		proxy_node.visible = true
+
+func _should_show_scene_landmark_far_proxy(player_position: Vector3, entry: Dictionary) -> bool:
+	var far_visibility_variant = entry.get("far_visibility", {})
+	if not (far_visibility_variant is Dictionary):
+		return false
+	var far_visibility: Dictionary = far_visibility_variant
+	if not bool(far_visibility.get("enabled", false)):
+		return false
+	var proxy_scene_path := str(far_visibility.get("proxy_scene_path", "")).strip_edges()
+	if proxy_scene_path == "":
+		return false
+	var world_position_variant: Variant = entry.get("world_position", null)
+	if not (world_position_variant is Vector3):
+		return false
+	var world_position: Vector3 = world_position_variant
+	var visibility_radius_m := float(far_visibility.get("visibility_radius_m", 0.0))
+	if visibility_radius_m <= 0.0:
+		return false
+	var distance_m := player_position.distance_to(world_position)
+	if distance_m > visibility_radius_m:
+		return false
+	var chunk_id := str(entry.get("anchor_chunk_id", "")).strip_edges()
+	var chunk_scene := get_chunk_scene(chunk_id) as Node
+	var allowed_lod_modes := _resolve_scene_landmark_far_proxy_allowed_lod_modes(far_visibility)
+	if chunk_scene != null and chunk_scene.has_method("get_current_lod_mode"):
+		var lod_mode := str(chunk_scene.get_current_lod_mode())
+		if lod_mode == CityChunkScene.LOD_NEAR:
+			return false
+		return allowed_lod_modes.has(lod_mode)
+	if distance_m < float(CityChunkScene.NEAR_THRESHOLD_M):
+		# The active chunk window can retire the chunk before the near threshold is reached.
+		# In that gap, keep the cheap proxy visible instead of letting the tower disappear.
+		return true
+	var resolved_lod_mode := _resolve_scene_landmark_far_proxy_lod_mode(distance_m)
+	return allowed_lod_modes.has(resolved_lod_mode)
+
+func _resolve_scene_landmark_far_proxy_allowed_lod_modes(far_visibility: Dictionary) -> Array[String]:
+	var allowed: Array[String] = []
+	var lod_modes_variant = far_visibility.get("lod_modes", [])
+	if lod_modes_variant is Array:
+		for mode_variant in lod_modes_variant:
+			var mode := str(mode_variant).strip_edges()
+			if mode == "" or allowed.has(mode):
+				continue
+			if mode == CityChunkScene.LOD_NEAR or mode == CityChunkScene.LOD_MID or mode == CityChunkScene.LOD_FAR:
+				allowed.append(mode)
+	if allowed.is_empty():
+		allowed = [CityChunkScene.LOD_MID, CityChunkScene.LOD_FAR]
+	return allowed
+
+func _resolve_scene_landmark_far_proxy_lod_mode(distance_m: float) -> String:
+	if distance_m < float(CityChunkScene.NEAR_THRESHOLD_M):
+		return CityChunkScene.LOD_NEAR
+	if distance_m < float(CityChunkScene.MID_THRESHOLD_M):
+		return CityChunkScene.LOD_MID
+	return CityChunkScene.LOD_FAR
+
+func _ensure_scene_landmark_far_proxy_root() -> Node3D:
+	if _scene_landmark_far_proxy_root != null and is_instance_valid(_scene_landmark_far_proxy_root):
+		return _scene_landmark_far_proxy_root
+	_scene_landmark_far_proxy_root = get_node_or_null("SceneLandmarkFarProxies") as Node3D
+	if _scene_landmark_far_proxy_root != null:
+		return _scene_landmark_far_proxy_root
+	_scene_landmark_far_proxy_root = Node3D.new()
+	_scene_landmark_far_proxy_root.name = "SceneLandmarkFarProxies"
+	add_child(_scene_landmark_far_proxy_root)
+	return _scene_landmark_far_proxy_root
+
+func _ensure_scene_landmark_far_proxy_node(entry: Dictionary) -> Node3D:
+	var landmark_id := str(entry.get("landmark_id", "")).strip_edges()
+	if landmark_id == "":
+		return null
+	var existing_proxy := find_scene_landmark_far_proxy_node(landmark_id) as Node3D
+	if existing_proxy != null:
+		return existing_proxy
+	var far_visibility_variant = entry.get("far_visibility", {})
+	if not (far_visibility_variant is Dictionary):
+		return null
+	var far_visibility: Dictionary = far_visibility_variant
+	var proxy_scene_path := str(far_visibility.get("proxy_scene_path", "")).strip_edges()
+	if proxy_scene_path == "":
+		return null
+	var packed_scene := _load_cached_scene_landmark_far_proxy_scene(proxy_scene_path)
+	if packed_scene == null:
+		return null
+	var instantiated_variant: Variant = packed_scene.instantiate()
+	var proxy_root := instantiated_variant as Node3D
+	if proxy_root == null:
+		if not (instantiated_variant is Node):
+			return null
+		proxy_root = Node3D.new()
+		proxy_root.name = "SceneLandmarkFarProxyRoot"
+		proxy_root.add_child(instantiated_variant as Node)
+	var landmark_root := _ensure_scene_landmark_far_proxy_root()
+	landmark_root.add_child(proxy_root)
+	proxy_root.visible = false
+	proxy_root.set_meta("city_scene_landmark_far_visibility", true)
+	proxy_root.set_meta("city_scene_landmark_id", landmark_id)
+	proxy_root.set_meta("city_scene_landmark_proxy_scene_path", proxy_scene_path)
+	_scene_landmark_far_proxy_nodes_by_landmark_id[landmark_id] = proxy_root
+	return proxy_root
+
+func _apply_scene_landmark_far_proxy_transform(proxy_node: Node3D, entry: Dictionary) -> void:
+	var world_position_variant: Variant = entry.get("world_position", Vector3.ZERO)
+	if world_position_variant is Vector3:
+		proxy_node.global_position = world_position_variant
+	proxy_node.rotation.y = float(entry.get("yaw_rad", 0.0))
+
+func _prune_scene_landmark_far_proxies() -> void:
+	for landmark_id_variant in _scene_landmark_far_proxy_nodes_by_landmark_id.keys():
+		var landmark_id := str(landmark_id_variant)
+		if _scene_landmark_far_proxy_entries_by_landmark_id.has(landmark_id):
+			continue
+		var proxy_node := find_scene_landmark_far_proxy_node(landmark_id) as Node
+		if proxy_node != null:
+			proxy_node.queue_free()
+		_scene_landmark_far_proxy_nodes_by_landmark_id.erase(landmark_id)
+	if _scene_landmark_far_proxy_entries_by_landmark_id.is_empty():
+		_clear_scene_landmark_far_proxies()
+
+func _clear_scene_landmark_far_proxies() -> void:
+	for proxy_variant in _scene_landmark_far_proxy_nodes_by_landmark_id.values():
+		var proxy_node := proxy_variant as Node
+		if proxy_node != null and is_instance_valid(proxy_node):
+			proxy_node.queue_free()
+	_scene_landmark_far_proxy_nodes_by_landmark_id.clear()
+	if _scene_landmark_far_proxy_root != null and is_instance_valid(_scene_landmark_far_proxy_root):
+		_scene_landmark_far_proxy_root.queue_free()
+	_scene_landmark_far_proxy_root = null
+
+static func _load_cached_scene_landmark_far_proxy_scene(scene_path: String) -> PackedScene:
+	if scene_path == "":
+		return null
+	if _shared_scene_landmark_far_proxy_scene_cache.has(scene_path):
+		return _shared_scene_landmark_far_proxy_scene_cache.get(scene_path) as PackedScene
+	var packed_scene := load(scene_path) as PackedScene
+	if packed_scene == null:
+		_shared_scene_landmark_far_proxy_scene_cache[scene_path] = null
+		return null
+	_shared_scene_landmark_far_proxy_scene_cache[scene_path] = packed_scene
+	return packed_scene
 
 func _resolve_initial_lod_mode(payload: Dictionary) -> String:
 	var chunk_center: Vector3 = payload.get("chunk_center", Vector3.ZERO)

@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://cshwgrgk842r0"]
+
+[ext_resource type="PackedScene" uid="uid://fpcucxd1xjhr" path="res://city_game/assets/environment/source/towers/Radio tower.glb" id="1_radio_tower"]
+
+[node name="RadioTowerLandmark" type="Node3D" unique_id=1144910424]
+
+[node name="Model" parent="." unique_id=173644717 instance=ExtResource("1_radio_tower")]
+transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 0.168652, 0)

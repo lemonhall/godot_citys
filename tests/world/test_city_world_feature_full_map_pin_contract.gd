@@ -25,11 +25,13 @@ func _run() -> void:
 	world.set_full_map_open(true)
 	var map_state: Dictionary = {}
 	var fountain_marker: Dictionary = {}
+	var radio_tower_marker: Dictionary = {}
 	for _frame in range(90):
 		await process_frame
 		map_state = world.get_map_screen_state()
 		fountain_marker = _find_marker_by_icon_id(map_state.get("pin_markers", []), "fountain")
-		if not fountain_marker.is_empty():
+		radio_tower_marker = _find_marker_by_icon_id(map_state.get("pin_markers", []), "radio_tower")
+		if not fountain_marker.is_empty() and not radio_tower_marker.is_empty():
 			break
 	if not T.require_true(self, not fountain_marker.is_empty(), "Full map render state must expose a fountain marker from the scene_landmark manifest pipeline"):
 		return
@@ -39,12 +41,22 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(fountain_marker.get("icon_glyph", "")) == "⛲", "Fountain marker must resolve the fountain glyph from icon_id in UI layer"):
 		return
+	if not T.require_true(self, not radio_tower_marker.is_empty(), "Full map render state must expose a radio tower marker from the scene_landmark manifest pipeline"):
+		return
+	if not T.require_true(self, str(radio_tower_marker.get("pin_type", "")) == "landmark", "Radio tower marker must reuse the landmark pin family on full map"):
+		return
+	if not T.require_true(self, str(radio_tower_marker.get("visibility_scope", "")) == "full_map", "Radio tower marker must remain full_map only in render state"):
+		return
+	if not T.require_true(self, str(radio_tower_marker.get("icon_glyph", "")) == "📡", "Radio tower marker must resolve the radio tower glyph from icon_id in UI layer"):
+		return
 
 	var minimap_snapshot: Dictionary = world.build_minimap_snapshot()
 	var pin_overlay: Dictionary = minimap_snapshot.get("pin_overlay", {})
 	for pin_variant in pin_overlay.get("pins", []):
 		var pin: Dictionary = pin_variant
 		if not T.require_true(self, str(pin.get("icon_id", "")) != "fountain", "Fountain full-map marker must not leak into minimap overlay"):
+			return
+		if not T.require_true(self, str(pin.get("icon_id", "")) != "radio_tower", "Radio tower full-map marker must not leak into minimap overlay"):
 			return
 
 	world.queue_free()

@@ -6,6 +6,12 @@
 			"feature_kind": "scene_landmark",
 			"manifest_path": "res://city_game/serviceability/landmarks/generated/landmark_v21_fountain_chunk_129_142/landmark_manifest.json",
 			"scene_path": "res://city_game/serviceability/landmarks/generated/landmark_v21_fountain_chunk_129_142/fountain_landmark.tscn"
+		},
+		"landmark:v21:radio_tower:chunk_131_138": {
+			"landmark_id": "landmark:v21:radio_tower:chunk_131_138",
+			"feature_kind": "scene_landmark",
+			"manifest_path": "res://city_game/serviceability/landmarks/generated/landmark_v21_radio_tower_chunk_131_138/landmark_manifest.json",
+			"scene_path": "res://city_game/serviceability/landmarks/generated/landmark_v21_radio_tower_chunk_131_138/radio_tower_landmark.tscn"
 		}
 	}
 }

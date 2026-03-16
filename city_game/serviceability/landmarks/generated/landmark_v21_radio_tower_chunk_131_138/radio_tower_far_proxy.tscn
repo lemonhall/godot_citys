@@ -1,0 +1,71 @@
+[gd_scene format=3 uid="uid://dudobw8pqsdlv"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_mast"]
+albedo_color = Color(0.705882, 0.733333, 0.772549, 1)
+metallic = 0.08
+roughness = 0.56
+
+[sub_resource type="BoxMesh" id="BoxMesh_base"]
+size = Vector3(11, 2, 11)
+
+[sub_resource type="BoxMesh" id="BoxMesh_mast"]
+size = Vector3(5.5, 108, 5.5)
+
+[sub_resource type="BoxMesh" id="BoxMesh_cross_long"]
+size = Vector3(22, 1.4, 1.4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_cross_short"]
+size = Vector3(1.4, 1.4, 22)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_beacon"]
+albedo_color = Color(0.890196, 0.203922, 0.168627, 1)
+roughness = 0.34
+
+[sub_resource type="SphereMesh" id="SphereMesh_beacon"]
+
+[node name="RadioTowerFarProxy" type="Node3D" unique_id=1729479909]
+
+[node name="Base" type="MeshInstance3D" parent="." unique_id=2003540874]
+transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 504.97253, 0)
+material_override = SubResource("StandardMaterial3D_mast")
+mesh = SubResource("BoxMesh_base")
+
+[node name="Mast" type="MeshInstance3D" parent="." unique_id=264535879]
+transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 557.97253, 0)
+material_override = SubResource("StandardMaterial3D_mast")
+mesh = SubResource("BoxMesh_mast")
+
+[node name="CrossArmLowerX" type="MeshInstance3D" parent="." unique_id=47202724]
+transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 541.97253, 0)
+material_override = SubResource("StandardMaterial3D_mast")
+mesh = SubResource("BoxMesh_cross_long")
+
+[node name="CrossArmLowerZ" type="MeshInstance3D" parent="." unique_id=2101330734]
+transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 541.97253, 0)
+material_override = SubResource("StandardMaterial3D_mast")
+mesh = SubResource("BoxMesh_cross_short")
+
+[node name="CrossArmUpperX" type="MeshInstance3D" parent="." unique_id=1011059114]
+transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 577.97253, 0)
+material_override = SubResource("StandardMaterial3D_mast")
+mesh = SubResource("BoxMesh_cross_long")
+
+[node name="CrossArmUpperZ" type="MeshInstance3D" parent="." unique_id=2010912958]
+transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 577.97253, 0)
+material_override = SubResource("StandardMaterial3D_mast")
+mesh = SubResource("BoxMesh_cross_short")
+
+[node name="CrossArmTopX" type="MeshInstance3D" parent="." unique_id=1665764793]
+transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 601.97253, 0)
+material_override = SubResource("StandardMaterial3D_mast")
+mesh = SubResource("BoxMesh_cross_long")
+
+[node name="CrossArmTopZ" type="MeshInstance3D" parent="." unique_id=1364112352]
+transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 601.97253, 0)
+material_override = SubResource("StandardMaterial3D_mast")
+mesh = SubResource("BoxMesh_cross_short")
+
+[node name="Beacon" type="MeshInstance3D" parent="." unique_id=63149055]
+transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 613.37256, 0)
+material_override = SubResource("StandardMaterial3D_beacon")
+mesh = SubResource("SphereMesh_beacon")

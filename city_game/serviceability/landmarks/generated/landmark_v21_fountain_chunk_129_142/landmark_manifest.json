@@ -1,0 +1,26 @@
+{
+	"landmark_id": "landmark:v21:fountain:chunk_129_142",
+	"display_name": "城市喷泉",
+	"feature_kind": "scene_landmark",
+	"anchor_chunk_id": "chunk_129_142",
+	"anchor_chunk_key": {
+		"@type": "Vector2i",
+		"x": 129,
+		"y": 142
+	},
+	"world_position": {
+		"@type": "Vector3",
+		"x": -1848.0,
+		"y": 14.545391,
+		"z": 1480.0
+	},
+	"scene_path": "res://city_game/serviceability/landmarks/generated/landmark_v21_fountain_chunk_129_142/fountain_landmark.tscn",
+	"manifest_path": "res://city_game/serviceability/landmarks/generated/landmark_v21_fountain_chunk_129_142/landmark_manifest.json",
+	"full_map_pin": {
+		"visible": true,
+		"icon_id": "fountain",
+		"title": "城市喷泉",
+		"subtitle": "地标",
+		"priority": 68
+	}
+}

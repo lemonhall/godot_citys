@@ -19,6 +19,7 @@ const PIN_ICON_GLYPHS := {
 	"cafe": "☕",
 	"clinic": "⚕",
 	"garage": "🔧",
+	"fountain": "⛲",
 	"gun_shop": "🔫",
 	"shop": "🛍",
 	"restaurant": "🍽",

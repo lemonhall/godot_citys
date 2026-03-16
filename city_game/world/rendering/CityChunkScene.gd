@@ -29,6 +29,7 @@ static var _shared_box_shape_cache: Dictionary = {}
 static var _shared_box_mesh_cache: Dictionary = {}
 static var _shared_box_material_cache: Dictionary = {}
 static var _shared_building_override_scene_cache: Dictionary = {}
+static var _shared_scene_landmark_scene_cache: Dictionary = {}
 
 var _chunk_data: Dictionary = {}
 var _profile: Dictionary = {}
@@ -77,6 +78,19 @@ static func prewarm_building_override_entries(entries: Dictionary) -> void:
 		if scene_path == "":
 			continue
 		var packed_scene := _load_cached_building_override_scene(scene_path)
+		if packed_scene == null:
+			continue
+		var preview_instance: Variant = packed_scene.instantiate()
+		if preview_instance is Node:
+			(preview_instance as Node).free()
+
+static func prewarm_scene_landmark_entries(entries: Dictionary) -> void:
+	for entry_variant in entries.values():
+		var entry: Dictionary = entry_variant
+		var scene_path := str(entry.get("scene_path", ""))
+		if scene_path == "":
+			continue
+		var packed_scene := _load_cached_scene_landmark_scene(scene_path)
 		if packed_scene == null:
 			continue
 		var preview_instance: Variant = packed_scene.instantiate()
@@ -218,6 +232,14 @@ func find_building_override_node(building_id: String) -> Node:
 	if near_group == null:
 		return null
 	return _find_building_override_node_recursive(near_group, building_id)
+
+func find_scene_landmark_node(landmark_id: String) -> Node:
+	if landmark_id == "":
+		return null
+	var near_group := get_node_or_null("NearGroup") as Node
+	if near_group == null:
+		return null
+	return _find_scene_landmark_node_recursive(near_group, landmark_id)
 
 func get_road_collision_shape_count() -> int:
 	var road_overlay := get_node_or_null("NearGroup/RoadOverlay") as Node
@@ -586,6 +608,15 @@ func _build_near_group() -> Dictionary:
 	if street_lamps == null:
 		street_lamps = CityChunkMultimeshBuilder.build_street_lamps(_profile)
 	props.add_child(street_lamps)
+	var scene_landmarks := Node3D.new()
+	scene_landmarks.name = "SceneLandmarks"
+	near_group.add_child(scene_landmarks)
+	for landmark_entry_variant in _chunk_data.get("scene_landmark_entries", []):
+		if not (landmark_entry_variant is Dictionary):
+			continue
+		var landmark_node := _build_scene_landmark(landmark_entry_variant as Dictionary)
+		if landmark_node != null:
+			scene_landmarks.add_child(landmark_node)
 	stats["props_usec"] = int(Time.get_ticks_usec() - phase_started_usec)
 	return stats
 
@@ -636,6 +667,37 @@ func _resolve_building_override_entry(building: Dictionary) -> Dictionary:
 	var override_entries: Dictionary = _chunk_data.get("building_override_entries", {})
 	return (override_entries.get(building_id, {}) as Dictionary).duplicate(true)
 
+func _build_scene_landmark(entry: Dictionary) -> Node3D:
+	var scene_path := str(entry.get("scene_path", "")).strip_edges()
+	if scene_path == "":
+		return null
+	var scene_resource := _load_cached_scene_landmark_scene(scene_path)
+	if scene_resource == null:
+		return null
+	var instantiated_variant: Variant = scene_resource.instantiate()
+	var landmark_root := instantiated_variant as Node3D
+	if landmark_root == null:
+		if not (instantiated_variant is Node):
+			return null
+		landmark_root = Node3D.new()
+		landmark_root.name = "SceneLandmarkRoot"
+		landmark_root.add_child(instantiated_variant as Node)
+	var world_position_variant: Variant = entry.get("world_position", Vector3.ZERO)
+	var world_position := Vector3.ZERO
+	if world_position_variant is Vector3:
+		world_position = world_position_variant as Vector3
+	var chunk_center: Vector3 = _chunk_data.get("chunk_center", Vector3.ZERO)
+	landmark_root.position = world_position - chunk_center
+	landmark_root.rotation.y = float(entry.get("yaw_rad", 0.0))
+	var landmark_id := str(entry.get("landmark_id", "")).strip_edges()
+	if landmark_id != "":
+		landmark_root.set_meta("city_scene_landmark_id", landmark_id)
+	landmark_root.set_meta("city_scene_landmark", true)
+	landmark_root.set_meta("city_scene_landmark_scene_path", scene_path)
+	landmark_root.set_meta("city_scene_landmark_feature_kind", str(entry.get("feature_kind", "")))
+	landmark_root.set_meta("city_scene_landmark_manifest_path", str(entry.get("manifest_path", "")))
+	return landmark_root
+
 func _register_building_collision_shapes(root: Node) -> void:
 	var shapes: Array[CollisionShape3D] = CityBuildingSceneBuilder.collect_collision_shapes(root)
 	for collision_shape in shapes:
@@ -656,6 +718,20 @@ func _find_building_override_node_recursive(root: Node, building_id: String) -> 
 			return match_node
 	return null
 
+func _find_scene_landmark_node_recursive(root: Node, landmark_id: String) -> Node:
+	if root == null:
+		return null
+	if bool(root.get_meta("city_scene_landmark", false)) and str(root.get_meta("city_scene_landmark_id", "")) == landmark_id:
+		return root
+	for child in root.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		var match_node := _find_scene_landmark_node_recursive(child_node, landmark_id)
+		if match_node != null:
+			return match_node
+	return null
+
 static func _load_cached_building_override_scene(scene_path: String) -> PackedScene:
 	if scene_path == "":
 		return null
@@ -667,6 +743,19 @@ static func _load_cached_building_override_scene(scene_path: String) -> PackedSc
 		return null
 	var packed_scene := scene_resource as PackedScene
 	_shared_building_override_scene_cache[scene_path] = packed_scene
+	return packed_scene
+
+static func _load_cached_scene_landmark_scene(scene_path: String) -> PackedScene:
+	if scene_path == "":
+		return null
+	if _shared_scene_landmark_scene_cache.has(scene_path):
+		return _shared_scene_landmark_scene_cache.get(scene_path) as PackedScene
+	var scene_resource := load(scene_path)
+	if scene_resource == null or not (scene_resource is PackedScene):
+		_shared_scene_landmark_scene_cache[scene_path] = null
+		return null
+	var packed_scene := scene_resource as PackedScene
+	_shared_scene_landmark_scene_cache[scene_path] = packed_scene
 	return packed_scene
 
 func _build_static_box(node_name: String, center: Vector3, size: Vector3, color: Color, yaw_rad: float = 0.0, collision_size: Vector3 = Vector3.ZERO) -> StaticBody3D:

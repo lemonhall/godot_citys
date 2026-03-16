@@ -28,6 +28,8 @@ const CityWorldInspectionResolver := preload("res://city_game/world/inspection/C
 const CityBuildingSceneExporter := preload("res://city_game/world/serviceability/CityBuildingSceneExporter.gd")
 const CityBuildingOverrideRegistry := preload("res://city_game/world/serviceability/CityBuildingOverrideRegistry.gd")
 const CityServiceBuildingMapPinRuntime := preload("res://city_game/world/serviceability/CityServiceBuildingMapPinRuntime.gd")
+const CitySceneLandmarkRegistry := preload("res://city_game/world/features/CitySceneLandmarkRegistry.gd")
+const CitySceneLandmarkRuntime := preload("res://city_game/world/features/CitySceneLandmarkRuntime.gd")
 const CityNpcInteractionRuntime := preload("res://city_game/world/interactions/CityNpcInteractionRuntime.gd")
 const CityDialogueRuntime := preload("res://city_game/world/interactions/CityDialogueRuntime.gd")
 
@@ -61,6 +63,7 @@ const BUILDING_EXPORT_WINDOW_SEC := 10.0
 const BUILDING_EXPORT_TOAST_DURATION_SEC := 6.0
 const BUILDING_EXPORT_SCENE_ROOT_PREFERRED := "res://city_game/serviceability/buildings/generated"
 const BUILDING_EXPORT_SCENE_ROOT_FALLBACK := "user://serviceability/buildings/generated"
+const SCENE_LANDMARK_REGISTRY_PATH := "res://city_game/serviceability/landmarks/generated/landmark_override_registry.json"
 const SERVICE_BUILDING_MAP_PIN_STARTUP_DELAY_FRAMES := 120
 const SERVICE_BUILDING_MAP_PIN_BATCH_SIZE := 1
 const SERVICE_BUILDING_MAP_PIN_BATCH_BUDGET_USEC := 1200
@@ -154,6 +157,8 @@ var _building_export_request: Dictionary = {}
 var _building_export_pending_result: Dictionary = {}
 var _building_export_started_process_frame := -1
 var _service_building_map_pin_runtime = null
+var _scene_landmark_registry = null
+var _scene_landmark_runtime = null
 var _building_export_state: Dictionary = {
 	"running": false,
 	"status": "idle",
@@ -195,6 +200,8 @@ func _ready() -> void:
 	_building_scene_exporter = CityBuildingSceneExporter.new()
 	_building_override_registry = CityBuildingOverrideRegistry.new()
 	_service_building_map_pin_runtime = CityServiceBuildingMapPinRuntime.new()
+	_scene_landmark_registry = CitySceneLandmarkRegistry.new()
+	_scene_landmark_runtime = CitySceneLandmarkRuntime.new()
 	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
 		_inspection_resolver.setup(_world_config, _world_data)
 	_setup_map_ui()
@@ -204,6 +211,7 @@ func _ready() -> void:
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
 		_reload_building_override_registry()
+		_reload_scene_landmark_registry()
 		if chunk_renderer.has_method("set_pedestrians_visible"):
 			chunk_renderer.set_pedestrians_visible(_pedestrians_visible)
 	if debug_overlay != null:
@@ -1405,6 +1413,11 @@ func get_service_building_map_pin_state() -> Dictionary:
 	if _service_building_map_pin_runtime == null or not _service_building_map_pin_runtime.has_method("get_state"):
 		return {}
 	return _service_building_map_pin_runtime.get_state()
+
+func get_scene_landmark_runtime_state() -> Dictionary:
+	if _scene_landmark_runtime == null or not _scene_landmark_runtime.has_method("get_state"):
+		return {}
+	return _scene_landmark_runtime.get_state()
 
 func register_task_pin(pin_id: String, world_position: Vector3, title: String, subtitle: String = "", pin_type: String = "task") -> Dictionary:
 	if _map_pin_registry == null or not _map_pin_registry.has_method("register_task_pin"):
@@ -2642,6 +2655,15 @@ func _reload_building_override_registry() -> Dictionary:
 	_sync_building_override_entries(entries)
 	return entries
 
+func _reload_scene_landmark_registry() -> Dictionary:
+	if _scene_landmark_registry == null:
+		return {}
+	var load_registry_paths: Array[String] = [SCENE_LANDMARK_REGISTRY_PATH]
+	_scene_landmark_registry.configure(SCENE_LANDMARK_REGISTRY_PATH, load_registry_paths)
+	var entries: Dictionary = _scene_landmark_registry.load_registry()
+	_sync_scene_landmark_entries(entries)
+	return entries
+
 func _resolve_building_override_registry_config() -> Dictionary:
 	var primary_registry_path := _normalize_serviceability_resource_path(_building_serviceability_registry_override_path)
 	var load_registry_paths: Array[String] = []
@@ -2671,6 +2693,22 @@ func _sync_building_override_entries(entries: Dictionary) -> void:
 	if _service_building_map_pin_runtime != null and _service_building_map_pin_runtime.has_method("configure"):
 		_service_building_map_pin_runtime.configure(entries.duplicate(true))
 	_sync_service_building_pin_registry()
+
+func _sync_scene_landmark_entries(entries: Dictionary) -> void:
+	if _scene_landmark_runtime != null and _scene_landmark_runtime.has_method("configure"):
+		_scene_landmark_runtime.configure(entries.duplicate(true))
+	var runtime_entries: Dictionary = entries.duplicate(true)
+	if _scene_landmark_runtime != null and _scene_landmark_runtime.has_method("get_entries_snapshot"):
+		runtime_entries = _scene_landmark_runtime.get_entries_snapshot()
+	if chunk_renderer != null and chunk_renderer.has_method("set_scene_landmark_entries"):
+		chunk_renderer.set_scene_landmark_entries(runtime_entries)
+	if _map_pin_registry != null and _map_pin_registry.has_method("replace_scene_landmark_pins"):
+		var pins: Array = []
+		if _scene_landmark_runtime != null and _scene_landmark_runtime.has_method("get_full_map_pins"):
+			pins = _scene_landmark_runtime.get_full_map_pins()
+		_map_pin_registry.replace_scene_landmark_pins(pins)
+	if _full_map_open and _map_screen != null and _map_screen.has_method("set_pins"):
+		_map_screen.set_pins(_get_map_pins("full_map"))
 
 func _collect_completed_building_export_job() -> void:
 	if _building_export_thread != null:

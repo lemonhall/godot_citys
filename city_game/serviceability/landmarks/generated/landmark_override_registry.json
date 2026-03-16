@@ -1,0 +1,11 @@
+{
+	"schema_version": "v21-scene-landmark-registry-1",
+	"entries": {
+		"landmark:v21:fountain:chunk_129_142": {
+			"landmark_id": "landmark:v21:fountain:chunk_129_142",
+			"feature_kind": "scene_landmark",
+			"manifest_path": "res://city_game/serviceability/landmarks/generated/landmark_v21_fountain_chunk_129_142/landmark_manifest.json",
+			"scene_path": "res://city_game/serviceability/landmarks/generated/landmark_v21_fountain_chunk_129_142/fountain_landmark.tscn"
+		}
+	}
+}

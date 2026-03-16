@@ -132,6 +132,7 @@ var _global_death_visuals: Array[Dictionary] = []
 var _chunk_death_visual_records: Dictionary = {}
 var _pedestrian_visual_catalog: CityPedestrianVisualCatalog = null
 var _building_override_entries: Dictionary = {}
+var _scene_landmark_entries_by_chunk_id: Dictionary = {}
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
@@ -169,6 +170,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_chunk_death_visual_records.clear()
 	_pedestrian_visual_catalog = null
 	_building_override_entries.clear()
+	_scene_landmark_entries_by_chunk_id.clear()
 	if _world_data.has("pedestrian_query"):
 		CityPedestrianVisualInstance.prewarm_shared_catalog()
 		_pedestrian_visual_catalog = CityPedestrianVisualCatalog.new()
@@ -182,8 +184,23 @@ func setup(config, world_data: Dictionary) -> void:
 	set_process(true)
 
 func set_building_override_entries(entries: Dictionary) -> void:
+	# Authored building scenes stay lazy; eager preview instantiation inflated cold-path profiling.
 	_building_override_entries = entries.duplicate(true)
-	CityChunkScene.prewarm_building_override_entries(_building_override_entries)
+
+func set_scene_landmark_entries(entries: Dictionary) -> void:
+	_scene_landmark_entries_by_chunk_id.clear()
+	# Landmark manifests are cached at sync time, but the scene itself only loads on chunk mount.
+	var normalized_entries: Dictionary = entries.duplicate(true)
+	for entry_variant in normalized_entries.values():
+		if not (entry_variant is Dictionary):
+			continue
+		var entry: Dictionary = entry_variant
+		var chunk_id := str(entry.get("anchor_chunk_id", "")).strip_edges()
+		if chunk_id == "":
+			continue
+		var chunk_entries: Array = _scene_landmark_entries_by_chunk_id.get(chunk_id, [])
+		chunk_entries.append(entry.duplicate(true))
+		_scene_landmark_entries_by_chunk_id[chunk_id] = chunk_entries
 
 func get_building_override_entry(building_id: String) -> Dictionary:
 	if building_id == "":
@@ -1268,6 +1285,7 @@ func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 		"street_cluster_catalog": _world_data.get("street_cluster_catalog"),
 		"vehicle_query": _world_data.get("vehicle_query"),
 		"building_override_entries": _building_override_entries.duplicate(true),
+		"scene_landmark_entries": _get_scene_landmark_entries_for_chunk(chunk_id),
 		"pedestrian_chunk_snapshot": {},
 		"vehicle_chunk_snapshot": {},
 	}
@@ -1317,6 +1335,16 @@ func _chunk_center_from_key(chunk_key: Vector2i) -> Vector3:
 	var center_x := bounds.position.x + (float(chunk_key.x) + 0.5) * float(_config.chunk_size_m)
 	var center_z := bounds.position.y + (float(chunk_key.y) + 0.5) * float(_config.chunk_size_m)
 	return Vector3(center_x, 0.0, center_z)
+
+func _get_scene_landmark_entries_for_chunk(chunk_id: String) -> Array:
+	if chunk_id == "":
+		return []
+	var chunk_entries: Array = _scene_landmark_entries_by_chunk_id.get(chunk_id, [])
+	var snapshot: Array = []
+	for entry_variant in chunk_entries:
+		var entry: Dictionary = entry_variant
+		snapshot.append(entry.duplicate(true))
+	return snapshot
 
 func _duration_or_zero(started_usec: int, item_count: int) -> int:
 	if item_count <= 0:

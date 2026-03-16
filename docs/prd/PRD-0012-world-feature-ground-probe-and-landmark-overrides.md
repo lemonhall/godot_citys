@@ -61,11 +61,14 @@
   - `chunk_id`
   - `chunk_key`
   - `world_position`
+  - `surface_y_m`
   - `chunk_local_position`
   - `surface_normal`
   - `message_text`
   - `clipboard_text`
 - `chunk_local_position` 定义为：相对 chunk center 的局部 `Vector3`
+- `surface_y_m` 定义为：ground hit 的绝对世界高度，必须与 `world_position.y` 一致
+- `message_text` 与 `clipboard_text` 都必须显式包含 `y=`，避免 authored placement 时漏掉高程
 - `clipboard_text` 必须包含 chunk id、chunk key、world position 与 local position
 - building hit 现有 contract 不得回退
 
@@ -78,7 +81,9 @@
 
 - 自动化测试至少断言：ground hit 不再只返回 `inspection_kind = chunk` 的粗粒度文本结果。
 - 自动化测试至少断言：ground probe payload 含非空 `chunk_id`、正确 `chunk_key`、`world_position` 与 `chunk_local_position`。
+- 自动化测试至少断言：ground probe payload 显式暴露 `surface_y_m`，且数值与 `world_position.y` 一致。
 - 自动化测试至少断言：同一世界坐标经 chunk center 反推后，`chunk_local_position` 稳定可复现。
+- 自动化测试至少断言：HUD / clipboard 文案显式出现 `y=`，方便用户直接复制高程给 AI 进行后续地标摆放。
 - 自动化测试至少断言：building inspection 仍保留 `building_id` 主链，不被 ground probe 回归破坏。
 - 反作弊条款：不得通过只改 HUD 文案、不落正式 payload 字段、或把 local position 写死到测试夹具里来宣称完成。
 
@@ -157,6 +162,7 @@
 - 自动化测试至少断言：full map render state 能看到 `icon_id = fountain` 的 marker。
 - 自动化测试至少断言：同一 session 下 minimap overlay 不会出现 fountain pin。
 - 自动化测试至少断言：world position 来自 manifest，而不是加载 scene 推导。
+- 自动化测试至少断言：喷泉 mounted 后的视觉包围盒具备可读尺寸，且 visual bottom 与地面高度基本对齐，不允许“节点存在但肉眼近似不可见”。
 - 反作弊条款：不得把喷泉 icon 直接写死在 UI 的 `landmark_id -> glyph` 特判里而绕过 manifest。
 
 ### REQ-0012-004 `v21` 不得破坏现有 building override、inspection 和地图性能纪律

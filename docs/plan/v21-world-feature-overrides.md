@@ -27,6 +27,7 @@
   - `chunk_id`
   - `chunk_key`
   - `world_position`
+  - `surface_y_m`
   - `chunk_local_position`
   - `surface_normal`
   - `message_text`
@@ -80,13 +81,15 @@
 ## Acceptance
 
 1. 自动化测试必须证明：ground hit 返回 `ground_probe` payload，而不是只返回 chunk 级粗文本。
-2. 自动化测试必须证明：`chunk_local_position` 可由 `world_position - chunk_center` 稳定复算，不是随手拼的字符串。
-3. 自动化测试必须证明：scene landmark registry 能跨 session 重读，并在目标 chunk near mount 时实例化 scene。
-4. 自动化测试必须证明：喷泉 manifest / registry / scene path 三者口径一致，并指向正式 fountain scene。
-5. 自动化测试必须证明：full map 上能看到 `icon_id = fountain` 的 marker，而 minimap 不会出现它。
-6. 自动化测试必须证明：building inspection/export 以及 service building full-map icon 主链不回退。
-7. profiling 三件套必须串行继续过线。
-8. 反作弊条款：不得把喷泉挂靠到 fake `building_id`；不得在 `_process()` 每帧扫 registry；不得让喷泉 icon 绕过 manifest 直接写死在 UI；不得把 mountain/lake 通过一个超大 scene 假装已经有路线。
+2. 自动化测试必须证明：`surface_y_m` 显式暴露，且与 `world_position.y` 一致；HUD / clipboard 必须带 `y=`，方便后续人工复制摆放高程。
+3. 自动化测试必须证明：`chunk_local_position` 可由 `world_position - chunk_center` 稳定复算，不是随手拼的字符串。
+4. 自动化测试必须证明：scene landmark registry 能跨 session 重读，并在目标 chunk near mount 时实例化 scene。
+5. 自动化测试必须证明：喷泉 manifest / registry / scene path 三者口径一致，并指向正式 fountain scene。
+6. 自动化测试必须证明：full map 上能看到 `icon_id = fountain` 的 marker，而 minimap 不会出现它。
+7. 自动化测试必须证明：喷泉 mounted 后具备可读视觉包围盒，并且 visual bottom 与地面高度基本对齐，不允许“节点存在但肉眼近似不可见”。
+8. 自动化测试必须证明：building inspection/export 以及 service building full-map icon 主链不回退。
+9. profiling 三件套必须串行继续过线。
+10. 反作弊条款：不得把喷泉挂靠到 fake `building_id`；不得在 `_process()` 每帧扫 registry；不得让喷泉 icon 绕过 manifest 直接写死在 UI；不得在 registry sync 阶段 preview instantiate landmark scene；不得把 mountain/lake 通过一个超大 scene 假装已经有路线。
 
 ## Proposed Files
 
@@ -105,6 +108,7 @@
 - Future Create: `tests/world/test_city_ground_probe_inspection_contract.gd`
 - Future Create: `tests/world/test_city_scene_landmark_registry_runtime.gd`
 - Future Create: `tests/world/test_city_fountain_landmark_manifest_contract.gd`
+- Future Create: `tests/world/test_city_fountain_landmark_visual_envelope.gd`
 - Future Create: `tests/world/test_city_world_feature_full_map_pin_contract.gd`
 - Future Create: `tests/e2e/test_city_scene_landmark_mount_flow.gd`
 - Future Create: `tests/e2e/test_city_fountain_landmark_full_map_flow.gd`

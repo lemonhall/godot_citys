@@ -150,22 +150,41 @@ func _run() -> void:
 		return
 
 	var chunk_result: Dictionary = world.get_last_laser_designator_result()
-	if not T.require_true(self, str(chunk_result.get("inspection_kind", "")) == "chunk", "Laser hitting the ground must resolve to chunk inspection kind"):
+	if not T.require_true(self, str(chunk_result.get("inspection_kind", "")) == "ground_probe", "Laser hitting the ground must resolve to formal ground_probe inspection kind"):
 		return
-	if not T.require_true(self, str(chunk_result.get("chunk_id", "")) != "", "Chunk inspection must expose non-empty chunk_id"):
+	if not T.require_true(self, str(chunk_result.get("chunk_id", "")) != "", "Ground probe inspection must expose non-empty chunk_id"):
 		return
-	if not T.require_true(self, chunk_result.has("chunk_key"), "Chunk inspection must expose chunk_key"):
+	if not T.require_true(self, chunk_result.has("chunk_key"), "Ground probe inspection must expose chunk_key"):
+		return
+	if not T.require_true(self, chunk_result.get("world_position", null) is Vector3, "Ground probe inspection must expose world_position as Vector3"):
+		return
+	if not T.require_true(self, typeof(chunk_result.get("surface_y_m", null)) == TYPE_FLOAT, "Ground probe inspection must expose surface_y_m as float for landmark placement"):
+		return
+	if not T.require_true(self, chunk_result.get("chunk_local_position", null) is Vector3, "Ground probe inspection must expose chunk_local_position as Vector3"):
+		return
+	if not T.require_true(self, chunk_result.get("surface_normal", null) is Vector3, "Ground probe inspection must expose surface_normal as Vector3"):
+		return
+	var sampled_y_text := "y=%.2f" % [float(chunk_result.get("surface_y_m", 0.0))]
+	if not T.require_true(self, absf(float(chunk_result.get("surface_y_m", 0.0)) - (chunk_result.get("world_position", Vector3.ZERO) as Vector3).y) <= 0.01, "Ground probe surface_y_m must match the hit world_position.y"):
 		return
 
 	message_state = hud.get_focus_message_state()
-	if not T.require_true(self, bool(message_state.get("visible", false)), "Chunk inspection must also show a HUD focus message"):
+	if not T.require_true(self, bool(message_state.get("visible", false)), "Ground probe inspection must also show a HUD focus message"):
 		return
-	if not T.require_true(self, str(message_state.get("text", "")).find(str(chunk_result.get("chunk_id", ""))) >= 0, "Chunk inspection message must include the resolved chunk_id"):
+	if not T.require_true(self, str(message_state.get("text", "")).find(str(chunk_result.get("chunk_id", ""))) >= 0, "Ground probe inspection message must include the resolved chunk_id"):
+		return
+	if not T.require_true(self, str(message_state.get("text", "")).find(sampled_y_text) >= 0, "Ground probe inspection message must include the explicit sampled y value"):
 		return
 	if not T.require_true(self, float(message_state.get("remaining_sec", 0.0)) >= 9.0, "A second inspection within the 10 second window must immediately refresh the HUD message lifetime"):
 		return
 	var chunk_clipboard_text := str(world.get_last_laser_designator_clipboard_text())
-	if not T.require_true(self, chunk_clipboard_text.find(str(chunk_result.get("chunk_id", ""))) >= 0, "Chunk inspection must refresh clipboard text to the current chunk info"):
+	if not T.require_true(self, chunk_clipboard_text.find(str(chunk_result.get("chunk_id", ""))) >= 0, "Ground probe inspection must refresh clipboard text to the current chunk info"):
+		return
+	if not T.require_true(self, chunk_clipboard_text.find(sampled_y_text) >= 0, "Ground probe clipboard text must include the explicit sampled y value"):
+		return
+	if not T.require_true(self, chunk_clipboard_text.find("world=") >= 0, "Ground probe clipboard text must include serialized world coordinates"):
+		return
+	if not T.require_true(self, chunk_clipboard_text.find("local=") >= 0, "Ground probe clipboard text must include serialized local chunk coordinates"):
 		return
 	if not T.require_true(self, chunk_clipboard_text != building_clipboard_text, "A second inspection result must replace the prior clipboard text instead of leaving the first value latched for 10 seconds"):
 		return

@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://dn3pht3yfupjf"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_m7s4a"]
 size = Vector3(34, 16, 42)
@@ -26,7 +26,9 @@ text = "Hello World"
 pixel_size = 0.03
 depth = 0.04
 
-[node name="ServiceBuildingRoot" type="Node3D" unique_id=1928051846]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_m7s4a"]
+
+[node name="ServiceBuildingRoot2" type="Node3D" unique_id=1928051846]
 metadata/city_service_scene_root = true
 metadata/city_building_id = "bld:v15-building-id-1:seed424242:chunk_137_136:003"
 metadata/city_building_display_name = "60278700 Delracrest Skyway [chunk_137_136#003]"
@@ -79,5 +81,6 @@ material_override = SubResource("StandardMaterial3D_ke2l6")
 mesh = SubResource("BoxMesh_vx2mr")
 
 [node name="FacadeLabel" type="MeshInstance3D" parent="GeneratedBuilding" unique_id=1421186409]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.8, 1.5, 21.08)
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0.9013152, 1.5, 21.08)
 mesh = SubResource("TextMesh_greet003")
+surface_material_override/0 = SubResource("StandardMaterial3D_m7s4a")

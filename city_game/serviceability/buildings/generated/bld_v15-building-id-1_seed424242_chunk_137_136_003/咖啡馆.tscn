@@ -27,6 +27,12 @@ size = Vector3(3.2, 1.8, 0.08)
 [sub_resource type="BoxShape3D" id="BoxShape3D_counter"]
 size = Vector3(9, 1.1, 2.6)
 
+[sub_resource type="BoxShape3D" id="BoxShape3D_back_platform"]
+size = Vector3(26, 1.4, 5.2)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_side_banquette"]
+size = Vector3(3.2, 1.4, 22)
+
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wall"]
 albedo_color = Color(0.783421, 0.744213, 0.668845, 1)
 
@@ -114,6 +120,21 @@ size = Vector3(0.08, 2.6, 0.08)
 [sub_resource type="BoxMesh" id="BoxMesh_pendant_shade"]
 size = Vector3(0.9, 0.35, 0.9)
 
+[sub_resource type="BoxMesh" id="BoxMesh_back_platform"]
+size = Vector3(26, 1.4, 5.2)
+
+[sub_resource type="BoxMesh" id="BoxMesh_side_banquette"]
+size = Vector3(3.2, 1.4, 22)
+
+[sub_resource type="BoxMesh" id="BoxMesh_register"]
+size = Vector3(0.9, 0.55, 0.55)
+
+[sub_resource type="BoxMesh" id="BoxMesh_coffee_machine"]
+size = Vector3(1.5, 1.05, 0.75)
+
+[sub_resource type="BoxMesh" id="BoxMesh_pastry_case"]
+size = Vector3(2.4, 0.9, 1)
+
 [sub_resource type="BoxMesh" id="BoxMesh_roof_a"]
 size = Vector3(8.16, 2.88, 36.96)
 
@@ -124,6 +145,11 @@ size = Vector3(8.16, 2.24, 36.96)
 text = "SKYWAY CAFE"
 pixel_size = 0.05
 depth = 0.06
+
+[sub_resource type="TextMesh" id="TextMesh_menu_text"]
+text = "ESPRESSO\nLATTE\nCOLD BREW\nPASTRY"
+pixel_size = 0.025
+depth = 0.03
 
 [node name="ServiceBuildingRoot2" type="Node3D" unique_id=1928051846]
 metadata/city_service_scene_root = true
@@ -213,6 +239,35 @@ shape = SubResource("BoxShape3D_door_transom")
 [node name="CollisionCounter" type="CollisionShape3D" parent="GeneratedBuilding"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -7.35, -14)
 shape = SubResource("BoxShape3D_counter")
+
+[node name="TerrainMitigation" type="Node3D" parent="GeneratedBuilding"]
+
+[node name="BackPlatformCollision" type="CollisionShape3D" parent="GeneratedBuilding/TerrainMitigation"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -7.1, -17.4)
+shape = SubResource("BoxShape3D_back_platform")
+
+[node name="BackPlatform" type="MeshInstance3D" parent="GeneratedBuilding/TerrainMitigation"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -7.1, -17.4)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_back_platform")
+
+[node name="LeftBanquetteCollision" type="CollisionShape3D" parent="GeneratedBuilding/TerrainMitigation"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13.9, -7.1, 4)
+shape = SubResource("BoxShape3D_side_banquette")
+
+[node name="LeftBanquette" type="MeshInstance3D" parent="GeneratedBuilding/TerrainMitigation"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13.9, -7.1, 4)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_side_banquette")
+
+[node name="RightBanquetteCollision" type="CollisionShape3D" parent="GeneratedBuilding/TerrainMitigation"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.9, -7.1, 4)
+shape = SubResource("BoxShape3D_side_banquette")
+
+[node name="RightBanquette" type="MeshInstance3D" parent="GeneratedBuilding/TerrainMitigation"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.9, -7.1, 4)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_side_banquette")
 
 [node name="Shell" type="Node3D" parent="GeneratedBuilding"]
 
@@ -308,6 +363,21 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -7.35, -14)
 material_override = SubResource("StandardMaterial3D_wood")
 mesh = SubResource("BoxMesh_counter")
 
+[node name="Register" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.6, -6.48, -13.4)
+material_override = SubResource("StandardMaterial3D_menu")
+mesh = SubResource("BoxMesh_register")
+
+[node name="CoffeeMachine" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.2, -6.23, -14.2)
+material_override = SubResource("StandardMaterial3D_sign")
+mesh = SubResource("BoxMesh_coffee_machine")
+
+[node name="PastryCase" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, -6.55, -13.5)
+material_override = SubResource("StandardMaterial3D_glass")
+mesh = SubResource("BoxMesh_pastry_case")
+
 [node name="BackShelfLower" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -5.8, -19.4)
 material_override = SubResource("StandardMaterial3D_trim")
@@ -322,6 +392,11 @@ mesh = SubResource("BoxMesh_shelf")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.8, -20.18)
 material_override = SubResource("StandardMaterial3D_menu")
 mesh = SubResource("BoxMesh_menu_board")
+
+[node name="MenuText" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
+transform = Transform3D(3.8, 0, 0, 0, 3.8, 0, 0, 0, 3.8, -4.3, -1.5, -20.02)
+mesh = SubResource("TextMesh_menu_text")
+surface_material_override/0 = SubResource("StandardMaterial3D_sign")
 
 [node name="FloorRunner" type="MeshInstance3D" parent="GeneratedBuilding/Interior"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -7.78, 6.8)
@@ -438,3 +513,50 @@ mesh = SubResource("BoxMesh_pendant_rod")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.85, 0)
 material_override = SubResource("StandardMaterial3D_sign")
 mesh = SubResource("BoxMesh_pendant_shade")
+
+[node name="Lighting" type="Node3D" parent="GeneratedBuilding"]
+
+[node name="TableLeftLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting"]
+position = Vector3(-8.2, -3.2, 6.5)
+light_color = Color(1, 0.905882, 0.807843, 1)
+light_energy = 2.4
+omni_range = 16.0
+
+[node name="TableRightLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting"]
+position = Vector3(8.2, -3.2, 6.5)
+light_color = Color(1, 0.905882, 0.807843, 1)
+light_energy = 2.4
+omni_range = 16.0
+
+[node name="CounterLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting"]
+position = Vector3(0, -3.7, -11)
+light_color = Color(1, 0.878431, 0.741176, 1)
+light_energy = 2.8
+omni_range = 18.0
+
+[node name="ServiceAnchors" type="Node3D" parent="GeneratedBuilding"]
+
+[node name="BaristaAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors"]
+position = Vector3(-1.3, -7.8, -15.5)
+metadata/city_service_anchor_id = "barista"
+metadata/city_service_anchor_role = "staff"
+
+[node name="RegisterQueueAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors"]
+position = Vector3(0, -7.8, -8.8)
+metadata/city_service_anchor_id = "register_queue"
+metadata/city_service_anchor_role = "queue"
+
+[node name="WindowSeatLeftAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors"]
+position = Vector3(-8.2, -7.8, 6.5)
+metadata/city_service_anchor_id = "window_seat_left"
+metadata/city_service_anchor_role = "seat"
+
+[node name="WindowSeatRightAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors"]
+position = Vector3(8.2, -7.8, 6.5)
+metadata/city_service_anchor_id = "window_seat_right"
+metadata/city_service_anchor_role = "seat"
+
+[node name="DoorEntryAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors"]
+position = Vector3(0, -7.8, 16.8)
+metadata/city_service_anchor_id = "door_entry"
+metadata/city_service_anchor_role = "entry"

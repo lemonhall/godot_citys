@@ -183,9 +183,9 @@ func set_marker_radius(radius_m: float) -> void:
 func set_marker_world_position(world_position: Vector3) -> void:
 	global_position = world_position
 
-func set_marker_visible(is_visible: bool) -> void:
-	visible = is_visible
-	if not is_visible:
+func set_marker_visible(should_be_visible: bool) -> void:
+	visible = should_be_visible
+	if not should_be_visible:
 		_elapsed_sec = 0.0
 
 func tick(delta: float) -> void:

@@ -269,7 +269,7 @@ func _build_debug_address_query(block_layout, road_graph, street_cluster_catalog
 	var block_stride := maxi(int(floor(float(block_count) / 2048.0)), 1)
 	var center_block_serial := int(floor(float(block_count) * 0.5))
 	for search_index in range(0, 2048):
-		var signed_offset := search_index / 2
+		var signed_offset := int(float(search_index) / 2.0)
 		if search_index % 2 == 1:
 			signed_offset = -signed_offset
 		var block_serial_index := clampi(center_block_serial + signed_offset * block_stride, 0, block_count - 1)

@@ -41,7 +41,7 @@ func set_minimap_snapshot(snapshot: Dictionary) -> void:
 	_minimap_snapshot = snapshot.duplicate(false)
 	_apply_minimap_state()
 
-func set_navigation_state(state: Dictionary) -> void:
+func set_navigation_state(_state: Dictionary) -> void:
 	pass
 
 func set_crosshair_state(state: Dictionary) -> void:
@@ -57,8 +57,8 @@ func get_minimap_state() -> Dictionary:
 func get_navigation_state() -> Dictionary:
 	return {}
 
-func set_fps_overlay_visible(is_visible: bool) -> void:
-	_fps_overlay_state["visible"] = is_visible
+func set_fps_overlay_visible(should_be_visible: bool) -> void:
+	_fps_overlay_state["visible"] = should_be_visible
 	_apply_fps_overlay_state()
 
 func set_fps_overlay_sample(fps: float) -> void:

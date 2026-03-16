@@ -469,10 +469,10 @@ func set_control_mode(mode: String) -> void:
 	_set_camera_current(player.get_node_or_null("CameraRig/Camera3D"), true)
 	_refresh_hud_status({}, true)
 
-func set_pedestrians_visible(is_visible: bool) -> void:
-	_pedestrians_visible = is_visible
+func set_pedestrians_visible(should_be_visible: bool) -> void:
+	_pedestrians_visible = should_be_visible
 	if chunk_renderer != null and chunk_renderer.has_method("set_pedestrians_visible"):
-		chunk_renderer.set_pedestrians_visible(is_visible)
+		chunk_renderer.set_pedestrians_visible(should_be_visible)
 	_refresh_hud_status({}, true)
 
 func toggle_pedestrians_visible() -> void:
@@ -483,10 +483,10 @@ func are_pedestrians_visible() -> bool:
 		return bool(chunk_renderer.are_pedestrians_visible())
 	return _pedestrians_visible
 
-func set_fps_overlay_visible(is_visible: bool) -> void:
-	_fps_overlay_visible = is_visible
+func set_fps_overlay_visible(should_be_visible: bool) -> void:
+	_fps_overlay_visible = should_be_visible
 	if hud != null and hud.has_method("set_fps_overlay_visible"):
-		hud.set_fps_overlay_visible(is_visible)
+		hud.set_fps_overlay_visible(should_be_visible)
 	if hud != null and hud.has_method("set_fps_overlay_sample"):
 		hud.set_fps_overlay_sample(_last_fps_sample)
 	_refresh_hud_status({}, true)
@@ -1934,7 +1934,8 @@ func _apply_world_simulation_pause(should_pause: bool) -> void:
 		var node := entry.get("node") as Node
 		if node == null or not is_instance_valid(node):
 			continue
-		node.process_mode = int(entry.get("process_mode", Node.PROCESS_MODE_INHERIT))
+		var saved_process_mode := int(entry.get("process_mode", Node.PROCESS_MODE_INHERIT)) as Node.ProcessMode
+		node.process_mode = saved_process_mode
 	_paused_world_process_entries.clear()
 
 func _collect_world_pause_nodes() -> Array[Node]:

@@ -87,7 +87,7 @@ func configure_from_states(states: Array, chunk_center: Vector3, visual_catalog:
 		_cached_instance_colors.resize(states.size())
 	return transform_write_count
 
-func _build_instance_transform(state, chunk_center: Vector3, visual_catalog: CityVehicleVisualCatalog) -> Transform3D:
+func _build_instance_transform(state, chunk_center: Vector3, _visual_catalog: CityVehicleVisualCatalog) -> Transform3D:
 	var world_position := _state_world_position(state)
 	var local_position := world_position - chunk_center
 	var heading := _state_heading(state)

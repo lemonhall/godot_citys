@@ -34,11 +34,12 @@ const LANDMARK_TAIL := [
 	"Market", "Outlook", "Pavilion", "Plaza", "Point", "Square",
 ]
 
-func build_catalog(seed: int) -> Dictionary:
-	var road_roots := _rotate_pool(_build_word_pool(ROAD_FRONT, ROAD_MIDDLE, ROAD_TAIL, ROAD_ROOT_TARGET), seed)
-	var landmark_names := _rotate_pool(_build_word_pool(LANDMARK_FRONT, LANDMARK_MIDDLE, LANDMARK_TAIL, LANDMARK_TARGET), seed / 3 + 17)
+func build_catalog(catalog_seed: int) -> Dictionary:
+	var road_roots := _rotate_pool(_build_word_pool(ROAD_FRONT, ROAD_MIDDLE, ROAD_TAIL, ROAD_ROOT_TARGET), catalog_seed)
+	var landmark_seed := int(float(catalog_seed) / 3.0) + 17
+	var landmark_names := _rotate_pool(_build_word_pool(LANDMARK_FRONT, LANDMARK_MIDDLE, LANDMARK_TAIL, LANDMARK_TARGET), landmark_seed)
 	return {
-		"source_seed": seed,
+		"source_seed": catalog_seed,
 		"road_name_root_pool": road_roots,
 		"landmark_proper_name_pool": landmark_names,
 	}
@@ -61,11 +62,11 @@ func _build_word_pool(front: Array, middle: Array, tail: Array, target_count: in
 					return pool
 	return pool
 
-func _rotate_pool(pool: Array[String], seed: int) -> Array[String]:
+func _rotate_pool(pool: Array[String], rotation_seed: int) -> Array[String]:
 	if pool.is_empty():
 		return []
 	var rotated: Array[String] = pool.duplicate()
-	var offset := int(posmod(seed, rotated.size()))
+	var offset := int(posmod(rotation_seed, rotated.size()))
 	if offset == 0:
 		return rotated
 	return rotated.slice(offset) + rotated.slice(0, offset)

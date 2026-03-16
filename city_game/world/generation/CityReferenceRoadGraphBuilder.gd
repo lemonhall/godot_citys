@@ -447,17 +447,17 @@ func _register_endpoint_branch(endpoint_nodes: Dictionary, position: Vector2, ta
 
 func _resolve_edge_endpoint_target(points: Array, from_start: bool) -> Vector2:
 	if from_start:
-		var origin: Vector2 = points[0]
+		var start_origin: Vector2 = points[0]
 		for point_index in range(1, points.size()):
 			var candidate: Vector2 = points[point_index]
-			if origin.distance_to(candidate) > 1.5:
+			if start_origin.distance_to(candidate) > 1.5:
 				return candidate
 		return points[points.size() - 1]
-	var origin: Vector2 = points[points.size() - 1]
+	var end_origin: Vector2 = points[points.size() - 1]
 	for reverse_offset in range(1, points.size()):
 		var reverse_index := points.size() - 1 - reverse_offset
 		var candidate: Vector2 = points[reverse_index]
-		if origin.distance_to(candidate) > 1.5:
+		if end_origin.distance_to(candidate) > 1.5:
 			return candidate
 	return points[0]
 

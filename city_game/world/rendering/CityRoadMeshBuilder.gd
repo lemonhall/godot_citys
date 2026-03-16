@@ -37,7 +37,7 @@ static func build_road_overlay(profile: Dictionary, chunk_data: Dictionary) -> N
 
 	return road_root
 
-static func build_bridge_proxy(profile: Dictionary, chunk_data: Dictionary) -> Node3D:
+static func build_bridge_proxy(profile: Dictionary, _chunk_data: Dictionary) -> Node3D:
 	var palette: Dictionary = profile.get("palette", {})
 	var road_color: Color = palette.get("road", Color(0.16, 0.17, 0.19, 1.0))
 	var bridge_segments := _filter_bridge_segments(profile.get("road_segments", []))

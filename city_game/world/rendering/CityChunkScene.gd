@@ -419,12 +419,12 @@ func drain_pedestrian_death_visuals(target_parent: Node3D) -> Array[Dictionary]:
 		return []
 	return _pedestrian_crowd.drain_death_visuals(target_parent)
 
-func set_pedestrian_visibility(is_visible: bool) -> void:
-	if _pedestrians_visible == is_visible:
+func set_pedestrian_visibility(should_be_visible: bool) -> void:
+	if _pedestrians_visible == should_be_visible:
 		return
-	_pedestrians_visible = is_visible
+	_pedestrians_visible = should_be_visible
 	if _pedestrian_crowd != null:
-		_pedestrian_crowd.visible = is_visible
+		_pedestrian_crowd.visible = should_be_visible
 
 func are_pedestrians_visible() -> bool:
 	return _pedestrians_visible

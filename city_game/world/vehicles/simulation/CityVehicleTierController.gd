@@ -89,7 +89,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	_assignment_rebuild_elapsed_sec += maxf(delta, 0.0)
 	if not _should_rebuild_assignments(active_chunk_ids, player_position):
 		var reuse_result := _rebuild_chunk_snapshots_from_cached_assignments(active_chunk_ids)
-		var runtime_snapshot: Dictionary = _vehicle_streamer.get_runtime_summary()
+		var reuse_runtime_summary: Dictionary = _vehicle_streamer.get_runtime_summary()
 		_update_runtime_snapshot(
 			active_chunk_ids.size(),
 			active_states.size(),
@@ -97,7 +97,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			int(reuse_result.get("tier1_count", 0)),
 			int(reuse_result.get("tier2_count", 0)),
 			int(reuse_result.get("tier3_count", 0)),
-			runtime_snapshot,
+			reuse_runtime_summary,
 			traffic_spawn_usec,
 			traffic_step_usec,
 			0,

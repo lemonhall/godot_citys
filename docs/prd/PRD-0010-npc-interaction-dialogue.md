@@ -1,17 +1,19 @@
 # PRD-0010 NPC Interaction And Dialogue
 
+> 2026-03-16 口径修正：本 PRD 覆盖的是“任何被显式配置为可交互的 NPC”，不是“仅限功能建筑里的 NPC”；咖啡馆服务员只是首个 consumer。
+
 ## Vision
 
 把城市里“可交互 NPC”正式收口成一条可复用的近距交互链，而不是每个 NPC 各写一套临时逻辑。玩家接近某个可交互 NPC 到 `3m` 内时，画面上会稳定出现“可以按下 `E` 键交互”的提示；玩家按下 `E` 后，系统进入正式的对话态，并把该 NPC 的对话内容呈现出来。第一批交付的用户价值不是“已经有完整商业系统”，而是先把 `接近 -> 提示 -> 按 E -> 对话` 这条主链在真实城市场景里跑通，并且让未来更多 NPC 直接复用。
 
-`v17` 的成功标准有四条。第一，近距提示是正式 runtime contract，不是只对某一个咖啡馆服务员写死的特判。第二，`E` 键交互必须有明确 ownership，不得和当前车辆 `F` 键交互链打架。第三，对话 runtime 必须是一个正式子系统，至少具备 `idle / active` 状态、speaker 文本与关闭行为。第四，首个 consumer 必须真实挂在 `v16` 导出的咖啡馆服务员身上，玩家进场后能在实机里完成这条链。
+`v17` 的成功标准有四条。第一，近距提示是正式 runtime contract，不是只对某一个咖啡馆服务员写死的特判。第二，`E` 键交互必须有明确 ownership，不得和当前车辆 `F` 键交互链打架。第三，对话 runtime 必须是一个正式子系统，至少具备 `idle / active` 状态、speaker 文本与关闭行为。第四，首个 consumer 虽然先挂在 `v16` 导出的咖啡馆服务员身上，但整条 contract 必须从一开始就能服务于未来任意被显式配置为可交互的 NPC。
 
 ## Background
 
-- `v16` 已经把功能建筑场景正式挂回城市；咖啡馆服务员现已存在于 `003` 号服务化场景中。
+- `v16` 已经把功能建筑场景正式挂回城市；咖啡馆服务员现已存在于 `003` 号服务化场景中，可作为 `v17` 的首个 consumer。
 - 当前仓库已有成熟的 `PrototypeHud.set_focus_message()` Toast 能力，但还没有“持续显示的近距交互提示”。
 - `CityPrototype` 里已经有正式 `_unhandled_input()` 分发链，也已有车辆 `F` 键交互 contract，可作为输入 ownership 参考。
-- 当前仓库没有正式的 NPC 交互 runtime，也没有通用对话 runtime；如果直接在咖啡馆场景里堆临时脚本，后续每个 NPC 都会重新分叉。
+- 当前仓库没有正式的 NPC 交互 runtime，也没有通用对话 runtime；如果继续在某个具体场景里堆临时脚本，后续每个可交互 NPC 都会重新分叉。
 
 ## Scope
 
@@ -19,12 +21,12 @@
 
 包含：
 
-- 为近距可交互 NPC 建立正式 contract
+- 为任何被显式配置为可交互的 NPC 建立正式 contract
 - 玩家距离某个可交互 NPC `3m` 内时显示持续性的 `E` 键交互提示
 - 玩家按 `E` 时进入通用对话 runtime
 - 首个对话 consumer 为咖啡馆服务员，默认台词为“你想喝点什么？”
 - 对话 UI 至少显示：speaker、正文、关闭/继续提示
-- 未来 NPC 可复用同一套交互/对话 contract，而不是只服务于咖啡馆
+- 未来任意被显式配置为可交互的 NPC 都可复用同一套交互/对话 contract，而不是只服务于咖啡馆
 
 不包含：
 
@@ -44,11 +46,11 @@
 
 ### REQ-0010-001 系统必须为近距可交互 NPC 提供正式的 `3m / E` 提示 contract
 
-**动机**：如果提示链只靠某个场景局部脚本或某条临时文本，未来 NPC 就无法复用。
+**动机**：如果提示链只靠某个场景局部脚本或某条临时文本，未来可交互 NPC 就无法复用。
 
 **范围**：
 
-- 可交互 NPC 必须具备正式 interaction contract，至少包含：
+- 被显式配置为可交互的 NPC 必须具备正式 interaction contract，至少包含：
   - `actor_id`
   - `display_name`
   - `interaction_kind`
@@ -101,11 +103,11 @@
 
 ### REQ-0010-003 咖啡馆服务员必须成为首个真实 consumer，并说出“你想喝点什么？”
 
-**动机**：如果没有真实 consumer，通用 runtime 很容易沦为空壳。
+**动机**：如果没有真实 consumer，通用 runtime 很容易沦为空壳；但首个 consumer 不能反向把整条 contract 收窄成“只给这一个 NPC 用”。
 
 **范围**：
 
-- `v16` 咖啡馆服务员必须挂入正式 interaction contract
+- `v16` 咖啡馆服务员必须挂入正式 interaction contract，作为首个真实 consumer
 - 玩家靠近服务员时显示 `E` 提示
 - 玩家按 `E` 后，对话 UI 至少显示：
   - speaker 名称

@@ -1,5 +1,7 @@
 # V17 Index
 
+> 2026-03-16 口径修正：`v17` 不是“建筑物里的 NPC 交互版”，而是“任何被显式配置为可交互的 NPC 都可复用的通用交互/对话底座”；咖啡馆服务员只是首个 consumer。
+
 ## 愿景
 
 PRD 入口：[PRD-0010 NPC Interaction And Dialogue](../prd/PRD-0010-npc-interaction-dialogue.md)
@@ -11,7 +13,7 @@ PRD 入口：[PRD-0010 NPC Interaction And Dialogue](../prd/PRD-0010-npc-interac
 - [PRD-0009 Building Serviceability Reconstruction](../prd/PRD-0009-building-serviceability-reconstruction.md)
 - [v16-index.md](./v16-index.md)
 
-`v17` 的目标是把“接近功能建筑里的可交互 NPC -> HUD 提示 -> 按 `E` -> 对话”冻结成正式主链。第一批交付先以咖啡馆服务员为首个 consumer，但 runtime contract 必须从一开始就服务于未来更多 NPC，而不是只给单个场景写死。
+`v17` 的目标是把“接近任意被显式配置为可交互的 NPC -> HUD 提示 -> 按 `E` -> 对话”冻结成正式主链。第一批交付先以咖啡馆服务员为首个 consumer，但 runtime contract 必须从一开始就服务于未来更多 NPC，而不是只给单个场景写死。
 
 ## 决策冻结
 
@@ -19,7 +21,7 @@ PRD 入口：[PRD-0010 NPC Interaction And Dialogue](../prd/PRD-0010-npc-interac
 - 近距提示距离冻结为 `3m`。
 - HUD 交互提示冻结为持续 state，不复用 `FocusMessage` 计时 Toast。
 - 对话 runtime 首版冻结为单轮 opening line + close，不做商品结算和多轮分支。
-- 交互候选只允许来自当前已挂载的 service actors，不允许每帧扫描全城 pedestrian 数据。
+- 交互候选只允许来自当前已挂载且显式声明为可交互的 NPC actor group，不允许每帧扫描全城 pedestrian 数据。
 
 ## 里程碑
 
@@ -46,7 +48,7 @@ PRD 入口：[PRD-0010 NPC Interaction And Dialogue](../prd/PRD-0010-npc-interac
 
 - `v17` closeout 必须以 fresh tests + fresh profiling 为准，统一落在 `docs/plan/v17-mN-verification-YYYY-MM-DD.md`。
 - 只显示提示、不支持 `E` ownership 与对话 runtime，不算 `v17` 完成。
-- 只有咖啡馆服务员能交互、未来 actor 无法复用同一 contract，不算 `v17` 完成。
+- 只有咖啡馆服务员能交互、未来被配置为可交互的 NPC 无法复用同一 contract，不算 `v17` 完成。
 
 ## ECN 索引
 

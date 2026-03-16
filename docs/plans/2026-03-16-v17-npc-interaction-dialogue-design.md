@@ -1,10 +1,10 @@
 # V17 NPC Interaction And Dialogue Design
 
-**Goal:** 把“接近 NPC -> HUD 提示 -> 按 `E` -> 对话”收口成正式 runtime，而不是继续在每个功能场景里写零散脚本。
+**Goal:** 把“接近 NPC -> HUD 提示 -> 按 `E` -> 对话”收口成正式 runtime，而不是继续在每个具体场景里写零散脚本。
 
-**Architecture:** 继续沿 `CityPrototype + PrototypeHud + serviceability scene` 主链推进。交互候选只来自当前已挂载的 service actors，按最近距离做单拥有者裁定；HUD 增加一条持续性的 interaction prompt；按 `E` 进入独立 dialogue runtime，再由 dialogue runtime 接管 `E` ownership。
+**Architecture:** 继续沿 `CityPrototype + PrototypeHud + interactable NPC actor` 主链推进。交互候选只来自当前已挂载且显式声明为可交互的 NPC actors，按最近距离做单拥有者裁定；HUD 增加一条持续性的 interaction prompt；按 `E` 进入独立 dialogue runtime，再由 dialogue runtime 接管 `E` ownership。
 
-**Tech Stack:** Godot 4.6、GDScript、现有 `PrototypeHud`、`CityPrototype._unhandled_input()`、功能建筑 service scene、现有 `suit.glb` 服务员。
+**Tech Stack:** Godot 4.6、GDScript、现有 `PrototypeHud`、`CityPrototype._unhandled_input()`、可交互 NPC actor contract、现有 `suit.glb` 服务员。
 
 ---
 
@@ -12,7 +12,7 @@
 
 - 现在仓库里已经有 `FocusMessage` Toast，但它是时间衰减消息，不适合作为“持续显示直到离开 3m”的交互提示。
 - `CityPrototype` 已经维护输入 ownership：`M` 地图、`T` 快速旅行、`F` 车辆交互、`KP+` 建筑导出。NPC 交互要接进同一条 ownership 链，而不是绕开它。
-- `v16` 的咖啡馆服务员已经存在于服务化场景里，具备 `actor_id / role` 元数据与稳定锚点，是最合适的第一个 consumer。
+- `v16` 的咖啡馆服务员已经存在于服务化场景里，具备稳定锚点，是最合适的第一个 consumer；但 `v17` 的 contract 不能因此被锁死在“功能建筑内部 NPC”。
 
 ## Options
 
@@ -24,7 +24,7 @@
 
 ### 方案 B：新增 `InteractionPrompt` HUD 状态 + `NpcInteractionRuntime` + `DialogueRuntime`
 
-优点：语义清晰，ownership 明确；以后任何 service actor 都能接同一 contract。提示、交互、对话分层明确，不污染 `FocusMessage`。
+优点：语义清晰，ownership 明确；以后任何被显式配置为可交互的 NPC actor 都能接同一 contract。提示、交互、对话分层明确，不污染 `FocusMessage`。
 
 缺点：要多建一个 runtime 和一条 HUD 状态。
 
@@ -39,7 +39,7 @@
 ## Data Flow
 
 ```text
-mounted service actor nodes
+mounted interactable npc actor nodes
   -> CityNpcInteractionRuntime scans active actors only
   -> nearest actor within 3m becomes prompt owner
   -> PrototypeHud shows "可以按下 E 键交互"
@@ -52,9 +52,9 @@ mounted service actor nodes
 
 ## Component Design
 
-### 1. `CityServiceActor.gd`
+### 1. `CityInteractableNpc.gd`
 
-- 通用 actor contract 承载脚本。
+- 通用 interactable NPC actor contract 承载脚本。
 - 最小导出字段：
   - `actor_id`
   - `display_name`
@@ -62,13 +62,13 @@ mounted service actor nodes
   - `interaction_radius_m`
   - `dialogue_id`
   - `opening_line`
-- `_ready()` 时进入统一 group，例如 `city_service_actor`。
+- `_ready()` 时进入统一 group，例如 `city_interactable_npc`。
 - 可与 `CityIdleServicePedestrian.gd` 组合使用，避免把 idle 动画逻辑和交互逻辑耦死。
 
 ### 2. `CityNpcInteractionRuntime.gd`
 
 - 世界级 runtime，挂在 `CityPrototype` 下。
-- 只扫描当前 scene tree 中已挂载的 `city_service_actor`，不碰全城生成数据。
+- 只扫描当前 scene tree 中已挂载的 `city_interactable_npc`，不碰全城生成数据。
 - 每帧或事件驱动选出最近且在 `3m` 内的候选 actor。
 - 输出稳定 state：
   - `visible`
@@ -107,7 +107,7 @@ mounted service actor nodes
   - `E` ownership 与 `idle / active` 切换
   - 对话打开时 prompt 隐藏，关闭时恢复
 - `tests/world/test_city_cafe_scene_contract.gd`
-  - 咖啡馆服务员具备 `CityServiceActor` contract 与 opening line
+  - 咖啡馆服务员具备 `CityInteractableNpc` contract 与 opening line
 
 ### E2E
 
@@ -143,8 +143,8 @@ mounted service actor nodes
 
 **Files:**
 
-- Create: `city_game/world/serviceability/CityServiceActor.gd`
-- Create: `city_game/world/serviceability/CityNpcInteractionRuntime.gd`
+- Create: `city_game/world/interactions/CityInteractableNpc.gd`
+- Create: `city_game/world/interactions/CityNpcInteractionRuntime.gd`
 - Modify: `city_game/scripts/CityPrototype.gd`
 - Modify: `city_game/ui/PrototypeHud.gd`
 
@@ -152,7 +152,7 @@ mounted service actor nodes
 
 **Files:**
 
-- Create: `city_game/world/serviceability/CityDialogueRuntime.gd`
+- Create: `city_game/world/interactions/CityDialogueRuntime.gd`
 - Create: `city_game/ui/CityDialoguePanel.gd`
 - Modify: `city_game/scripts/CityPrototype.gd`
 - Modify: `city_game/ui/PrototypeHud.gd`

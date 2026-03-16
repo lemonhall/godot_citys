@@ -328,6 +328,18 @@ func get_chunk_scene_count() -> int:
 func get_chunk_scene(chunk_id: String):
 	return _chunk_scenes.get(chunk_id)
 
+func get_building_generation_contract(building_id: String) -> Dictionary:
+	if building_id == "":
+		return {}
+	for chunk_id in get_chunk_ids():
+		var chunk_scene: Node = _chunk_scenes.get(chunk_id) as Node
+		if chunk_scene == null or not chunk_scene.has_method("get_building_generation_contract"):
+			continue
+		var contract: Dictionary = chunk_scene.get_building_generation_contract(building_id)
+		if not contract.is_empty():
+			return contract
+	return {}
+
 func prewarm_actor_pages(chunk_entries: Array) -> void:
 	if _pedestrian_tier_controller != null and _pedestrian_tier_controller.has_method("prewarm_chunk_entries"):
 		_pedestrian_tier_controller.prewarm_chunk_entries(chunk_entries)
@@ -1229,6 +1241,9 @@ func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 		"chunk_seed": _config.derive_seed("render_chunk", chunk_key),
 		"world_seed": int(_config.base_seed),
 		"road_graph": _world_data.get("road_graph"),
+		"block_layout": _world_data.get("block_layout"),
+		"street_cluster_catalog": _world_data.get("street_cluster_catalog"),
+		"vehicle_query": _world_data.get("vehicle_query"),
 		"pedestrian_chunk_snapshot": {},
 		"vehicle_chunk_snapshot": {},
 	}

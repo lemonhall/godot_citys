@@ -2,7 +2,10 @@ extends RefCounted
 
 const CityRoadLayoutBuilder := preload("res://city_game/world/rendering/CityRoadLayoutBuilder.gd")
 const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
+const CityPlaceIndexBuilder := preload("res://city_game/world/generation/CityPlaceIndexBuilder.gd")
+const CityAddressGrammar := preload("res://city_game/world/model/CityAddressGrammar.gd")
 
+const BUILDING_ID_SCHEMA_VERSION := "v15-building-id-1"
 const ROAD_CLEARANCE_M := 6.0
 const BUILDING_MARGIN_M := 3.0
 const CANDIDATE_STEP_M := 22.0
@@ -118,6 +121,7 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 	var building_result: Dictionary = _build_buildings(chunk_center, chunk_size_m, chunk_seed, world_seed, road_segments)
 	var buildings_usec := Time.get_ticks_usec() - buildings_started_usec
 	var buildings: Array = building_result.get("buildings", [])
+	buildings = _attach_building_inspection_payloads(chunk_data, buildings)
 	var building_layout_stats: Dictionary = (building_result.get("layout_stats", {}) as Dictionary).duplicate(true)
 	var building_archetype_ids := _collect_building_archetypes(buildings)
 	var terrain_relief_started_usec := Time.get_ticks_usec()
@@ -245,6 +249,182 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 		"buildings": buildings,
 		"layout_stats": _build_building_layout_stats(buildings, streetfront_candidates, infill_candidates),
 	}
+
+static func _attach_building_inspection_payloads(chunk_data: Dictionary, buildings: Array) -> Array:
+	if buildings.is_empty():
+		return []
+	var chunk_id := str(chunk_data.get("chunk_id", ""))
+	var chunk_key: Vector2i = chunk_data.get("chunk_key", Vector2i.ZERO)
+	var world_seed := int(chunk_data.get("world_seed", 0))
+	var address_targets := _build_chunk_address_targets(chunk_data, maxi(buildings.size(), 1))
+	var ordered_entries: Array = []
+	for building_index in range(buildings.size()):
+		ordered_entries.append({
+			"index": building_index,
+			"building": buildings[building_index],
+		})
+	ordered_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var center_a: Vector2 = (a.get("building", {}) as Dictionary).get("center_2d", Vector2.ZERO)
+		var center_b: Vector2 = (b.get("building", {}) as Dictionary).get("center_2d", Vector2.ZERO)
+		if not is_equal_approx(center_a.x, center_b.x):
+			return center_a.x < center_b.x
+		if not is_equal_approx(center_a.y, center_b.y):
+			return center_a.y < center_b.y
+		return int((a.get("building", {}) as Dictionary).get("detail_seed", 0)) < int((b.get("building", {}) as Dictionary).get("detail_seed", 0))
+	)
+	var payloads_by_index: Dictionary = {}
+	var remaining_targets: Array = address_targets.duplicate(false)
+	for ordered_entry_index in range(ordered_entries.size()):
+		var entry_variant = ordered_entries[ordered_entry_index]
+		var entry: Dictionary = entry_variant
+		var index := int(entry.get("index", -1))
+		var building: Dictionary = entry.get("building", {})
+		var building_local_index := ordered_entry_index + 1
+		var payload := _resolve_building_inspection_payload(
+			building,
+			remaining_targets,
+			chunk_id,
+			chunk_key,
+			world_seed,
+			building_local_index,
+			true
+		)
+		payloads_by_index[index] = payload
+	var enriched_buildings: Array = []
+	for building_index in range(buildings.size()):
+		var building: Dictionary = (buildings[building_index] as Dictionary).duplicate(true)
+		var payload: Dictionary = payloads_by_index.get(
+			building_index,
+			_resolve_building_inspection_payload(
+				building,
+				address_targets,
+				chunk_id,
+				chunk_key,
+				world_seed,
+				building_index + 1,
+				false
+			)
+		)
+		building["building_id"] = str(payload.get("building_id", ""))
+		building["building_local_index"] = int(payload.get("building_local_index", 0))
+		building["display_name"] = str(payload.get("display_name", ""))
+		building["address_label"] = str(payload.get("address_label", ""))
+		building["place_id"] = str(payload.get("place_id", ""))
+		building["generation_locator"] = (payload.get("generation_locator", {}) as Dictionary).duplicate(true)
+		building["inspection_payload"] = payload
+		enriched_buildings.append(building)
+	return enriched_buildings
+
+static func _build_chunk_address_targets(chunk_data: Dictionary, desired_target_count: int) -> Array:
+	var block_layout = chunk_data.get("block_layout")
+	var road_graph = chunk_data.get("road_graph")
+	var street_cluster_catalog = chunk_data.get("street_cluster_catalog")
+	var chunk_key: Vector2i = chunk_data.get("chunk_key", Vector2i.ZERO)
+	if block_layout == null or road_graph == null or street_cluster_catalog == null:
+		return []
+	if not block_layout.has_method("get_blocks_for_chunk") or not block_layout.has_method("get_parcels_for_block"):
+		return []
+	var address_targets: Array = []
+	var grammar := CityAddressGrammar.new()
+	var chunk_blocks: Array = block_layout.get_blocks_for_chunk(chunk_key)
+	var parcel_count := maxi(chunk_blocks.size() * 4, 1)
+	var slots_per_parcel := maxi(int(ceil(float(desired_target_count) / float(parcel_count))), 1)
+	for block_variant in chunk_blocks:
+		var block_data: Dictionary = block_variant
+		for parcel_variant in block_layout.get_parcels_for_block(block_data):
+			var parcel_data: Dictionary = parcel_variant
+			var canonical_road_name := CityPlaceIndexBuilder.resolve_canonical_road_name_for_parcel(
+				road_graph,
+				street_cluster_catalog,
+				block_data,
+				parcel_data
+			)
+			if canonical_road_name == "":
+				continue
+			var parcel_center_2d: Vector2 = parcel_data.get("center_2d", block_data.get("center_2d", Vector2.ZERO))
+			var world_anchor := Vector3(parcel_center_2d.x, 0.0, parcel_center_2d.y)
+			for frontage_slot_index in range(slots_per_parcel):
+				var address_record := grammar.build_address_record(
+					block_data,
+					parcel_data,
+					frontage_slot_index,
+					canonical_road_name,
+					str(parcel_data.get("frontage_side", ""))
+				)
+				address_targets.append({
+					"display_name": str(address_record.get("display_name", "")),
+					"place_id": str(address_record.get("place_id", "")),
+					"world_anchor_2d": parcel_center_2d,
+					"world_position": world_anchor,
+					"frontage_slot_index": frontage_slot_index,
+				})
+	return address_targets
+
+static func _resolve_building_inspection_payload(building: Dictionary, address_targets: Array, chunk_id: String, chunk_key: Vector2i, world_seed: int, building_local_index: int, consume_target: bool) -> Dictionary:
+	var building_center: Vector3 = building.get("center", Vector3.ZERO)
+	var building_center_2d: Vector2 = building.get("center_2d", Vector2(building_center.x, building_center.z))
+	var best_target_index := -1
+	var best_distance_sq := INF
+	for target_index in range(address_targets.size()):
+		var target_variant = address_targets[target_index]
+		var target: Dictionary = target_variant
+		var target_anchor: Vector2 = target.get("world_anchor_2d", Vector2.ZERO)
+		var distance_sq := building_center_2d.distance_squared_to(target_anchor)
+		if distance_sq < best_distance_sq:
+			best_distance_sq = distance_sq
+			best_target_index = target_index
+	var best_target: Dictionary = {}
+	if best_target_index >= 0 and best_target_index < address_targets.size():
+		best_target = address_targets[best_target_index]
+		if consume_target:
+			address_targets.remove_at(best_target_index)
+	var address_label := str(best_target.get("display_name", ""))
+	var place_id := str(best_target.get("place_id", ""))
+	var building_code := _build_building_code(chunk_id, building_local_index)
+	var building_id := _build_building_id(world_seed, chunk_id, building_local_index)
+	var fallback_name := str(building.get("name", "Building"))
+	var display_name := _build_building_display_name(address_label, building_code, fallback_name)
+	var generation_locator := {
+		"schema_version": BUILDING_ID_SCHEMA_VERSION,
+		"building_id": building_id,
+		"world_seed": world_seed,
+		"chunk_id": chunk_id,
+		"chunk_key": chunk_key,
+		"building_local_index": building_local_index,
+		"detail_seed": int(building.get("detail_seed", 0)),
+		"archetype_id": str(building.get("archetype_id", "")),
+		"candidate_kind": str(building.get("candidate_kind", "")),
+	}
+	return {
+		"inspection_kind": "building",
+		"display_name": display_name,
+		"address_label": address_label if address_label != "" else fallback_name,
+		"building_id": building_id,
+		"building_code": building_code,
+		"building_local_index": building_local_index,
+		"place_id": place_id,
+		"chunk_id": chunk_id,
+		"chunk_key": chunk_key,
+		"world_position": building_center,
+		"generation_locator": generation_locator,
+		"detail_seed": int(building.get("detail_seed", 0)),
+		"archetype_id": str(building.get("archetype_id", "")),
+	}
+
+static func _build_building_id(world_seed: int, chunk_id: String, building_local_index: int) -> String:
+	return "bld:%s:seed%d:%s:%03d" % [
+		BUILDING_ID_SCHEMA_VERSION,
+		world_seed,
+		chunk_id,
+		building_local_index,
+	]
+
+static func _build_building_code(chunk_id: String, building_local_index: int) -> String:
+	return "%s#%03d" % [chunk_id, building_local_index]
+
+static func _build_building_display_name(address_label: String, building_code: String, fallback_name: String) -> String:
+	var resolved_label := address_label if address_label != "" else fallback_name
+	return "%s [%s]" % [resolved_label, building_code]
 
 static func _build_streetfront_candidates(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, road_segments: Array, candidate_keys: Dictionary) -> Array:
 	var half_extent := chunk_size_m * 0.5 - 18.0

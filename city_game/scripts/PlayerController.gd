@@ -4,6 +4,7 @@ const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/render
 
 signal primary_fire_requested
 signal grenade_throw_requested
+signal laser_designator_requested
 signal weapon_mode_changed(weapon_mode: String)
 signal aim_down_sights_changed(is_active: bool)
 
@@ -13,6 +14,7 @@ const TRAVERSAL_MODE_WALL_CLIMB := "wall_climb"
 const TRAVERSAL_MODE_GROUND_SLAM := "ground_slam"
 const WEAPON_MODE_RIFLE := "rifle"
 const WEAPON_MODE_GRENADE := "grenade"
+const WEAPON_MODE_LASER_DESIGNATOR := "laser_designator"
 const SPORTS_CAR_MODEL_ID := "sports_car_a"
 const SPORTS_CAR_SPEED_MULTIPLIER := 2.0
 
@@ -192,13 +194,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		if button.button_index == MOUSE_BUTTON_LEFT:
 			if _weapon_mode == WEAPON_MODE_RIFLE:
 				set_primary_fire_active(button.pressed)
-			elif button.pressed:
+			elif _weapon_mode == WEAPON_MODE_GRENADE and button.pressed:
 				request_grenade_throw()
+			elif _weapon_mode == WEAPON_MODE_LASER_DESIGNATOR and button.pressed:
+				request_laser_designator_fire()
 		elif button.button_index == MOUSE_BUTTON_RIGHT:
-			if _weapon_mode == WEAPON_MODE_RIFLE:
-				set_aim_down_sights_active(button.pressed)
-			else:
+			if _weapon_mode == WEAPON_MODE_GRENADE:
 				set_grenade_ready_active(button.pressed)
+			else:
+				set_aim_down_sights_active(button.pressed)
 		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 		elif button.pressed and button.button_index == MOUSE_BUTTON_RIGHT:
@@ -208,6 +212,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if key_event.pressed and not key_event.echo:
 			if key_event.keycode == KEY_CTRL:
 				request_ground_slam()
+			elif key_event.keycode == KEY_0:
+				set_weapon_mode(WEAPON_MODE_LASER_DESIGNATOR)
 			elif key_event.keycode == KEY_1:
 				set_weapon_mode(WEAPON_MODE_RIFLE)
 			elif key_event.keycode == KEY_2:
@@ -283,7 +289,7 @@ func is_control_enabled() -> bool:
 func set_weapon_mode(mode: String) -> void:
 	if _driving_vehicle:
 		return
-	if mode != WEAPON_MODE_RIFLE and mode != WEAPON_MODE_GRENADE:
+	if mode != WEAPON_MODE_RIFLE and mode != WEAPON_MODE_GRENADE and mode != WEAPON_MODE_LASER_DESIGNATOR:
 		return
 	if _weapon_mode == mode:
 		_update_grenade_hold_visual()
@@ -503,7 +509,7 @@ func set_primary_fire_active(active: bool) -> void:
 		request_primary_fire()
 
 func set_aim_down_sights_active(active: bool) -> void:
-	var next_active := active and _control_enabled and _weapon_mode == WEAPON_MODE_RIFLE
+	var next_active := active and _control_enabled and _weapon_mode != WEAPON_MODE_GRENADE
 	if _driving_vehicle:
 		next_active = false
 	if _aim_down_sights_active == next_active:
@@ -568,6 +574,16 @@ func request_grenade_throw() -> bool:
 	grenade_throw_requested.emit()
 	if _grenade_hold_requested:
 		call_deferred("_restore_grenade_ready_from_hold")
+	return true
+
+func request_laser_designator_fire() -> bool:
+	if not _control_enabled:
+		return false
+	if _driving_vehicle:
+		return false
+	if _weapon_mode != WEAPON_MODE_LASER_DESIGNATOR:
+		return false
+	laser_designator_requested.emit()
 	return true
 
 func request_wall_climb() -> bool:
@@ -669,25 +685,53 @@ func _resolve_grenade_surface_target(spawn_origin: Vector3, horizontal_direction
 	)
 	if get_world_3d() == null or get_world_3d().direct_space_state == null:
 		return fallback_position
-	var query := PhysicsRayQueryParameters3D.create(
-		probe_position + Vector3.UP * 48.0,
-		probe_position + Vector3.DOWN * 96.0
-	)
-	query.collide_with_areas = false
-	query.exclude = [get_rid()]
-	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
-	if hit.is_empty():
-		return fallback_position
-	return hit.get("position", fallback_position)
+	var max_height_above_spawn_m := _resolve_grenade_surface_height_budget(target_distance_m)
+	var excluded_rids: Array[RID] = [get_rid()]
+	for _attempt in range(8):
+		var query := PhysicsRayQueryParameters3D.create(
+			probe_position + Vector3.UP * 48.0,
+			probe_position + Vector3.DOWN * 96.0
+		)
+		query.collide_with_areas = false
+		query.exclude = excluded_rids
+		var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+		if hit.is_empty():
+			return fallback_position
+		var hit_position: Vector3 = hit.get("position", fallback_position)
+		if hit_position.y <= spawn_origin.y + max_height_above_spawn_m:
+			return hit_position
+		var collider := hit.get("collider") as CollisionObject3D
+		if collider == null:
+			return fallback_position
+		excluded_rids.append(collider.get_rid())
+	return fallback_position
+
+func _resolve_grenade_surface_height_budget(target_distance_m: float) -> float:
+	if target_distance_m <= 10.0:
+		return 2.5
+	if target_distance_m <= 24.0:
+		return 5.0
+	if target_distance_m <= 48.0:
+		return 10.0
+	return 18.0
 
 func get_aim_target_world_position() -> Vector3:
 	return _resolve_aim_target_world_position()
 
-func _resolve_aim_target_world_position() -> Vector3:
+func get_aim_trace_segment() -> Dictionary:
 	var aim_basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
-	var origin := camera.global_position if camera != null else global_position + Vector3.UP * 1.4
+	var origin: Vector3 = camera.global_position if camera != null else global_position + Vector3.UP * 1.4
 	var forward := (-aim_basis.z).normalized()
-	var fallback_target := origin + forward * aim_trace_distance_m
+	return {
+		"origin": origin,
+		"target": origin + forward * aim_trace_distance_m,
+		"distance_m": aim_trace_distance_m,
+	}
+
+func _resolve_aim_target_world_position() -> Vector3:
+	var trace_segment: Dictionary = get_aim_trace_segment()
+	var origin: Vector3 = trace_segment.get("origin", global_position + Vector3.UP * 1.4)
+	var fallback_target: Vector3 = trace_segment.get("target", origin + Vector3.FORWARD * aim_trace_distance_m)
 	if get_world_3d() == null or get_world_3d().direct_space_state == null:
 		return fallback_target
 	var query := PhysicsRayQueryParameters3D.create(origin, fallback_target)

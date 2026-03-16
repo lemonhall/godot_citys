@@ -22,7 +22,9 @@ const CityTaskPinProjection := preload("res://city_game/world/tasks/presentation
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
 const CityProjectile := preload("res://city_game/combat/CityProjectile.gd")
 const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
+const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesignatorBeam.gd")
 const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
+const CityWorldInspectionResolver := preload("res://city_game/world/inspection/CityWorldInspectionResolver.gd")
 
 const CONTROL_MODE_PLAYER := "player"
 const CONTROL_MODE_INSPECTION := "inspection"
@@ -110,6 +112,7 @@ var _minimap_build_last_usec := 0
 var _combat_root: Node3D = null
 var _projectile_root: Node3D = null
 var _grenade_root: Node3D = null
+var _laser_beam_root: Node3D = null
 var _enemy_projectile_root: Node3D = null
 var _enemy_root: Node3D = null
 var _pedestrians_visible := true
@@ -127,6 +130,9 @@ var _destination_world_marker_cached_route_id := ""
 var _destination_world_marker_cached_anchor := Vector3.INF
 var _destination_world_marker_cached_world_position := Vector3.ZERO
 var _destination_world_marker_surface_resolve_count := 0
+var _inspection_resolver = null
+var _last_laser_designator_result: Dictionary = {}
+var _last_laser_designator_clipboard_text := ""
 
 func _ready() -> void:
 	_configure_environment()
@@ -148,6 +154,9 @@ func _ready() -> void:
 	_autodrive_controller = CityAutodriveController.new()
 	_minimap_projector = CityMinimapProjector.new(_world_config, _world_data)
 	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
+	_inspection_resolver = CityWorldInspectionResolver.new()
+	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
+		_inspection_resolver.setup(_world_config, _world_data)
 	_setup_map_ui()
 	_ensure_destination_world_marker()
 	_ensure_task_system_runtimes()
@@ -295,7 +304,7 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 			"Shift sprint  Space jump",
 			"Mouse rotates player camera  Esc releases cursor",
 			"Press C to toggle normal / inspection speed",
-			"1 rifle  2 grenade  Left click fires / throws  Right click ADS / hold grenade",
+			"0 laser  1 rifle  2 grenade  Left click fires / throws / inspects  Right click ADS / hold grenade",
 			"Numpad / spawns trauma squad enemy",
 			"Numpad * toggles pedestrians  Numpad - toggles FPS overlay",
 			"control_mode=%s" % _control_mode,
@@ -414,6 +423,20 @@ func get_active_projectile_count() -> int:
 func get_active_grenade_count() -> int:
 	return 0 if _grenade_root == null else _grenade_root.get_child_count()
 
+func get_active_laser_beam_count() -> int:
+	return 0 if _laser_beam_root == null else _laser_beam_root.get_child_count()
+
+func get_last_laser_designator_result() -> Dictionary:
+	return _last_laser_designator_result.duplicate(true)
+
+func get_last_laser_designator_clipboard_text() -> String:
+	return _last_laser_designator_clipboard_text
+
+func get_building_generation_contract(building_id: String) -> Dictionary:
+	if chunk_renderer == null or not chunk_renderer.has_method("get_building_generation_contract"):
+		return {}
+	return chunk_renderer.get_building_generation_contract(building_id)
+
 func get_active_enemy_projectile_count() -> int:
 	return 0 if _enemy_projectile_root == null else _enemy_projectile_root.get_child_count()
 
@@ -422,6 +445,38 @@ func throw_player_grenade() -> Node3D:
 		return null
 	var spawn_transform: Transform3D = player.get_grenade_spawn_transform()
 	return _spawn_grenade(spawn_transform.origin, player.get_grenade_launch_velocity())
+
+func fire_player_laser_designator() -> Dictionary:
+	if player == null or not player.has_method("get_aim_trace_segment"):
+		return {}
+	var trace_segment: Dictionary = player.get_aim_trace_segment()
+	return inspect_laser_designator_segment(
+		trace_segment.get("origin", Vector3.ZERO),
+		trace_segment.get("target", Vector3.ZERO)
+	)
+
+func inspect_laser_designator_segment(origin: Vector3, target: Vector3) -> Dictionary:
+	_ensure_combat_roots()
+	var hit: Dictionary = _perform_laser_designator_trace(origin, target)
+	if hit.is_empty():
+		return {}
+	var hit_position: Vector3 = hit.get("position", target)
+	if _laser_beam_root != null:
+		var beam := CityLaserDesignatorBeam.new()
+		beam.configure(origin, hit_position)
+		_laser_beam_root.add_child(beam)
+	var inspection_result: Dictionary = {}
+	if _inspection_resolver != null and _inspection_resolver.has_method("resolve_hit"):
+		inspection_result = _inspection_resolver.resolve_hit(hit, chunk_renderer)
+	_last_laser_designator_result = inspection_result.duplicate(true)
+	var message_text := str(inspection_result.get("message_text", ""))
+	var clipboard_text := str(inspection_result.get("clipboard_text", message_text))
+	if hud != null and hud.has_method("set_focus_message"):
+		if message_text != "":
+			hud.set_focus_message(message_text, 10.0)
+	if clipboard_text != "":
+		_commit_laser_designator_clipboard_text(clipboard_text)
+	return inspection_result
 
 func spawn_trauma_enemy() -> CharacterBody3D:
 	var spawn_position := _resolve_enemy_spawn_world_position(_get_active_anchor_position())
@@ -636,6 +691,12 @@ func _ensure_combat_roots() -> void:
 			_grenade_root = Node3D.new()
 			_grenade_root.name = "Grenades"
 			_combat_root.add_child(_grenade_root)
+	if _laser_beam_root == null:
+		_laser_beam_root = _combat_root.get_node_or_null("LaserBeams") as Node3D
+		if _laser_beam_root == null:
+			_laser_beam_root = Node3D.new()
+			_laser_beam_root.name = "LaserBeams"
+			_combat_root.add_child(_laser_beam_root)
 	if _enemy_projectile_root == null:
 		_enemy_projectile_root = _combat_root.get_node_or_null("EnemyProjectiles") as Node3D
 		if _enemy_projectile_root == null:
@@ -660,6 +721,10 @@ func _connect_player_combat() -> void:
 		var grenade_throw_callable := Callable(self, "_on_player_grenade_throw_requested")
 		if not player.grenade_throw_requested.is_connected(grenade_throw_callable):
 			player.grenade_throw_requested.connect(grenade_throw_callable)
+	if player.has_signal("laser_designator_requested"):
+		var laser_callable := Callable(self, "_on_player_laser_designator_requested")
+		if not player.laser_designator_requested.is_connected(laser_callable):
+			player.laser_designator_requested.connect(laser_callable)
 	if player.has_signal("weapon_mode_changed"):
 		var weapon_mode_callable := Callable(self, "_on_player_weapon_mode_changed")
 		if not player.weapon_mode_changed.is_connected(weapon_mode_callable):
@@ -674,6 +739,9 @@ func _on_player_primary_fire_requested() -> void:
 
 func _on_player_grenade_throw_requested() -> void:
 	throw_player_grenade()
+
+func _on_player_laser_designator_requested() -> void:
+	fire_player_laser_designator()
 
 func _on_player_weapon_mode_changed(_weapon_mode: String) -> void:
 	_refresh_hud_status({}, true)
@@ -1940,11 +2008,44 @@ func _apply_world_simulation_pause(should_pause: bool) -> void:
 
 func _collect_world_pause_nodes() -> Array[Node]:
 	var nodes: Array[Node] = []
-	for candidate in [player, generated_city, chunk_renderer, _combat_root, _projectile_root, _grenade_root, _enemy_projectile_root, _enemy_root]:
+	for candidate in [player, generated_city, chunk_renderer, _combat_root, _projectile_root, _grenade_root, _laser_beam_root, _enemy_projectile_root, _enemy_root]:
 		var node := candidate as Node
 		if node != null:
 			nodes.append(node)
 	return nodes
+
+func _perform_laser_designator_trace(origin: Vector3, target: Vector3) -> Dictionary:
+	if get_world_3d() == null or get_world_3d().direct_space_state == null:
+		return {}
+	var excluded_rids: Array[RID] = []
+	if player is CollisionObject3D:
+		excluded_rids.append((player as CollisionObject3D).get_rid())
+	for _attempt in range(8):
+		var query := PhysicsRayQueryParameters3D.create(origin, target)
+		query.collide_with_areas = false
+		query.exclude = excluded_rids
+		var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+		if hit.is_empty():
+			return {}
+		var collider := hit.get("collider") as Node
+		if _should_skip_laser_designator_collider(collider):
+			if collider is CollisionObject3D:
+				excluded_rids.append((collider as CollisionObject3D).get_rid())
+				continue
+			return {}
+		return hit
+	return {}
+
+func _should_skip_laser_designator_collider(collider: Node) -> bool:
+	if collider == null:
+		return false
+	return generated_city != null and (collider == generated_city or generated_city.is_ancestor_of(collider))
+
+func _commit_laser_designator_clipboard_text(text: String) -> void:
+	_last_laser_designator_clipboard_text = text
+	if text == "" or DisplayServer.get_name() == "headless":
+		return
+	DisplayServer.clipboard_set(text)
 
 func _clamp_world_position_to_bounds(world_position: Vector3) -> Vector3:
 	if _world_config == null or not _world_config.has_method("get_world_bounds"):

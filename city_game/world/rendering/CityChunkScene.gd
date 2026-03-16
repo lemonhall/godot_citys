@@ -187,6 +187,15 @@ func get_building_count() -> int:
 func get_building_archetype_ids() -> Array:
 	return (_profile.get("building_archetype_ids", []) as Array).duplicate()
 
+func get_building_generation_contract(building_id: String) -> Dictionary:
+	if building_id == "":
+		return {}
+	for building_variant in _profile.get("buildings", []):
+		var building: Dictionary = building_variant
+		if str(building.get("building_id", "")) == building_id:
+			return building.duplicate(true)
+	return {}
+
 func get_road_collision_shape_count() -> int:
 	var road_overlay := get_node_or_null("NearGroup/RoadOverlay") as Node
 	if road_overlay != null and road_overlay.has_meta("road_collision_shape_count"):
@@ -567,6 +576,9 @@ func _build_building(building: Dictionary) -> Node3D:
 		float(building.get("yaw_rad", 0.0)),
 		collision_size
 	)
+	var inspection_payload: Dictionary = building.get("inspection_payload", {})
+	if not inspection_payload.is_empty():
+		building_root.set_meta("city_inspection_payload", inspection_payload.duplicate(true))
 	var size: Vector3 = building.get("size", Vector3.ONE)
 	var accent: Color = building.get("accent_color", Color(0.52, 0.58, 0.66, 1.0))
 	var roof: Color = building.get("roof_color", accent)

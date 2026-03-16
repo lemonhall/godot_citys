@@ -62,16 +62,27 @@ func register_pin(pin_data: Dictionary) -> Dictionary:
 	_pins_by_id[pin_id] = stored
 	return stored.duplicate(true)
 
+func remove_pin(pin_id: String) -> void:
+	if pin_id == "":
+		return
+	_pins_by_id.erase(pin_id)
+
 func replace_task_pins(task_pins: Array) -> void:
+	_replace_pins_by_source("task_runtime", task_pins)
+
+func replace_service_building_pins(service_building_pins: Array) -> void:
+	_replace_pins_by_source("service_building_manifest", service_building_pins)
+
+func _replace_pins_by_source(pin_source: String, replacement_pins: Array) -> void:
 	var to_remove: Array[String] = []
 	for pin_id_variant in _pins_by_id.keys():
 		var pin_id := str(pin_id_variant)
 		var pin: Dictionary = _pins_by_id[pin_id]
-		if str(pin.get("pin_source", "")) == "task_runtime":
+		if str(pin.get("pin_source", "")) == pin_source:
 			to_remove.append(pin_id)
 	for pin_id in to_remove:
 		_pins_by_id.erase(pin_id)
-	for pin_variant in task_pins:
+	for pin_variant in replacement_pins:
 		if not (pin_variant is Dictionary):
 			continue
 		register_pin(pin_variant as Dictionary)

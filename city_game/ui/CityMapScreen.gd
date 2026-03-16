@@ -8,6 +8,19 @@ const ZOOM_STEP_RATIO := 0.82
 const MIN_VIEW_HALF_EXTENT_Y_M := 256.0
 const TASK_PANEL_WIDTH_PX := 320.0
 const TASK_PANEL_MARGIN_PX := 16.0
+const PIN_ICON_FONT_NAMES := [
+	"Segoe UI Emoji",
+	"Segoe UI Symbol",
+	"Noto Color Emoji",
+	"Noto Emoji",
+]
+const PIN_ICON_GLYPHS := {
+	"cafe": "☕",
+	"clinic": "⚕",
+	"garage": "🔧",
+	"shop": "🛍",
+	"restaurant": "🍽",
+}
 const CityTaskBriefPanelScene := preload("res://city_game/ui/CityTaskBriefPanel.tscn")
 
 var _world_bounds := Rect2()
@@ -31,10 +44,12 @@ var _drag_candidate_active := false
 var _drag_active := false
 var _drag_anchor_map_position := Vector2.ZERO
 var _drag_anchor_center_world := Vector2.ZERO
+var _pin_icon_font: Font = null
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_ensure_task_panel()
+	_pin_icon_font = _build_pin_icon_font()
 	visible = false
 
 func setup(world_bounds: Rect2) -> void:
@@ -156,6 +171,7 @@ func get_render_state() -> Dictionary:
 		"road_polyline_count": _road_polylines.size(),
 		"pin_count": _pins.size(),
 		"pin_types": pin_types,
+		"pin_markers": _build_pin_markers_render_state(),
 		"route_point_count": (_route_result.get("polyline", []) as Array).size(),
 		"route_style_id": str(_route_result.get("route_style_id", "destination")),
 		"last_selection_contract": _last_selection_contract.duplicate(true),
@@ -250,7 +266,13 @@ func _draw_pins() -> void:
 		var world_position: Vector3 = pin.get("world_position", Vector3.ZERO)
 		var pin_position := world_to_map(world_position)
 		var pin_color := _resolve_pin_color(str(pin.get("pin_type", "")))
-		draw_circle(pin_position, 5.0, pin_color)
+		var icon_glyph := _resolve_pin_icon_glyph(str(pin.get("icon_id", "")))
+		if icon_glyph == "":
+			draw_circle(pin_position, 5.0, pin_color)
+			continue
+		draw_circle(pin_position, 10.0, Color(0.08, 0.1, 0.12, 0.96))
+		draw_circle(pin_position, 8.4, pin_color)
+		_draw_pin_icon_glyph(pin_position, icon_glyph)
 
 func _draw_selection_marker() -> void:
 	var selection_target: Dictionary = _last_selection_contract.get("resolved_target", {})
@@ -287,6 +309,8 @@ func _resolve_pin_color(pin_type: String) -> Color:
 	match pin_type:
 		"landmark":
 			return Color(0.38, 0.82, 0.98, 1.0)
+		"service_building":
+			return Color(0.81, 0.53, 0.28, 1.0)
 		"task_available":
 			return Color(0.34, 0.92, 0.48, 1.0)
 		"task_active":
@@ -336,6 +360,33 @@ func _resolve_route_style(route_style_id: String) -> Dictionary:
 	return {
 		"line": Color(1.0, 0.72, 0.18, 0.92),
 	}
+
+func _build_pin_markers_render_state() -> Array[Dictionary]:
+	var markers: Array[Dictionary] = []
+	for pin_variant in _pins:
+		var pin: Dictionary = pin_variant
+		var marker := pin.duplicate(true)
+		marker["position"] = world_to_map(pin.get("world_position", Vector3.ZERO))
+		marker["icon_glyph"] = _resolve_pin_icon_glyph(str(pin.get("icon_id", "")))
+		markers.append(marker)
+	return markers
+
+func _resolve_pin_icon_glyph(icon_id: String) -> String:
+	return str(PIN_ICON_GLYPHS.get(icon_id, ""))
+
+func _build_pin_icon_font() -> Font:
+	var system_font := SystemFont.new()
+	system_font.font_names = PIN_ICON_FONT_NAMES
+	system_font.allow_system_fallback = true
+	return system_font
+
+func _draw_pin_icon_glyph(pin_position: Vector2, icon_glyph: String) -> void:
+	if _pin_icon_font == null or icon_glyph == "":
+		return
+	var font_size := 16
+	var glyph_size := _pin_icon_font.get_string_size(icon_glyph, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+	var baseline := pin_position + Vector2(-glyph_size.x * 0.5, glyph_size.y * 0.38)
+	draw_string(_pin_icon_font, baseline, icon_glyph, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0.13, 0.08, 0.03, 1.0))
 
 func _ensure_road_cache() -> void:
 	if not _map_open or not _road_cache_dirty:

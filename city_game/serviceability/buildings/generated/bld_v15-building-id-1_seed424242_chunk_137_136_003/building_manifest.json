@@ -2,6 +2,13 @@
 	"building_id": "bld:v15-building-id-1:seed424242:chunk_137_136:003",
 	"display_name": "60278700 Delracrest Skyway [chunk_137_136#003]",
 	"export_root_kind": "preferred",
+	"full_map_pin": {
+		"icon_id": "cafe",
+		"priority": 72,
+		"subtitle": "60278700 Delracrest Skyway",
+		"title": "Skyway Cafe",
+		"visible": true
+	},
 	"generation_locator": {
 		"archetype_id": "industrial",
 		"building_id": "bld:v15-building-id-1:seed424242:chunk_137_136:003",

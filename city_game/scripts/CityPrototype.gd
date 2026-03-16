@@ -27,6 +27,7 @@ const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
 const CityWorldInspectionResolver := preload("res://city_game/world/inspection/CityWorldInspectionResolver.gd")
 const CityBuildingSceneExporter := preload("res://city_game/world/serviceability/CityBuildingSceneExporter.gd")
 const CityBuildingOverrideRegistry := preload("res://city_game/world/serviceability/CityBuildingOverrideRegistry.gd")
+const CityServiceBuildingMapPinRuntime := preload("res://city_game/world/serviceability/CityServiceBuildingMapPinRuntime.gd")
 const CityNpcInteractionRuntime := preload("res://city_game/world/interactions/CityNpcInteractionRuntime.gd")
 const CityDialogueRuntime := preload("res://city_game/world/interactions/CityDialogueRuntime.gd")
 
@@ -60,6 +61,9 @@ const BUILDING_EXPORT_WINDOW_SEC := 10.0
 const BUILDING_EXPORT_TOAST_DURATION_SEC := 6.0
 const BUILDING_EXPORT_SCENE_ROOT_PREFERRED := "res://city_game/serviceability/buildings/generated"
 const BUILDING_EXPORT_SCENE_ROOT_FALLBACK := "user://serviceability/buildings/generated"
+const SERVICE_BUILDING_MAP_PIN_STARTUP_DELAY_FRAMES := 120
+const SERVICE_BUILDING_MAP_PIN_BATCH_SIZE := 1
+const SERVICE_BUILDING_MAP_PIN_BATCH_BUDGET_USEC := 1200
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -149,6 +153,7 @@ var _building_export_thread: Thread = null
 var _building_export_request: Dictionary = {}
 var _building_export_pending_result: Dictionary = {}
 var _building_export_started_process_frame := -1
+var _service_building_map_pin_runtime = null
 var _building_export_state: Dictionary = {
 	"running": false,
 	"status": "idle",
@@ -189,6 +194,7 @@ func _ready() -> void:
 	_inspection_resolver = CityWorldInspectionResolver.new()
 	_building_scene_exporter = CityBuildingSceneExporter.new()
 	_building_override_registry = CityBuildingOverrideRegistry.new()
+	_service_building_map_pin_runtime = CityServiceBuildingMapPinRuntime.new()
 	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
 		_inspection_resolver.setup(_world_config, _world_data)
 	_setup_map_ui()
@@ -240,6 +246,7 @@ func _exit_tree() -> void:
 func _process(delta: float) -> void:
 	_collect_completed_building_export_job()
 	_expire_exportable_building_inspection_window()
+	_update_service_building_map_pins()
 	if _world_simulation_paused:
 		_update_npc_interaction_system()
 		return
@@ -1394,6 +1401,11 @@ func get_pin_registry_state() -> Dictionary:
 		return {}
 	return _map_pin_registry.get_state()
 
+func get_service_building_map_pin_state() -> Dictionary:
+	if _service_building_map_pin_runtime == null or not _service_building_map_pin_runtime.has_method("get_state"):
+		return {}
+	return _service_building_map_pin_runtime.get_state()
+
 func register_task_pin(pin_id: String, world_position: Vector3, title: String, subtitle: String = "", pin_type: String = "task") -> Dictionary:
 	if _map_pin_registry == null or not _map_pin_registry.has_method("register_task_pin"):
 		return {}
@@ -2102,6 +2114,45 @@ func _get_map_pins(scope: String = "all") -> Array[Dictionary]:
 		return []
 	return _map_pin_registry.get_pins(scope)
 
+func _update_service_building_map_pins() -> void:
+	if _service_building_map_pin_runtime == null or not _service_building_map_pin_runtime.has_method("advance"):
+		return
+	if not _full_map_open and Engine.get_process_frames() < SERVICE_BUILDING_MAP_PIN_STARTUP_DELAY_FRAMES:
+		return
+	if _has_streaming_backpressure():
+		return
+	var batch_result: Dictionary = _service_building_map_pin_runtime.advance(
+		SERVICE_BUILDING_MAP_PIN_BATCH_SIZE,
+		SERVICE_BUILDING_MAP_PIN_BATCH_BUDGET_USEC
+	)
+	if not bool(batch_result.get("did_change", false)):
+		return
+	if bool(batch_result.get("did_pin_delta", false)):
+		_apply_service_building_pin_delta(batch_result)
+	if _full_map_open and bool(batch_result.get("did_pin_delta", false)) and _map_screen != null and _map_screen.has_method("set_pins"):
+		_map_screen.set_pins(_get_map_pins("full_map"))
+
+func _sync_service_building_pin_registry() -> void:
+	if _map_pin_registry == null or not _map_pin_registry.has_method("replace_service_building_pins"):
+		return
+	var pins: Array = []
+	if _service_building_map_pin_runtime != null and _service_building_map_pin_runtime.has_method("get_pins"):
+		pins = _service_building_map_pin_runtime.get_pins()
+	_map_pin_registry.replace_service_building_pins(pins)
+
+func _apply_service_building_pin_delta(batch_result: Dictionary) -> void:
+	if _map_pin_registry == null:
+		return
+	for pin_id_variant in batch_result.get("pin_remove_ids", []):
+		var pin_id := str(pin_id_variant).strip_edges()
+		if pin_id == "" or not _map_pin_registry.has_method("remove_pin"):
+			continue
+		_map_pin_registry.remove_pin(pin_id)
+	for pin_variant in batch_result.get("pin_upserts", []):
+		if not (pin_variant is Dictionary) or not _map_pin_registry.has_method("register_pin"):
+			continue
+		_map_pin_registry.register_pin(pin_variant as Dictionary)
+
 func _build_task_panel_state() -> Dictionary:
 	if _task_brief_view_model == null or _task_runtime == null or not _task_brief_view_model.has_method("build"):
 		return {}
@@ -2617,6 +2668,9 @@ func _resolve_building_override_registry_config() -> Dictionary:
 func _sync_building_override_entries(entries: Dictionary) -> void:
 	if chunk_renderer != null and chunk_renderer.has_method("set_building_override_entries"):
 		chunk_renderer.set_building_override_entries(entries.duplicate(true))
+	if _service_building_map_pin_runtime != null and _service_building_map_pin_runtime.has_method("configure"):
+		_service_building_map_pin_runtime.configure(entries.duplicate(true))
+	_sync_service_building_pin_registry()
 
 func _collect_completed_building_export_job() -> void:
 	if _building_export_thread != null:

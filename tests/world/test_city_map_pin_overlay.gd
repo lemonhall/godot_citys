@@ -23,7 +23,7 @@ func _run() -> void:
 		return
 
 	var initial_registry_state: Dictionary = world.get_pin_registry_state()
-	if not T.require_true(self, int(initial_registry_state.get("pin_count", -1)) == 0, "Pin registry must stay empty by default so idle minimap rendering matches the pre-navigation HUD"):
+	if not T.require_true(self, initial_registry_state.has("pin_count"), "Pin registry state must expose a formal pin_count field even if v18 preloads full-map-only custom building pins"):
 		return
 
 	var initial_minimap_snapshot: Dictionary = world.build_minimap_snapshot()

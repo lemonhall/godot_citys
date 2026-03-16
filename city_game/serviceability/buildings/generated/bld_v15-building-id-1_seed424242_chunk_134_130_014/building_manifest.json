@@ -1,0 +1,146 @@
+{
+	"building_id": "bld:v15-building-id-1:seed424242:chunk_134_130:014",
+	"display_name": "58954803 Elmaestead Lane [chunk_134_130#014]",
+	"export_root_kind": "preferred",
+	"full_map_pin": {
+		"icon_id": "gun_shop",
+		"priority": 74,
+		"subtitle": "58954803 Elmaestead Lane",
+		"title": "Elmaestead Arms",
+		"visible": true
+	},
+	"generation_locator": {
+		"archetype_id": "courtyard",
+		"building_id": "bld:v15-building-id-1:seed424242:chunk_134_130:014",
+		"building_local_index": 14,
+		"candidate_kind": "streetfront",
+		"chunk_id": "chunk_134_130",
+		"chunk_key": {
+			"@type": "Vector2i",
+			"x": 134,
+			"y": 130
+		},
+		"detail_seed": 2987530335,
+		"schema_version": "v15-building-id-1",
+		"world_seed": 424242
+	},
+	"manifest_path": "res://city_game/serviceability/buildings/generated/bld_v15-building-id-1_seed424242_chunk_134_130_014/building_manifest.json",
+	"requested_at_unix_sec": 1773666040,
+	"scene_path": "res://city_game/serviceability/buildings/generated/bld_v15-building-id-1_seed424242_chunk_134_130_014/枪店_A.tscn",
+	"schema_version": "v16-building-export-1",
+	"source_building_contract": {
+		"accent_color": {
+			"@type": "Color",
+			"a": 1.0,
+			"b": 0.35159507393837,
+			"g": 0.553986787796021,
+			"r": 0.831339299678802
+		},
+		"address_label": "58954803 Elmaestead Lane",
+		"archetype_id": "courtyard",
+		"building_id": "bld:v15-building-id-1:seed424242:chunk_134_130:014",
+		"building_local_index": 14,
+		"candidate_kind": "streetfront",
+		"center": {
+			"@type": "Vector3",
+			"x": 38.0080757141113,
+			"y": -11.7561979293823,
+			"z": 52.9267845153809
+		},
+		"center_2d": {
+			"@type": "Vector2",
+			"x": 38.0080757141113,
+			"y": 52.9267845153809
+		},
+		"collision_size": {
+			"@type": "Vector3",
+			"x": 24.0,
+			"y": 18.0,
+			"z": 32.0
+		},
+		"detail_seed": 2987530335,
+		"display_name": "58954803 Elmaestead Lane [chunk_134_130#014]",
+		"footprint_radius_m": 20.0,
+		"generation_locator": {
+			"archetype_id": "courtyard",
+			"building_id": "bld:v15-building-id-1:seed424242:chunk_134_130:014",
+			"building_local_index": 14,
+			"candidate_kind": "streetfront",
+			"chunk_id": "chunk_134_130",
+			"chunk_key": {
+				"@type": "Vector2i",
+				"x": 134,
+				"y": 130
+			},
+			"detail_seed": 2987530335,
+			"schema_version": "v15-building-id-1",
+			"world_seed": 424242
+		},
+		"inspection_payload": {
+			"address_label": "58954803 Elmaestead Lane",
+			"archetype_id": "courtyard",
+			"building_code": "chunk_134_130#014",
+			"building_id": "bld:v15-building-id-1:seed424242:chunk_134_130:014",
+			"building_local_index": 14,
+			"chunk_id": "chunk_134_130",
+			"chunk_key": {
+				"@type": "Vector2i",
+				"x": 134,
+				"y": 130
+			},
+			"detail_seed": 2987530335,
+			"display_name": "58954803 Elmaestead Lane [chunk_134_130#014]",
+			"generation_locator": {
+				"archetype_id": "courtyard",
+				"building_id": "bld:v15-building-id-1:seed424242:chunk_134_130:014",
+				"building_local_index": 14,
+				"candidate_kind": "streetfront",
+				"chunk_id": "chunk_134_130",
+				"chunk_key": {
+					"@type": "Vector2i",
+					"x": 134,
+					"y": 130
+				},
+				"detail_seed": 2987530335,
+				"schema_version": "v15-building-id-1",
+				"world_seed": 424242
+			},
+			"inspection_kind": "building",
+			"place_id": "addr:chunk_134_130_block_2_parcel_3:1",
+			"world_position": {
+				"@type": "Vector3",
+				"x": 38.0080757141113,
+				"y": -11.7561979293823,
+				"z": 52.9267845153809
+			}
+		},
+		"main_color": {
+			"@type": "Color",
+			"a": 1.0,
+			"b": 0.586532056331635,
+			"g": 0.673007786273956,
+			"r": 0.657968759536743
+		},
+		"name": "Building_335_courtyard",
+		"place_id": "addr:chunk_134_130_block_2_parcel_3:1",
+		"road_alignment_delta_deg": 0.0,
+		"road_angle_rad": -2.05551741553264,
+		"road_clearance_m": 14.0,
+		"roof_color": {
+			"@type": "Color",
+			"a": 1.0,
+			"b": 0.364729434251785,
+			"g": 0.447787582874298,
+			"r": 0.451398253440857
+		},
+		"size": {
+			"@type": "Vector3",
+			"x": 24.0,
+			"y": 18.0,
+			"z": 32.0
+		},
+		"visual_footprint_radius_m": 20.0,
+		"visual_road_clearance_m": 14.0,
+		"yaw_rad": -2.05551741553264
+	}
+}

@@ -27,9 +27,9 @@ func _run() -> void:
 		return
 
 	var pin_runtime_state := await _wait_for_service_building_pin_cache(world)
-	if not T.require_true(self, int(pin_runtime_state.get("pin_count", 0)) >= 1, "Service building full-map pin runtime must eventually cache at least one custom-building pin"):
+	if not T.require_true(self, int(pin_runtime_state.get("pin_count", 0)) >= 2, "Service building full-map pin runtime must eventually cache both cafe and gun shop custom-building pins"):
 		return
-	if not T.require_true(self, int(pin_runtime_state.get("manifest_read_count", 0)) >= 2, "Service building full-map pin runtime must actually read generated building manifests instead of synthesizing pins out of thin air"):
+	if not T.require_true(self, int(pin_runtime_state.get("manifest_read_count", 0)) >= 3, "Service building full-map pin runtime must actually read the generated building manifests instead of synthesizing pins out of thin air"):
 		return
 
 	var registry_state: Dictionary = world.get_pin_registry_state()
@@ -50,6 +50,15 @@ func _run() -> void:
 	if not T.require_true(self, str(cafe_marker.get("visibility_scope", "")) == "full_map", "Cafe marker must remain full_map only in the render state contract"):
 		return
 	if not T.require_true(self, str(cafe_marker.get("icon_glyph", "")) == "☕", "Cafe marker must resolve the coffee emoji/text glyph from icon_id in the UI layer"):
+		return
+	var gun_shop_marker := _find_marker_by_icon_id(map_state.get("pin_markers", []), "gun_shop")
+	if not T.require_true(self, not gun_shop_marker.is_empty(), "Full map render state must expose a gun shop marker projected from the custom building manifest"):
+		return
+	if not T.require_true(self, str(gun_shop_marker.get("pin_type", "")) == "service_building", "Gun shop marker must keep the formal service_building pin_type in the full-map render state"):
+		return
+	if not T.require_true(self, str(gun_shop_marker.get("visibility_scope", "")) == "full_map", "Gun shop marker must remain full_map only in the render state contract"):
+		return
+	if not T.require_true(self, str(gun_shop_marker.get("icon_glyph", "")) == "🔫", "Gun shop marker must resolve the gun glyph from icon_id in the UI layer"):
 		return
 
 	var minimap_snapshot: Dictionary = world.build_minimap_snapshot()

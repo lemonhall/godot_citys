@@ -26,7 +26,7 @@ func _run() -> void:
 	if not T.require_true(self, registry_variant is Dictionary, "Service building map pin runtime test requires a valid generated building override registry"):
 		return
 	var entries: Dictionary = (registry_variant as Dictionary).get("entries", {})
-	if not T.require_true(self, entries.size() >= 2, "Service building map pin runtime test requires at least two generated building registry entries"):
+	if not T.require_true(self, entries.size() >= 3, "Service building map pin runtime test requires at least three generated building registry entries for multi-building icon coverage"):
 		return
 
 	runtime.configure(entries)
@@ -38,55 +38,70 @@ func _run() -> void:
 	if not T.require_true(self, int(initial_state.get("manifest_read_count", -1)) == 0, "Service building map pin runtime must not read manifest files before the first lazy advance"):
 		return
 
-	var batch_one_result: Dictionary = runtime.advance(1, 1000000)
-	var batch_one_state: Dictionary = runtime.get_state()
-	if not T.require_true(self, int(batch_one_state.get("loaded_entry_count", -1)) == 1, "Advancing one lazy batch must only consume one manifest entry"):
-		return
-	if not T.require_true(self, int(batch_one_state.get("pending_entry_count", -1)) == entries.size() - 1, "Advancing one lazy batch must leave the remaining entries pending"):
-		return
-	if not T.require_true(self, int(batch_one_state.get("pin_count", -1)) == 0, "The first generated building manifest must not create a pin unless it explicitly declares full_map_pin metadata"):
-		return
-	if not T.require_true(self, not bool(batch_one_result.get("did_pin_delta", true)), "Reading a non-pinned manifest entry must not force a pin registry delta"):
-		return
-	if not T.require_true(self, (batch_one_result.get("pin_upserts", []) as Array).is_empty(), "A non-pinned manifest entry must not emit service-building pin upserts"):
-		return
-	if not T.require_true(self, (batch_one_result.get("pin_remove_ids", []) as Array).is_empty(), "A non-pinned manifest entry must not emit service-building pin removals"):
-		return
+	var observed_delta_icon_ids := {}
+	var observed_empty_delta_batch_count := 0
+	while bool(runtime.get_state().get("loading", false)):
+		var batch_result: Dictionary = runtime.advance(1, 1000000)
+		var batch_state: Dictionary = runtime.get_state()
+		if not T.require_true(self, int(batch_state.get("loaded_entry_count", -1)) >= 1, "Each lazy batch must advance loaded_entry_count once work begins"):
+			return
+		var batch_upserts: Array = batch_result.get("pin_upserts", [])
+		if batch_upserts.is_empty():
+			observed_empty_delta_batch_count += 1
+		for pin_variant in batch_upserts:
+			var pin: Dictionary = pin_variant
+			observed_delta_icon_ids[str(pin.get("icon_id", ""))] = true
+		if not T.require_true(self, (batch_result.get("pin_remove_ids", []) as Array).is_empty(), "The current fixtures must not emit service-building pin removals while registry entries only add or keep pins"):
+			return
 
-	var batch_two_result: Dictionary = runtime.advance(1, 1000000)
 	var completed_state: Dictionary = runtime.get_state()
 	if not T.require_true(self, not bool(completed_state.get("loading", true)), "Service building map pin runtime must leave loading state once all queued entries are processed"):
 		return
 	if not T.require_true(self, int(completed_state.get("loaded_entry_count", -1)) == entries.size(), "Service building map pin runtime must eventually process every queued registry entry"):
 		return
-	if not T.require_true(self, int(completed_state.get("pin_count", -1)) == 1, "Exactly one generated building manifest should currently opt into a full-map icon pin"):
+	if not T.require_true(self, int(completed_state.get("pin_count", -1)) == 2, "Exactly two generated building manifests should currently opt into a full-map icon pin"):
 		return
-	if not T.require_true(self, bool(batch_two_result.get("did_pin_delta", false)), "Reading a pinned manifest entry must emit a service-building pin delta"):
+	if not T.require_true(self, observed_empty_delta_batch_count >= 1, "The current fixtures must still contain at least one non-pinned building manifest batch"):
 		return
-	var batch_two_upserts: Array = batch_two_result.get("pin_upserts", [])
-	if not T.require_true(self, batch_two_upserts.size() == 1, "The current fixtures must emit exactly one service-building pin upsert when the cafe manifest is read"):
+	if not T.require_true(self, observed_delta_icon_ids.has("cafe"), "The service-building pin deltas must still include the cafe icon contract"):
 		return
-	if not T.require_true(self, str((batch_two_upserts[0] as Dictionary).get("icon_id", "")) == "cafe", "The service-building pin delta must carry the cafe icon contract"):
-		return
-	if not T.require_true(self, (batch_two_result.get("pin_remove_ids", []) as Array).is_empty(), "The current fixtures must not emit service-building pin removals while the registry only grows"):
+	if not T.require_true(self, observed_delta_icon_ids.has("gun_shop"), "The service-building pin deltas must include the gun shop icon contract"):
 		return
 
 	var pins: Array = runtime.get_pins()
-	if not T.require_true(self, pins.size() == 1, "Service building map pin runtime must emit exactly one custom-building full-map pin from the current fixtures"):
+	if not T.require_true(self, pins.size() == 2, "Service building map pin runtime must emit exactly two custom-building full-map pins from the current fixtures"):
 		return
-	var cafe_pin: Dictionary = pins[0]
-	for required_key in ["pin_id", "pin_type", "pin_source", "visibility_scope", "building_id", "world_position", "title", "subtitle", "priority", "icon_id"]:
-		if not T.require_true(self, cafe_pin.has(required_key), "Service building map pin runtime must publish %s" % required_key):
-			return
+
+	var pins_by_icon_id := {}
+	for pin_variant in pins:
+		var pin: Dictionary = pin_variant
+		for required_key in ["pin_id", "pin_type", "pin_source", "visibility_scope", "building_id", "world_position", "title", "subtitle", "priority", "icon_id"]:
+			if not T.require_true(self, pin.has(required_key), "Service building map pin runtime must publish %s" % required_key):
+				return
+		pins_by_icon_id[str(pin.get("icon_id", ""))] = pin
+
+	if not T.require_true(self, pins_by_icon_id.has("cafe"), "Service building map pin runtime must publish the cafe custom-building pin"):
+		return
+	if not T.require_true(self, pins_by_icon_id.has("gun_shop"), "Service building map pin runtime must publish the gun shop custom-building pin"):
+		return
+
+	var cafe_pin: Dictionary = pins_by_icon_id.get("cafe", {})
+	var gun_shop_pin: Dictionary = pins_by_icon_id.get("gun_shop", {})
 	if not T.require_true(self, str(cafe_pin.get("pin_type", "")) == "service_building", "Custom building full-map pins must publish the formal service_building pin_type"):
 		return
 	if not T.require_true(self, str(cafe_pin.get("visibility_scope", "")) == "full_map", "Custom building full-map pins must stay out of minimap scope"):
 		return
-	if not T.require_true(self, str(cafe_pin.get("icon_id", "")) == "cafe", "Cafe manifest must resolve to the formal cafe icon_id"):
-		return
 	if not T.require_true(self, str(cafe_pin.get("building_id", "")) == "bld:v15-building-id-1:seed424242:chunk_137_136:003", "Cafe full-map pin must keep the stable building_id owner"):
 		return
 	if not T.require_true(self, cafe_pin.get("world_position", Vector3.ZERO) is Vector3, "Custom building full-map pin must decode a formal Vector3 world_position from the manifest sidecar"):
+		return
+	if not T.require_true(self, str(gun_shop_pin.get("pin_type", "")) == "service_building", "Gun shop full-map pin must share the formal service_building pin_type"):
+		return
+	if not T.require_true(self, str(gun_shop_pin.get("visibility_scope", "")) == "full_map", "Gun shop full-map pin must stay out of minimap scope"):
+		return
+	if not T.require_true(self, str(gun_shop_pin.get("building_id", "")) == "bld:v15-building-id-1:seed424242:chunk_134_130:014", "Gun shop full-map pin must keep the stable building_id owner"):
+			return
+	if not T.require_true(self, gun_shop_pin.get("world_position", Vector3.ZERO) is Vector3, "Gun shop full-map pin must decode a formal Vector3 world_position from the manifest sidecar"):
 		return
 
 	var manifest_read_count_before_reconfigure := int(completed_state.get("manifest_read_count", -1))

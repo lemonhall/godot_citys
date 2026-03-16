@@ -19,7 +19,7 @@
 	},
 	"manifest_path": "res://city_game/serviceability/buildings/generated/bld_v15-building-id-1_seed424242_chunk_137_136_003/building_manifest.json",
 	"requested_at_unix_sec": 1773650994,
-	"scene_path": "res://city_game/serviceability/buildings/generated/bld_v15-building-id-1_seed424242_chunk_137_136_003/building_scene.tscn",
+	"scene_path": "res://city_game/serviceability/buildings/generated/bld_v15-building-id-1_seed424242_chunk_137_136_003/咖啡馆.tscn",
 	"schema_version": "v16-building-export-1",
 	"source_building_contract": {
 		"accent_color": {

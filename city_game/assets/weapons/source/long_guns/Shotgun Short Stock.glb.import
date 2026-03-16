@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://bvxxc7al3s1lh"
-path="res://.godot/imported/Pistol (1).glb-e350c0b7748a4ee89231bd637a6e08f9.scn"
+uid="uid://dqj2l5e6q5rww"
+path="res://.godot/imported/Shotgun Short Stock.glb-d70e783ea40585b339fdbdcbe1281272.scn"
 
 [deps]
 
-source_file="res://Pistol (1).glb"
-dest_files=["res://.godot/imported/Pistol (1).glb-e350c0b7748a4ee89231bd637a6e08f9.scn"]
+source_file="res://city_game/assets/weapons/source/long_guns/Shotgun Short Stock.glb"
+dest_files=["res://.godot/imported/Shotgun Short Stock.glb-d70e783ea40585b339fdbdcbe1281272.scn"]
 
 [params]
 

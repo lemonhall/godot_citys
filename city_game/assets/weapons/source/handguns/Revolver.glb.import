@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://b3ex86ese12hm"
-path="res://.godot/imported/Flare Gun.glb-933332c27901258b8a32303ed888d48d.scn"
+uid="uid://cvp3owep4ul7s"
+path="res://.godot/imported/Revolver.glb-5030220e2094ce1ca344613e7eeeb536.scn"
 
 [deps]
 
-source_file="res://Flare Gun.glb"
-dest_files=["res://.godot/imported/Flare Gun.glb-933332c27901258b8a32303ed888d48d.scn"]
+source_file="res://city_game/assets/weapons/source/handguns/Revolver.glb"
+dest_files=["res://.godot/imported/Revolver.glb-5030220e2094ce1ca344613e7eeeb536.scn"]
 
 [params]
 

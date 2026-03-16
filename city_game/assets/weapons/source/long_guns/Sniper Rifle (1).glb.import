@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://dqkcjh7ca8anf"
-path="res://.godot/imported/Sniper Rifle.glb-3ab77f8379b8f91a296e1aeb5302394c.scn"
+uid="uid://bh8843yi0jquc"
+path="res://.godot/imported/Sniper Rifle (1).glb-a00b8d6e57f6f611b7076f291844ccf6.scn"
 
 [deps]
 
-source_file="res://Sniper Rifle.glb"
-dest_files=["res://.godot/imported/Sniper Rifle.glb-3ab77f8379b8f91a296e1aeb5302394c.scn"]
+source_file="res://city_game/assets/weapons/source/long_guns/Sniper Rifle (1).glb"
+dest_files=["res://.godot/imported/Sniper Rifle (1).glb-a00b8d6e57f6f611b7076f291844ccf6.scn"]
 
 [params]
 

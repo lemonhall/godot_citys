@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://dv4fpbogwqqq6"
-path="res://.godot/imported/Shotgun Short Stock.glb-8dd3cf4d1add291a145720718bb6c6fa.scn"
+uid="uid://dmwqfi314mtj5"
+path="res://.godot/imported/9mm Pistol.glb-53eb9a4db914639062f4684d41ede951.scn"
 
 [deps]
 
-source_file="res://Shotgun Short Stock.glb"
-dest_files=["res://.godot/imported/Shotgun Short Stock.glb-8dd3cf4d1add291a145720718bb6c6fa.scn"]
+source_file="res://city_game/assets/weapons/source/handguns/9mm Pistol.glb"
+dest_files=["res://.godot/imported/9mm Pistol.glb-53eb9a4db914639062f4684d41ede951.scn"]
 
 [params]
 

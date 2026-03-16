@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://thdjs75gmsys"
-path="res://.godot/imported/Shotgun Sawed Off.glb-33d0c61a1ef60cee0f9ff249b92310ec.scn"
+uid="uid://4m3nuforxjak"
+path="res://.godot/imported/Assault Rifle (1).glb-09798c29307217656298371e937e8944.scn"
 
 [deps]
 
-source_file="res://Shotgun Sawed Off.glb"
-dest_files=["res://.godot/imported/Shotgun Sawed Off.glb-33d0c61a1ef60cee0f9ff249b92310ec.scn"]
+source_file="res://city_game/assets/weapons/source/long_guns/Assault Rifle (1).glb"
+dest_files=["res://.godot/imported/Assault Rifle (1).glb-09798c29307217656298371e937e8944.scn"]
 
 [params]
 

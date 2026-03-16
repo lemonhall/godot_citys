@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://d01wgbj03uqx5"
-path="res://.godot/imported/Sniper Rifle (1).glb-2457a3b16f3e8ce70bde82594e1f63e2.scn"
+uid="uid://bf3mcesvxs34b"
+path="res://.godot/imported/Flare Gun.glb-a9920c41582c9daabcf60391b500ee3e.scn"
 
 [deps]
 
-source_file="res://Sniper Rifle (1).glb"
-dest_files=["res://.godot/imported/Sniper Rifle (1).glb-2457a3b16f3e8ce70bde82594e1f63e2.scn"]
+source_file="res://city_game/assets/weapons/source/handguns/Flare Gun.glb"
+dest_files=["res://.godot/imported/Flare Gun.glb-a9920c41582c9daabcf60391b500ee3e.scn"]
 
 [params]
 

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://bmkwio7uk13m6"
-path="res://.godot/imported/Submachine Gun (1).glb-9085a1bafde186d36d90a4d3a41cd5a0.scn"
+uid="uid://liphyhlvuje7"
+path="res://.godot/imported/Submachine Gun (1).glb-524e10ed8e9733bb4536959acbdf14de.scn"
 
 [deps]
 
-source_file="res://Submachine Gun (1).glb"
-dest_files=["res://.godot/imported/Submachine Gun (1).glb-9085a1bafde186d36d90a4d3a41cd5a0.scn"]
+source_file="res://city_game/assets/weapons/source/long_guns/Submachine Gun (1).glb"
+dest_files=["res://.godot/imported/Submachine Gun (1).glb-524e10ed8e9733bb4536959acbdf14de.scn"]
 
 [params]
 

@@ -1,5 +1,22 @@
 [gd_scene format=3]
 
+[ext_resource type="Script" path="res://city_game/assets/weapons/CityWeaponDisplayProp.gd" id="1_weapon_prop"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/handguns/9mm Pistol.glb" id="2_weapon_9mm_pistol"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/handguns/Pistol.glb" id="3_weapon_pistol"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/handguns/Pistol (1).glb" id="4_weapon_pistol_alt"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/handguns/Revolver.glb" id="5_weapon_revolver"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/handguns/Flare Gun.glb" id="6_weapon_flare_gun"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Assault Rifle.glb" id="7_weapon_assault_rifle"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Assault Rifle (1).glb" id="8_weapon_assault_rifle_alt"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Shotgun.glb" id="9_weapon_shotgun"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Shotgun Sawed Off.glb" id="10_weapon_shotgun_sawed_off"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Shotgun Short Stock.glb" id="11_weapon_shotgun_short_stock"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Sniper Rifle.glb" id="12_weapon_sniper_rifle"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Sniper Rifle (1).glb" id="13_weapon_sniper_rifle_alt"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Submachine Gun.glb" id="14_weapon_submachine_gun"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/long_guns/Submachine Gun (1).glb" id="15_weapon_submachine_gun_alt"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/explosives/Grenade.glb" id="16_weapon_grenade"]
+
 [sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
 size = Vector3(23.4, 0.2, 31.4)
 
@@ -123,9 +140,6 @@ size = Vector3(0.25, 6.8, 18)
 [sub_resource type="BoxMesh" id="BoxMesh_rack_shelf"]
 size = Vector3(0.9, 0.18, 17.2)
 
-[sub_resource type="BoxMesh" id="BoxMesh_rifle_prop"]
-size = Vector3(0.18, 0.6, 3.6)
-
 [sub_resource type="BoxMesh" id="BoxMesh_ammo_wall_panel"]
 size = Vector3(10.8, 5.2, 0.16)
 
@@ -156,7 +170,7 @@ metadata/city_building_display_name = "58954803 Elmaestead Lane [chunk_134_130#0
 metadata/city_service_scene_kind = "gun_shop"
 
 [node name="GeneratedBuilding" type="StaticBody3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9, 0)
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 9, 0)
 metadata/city_building_id = "bld:v15-building-id-1:seed424242:chunk_134_130:014"
 metadata/city_generated_building = true
 metadata/city_service_scene_profile = "courtyard_gun_shop"
@@ -406,6 +420,148 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -8.4, -0.8)
 material_override = SubResource("StandardMaterial3D_floor")
 mesh = SubResource("BoxMesh_center_table")
 
+[node name="WeaponDisplays" type="Node3D" parent="GeneratedBuilding/Interior"]
+
+[node name="AssaultRifleDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(-10.45, -2.18, -6.6)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("7_weapon_assault_rifle")
+target_length_m = 0.84
+display_scale_multiplier = 3.5
+weapon_class = "assault_rifle"
+target_axis = "z"
+
+[node name="AssaultRifleAltDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(-10.45, -2.18, -1.8)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("8_weapon_assault_rifle_alt")
+target_length_m = 0.89
+display_scale_multiplier = 3.5
+weapon_class = "assault_rifle_alt"
+target_axis = "z"
+
+[node name="ShotgunDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(-10.45, -2.18, 3)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("9_weapon_shotgun")
+target_length_m = 1.003
+display_scale_multiplier = 3.5
+weapon_class = "shotgun"
+target_axis = "z"
+
+[node name="ShotgunSawedOffDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(-10.45, -4.88, -6.2)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("10_weapon_shotgun_sawed_off")
+target_length_m = 0.67
+display_scale_multiplier = 3.5
+weapon_class = "shotgun_sawed_off"
+target_axis = "z"
+
+[node name="ShotgunShortStockDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(-10.45, -4.88, -0.6)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("11_weapon_shotgun_short_stock")
+target_length_m = 0.82
+display_scale_multiplier = 3.5
+weapon_class = "shotgun_short_stock"
+target_axis = "z"
+
+[node name="SniperRifleDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(10.45, -2.18, -6.6)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("12_weapon_sniper_rifle")
+target_length_m = 1.204
+display_scale_multiplier = 3.5
+weapon_class = "sniper_rifle"
+target_axis = "z"
+
+[node name="SniperRifleAltDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(10.45, -2.18, -0.8)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("13_weapon_sniper_rifle_alt")
+target_length_m = 1.255
+display_scale_multiplier = 3.5
+weapon_class = "sniper_rifle_alt"
+target_axis = "z"
+
+[node name="SubmachineGunDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(10.45, -4.88, 3)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("14_weapon_submachine_gun")
+target_length_m = 0.68
+display_scale_multiplier = 3.5
+weapon_class = "submachine_gun"
+target_axis = "z"
+
+[node name="SubmachineGunAltDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(10.45, -4.88, 6.7)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("15_weapon_submachine_gun_alt")
+target_length_m = 0.62
+display_scale_multiplier = 3.5
+weapon_class = "submachine_gun_alt"
+target_axis = "z"
+
+[node name="Pistol9mmDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(-6.8, -7.55, 8.15)
+rotation = Vector3(0, 0.42, 0)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("2_weapon_9mm_pistol")
+target_length_m = 0.202
+display_scale_multiplier = 3.5
+weapon_class = "pistol_9mm"
+target_axis = "x"
+
+[node name="PistolCompactDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(-4.7, -7.55, 8.05)
+rotation = Vector3(0, -0.18, 0)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("3_weapon_pistol")
+target_length_m = 0.216
+display_scale_multiplier = 3.5
+weapon_class = "pistol_compact"
+target_axis = "x"
+
+[node name="PistolCompactAltDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(4.7, -7.55, 8.05)
+rotation = Vector3(0, 0.18, 0)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("4_weapon_pistol_alt")
+target_length_m = 0.229
+display_scale_multiplier = 3.5
+weapon_class = "pistol_compact_alt"
+target_axis = "x"
+
+[node name="RevolverDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(6.9, -7.55, 8.15)
+rotation = Vector3(0, -0.44, 0)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("5_weapon_revolver")
+target_length_m = 0.292
+display_scale_multiplier = 3.5
+weapon_class = "revolver"
+target_axis = "x"
+
+[node name="FlareGunDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(-6, -7.72, -11.55)
+rotation = Vector3(0, 0.34, 0)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("6_weapon_flare_gun")
+target_length_m = 0.254
+display_scale_multiplier = 3.5
+weapon_class = "flare_gun"
+target_axis = "x"
+
+[node name="GrenadeDisplay" type="Node3D" parent="GeneratedBuilding/Interior/WeaponDisplays"]
+position = Vector3(0, -7.86, -0.8)
+script = ExtResource("1_weapon_prop")
+source_scene = ExtResource("16_weapon_grenade")
+target_length_m = 0.089
+display_scale_multiplier = 3.5
+weapon_class = "grenade"
+target_axis = "y"
+
 [node name="LeftRack" type="Node3D" parent="GeneratedBuilding/Interior"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.8, 0, -1.4)
 
@@ -424,21 +580,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.33, -5.3, 0)
 material_override = SubResource("StandardMaterial3D_metal")
 mesh = SubResource("BoxMesh_rack_shelf")
 
-[node name="RifleA" type="MeshInstance3D" parent="GeneratedBuilding/Interior/LeftRack"]
-transform = Transform3D(0.866025, 0, -0.5, 0, 1, 0, 0.5, 0, 0.866025, 0.4, -5.2, -5.8)
-material_override = SubResource("StandardMaterial3D_metal")
-mesh = SubResource("BoxMesh_rifle_prop")
-
-[node name="RifleB" type="MeshInstance3D" parent="GeneratedBuilding/Interior/LeftRack"]
-transform = Transform3D(0.906308, 0, -0.422618, 0, 1, 0, 0.422618, 0, 0.906308, 0.4, -5.2, 0)
-material_override = SubResource("StandardMaterial3D_trim")
-mesh = SubResource("BoxMesh_rifle_prop")
-
-[node name="RifleC" type="MeshInstance3D" parent="GeneratedBuilding/Interior/LeftRack"]
-transform = Transform3D(0.939693, 0, -0.34202, 0, 1, 0, 0.34202, 0, 0.939693, 0.4, -5.2, 5.8)
-material_override = SubResource("StandardMaterial3D_metal")
-mesh = SubResource("BoxMesh_rifle_prop")
-
 [node name="RightRack" type="Node3D" parent="GeneratedBuilding/Interior"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.8, 0, -1.4)
 
@@ -456,21 +597,6 @@ mesh = SubResource("BoxMesh_rack_shelf")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.33, -5.3, 0)
 material_override = SubResource("StandardMaterial3D_metal")
 mesh = SubResource("BoxMesh_rack_shelf")
-
-[node name="RifleA" type="MeshInstance3D" parent="GeneratedBuilding/Interior/RightRack"]
-transform = Transform3D(0.866025, 0, 0.5, 0, 1, 0, -0.5, 0, 0.866025, -0.4, -5.2, -5.8)
-material_override = SubResource("StandardMaterial3D_metal")
-mesh = SubResource("BoxMesh_rifle_prop")
-
-[node name="RifleB" type="MeshInstance3D" parent="GeneratedBuilding/Interior/RightRack"]
-transform = Transform3D(0.906308, 0, 0.422618, 0, 1, 0, -0.422618, 0, 0.906308, -0.4, -5.2, 0)
-material_override = SubResource("StandardMaterial3D_trim")
-mesh = SubResource("BoxMesh_rifle_prop")
-
-[node name="RifleC" type="MeshInstance3D" parent="GeneratedBuilding/Interior/RightRack"]
-transform = Transform3D(0.939693, 0, 0.34202, 0, 1, 0, -0.34202, 0, 0.939693, -0.4, -5.2, 5.8)
-material_override = SubResource("StandardMaterial3D_metal")
-mesh = SubResource("BoxMesh_rifle_prop")
 
 [node name="BackAmmoWall" type="Node3D" parent="GeneratedBuilding/Interior"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -15.12)

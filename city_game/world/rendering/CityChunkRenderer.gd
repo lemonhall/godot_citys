@@ -131,6 +131,7 @@ var _global_death_root: Node3D = null
 var _global_death_visuals: Array[Dictionary] = []
 var _chunk_death_visual_records: Dictionary = {}
 var _pedestrian_visual_catalog: CityPedestrianVisualCatalog = null
+var _building_override_entries: Dictionary = {}
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
@@ -167,6 +168,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_clear_global_death_visuals()
 	_chunk_death_visual_records.clear()
 	_pedestrian_visual_catalog = null
+	_building_override_entries.clear()
 	if _world_data.has("pedestrian_query"):
 		CityPedestrianVisualInstance.prewarm_shared_catalog()
 		_pedestrian_visual_catalog = CityPedestrianVisualCatalog.new()
@@ -178,6 +180,27 @@ func setup(config, world_data: Dictionary) -> void:
 		_vehicle_tier_controller.setup(_config, _world_data)
 	reset_streaming_profile_stats()
 	set_process(true)
+
+func set_building_override_entries(entries: Dictionary) -> void:
+	_building_override_entries = entries.duplicate(true)
+	CityChunkScene.prewarm_building_override_entries(_building_override_entries)
+
+func get_building_override_entry(building_id: String) -> Dictionary:
+	if building_id == "":
+		return {}
+	return (_building_override_entries.get(building_id, {}) as Dictionary).duplicate(true)
+
+func find_building_override_node(building_id: String) -> Node:
+	if building_id == "":
+		return null
+	for chunk_id in get_chunk_ids():
+		var chunk_scene: Node = _chunk_scenes.get(chunk_id) as Node
+		if chunk_scene == null or not chunk_scene.has_method("find_building_override_node"):
+			continue
+		var override_node: Node = chunk_scene.find_building_override_node(building_id)
+		if override_node != null:
+			return override_node
+	return null
 
 func _process(delta: float) -> void:
 	_process_streaming_queues_once_per_frame()
@@ -1244,6 +1267,7 @@ func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 		"block_layout": _world_data.get("block_layout"),
 		"street_cluster_catalog": _world_data.get("street_cluster_catalog"),
 		"vehicle_query": _world_data.get("vehicle_query"),
+		"building_override_entries": _building_override_entries.duplicate(true),
 		"pedestrian_chunk_snapshot": {},
 		"vehicle_chunk_snapshot": {},
 	}

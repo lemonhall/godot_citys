@@ -1,0 +1,83 @@
+[gd_scene format=3]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_m7s4a"]
+size = Vector3(34, 16, 42)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_j7oa6"]
+albedo_color = Color(0.6770363, 0.6919981, 0.7406256, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_2ps24"]
+size = Vector3(34, 16, 42)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_snkok"]
+albedo_color = Color(0.40676, 0.46273655, 0.5299077, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_hbjfi"]
+size = Vector3(8.16, 2.88, 36.96)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ke2l6"]
+albedo_color = Color(0.45389032, 0.5682858, 0.66791993, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_vx2mr"]
+size = Vector3(8.16, 2.24, 36.96)
+
+[sub_resource type="TextMesh" id="TextMesh_greet003"]
+text = "Hello World"
+pixel_size = 0.03
+depth = 0.04
+
+[node name="ServiceBuildingRoot" type="Node3D" unique_id=1928051846]
+metadata/city_service_scene_root = true
+metadata/city_building_id = "bld:v15-building-id-1:seed424242:chunk_137_136:003"
+metadata/city_building_display_name = "60278700 Delracrest Skyway [chunk_137_136#003]"
+
+[node name="GeneratedBuilding" type="StaticBody3D" parent="." unique_id=1497670305]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8, 0)
+metadata/city_building_id = "bld:v15-building-id-1:seed424242:chunk_137_136:003"
+metadata/city_generated_building = true
+metadata/city_inspection_payload = {
+"address_label": "60278700 Delracrest Skyway",
+"archetype_id": "industrial",
+"building_code": "chunk_137_136#003",
+"building_id": "bld:v15-building-id-1:seed424242:chunk_137_136:003",
+"building_local_index": 3,
+"chunk_id": "chunk_137_136",
+"chunk_key": Vector2i(137, 136),
+"detail_seed": 1225711292,
+"display_name": "60278700 Delracrest Skyway [chunk_137_136#003]",
+"generation_locator": {
+"archetype_id": "industrial",
+"building_id": "bld:v15-building-id-1:seed424242:chunk_137_136:003",
+"building_local_index": 3,
+"candidate_kind": "infill",
+"chunk_id": "chunk_137_136",
+"chunk_key": Vector2i(137, 136),
+"detail_seed": 1225711292,
+"schema_version": "v15-building-id-1",
+"world_seed": 424242
+},
+"inspection_kind": "building",
+"place_id": "addr:chunk_137_136_block_0_parcel_2:0",
+"world_position": Vector3(-38.684357, 18.97835, -83.376816)
+}
+
+[node name="@CollisionShape3D@692" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1859434701]
+shape = SubResource("BoxShape3D_m7s4a")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="GeneratedBuilding" unique_id=891438989]
+material_override = SubResource("StandardMaterial3D_j7oa6")
+mesh = SubResource("BoxMesh_2ps24")
+
+[node name="SawToothA" type="MeshInstance3D" parent="GeneratedBuilding" unique_id=1547598395]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.12, 9.36, 0)
+material_override = SubResource("StandardMaterial3D_snkok")
+mesh = SubResource("BoxMesh_hbjfi")
+
+[node name="SawToothB" type="MeshInstance3D" parent="GeneratedBuilding" unique_id=528464739]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.12, 9.04, 0)
+material_override = SubResource("StandardMaterial3D_ke2l6")
+mesh = SubResource("BoxMesh_vx2mr")
+
+[node name="FacadeLabel" type="MeshInstance3D" parent="GeneratedBuilding" unique_id=1421186409]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.8, 1.5, 21.08)
+mesh = SubResource("TextMesh_greet003")

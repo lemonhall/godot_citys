@@ -1,0 +1,83 @@
+[gd_scene format=3]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ak3pq"]
+size = Vector3(14, 66, 14)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8264d"]
+albedo_color = Color(0.6991646, 0.71420616, 0.627716, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_brh1f"]
+size = Vector3(14, 66, 14)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_14cjb"]
+albedo_color = Color(0.49541706, 0.4915362, 0.40226296, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_n3ueu"]
+size = Vector3(7.84, 10.56, 7.84)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_hsd0q"]
+albedo_color = Color(0.77440476, 0.5015192, 0.30238712, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_rwn52"]
+size = Vector3(2.52, 3.6, 2.52)
+
+[sub_resource type="TextMesh" id="TextMesh_greet001"]
+text = "Ferry~"
+pixel_size = 0.035
+depth = 0.04
+
+[node name="ServiceBuildingRoot" type="Node3D" unique_id=778602628]
+metadata/city_service_scene_root = true
+metadata/city_building_id = "bld:v15-building-id-1:seed424242:chunk_137_136:001"
+metadata/city_building_display_name = "60278801 Dorormoor Boulevard [chunk_137_136#001]"
+
+[node name="GeneratedBuilding" type="StaticBody3D" parent="." unique_id=511020777]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 33, 0)
+metadata/city_building_id = "bld:v15-building-id-1:seed424242:chunk_137_136:001"
+metadata/city_generated_building = true
+metadata/city_inspection_payload = {
+"address_label": "60278801 Dorormoor Boulevard",
+"archetype_id": "needle",
+"building_code": "chunk_137_136#001",
+"building_id": "bld:v15-building-id-1:seed424242:chunk_137_136:001",
+"building_local_index": 1,
+"chunk_id": "chunk_137_136",
+"chunk_key": Vector2i(137, 136),
+"detail_seed": 645370351,
+"display_name": "60278801 Dorormoor Boulevard [chunk_137_136#001]",
+"generation_locator": {
+"archetype_id": "needle",
+"building_id": "bld:v15-building-id-1:seed424242:chunk_137_136:001",
+"building_local_index": 1,
+"candidate_kind": "infill",
+"chunk_id": "chunk_137_136",
+"chunk_key": Vector2i(137, 136),
+"detail_seed": 645370351,
+"schema_version": "v15-building-id-1",
+"world_seed": 424242
+},
+"inspection_kind": "building",
+"place_id": "addr:chunk_137_136_block_0_parcel_3:0",
+"world_position": Vector3(-92.828026, 44.07377, -66.15998)
+}
+
+[node name="@CollisionShape3D@694" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=314410998]
+shape = SubResource("BoxShape3D_ak3pq")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="GeneratedBuilding" unique_id=2012952141]
+material_override = SubResource("StandardMaterial3D_8264d")
+mesh = SubResource("BoxMesh_brh1f")
+
+[node name="Crown" type="MeshInstance3D" parent="GeneratedBuilding" unique_id=1349969928]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 38.2, 0)
+material_override = SubResource("StandardMaterial3D_14cjb")
+mesh = SubResource("BoxMesh_n3ueu")
+
+[node name="Spire" type="MeshInstance3D" parent="GeneratedBuilding" unique_id=1712940647]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 45.2, 0)
+material_override = SubResource("StandardMaterial3D_hsd0q")
+mesh = SubResource("BoxMesh_rwn52")
+
+[node name="FacadeLabel" type="MeshInstance3D" parent="GeneratedBuilding" unique_id=454671932]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.0, 8, 7.08)
+mesh = SubResource("TextMesh_greet001")

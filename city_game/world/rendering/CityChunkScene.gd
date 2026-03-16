@@ -10,6 +10,7 @@ const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTer
 const CityRoadMeshBuilder := preload("res://city_game/world/rendering/CityRoadMeshBuilder.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
 const CityGroundRoadOverlayShader := preload("res://city_game/world/rendering/CityGroundRoadOverlay.gdshader")
+const CityBuildingSceneBuilder := preload("res://city_game/world/serviceability/CityBuildingSceneBuilder.gd")
 
 const LOD_NEAR := "near"
 const LOD_MID := "mid"
@@ -27,6 +28,7 @@ const BUILDING_ORNAMENT_OVERLAP_M := 0.08
 static var _shared_box_shape_cache: Dictionary = {}
 static var _shared_box_mesh_cache: Dictionary = {}
 static var _shared_box_material_cache: Dictionary = {}
+static var _shared_building_override_scene_cache: Dictionary = {}
 
 var _chunk_data: Dictionary = {}
 var _profile: Dictionary = {}
@@ -67,6 +69,19 @@ func setup(chunk_data: Dictionary) -> void:
 	name = str(_chunk_data.get("chunk_id", "ChunkScene"))
 	position = _chunk_data.get("chunk_center", Vector3.ZERO)
 	_rebuild()
+
+static func prewarm_building_override_entries(entries: Dictionary) -> void:
+	for entry_variant in entries.values():
+		var entry: Dictionary = entry_variant
+		var scene_path := str(entry.get("scene_path", ""))
+		if scene_path == "":
+			continue
+		var packed_scene := _load_cached_building_override_scene(scene_path)
+		if packed_scene == null:
+			continue
+		var preview_instance: Variant = packed_scene.instantiate()
+		if preview_instance is Node:
+			(preview_instance as Node).free()
 
 func set_lod_mode(mode: String) -> void:
 	var normalized_mode := _normalize_lod_mode(mode)
@@ -195,6 +210,14 @@ func get_building_generation_contract(building_id: String) -> Dictionary:
 		if str(building.get("building_id", "")) == building_id:
 			return building.duplicate(true)
 	return {}
+
+func find_building_override_node(building_id: String) -> Node:
+	if building_id == "":
+		return null
+	var near_group := get_node_or_null("NearGroup") as Node
+	if near_group == null:
+		return null
+	return _find_building_override_node_recursive(near_group, building_id)
 
 func get_road_collision_shape_count() -> int:
 	var road_overlay := get_node_or_null("NearGroup/RoadOverlay") as Node
@@ -567,58 +590,84 @@ func _build_near_group() -> Dictionary:
 	return stats
 
 func _build_building(building: Dictionary) -> Node3D:
-	var collision_size: Vector3 = building.get("collision_size", building.get("size", Vector3(18.0, 24.0, 18.0)))
-	var building_root := _build_static_box(
-		str(building.get("name", "Building")),
-		building.get("center", Vector3.ZERO),
-		building.get("size", Vector3(18.0, 24.0, 18.0)),
-		building.get("main_color", Color(0.72, 0.74, 0.78, 1.0)),
-		float(building.get("yaw_rad", 0.0)),
-		collision_size
-	)
-	var inspection_payload: Dictionary = building.get("inspection_payload", {})
+	var override_entry := _resolve_building_override_entry(building)
+	if not override_entry.is_empty():
+		var override_node := _build_building_override(building, override_entry)
+		if override_node != null:
+			return override_node
+	var generated_building := CityBuildingSceneBuilder.build_runtime_building(building)
+	_register_building_collision_shapes(generated_building)
+	return generated_building
+
+func _build_building_override(building: Dictionary, override_entry: Dictionary) -> Node3D:
+	var scene_path := str(override_entry.get("scene_path", ""))
+	if scene_path == "":
+		return null
+	var scene_resource := _load_cached_building_override_scene(scene_path)
+	if scene_resource == null:
+		return null
+	var instantiated_variant: Variant = scene_resource.instantiate()
+	var override_root := instantiated_variant as Node3D
+	if override_root == null:
+		if not (instantiated_variant is Node):
+			return null
+		override_root = Node3D.new()
+		override_root.name = "BuildingOverrideRoot"
+		override_root.add_child(instantiated_variant as Node)
+	var inspection_payload: Dictionary = (building.get("inspection_payload", {}) as Dictionary).duplicate(true)
+	var building_id := str(building.get("building_id", ""))
+	var ground_anchor := CityBuildingSceneBuilder.resolve_ground_anchor(building)
+	override_root.position = ground_anchor
+	override_root.rotation.y = float(building.get("yaw_rad", 0.0))
+	if building_id != "":
+		override_root.set_meta("city_building_id", building_id)
+	override_root.set_meta("city_building_override", true)
+	override_root.set_meta("city_building_override_scene_path", scene_path)
 	if not inspection_payload.is_empty():
-		building_root.set_meta("city_inspection_payload", inspection_payload.duplicate(true))
-	var size: Vector3 = building.get("size", Vector3.ONE)
-	var accent: Color = building.get("accent_color", Color(0.52, 0.58, 0.66, 1.0))
-	var roof: Color = building.get("roof_color", accent)
-	var archetype_id := str(building.get("archetype_id", "mass"))
-	match archetype_id:
-		"slab":
-			var fin_size := Vector3(0.9, size.y * 0.92, size.z + 0.2)
-			_add_side_box(building_root, "FinWest", size, "west", 0.0, 0.0, fin_size, accent)
-			_add_side_box(building_root, "FinEast", size, "east", 0.0, 0.0, fin_size, accent)
-		"needle":
-			var crown_size := Vector3(size.x * 0.56, maxf(size.y * 0.16, 2.6), size.z * 0.56)
-			var spire_size := Vector3(size.x * 0.18, 3.6, size.z * 0.18)
-			_add_roof_box(building_root, "Crown", size, Vector2.ZERO, crown_size, roof)
-			_add_roof_stack_box(building_root, "Spire", size, Vector2.ZERO, crown_size.y - BUILDING_ORNAMENT_OVERLAP_M, spire_size, accent)
-		"courtyard":
-			var wing_size := Vector3(size.x, size.y * 0.22, size.z * 0.22)
-			var roof_frame_size := Vector3(size.x * 0.82, maxf(size.y * 0.08, 1.4), size.z * 0.82)
-			_add_side_box(building_root, "WingNorth", size, "north", 0.0, 0.0, wing_size, accent)
-			_add_side_box(building_root, "WingSouth", size, "south", 0.0, 0.0, wing_size, accent)
-			_add_roof_box(building_root, "RoofFrame", size, Vector2.ZERO, roof_frame_size, roof)
-		"podium_tower":
-			var podium_size := Vector3(size.x * 1.9, maxf(size.y * 0.24, 5.0), size.z * 1.9)
-			var cap_size := Vector3(size.x * 0.5, maxf(size.y * 0.1, 1.6), size.z * 0.5)
-			_add_ground_box(building_root, "Podium", size, Vector2.ZERO, podium_size, accent)
-			_add_roof_box(building_root, "Cap", size, Vector2.ZERO, cap_size, roof)
-		"step_midrise":
-			var setback_a_size := Vector3(size.x * 0.78, maxf(size.y * 0.2, 2.0), size.z * 0.78)
-			var setback_b_size := Vector3(size.x * 0.56, maxf(size.y * 0.14, 1.6), size.z * 0.56)
-			_add_roof_box(building_root, "SetbackA", size, Vector2.ZERO, setback_a_size, accent)
-			_add_roof_stack_box(building_root, "SetbackB", size, Vector2.ZERO, setback_a_size.y - BUILDING_ORNAMENT_OVERLAP_M, setback_b_size, roof)
-		"midrise_bar":
-			var roof_unit_size := Vector3(size.x * 0.22, maxf(size.y * 0.12, 1.4), size.z * 0.24)
-			_add_roof_box(building_root, "RoofUnitA", size, Vector2(-size.x * 0.18, 0.0), roof_unit_size, roof)
-			_add_roof_box(building_root, "RoofUnitB", size, Vector2(size.x * 0.18, 0.0), roof_unit_size, accent)
-		"industrial":
-			var sawtooth_a_size := Vector3(size.x * 0.24, maxf(size.y * 0.18, 1.8), size.z * 0.88)
-			var sawtooth_b_size := Vector3(size.x * 0.24, maxf(size.y * 0.14, 1.6), size.z * 0.88)
-			_add_roof_box(building_root, "SawToothA", size, Vector2(-size.x * 0.18, 0.0), sawtooth_a_size, roof)
-			_add_roof_box(building_root, "SawToothB", size, Vector2(size.x * 0.18, 0.0), sawtooth_b_size, accent)
-	return building_root
+		override_root.set_meta("city_inspection_payload", inspection_payload.duplicate(true))
+		CityBuildingSceneBuilder.apply_inspection_payload_recursive(override_root, inspection_payload)
+	_register_building_collision_shapes(override_root)
+	return override_root
+
+func _resolve_building_override_entry(building: Dictionary) -> Dictionary:
+	var building_id := str(building.get("building_id", ""))
+	if building_id == "":
+		return {}
+	var override_entries: Dictionary = _chunk_data.get("building_override_entries", {})
+	return (override_entries.get(building_id, {}) as Dictionary).duplicate(true)
+
+func _register_building_collision_shapes(root: Node) -> void:
+	var shapes: Array[CollisionShape3D] = CityBuildingSceneBuilder.collect_collision_shapes(root)
+	for collision_shape in shapes:
+		collision_shape.disabled = not _building_collisions_enabled
+		_building_collision_shapes.append(collision_shape)
+
+func _find_building_override_node_recursive(root: Node, building_id: String) -> Node:
+	if root == null:
+		return null
+	if bool(root.get_meta("city_building_override", false)) and str(root.get_meta("city_building_id", "")) == building_id:
+		return root
+	for child in root.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		var match_node := _find_building_override_node_recursive(child_node, building_id)
+		if match_node != null:
+			return match_node
+	return null
+
+static func _load_cached_building_override_scene(scene_path: String) -> PackedScene:
+	if scene_path == "":
+		return null
+	if _shared_building_override_scene_cache.has(scene_path):
+		return _shared_building_override_scene_cache.get(scene_path) as PackedScene
+	var scene_resource := load(scene_path)
+	if scene_resource == null or not (scene_resource is PackedScene):
+		_shared_building_override_scene_cache[scene_path] = null
+		return null
+	var packed_scene := scene_resource as PackedScene
+	_shared_building_override_scene_cache[scene_path] = packed_scene
+	return packed_scene
 
 func _build_static_box(node_name: String, center: Vector3, size: Vector3, color: Color, yaw_rad: float = 0.0, collision_size: Vector3 = Vector3.ZERO) -> StaticBody3D:
 	var body := StaticBody3D.new()

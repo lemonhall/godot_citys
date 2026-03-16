@@ -1,0 +1,139 @@
+{
+	"building_id": "bld:v15-building-id-1:seed424242:chunk_137_136:001",
+	"display_name": "60278801 Dorormoor Boulevard [chunk_137_136#001]",
+	"export_root_kind": "preferred",
+	"generation_locator": {
+		"archetype_id": "needle",
+		"building_id": "bld:v15-building-id-1:seed424242:chunk_137_136:001",
+		"building_local_index": 1,
+		"candidate_kind": "infill",
+		"chunk_id": "chunk_137_136",
+		"chunk_key": {
+			"@type": "Vector2i",
+			"x": 137,
+			"y": 136
+		},
+		"detail_seed": 645370351,
+		"schema_version": "v15-building-id-1",
+		"world_seed": 424242
+	},
+	"manifest_path": "res://city_game/serviceability/buildings/generated/bld_v15-building-id-1_seed424242_chunk_137_136_001/building_manifest.json",
+	"requested_at_unix_sec": 1773651304,
+	"scene_path": "res://city_game/serviceability/buildings/generated/bld_v15-building-id-1_seed424242_chunk_137_136_001/building_scene.tscn",
+	"schema_version": "v16-building-export-1",
+	"source_building_contract": {
+		"accent_color": {
+			"@type": "Color",
+			"a": 1.0,
+			"b": 0.302387118339539,
+			"g": 0.501519203186035,
+			"r": 0.774404764175415
+		},
+		"address_label": "60278801 Dorormoor Boulevard",
+		"archetype_id": "needle",
+		"building_id": "bld:v15-building-id-1:seed424242:chunk_137_136:001",
+		"building_local_index": 1,
+		"candidate_kind": "infill",
+		"center": {
+			"@type": "Vector3",
+			"x": -92.8280258178711,
+			"y": 44.0737686157227,
+			"z": -66.1599807739258
+		},
+		"center_2d": {
+			"@type": "Vector2",
+			"x": -92.8280258178711,
+			"y": -66.1599807739258
+		},
+		"collision_size": {
+			"@type": "Vector3",
+			"x": 14.0,
+			"y": 66.0,
+			"z": 14.0
+		},
+		"detail_seed": 645370351,
+		"display_name": "60278801 Dorormoor Boulevard [chunk_137_136#001]",
+		"footprint_radius_m": 9.89949493661167,
+		"generation_locator": {
+			"archetype_id": "needle",
+			"building_id": "bld:v15-building-id-1:seed424242:chunk_137_136:001",
+			"building_local_index": 1,
+			"candidate_kind": "infill",
+			"chunk_id": "chunk_137_136",
+			"chunk_key": {
+				"@type": "Vector2i",
+				"x": 137,
+				"y": 136
+			},
+			"detail_seed": 645370351,
+			"schema_version": "v15-building-id-1",
+			"world_seed": 424242
+		},
+		"inspection_payload": {
+			"address_label": "60278801 Dorormoor Boulevard",
+			"archetype_id": "needle",
+			"building_code": "chunk_137_136#001",
+			"building_id": "bld:v15-building-id-1:seed424242:chunk_137_136:001",
+			"building_local_index": 1,
+			"chunk_id": "chunk_137_136",
+			"chunk_key": {
+				"@type": "Vector2i",
+				"x": 137,
+				"y": 136
+			},
+			"detail_seed": 645370351,
+			"display_name": "60278801 Dorormoor Boulevard [chunk_137_136#001]",
+			"generation_locator": {
+				"archetype_id": "needle",
+				"building_id": "bld:v15-building-id-1:seed424242:chunk_137_136:001",
+				"building_local_index": 1,
+				"candidate_kind": "infill",
+				"chunk_id": "chunk_137_136",
+				"chunk_key": {
+					"@type": "Vector2i",
+					"x": 137,
+					"y": 136
+				},
+				"detail_seed": 645370351,
+				"schema_version": "v15-building-id-1",
+				"world_seed": 424242
+			},
+			"inspection_kind": "building",
+			"place_id": "addr:chunk_137_136_block_0_parcel_3:0",
+			"world_position": {
+				"@type": "Vector3",
+				"x": -92.8280258178711,
+				"y": 44.0737686157227,
+				"z": -66.1599807739258
+			}
+		},
+		"main_color": {
+			"@type": "Color",
+			"a": 1.0,
+			"b": 0.62771600484848,
+			"g": 0.714206159114838,
+			"r": 0.699164628982544
+		},
+		"name": "Building_351_needle",
+		"place_id": "addr:chunk_137_136_block_0_parcel_3:0",
+		"road_alignment_delta_deg": 2.00000000000001,
+		"road_angle_rad": -0.542795934893425,
+		"road_clearance_m": 60.114344785068,
+		"roof_color": {
+			"@type": "Color",
+			"a": 1.0,
+			"b": 0.402262955904007,
+			"g": 0.491536200046539,
+			"r": 0.495417058467865
+		},
+		"size": {
+			"@type": "Vector3",
+			"x": 14.0,
+			"y": 66.0,
+			"z": 14.0
+		},
+		"visual_footprint_radius_m": 9.89949493661167,
+		"visual_road_clearance_m": 60.114344785068,
+		"yaw_rad": -0.577702519933312
+	}
+}

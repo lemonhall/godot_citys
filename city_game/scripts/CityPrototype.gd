@@ -25,6 +25,8 @@ const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
 const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesignatorBeam.gd")
 const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
 const CityWorldInspectionResolver := preload("res://city_game/world/inspection/CityWorldInspectionResolver.gd")
+const CityBuildingSceneExporter := preload("res://city_game/world/serviceability/CityBuildingSceneExporter.gd")
+const CityBuildingOverrideRegistry := preload("res://city_game/world/serviceability/CityBuildingOverrideRegistry.gd")
 
 const CONTROL_MODE_PLAYER := "player"
 const CONTROL_MODE_INSPECTION := "inspection"
@@ -52,6 +54,10 @@ const DESTINATION_WORLD_MARKER_SURFACE_OFFSET_M := 0.12
 const ROUTE_STYLE_DESTINATION := "destination"
 const ROUTE_STYLE_TASK_AVAILABLE := "task_available"
 const ROUTE_STYLE_TASK_ACTIVE := "task_active"
+const BUILDING_EXPORT_WINDOW_SEC := 10.0
+const BUILDING_EXPORT_TOAST_DURATION_SEC := 6.0
+const BUILDING_EXPORT_SCENE_ROOT_PREFERRED := "res://city_game/serviceability/buildings/generated"
+const BUILDING_EXPORT_SCENE_ROOT_FALLBACK := "user://serviceability/buildings/generated"
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -133,6 +139,28 @@ var _destination_world_marker_surface_resolve_count := 0
 var _inspection_resolver = null
 var _last_laser_designator_result: Dictionary = {}
 var _last_laser_designator_clipboard_text := ""
+var _building_scene_exporter = null
+var _building_override_registry = null
+var _building_export_thread: Thread = null
+var _building_export_request: Dictionary = {}
+var _building_export_pending_result: Dictionary = {}
+var _building_export_started_process_frame := -1
+var _building_export_state: Dictionary = {
+	"running": false,
+	"status": "idle",
+	"building_id": "",
+	"display_name": "",
+	"scene_root": "",
+	"scene_path": "",
+	"manifest_path": "",
+	"error": "",
+	"export_root_kind": "",
+}
+var _exportable_building_inspection_result: Dictionary = {}
+var _exportable_building_inspection_expire_usec := 0
+var _building_serviceability_preferred_scene_root := BUILDING_EXPORT_SCENE_ROOT_PREFERRED
+var _building_serviceability_fallback_scene_root := BUILDING_EXPORT_SCENE_ROOT_FALLBACK
+var _building_serviceability_registry_override_path := ""
 
 func _ready() -> void:
 	_configure_environment()
@@ -155,6 +183,8 @@ func _ready() -> void:
 	_minimap_projector = CityMinimapProjector.new(_world_config, _world_data)
 	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
 	_inspection_resolver = CityWorldInspectionResolver.new()
+	_building_scene_exporter = CityBuildingSceneExporter.new()
+	_building_override_registry = CityBuildingOverrideRegistry.new()
 	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
 		_inspection_resolver.setup(_world_config, _world_data)
 	_setup_map_ui()
@@ -162,6 +192,7 @@ func _ready() -> void:
 	_ensure_task_system_runtimes()
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
+		_reload_building_override_registry()
 		if chunk_renderer.has_method("set_pedestrians_visible"):
 			chunk_renderer.set_pedestrians_visible(_pedestrians_visible)
 	if debug_overlay != null:
@@ -182,7 +213,27 @@ func _ready() -> void:
 	_update_task_system(0.0)
 	_refresh_hud_status()
 
+func _exit_tree() -> void:
+	if _building_export_thread != null and _building_export_thread.is_started():
+		var thread_result: Variant = _building_export_thread.wait_to_finish()
+		if thread_result is Dictionary:
+			_finalize_building_export_result(thread_result, false, false)
+		else:
+			_finalize_building_export_result({
+				"success": false,
+				"status": "failed",
+				"building_id": str(_building_export_request.get("building_id", "")),
+				"display_name": str(_building_export_request.get("display_name", "")),
+				"error": "invalid_thread_result",
+			}, false, false)
+	elif not _building_export_pending_result.is_empty():
+		_finalize_building_export_result(_building_export_pending_result, false, false)
+	_building_export_thread = null
+	_building_export_pending_result.clear()
+
 func _process(delta: float) -> void:
+	_collect_completed_building_export_job()
+	_expire_exportable_building_inspection_window()
 	if _world_simulation_paused:
 		return
 	_step_autodrive(delta)
@@ -218,6 +269,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				return
 		if _full_map_open:
+			return
+		if key_event.pressed and not key_event.echo and (key_event.keycode == KEY_KP_ADD or key_event.physical_keycode == KEY_KP_ADD):
+			var export_request := request_export_from_last_building_inspection()
+			if not bool(export_request.get("accepted", false)):
+				var rejection_message := _describe_building_export_request_error(str(export_request.get("error", "")))
+				if rejection_message != "":
+					_show_building_export_toast(rejection_message, 3.0)
+			get_viewport().set_input_as_handled()
 			return
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_F:
 			handle_vehicle_interaction()
@@ -437,6 +496,98 @@ func get_building_generation_contract(building_id: String) -> Dictionary:
 		return {}
 	return chunk_renderer.get_building_generation_contract(building_id)
 
+func configure_building_serviceability_paths(preferred_scene_root: String, fallback_scene_root: String = "", registry_path: String = "") -> void:
+	var resolved_preferred := _normalize_serviceability_resource_path(preferred_scene_root)
+	var resolved_fallback := _normalize_serviceability_resource_path(fallback_scene_root)
+	_building_serviceability_preferred_scene_root = resolved_preferred if resolved_preferred != "" else BUILDING_EXPORT_SCENE_ROOT_PREFERRED
+	_building_serviceability_fallback_scene_root = resolved_fallback if resolved_fallback != "" else BUILDING_EXPORT_SCENE_ROOT_FALLBACK
+	_building_serviceability_registry_override_path = _normalize_serviceability_resource_path(registry_path)
+	if is_inside_tree():
+		_reload_building_override_registry()
+
+func request_export_from_last_building_inspection() -> Dictionary:
+	_collect_completed_building_export_job()
+	_expire_exportable_building_inspection_window()
+	if bool(_building_export_state.get("running", false)):
+		return {
+			"accepted": false,
+			"error": "export_running",
+			"building_id": str(_building_export_state.get("building_id", "")),
+		}
+	if _exportable_building_inspection_result.is_empty():
+		return {
+			"accepted": false,
+			"error": "missing_exportable_building",
+		}
+	var export_request := _build_building_export_request(_exportable_building_inspection_result)
+	var building_id := str(export_request.get("building_id", ""))
+	var building_contract: Dictionary = export_request.get("building_contract", {})
+	if building_id == "" or building_contract.is_empty():
+		_clear_exportable_building_inspection_window()
+		return {
+			"accepted": false,
+			"error": "missing_building_contract",
+		}
+	var existing_override_entry: Dictionary = get_building_override_entry(building_id)
+	if not existing_override_entry.is_empty():
+		_clear_exportable_building_inspection_window()
+		return {
+			"accepted": false,
+			"error": "override_exists",
+			"building_id": building_id,
+		}
+	_building_export_request = export_request.duplicate(true)
+	_building_export_state = {
+		"running": true,
+		"status": "running",
+		"building_id": building_id,
+		"display_name": str(export_request.get("display_name", "")),
+		"scene_root": "",
+		"scene_path": "",
+		"manifest_path": "",
+		"error": "",
+		"export_root_kind": "",
+	}
+	_show_building_export_toast(_build_building_export_started_message(_building_export_state), 2.5)
+	_building_export_pending_result.clear()
+	_building_export_started_process_frame = Engine.get_process_frames()
+	_clear_exportable_building_inspection_window()
+	var thread := Thread.new()
+	var start_error := thread.start(Callable(self, "_run_building_export_thread").bind(export_request))
+	if start_error != OK:
+		_building_export_thread = null
+		_finalize_building_export_result(_run_building_export_thread(export_request))
+		return {
+			"accepted": true,
+			"started_async": false,
+			"building_id": building_id,
+		}
+	_building_export_thread = thread
+	return {
+		"accepted": true,
+		"started_async": true,
+		"building_id": building_id,
+	}
+
+func get_building_export_state() -> Dictionary:
+	return _building_export_state.duplicate(true)
+
+func get_building_override_entry(building_id: String) -> Dictionary:
+	if building_id == "":
+		return {}
+	if _building_override_registry != null and _building_override_registry.has_method("get_entry"):
+		var registry_entry: Dictionary = _building_override_registry.get_entry(building_id)
+		if not registry_entry.is_empty():
+			return registry_entry
+	if chunk_renderer != null and chunk_renderer.has_method("get_building_override_entry"):
+		return chunk_renderer.get_building_override_entry(building_id)
+	return {}
+
+func find_building_override_node(building_id: String) -> Node:
+	if building_id == "" or chunk_renderer == null or not chunk_renderer.has_method("find_building_override_node"):
+		return null
+	return chunk_renderer.find_building_override_node(building_id)
+
 func get_active_enemy_projectile_count() -> int:
 	return 0 if _enemy_projectile_root == null else _enemy_projectile_root.get_child_count()
 
@@ -459,6 +610,7 @@ func inspect_laser_designator_segment(origin: Vector3, target: Vector3) -> Dicti
 	_ensure_combat_roots()
 	var hit: Dictionary = _perform_laser_designator_trace(origin, target)
 	if hit.is_empty():
+		_clear_exportable_building_inspection_window()
 		return {}
 	var hit_position: Vector3 = hit.get("position", target)
 	if _laser_beam_root != null:
@@ -476,6 +628,7 @@ func inspect_laser_designator_segment(origin: Vector3, target: Vector3) -> Dicti
 			hud.set_focus_message(message_text, 10.0)
 	if clipboard_text != "":
 		_commit_laser_designator_clipboard_text(clipboard_text)
+	_update_exportable_building_inspection_result(inspection_result)
 	return inspection_result
 
 func spawn_trauma_enemy() -> CharacterBody3D:
@@ -2324,6 +2477,276 @@ func _average_usec(total_usec: int, sample_count: int) -> int:
 	if sample_count <= 0:
 		return 0
 	return int(round(float(total_usec) / float(sample_count)))
+
+func _reload_building_override_registry() -> Dictionary:
+	if _building_override_registry == null:
+		return {}
+	var registry_config := _resolve_building_override_registry_config()
+	var primary_registry_path := str(registry_config.get("primary_registry_path", ""))
+	var load_registry_paths: Array[String] = []
+	for path_variant in registry_config.get("load_registry_paths", []):
+		var path := _normalize_serviceability_resource_path(str(path_variant))
+		if path == "" or load_registry_paths.has(path):
+			continue
+		load_registry_paths.append(path)
+	_building_override_registry.configure(primary_registry_path, load_registry_paths)
+	var entries: Dictionary = _building_override_registry.load_registry()
+	_sync_building_override_entries(entries)
+	return entries
+
+func _resolve_building_override_registry_config() -> Dictionary:
+	var primary_registry_path := _normalize_serviceability_resource_path(_building_serviceability_registry_override_path)
+	var load_registry_paths: Array[String] = []
+	if primary_registry_path != "":
+		load_registry_paths.append(primary_registry_path)
+		return {
+			"primary_registry_path": primary_registry_path,
+			"load_registry_paths": load_registry_paths,
+		}
+	var preferred_registry_path := CityBuildingSceneExporter.build_registry_path(_building_serviceability_preferred_scene_root)
+	var fallback_registry_path := CityBuildingSceneExporter.build_registry_path(_building_serviceability_fallback_scene_root)
+	for path in [preferred_registry_path, fallback_registry_path]:
+		var normalized_path := _normalize_serviceability_resource_path(str(path))
+		if normalized_path == "" or load_registry_paths.has(normalized_path):
+			continue
+		load_registry_paths.append(normalized_path)
+	if primary_registry_path == "" and not load_registry_paths.is_empty():
+		primary_registry_path = load_registry_paths[0]
+	return {
+		"primary_registry_path": primary_registry_path,
+		"load_registry_paths": load_registry_paths,
+	}
+
+func _sync_building_override_entries(entries: Dictionary) -> void:
+	if chunk_renderer != null and chunk_renderer.has_method("set_building_override_entries"):
+		chunk_renderer.set_building_override_entries(entries.duplicate(true))
+
+func _collect_completed_building_export_job() -> void:
+	if _building_export_thread != null:
+		if _building_export_thread.is_alive():
+			return
+		var thread_result: Variant = _building_export_thread.wait_to_finish()
+		_building_export_thread = null
+		if thread_result is Dictionary:
+			_building_export_pending_result = (thread_result as Dictionary).duplicate(true)
+		else:
+			_building_export_pending_result = {
+				"success": false,
+				"status": "failed",
+				"building_id": str(_building_export_request.get("building_id", "")),
+				"display_name": str(_building_export_request.get("display_name", "")),
+				"error": "invalid_thread_result",
+			}
+	if _building_export_pending_result.is_empty():
+		return
+	if Engine.get_process_frames() <= _building_export_started_process_frame + 1:
+		return
+	_finalize_building_export_result(_building_export_pending_result)
+	_building_export_pending_result.clear()
+
+func _finalize_building_export_result(result: Dictionary, emit_toast: bool = true, sync_runtime_entries: bool = true) -> Dictionary:
+	var resolved_state := {
+		"running": false,
+		"status": str(result.get("status", "failed")),
+		"building_id": str(result.get("building_id", "")),
+		"display_name": str(result.get("display_name", "")),
+		"scene_root": str(result.get("scene_root", "")),
+		"scene_path": str(result.get("scene_path", "")),
+		"manifest_path": str(result.get("manifest_path", "")),
+		"error": str(result.get("error", "")),
+		"export_root_kind": str(result.get("export_root_kind", "")),
+	}
+	if bool(result.get("success", false)):
+		var registry_entry: Dictionary = (result.get("registry_entry", {}) as Dictionary).duplicate(true)
+		var registry_path := _normalize_serviceability_resource_path(str(result.get("registry_path", "")))
+		if registry_entry.is_empty() or registry_path == "" or _building_override_registry == null:
+			resolved_state["status"] = "failed"
+			resolved_state["error"] = "registry_persist_unavailable"
+		else:
+			_building_override_registry.set_primary_registry_path(registry_path)
+			var save_result: Dictionary = _building_override_registry.save_entry(registry_entry)
+			if bool(save_result.get("success", false)):
+				if sync_runtime_entries:
+					var entries: Dictionary = _building_override_registry.load_registry()
+					_sync_building_override_entries(entries)
+			else:
+				resolved_state["status"] = "failed"
+				resolved_state["error"] = str(save_result.get("error", "registry_save_failed"))
+	if emit_toast:
+		if str(resolved_state.get("status", "")) == "completed":
+			_show_building_export_toast(_build_building_export_success_message(resolved_state), BUILDING_EXPORT_TOAST_DURATION_SEC)
+		else:
+			_show_building_export_toast(_build_building_export_failure_message(resolved_state), BUILDING_EXPORT_TOAST_DURATION_SEC)
+	_building_export_state = resolved_state
+	_building_export_request.clear()
+	_building_export_started_process_frame = -1
+	return resolved_state.duplicate(true)
+
+func _build_building_export_success_message(state: Dictionary) -> String:
+	var display_name := str(state.get("display_name", ""))
+	if display_name != "":
+		return "建筑重构完成：%s" % display_name
+	var building_id := str(state.get("building_id", ""))
+	if building_id != "":
+		return "建筑重构完成：%s" % building_id
+	return "建筑重构完成"
+
+func _build_building_export_started_message(state: Dictionary) -> String:
+	var display_name := str(state.get("display_name", ""))
+	if display_name != "":
+		return "建筑重构开始：%s" % display_name
+	var building_id := str(state.get("building_id", ""))
+	if building_id != "":
+		return "建筑重构开始：%s" % building_id
+	return "建筑重构开始"
+
+func _build_building_export_failure_message(state: Dictionary) -> String:
+	var error_text := str(state.get("error", "")).strip_edges()
+	if error_text == "":
+		error_text = "unknown_error"
+	return "建筑重构失败：%s" % error_text
+
+func _show_building_export_toast(text: String, duration_sec: float = BUILDING_EXPORT_TOAST_DURATION_SEC) -> void:
+	var resolved_text := text.strip_edges()
+	if resolved_text == "":
+		return
+	if hud != null and hud.has_method("set_focus_message"):
+		hud.set_focus_message(resolved_text, duration_sec)
+
+func _describe_building_export_request_error(error_code: String) -> String:
+	match error_code:
+		"export_running":
+			return "建筑重构正在进行中"
+		"override_exists":
+			return "建筑已存在功能场景，拒绝覆盖"
+		"missing_exportable_building":
+			return "最近 10 秒内没有可重构建筑"
+		"missing_building_contract":
+			return "当前建筑缺少可重构生成参数"
+	return ""
+
+func _update_exportable_building_inspection_result(inspection_result: Dictionary) -> void:
+	if str(inspection_result.get("inspection_kind", "")) != "building":
+		_clear_exportable_building_inspection_window()
+		return
+	var building_id := str(inspection_result.get("building_id", ""))
+	if building_id == "":
+		_clear_exportable_building_inspection_window()
+		return
+	var building_contract := get_building_generation_contract(building_id)
+	if building_contract.is_empty():
+		_clear_exportable_building_inspection_window()
+		return
+	_exportable_building_inspection_result = inspection_result.duplicate(true)
+	_exportable_building_inspection_result["building_id"] = building_id
+	_exportable_building_inspection_result["display_name"] = str(_exportable_building_inspection_result.get("display_name", building_contract.get("display_name", "")))
+	_exportable_building_inspection_result["generation_locator"] = (building_contract.get("generation_locator", {}) as Dictionary).duplicate(true)
+	_exportable_building_inspection_result["source_building_contract"] = building_contract.duplicate(true)
+	_exportable_building_inspection_expire_usec = Time.get_ticks_usec() + int(round(BUILDING_EXPORT_WINDOW_SEC * 1000000.0))
+
+func _expire_exportable_building_inspection_window() -> void:
+	if _exportable_building_inspection_result.is_empty():
+		return
+	if _exportable_building_inspection_expire_usec <= 0:
+		_clear_exportable_building_inspection_window()
+		return
+	if Time.get_ticks_usec() < _exportable_building_inspection_expire_usec:
+		return
+	_clear_exportable_building_inspection_window()
+
+func _clear_exportable_building_inspection_window() -> void:
+	_exportable_building_inspection_result.clear()
+	_exportable_building_inspection_expire_usec = 0
+
+func _build_building_export_request(source_result: Dictionary) -> Dictionary:
+	return {
+		"building_id": str(source_result.get("building_id", "")),
+		"display_name": str(source_result.get("display_name", "")),
+		"generation_locator": (source_result.get("generation_locator", {}) as Dictionary).duplicate(true),
+		"building_contract": (source_result.get("source_building_contract", {}) as Dictionary).duplicate(true),
+		"requested_at_unix_sec": int(Time.get_unix_time_from_system()),
+		"scene_root_attempts": _resolve_building_export_scene_root_attempts(),
+		"registry_override_path": _normalize_serviceability_resource_path(_building_serviceability_registry_override_path),
+	}
+
+func _resolve_building_export_scene_root_attempts() -> Array[Dictionary]:
+	var attempts: Array[Dictionary] = []
+	for candidate in [
+		{"scene_root": _building_serviceability_preferred_scene_root, "export_root_kind": "preferred"},
+		{"scene_root": _building_serviceability_fallback_scene_root, "export_root_kind": "fallback"},
+	]:
+		var scene_root := _normalize_serviceability_resource_path(str(candidate.get("scene_root", "")))
+		if scene_root == "":
+			continue
+		var duplicate_root := false
+		for existing in attempts:
+			if str(existing.get("scene_root", "")) == scene_root:
+				duplicate_root = true
+				break
+		if duplicate_root:
+			continue
+		attempts.append({
+			"scene_root": scene_root,
+			"export_root_kind": str(candidate.get("export_root_kind", "preferred")),
+		})
+	return attempts
+
+func _run_building_export_thread(request: Dictionary) -> Dictionary:
+	var exporter := CityBuildingSceneExporter.new()
+	var building_id := str(request.get("building_id", ""))
+	var display_name := str(request.get("display_name", ""))
+	var building_contract: Dictionary = (request.get("building_contract", {}) as Dictionary).duplicate(true)
+	var generation_locator: Dictionary = (request.get("generation_locator", {}) as Dictionary).duplicate(true)
+	var registry_override_path := _normalize_serviceability_resource_path(str(request.get("registry_override_path", "")))
+	var requested_at_unix_sec := int(request.get("requested_at_unix_sec", 0))
+	var last_failure := {
+		"success": false,
+		"status": "failed",
+		"building_id": building_id,
+		"display_name": display_name,
+		"scene_root": "",
+		"scene_path": "",
+		"manifest_path": "",
+		"error": "missing_export_root",
+		"export_root_kind": "",
+	}
+	for attempt_variant in request.get("scene_root_attempts", []):
+		var attempt: Dictionary = attempt_variant
+		var scene_root := _normalize_serviceability_resource_path(str(attempt.get("scene_root", "")))
+		if scene_root == "":
+			continue
+		var export_root_kind := str(attempt.get("export_root_kind", "preferred"))
+		var prepared := exporter.prepare_export_payload({
+			"building_id": building_id,
+			"display_name": display_name,
+			"scene_root": scene_root,
+			"export_root_kind": export_root_kind,
+			"requested_at_unix_sec": requested_at_unix_sec,
+			"building_contract": building_contract,
+			"generation_locator": generation_locator,
+		})
+		if not bool(prepared.get("success", false)):
+			last_failure = {
+				"success": false,
+				"status": "failed",
+				"building_id": building_id,
+				"display_name": display_name,
+				"scene_root": scene_root,
+				"scene_path": "",
+				"manifest_path": "",
+				"error": str(prepared.get("error", "prepare_failed")),
+				"export_root_kind": export_root_kind,
+			}
+			continue
+		var committed := exporter.commit_export(prepared)
+		if bool(committed.get("success", false)):
+			committed["registry_path"] = registry_override_path if registry_override_path != "" else CityBuildingSceneExporter.build_registry_path(scene_root)
+			return committed
+		last_failure = committed.duplicate(true)
+	return last_failure.duplicate(true)
+
+func _normalize_serviceability_resource_path(path: String) -> String:
+	return path.replace("\\", "/").trim_suffix("/").strip_edges()
 
 func _configure_environment() -> void:
 	if world_environment == null:

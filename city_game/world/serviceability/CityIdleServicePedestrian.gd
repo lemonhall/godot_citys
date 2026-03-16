@@ -1,4 +1,4 @@
-extends Node3D
+extends "res://city_game/world/interactions/CityInteractableNpc.gd"
 
 @export var model_root_path: NodePath = ^"Model"
 @export var idle_animation_name := "CharacterArmature|Idle"
@@ -7,6 +7,7 @@ extends Node3D
 @export var source_ground_offset_m := 0.001869
 
 func _ready() -> void:
+	super()
 	var model_root := _resolve_model_root()
 	if model_root == null:
 		return

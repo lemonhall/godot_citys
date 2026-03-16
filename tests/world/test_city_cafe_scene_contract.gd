@@ -77,6 +77,19 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(barista.get_meta("city_service_actor_role", "")) == "barista", "Cafe barista actor must expose barista role metadata"):
 		return
+	if not T.require_true(self, barista.has_method("get_interaction_contract"), "Cafe barista actor must expose a formal interactable NPC contract"):
+		return
+	var interaction_contract: Dictionary = barista.get_interaction_contract()
+	if not T.require_true(self, str(interaction_contract.get("actor_id", "")) == "barista_01", "Cafe barista actor contract must preserve the formal actor_id"):
+		return
+	if not T.require_true(self, str(interaction_contract.get("interaction_kind", "")) == "dialogue", "Cafe barista actor contract must opt into dialogue interaction"):
+		return
+	if not T.require_true(self, float(interaction_contract.get("interaction_radius_m", 0.0)) >= 4.9, "Cafe barista actor contract must expose the frozen 5m interaction radius"):
+		return
+	if not T.require_true(self, str(interaction_contract.get("dialogue_id", "")) != "", "Cafe barista actor contract must expose a dialogue_id"):
+		return
+	if not T.require_true(self, str(interaction_contract.get("opening_line", "")).find("你想喝点什么") >= 0, "Cafe barista actor contract must expose the opening line for the first dialogue consumer"):
+		return
 	if not T.require_true(self, absf(barista.rotation_degrees.y) <= 0.1, "Cafe barista actor must face the customer area instead of turning its back to the room"):
 		return
 	var animation_player := _find_animation_player(barista)

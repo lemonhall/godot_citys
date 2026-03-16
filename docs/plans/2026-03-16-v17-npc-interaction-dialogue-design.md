@@ -10,7 +10,7 @@
 
 ## Context
 
-- 现在仓库里已经有 `FocusMessage` Toast，但它是时间衰减消息，不适合作为“持续显示直到离开 3m”的交互提示。
+- 现在仓库里已经有 `FocusMessage` Toast，但它是时间衰减消息，不适合作为“持续显示直到离开 5m”的交互提示。
 - `CityPrototype` 已经维护输入 ownership：`M` 地图、`T` 快速旅行、`F` 车辆交互、`KP+` 建筑导出。NPC 交互要接进同一条 ownership 链，而不是绕开它。
 - `v16` 的咖啡馆服务员已经存在于服务化场景里，具备稳定锚点，是最合适的第一个 consumer；但 `v17` 的 contract 不能因此被锁死在“功能建筑内部 NPC”。
 
@@ -41,7 +41,7 @@
 ```text
 mounted interactable npc actor nodes
   -> CityNpcInteractionRuntime scans active actors only
-  -> nearest actor within 3m becomes prompt owner
+  -> nearest actor within 5m becomes prompt owner
   -> PrototypeHud shows "可以按下 E 键交互"
   -> KEY_E
   -> CityDialogueRuntime.begin_dialogue(actor_contract)
@@ -69,7 +69,7 @@ mounted interactable npc actor nodes
 
 - 世界级 runtime，挂在 `CityPrototype` 下。
 - 只扫描当前 scene tree 中已挂载的 `city_interactable_npc`，不碰全城生成数据。
-- 每帧或事件驱动选出最近且在 `3m` 内的候选 actor。
+- 每帧或事件驱动选出最近且在 `5m` 内的候选 actor。
 - 输出稳定 state：
   - `visible`
   - `actor_id`

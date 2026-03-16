@@ -18,7 +18,7 @@ PRD 入口：[PRD-0010 NPC Interaction And Dialogue](../prd/PRD-0010-npc-interac
 ## 决策冻结
 
 - `v17` 的正式 NPC 交互键冻结为 `E`，不挤占车辆 `F` 键交互。
-- 近距提示距离冻结为 `3m`。
+- 近距提示距离冻结为 `5m`。
 - HUD 交互提示冻结为持续 state，不复用 `FocusMessage` 计时 Toast。
 - 对话 runtime 首版冻结为单轮 opening line + close，不做商品结算和多轮分支。
 - 交互候选只允许来自当前已挂载且显式声明为可交互的 NPC actor group，不允许每帧扫描全城 pedestrian 数据。
@@ -27,7 +27,7 @@ PRD 入口：[PRD-0010 NPC Interaction And Dialogue](../prd/PRD-0010-npc-interac
 
 | 里程碑 | 范围 | DoD | 验证命令/测试 | 状态 |
 |---|---|---|---|---|
-| M1 近距交互提示 | 通用 actor contract、3m 候选求解、HUD `E` 提示 | 最近 actor 在 `3m` 内稳定拥有提示；离开范围或对话打开后提示隐藏；不影响车辆 `F` 交互 | `tests/world/test_city_npc_interaction_prompt_contract.gd`、`tests/world/test_city_player_vehicle_drive_mode.gd` | todo |
+| M1 近距交互提示 | 通用 actor contract、5m 候选求解、HUD `E` 提示 | 最近 actor 在 `5m` 内稳定拥有提示；多个 NPC 同时在 `5m` 内时只有最近 actor 拥有提示；离开范围或对话打开后提示隐藏；不影响车辆 `F` 交互 | `tests/world/test_city_npc_interaction_prompt_contract.gd`、`tests/world/test_city_player_vehicle_drive_mode.gd` | todo |
 | M2 通用对话 runtime + 咖啡馆首个 consumer | `E` 键对话 ownership、dialogue runtime、咖啡馆服务员 opening line | 靠近服务员可按 `E` 打开对话；正文出现“你想喝点什么？”；关闭后回到提示态 | `tests/world/test_city_dialogue_runtime_contract.gd`、`tests/world/test_city_cafe_scene_contract.gd`、`tests/e2e/test_city_cafe_barista_dialogue_flow.gd` | todo |
 | M3 回归与性能复验 | 车辆交互不回退、runtime/first-visit profiling | `F` 键车辆交互继续成立；近距提示与对话链不踩性能红线 | `tests/e2e/test_city_vehicle_hijack_drive_flow.gd`、`tests/e2e/test_city_runtime_performance_profile.gd`、`tests/e2e/test_city_first_visit_performance_profile.gd` | todo |
 

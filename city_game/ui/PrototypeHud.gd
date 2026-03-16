@@ -1,6 +1,7 @@
 extends CanvasLayer
 
 const CityCrosshairViewScript := preload("res://city_game/ui/CityCrosshairView.gd")
+const CityDialoguePanelScript := preload("res://city_game/ui/CityDialoguePanel.gd")
 
 var _status_text := "Booting city skeleton..."
 var _debug_text := ""
@@ -18,6 +19,20 @@ var _focus_message_state: Dictionary = {
 	"remaining_sec": 0.0,
 	"duration_sec": 0.0,
 }
+var _interaction_prompt_state: Dictionary = {
+	"visible": false,
+	"actor_id": "",
+	"prompt_text": "",
+	"distance_m": 0.0,
+}
+var _dialogue_panel_state: Dictionary = {
+	"visible": false,
+	"speaker_name": "",
+	"body_text": "",
+	"dialogue_id": "",
+	"owner_actor_id": "",
+	"close_hint_text": "按 E 关闭",
+}
 var _crosshair_state: Dictionary = {
 	"visible": false,
 	"screen_position": Vector2.ZERO,
@@ -31,6 +46,8 @@ func _ready() -> void:
 	_ensure_crosshair_view()
 	_ensure_fps_label()
 	_ensure_focus_message_view()
+	_ensure_interaction_prompt_view()
+	_ensure_dialogue_panel_view()
 	var toggle_button := get_node_or_null("Root/ToggleButton") as Button
 	if toggle_button != null and not toggle_button.pressed.is_connected(_on_toggle_pressed):
 		toggle_button.pressed.connect(_on_toggle_pressed)
@@ -84,6 +101,32 @@ func clear_focus_message() -> void:
 	}
 	_apply_focus_message_state()
 
+func set_interaction_prompt_state(state: Dictionary) -> void:
+	_interaction_prompt_state = {
+		"visible": bool(state.get("visible", false)),
+		"actor_id": str(state.get("actor_id", "")),
+		"prompt_text": str(state.get("prompt_text", "")),
+		"distance_m": float(state.get("distance_m", 0.0)),
+	}
+	_apply_interaction_prompt_state()
+
+func get_interaction_prompt_state() -> Dictionary:
+	return _interaction_prompt_state.duplicate(true)
+
+func set_dialogue_panel_state(state: Dictionary) -> void:
+	_dialogue_panel_state = {
+		"visible": bool(state.get("visible", false)),
+		"speaker_name": str(state.get("speaker_name", "")),
+		"body_text": str(state.get("body_text", "")),
+		"dialogue_id": str(state.get("dialogue_id", "")),
+		"owner_actor_id": str(state.get("owner_actor_id", "")),
+		"close_hint_text": str(state.get("close_hint_text", "按 E 关闭")),
+	}
+	_apply_dialogue_panel_state()
+
+func get_dialogue_panel_state() -> Dictionary:
+	return _dialogue_panel_state.duplicate(true)
+
 func set_crosshair_state(state: Dictionary) -> void:
 	_crosshair_state = state.duplicate(true)
 	_apply_crosshair_state()
@@ -135,6 +178,8 @@ func _apply_state() -> void:
 	_apply_crosshair_state()
 	_apply_fps_overlay_state()
 	_apply_focus_message_state()
+	_apply_interaction_prompt_state()
+	_apply_dialogue_panel_state()
 
 func _apply_panel_state() -> void:
 	var panel := get_node_or_null("Root/Panel") as PanelContainer
@@ -179,6 +224,25 @@ func _apply_focus_message_state() -> void:
 	if label != null:
 		label.text = str(_focus_message_state.get("text", ""))
 
+func _apply_interaction_prompt_state() -> void:
+	var panel := get_node_or_null("Root/InteractionPrompt") as PanelContainer
+	var label := get_node_or_null("Root/InteractionPrompt/Label") as Label
+	if panel != null:
+		panel.visible = bool(_interaction_prompt_state.get("visible", false))
+	if label == null:
+		return
+	var prompt_text := str(_interaction_prompt_state.get("prompt_text", ""))
+	var distance_m := float(_interaction_prompt_state.get("distance_m", 0.0))
+	if prompt_text == "":
+		label.text = ""
+		return
+	label.text = "%s  %.1fm" % [prompt_text, distance_m]
+
+func _apply_dialogue_panel_state() -> void:
+	var panel := get_node_or_null("Root/DialoguePanel")
+	if panel != null and panel.has_method("set_state"):
+		panel.set_state(_dialogue_panel_state)
+
 func _ensure_mouse_passthrough() -> void:
 	var root := get_node_or_null("Root") as Control
 	if root != null:
@@ -192,6 +256,12 @@ func _ensure_mouse_passthrough() -> void:
 	var minimap_view := get_node_or_null("Root/MinimapFrame/MinimapView") as Control
 	if minimap_view != null:
 		minimap_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var interaction_prompt := get_node_or_null("Root/InteractionPrompt") as Control
+	if interaction_prompt != null:
+		interaction_prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var dialogue_panel := get_node_or_null("Root/DialoguePanel") as Control
+	if dialogue_panel != null:
+		dialogue_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 func _ensure_crosshair_view() -> void:
 	var root := get_node_or_null("Root") as Control
@@ -265,6 +335,66 @@ func _ensure_focus_message_view() -> void:
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.add_theme_color_override("font_color", Color(0.78, 1.0, 0.84, 1.0))
 	panel.add_child(label)
+	root.add_child(panel)
+
+func _ensure_interaction_prompt_view() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("InteractionPrompt") != null:
+		return
+	var panel := PanelContainer.new()
+	panel.name = "InteractionPrompt"
+	panel.anchor_left = 0.5
+	panel.anchor_top = 1.0
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 1.0
+	panel.offset_left = -220.0
+	panel.offset_top = -204.0
+	panel.offset_right = 220.0
+	panel.offset_bottom = -162.0
+	panel.visible = false
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var stylebox := StyleBoxFlat.new()
+	stylebox.bg_color = Color(0.05, 0.1, 0.08, 0.82)
+	stylebox.corner_radius_top_left = 8
+	stylebox.corner_radius_top_right = 8
+	stylebox.corner_radius_bottom_left = 8
+	stylebox.corner_radius_bottom_right = 8
+	stylebox.border_width_left = 1
+	stylebox.border_width_top = 1
+	stylebox.border_width_right = 1
+	stylebox.border_width_bottom = 1
+	stylebox.border_color = Color(0.2, 0.72, 0.44, 0.95)
+	stylebox.content_margin_left = 14.0
+	stylebox.content_margin_top = 8.0
+	stylebox.content_margin_right = 14.0
+	stylebox.content_margin_bottom = 8.0
+	panel.add_theme_stylebox_override("panel", stylebox)
+	var label := Label.new()
+	label.name = "Label"
+	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	label.offset_left = 0.0
+	label.offset_top = 0.0
+	label.offset_right = 0.0
+	label.offset_bottom = 0.0
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_color_override("font_color", Color(0.8, 1.0, 0.86, 1.0))
+	panel.add_child(label)
+	root.add_child(panel)
+
+func _ensure_dialogue_panel_view() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("DialoguePanel") != null:
+		return
+	var panel := PanelContainer.new()
+	panel.name = "DialoguePanel"
+	panel.set_script(CityDialoguePanelScript)
 	root.add_child(panel)
 
 func _resolve_fps_color_state(fps: float) -> Dictionary:

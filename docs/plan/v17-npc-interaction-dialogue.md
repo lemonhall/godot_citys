@@ -4,7 +4,7 @@
 
 ## Goal
 
-交付一条正式、可复用的 NPC 近距交互主链：玩家靠近某个被显式配置为可交互的 NPC 到 `3m` 内时，HUD 持续显示“可以按下 `E` 键交互”；玩家按下 `E` 后进入正式对话 runtime；咖啡馆服务员作为首个 consumer 会说出“你想喝点什么？”。
+交付一条正式、可复用的 NPC 近距交互主链：玩家靠近某个被显式配置为可交互的 NPC 到 `5m` 内时，HUD 持续显示“可以按下 `E` 键交互”；玩家按下 `E` 后进入正式对话 runtime；咖啡馆服务员作为首个 consumer 会说出“你想喝点什么？”。
 
 ## PRD Trace
 
@@ -33,7 +33,7 @@
 做什么：
 
 - 为任何被显式配置为可交互的 NPC 建立通用 actor contract
-- 新增世界级 `NpcInteractionRuntime`，负责 `3m` 候选裁定与 `E` 提示 ownership
+- 新增世界级 `NpcInteractionRuntime`，负责 `5m` 候选裁定与 `E` 提示 ownership
 - 在 `PrototypeHud` 新增持续性的 interaction prompt
 - 新增 `DialogueRuntime` 与 dialogue panel
 - 把咖啡馆服务员接成首个对话 consumer
@@ -48,8 +48,8 @@
 
 ## Acceptance
 
-1. 自动化测试必须证明：玩家在 `3m` 外看不到 NPC 交互提示，进入 `3m` 内后才会看到 `E` 提示。
-2. 自动化测试必须证明：多个近距 NPC 同时存在时，只允许最近 actor 拥有提示显示权。
+1. 自动化测试必须证明：玩家在 `5m` 外看不到 NPC 交互提示，进入 `5m` 内后才会看到 `E` 提示。
+2. 自动化测试必须证明：多个近距 NPC 同时存在且都在 `5m` 内时，只允许最近 actor 拥有提示显示权。
 3. 自动化测试必须证明：无 active interaction candidate 时按 `E` 不会误开 dialogue。
 4. 自动化测试必须证明：有 active interaction candidate 时按 `E` 会进入 dialogue active 状态，并隐藏 interaction prompt。
 5. 自动化测试必须证明：咖啡馆服务员按 `E` 后正文会出现“你想喝点什么？”。
@@ -76,7 +76,7 @@
 ## Steps
 
 1. 写失败测试（红）
-   - 先写 `test_city_npc_interaction_prompt_contract.gd`，覆盖 `3m` 提示 ownership。
+   - 先写 `test_city_npc_interaction_prompt_contract.gd`，覆盖 `5m` 提示 ownership。
    - 再写 `test_city_dialogue_runtime_contract.gd`，覆盖 `E` 键 ownership 与 dialogue `idle / active`。
    - 再写 `test_city_cafe_barista_dialogue_flow.gd`，覆盖咖啡馆服务员首个 consumer。
 2. 运行到红

@@ -27,6 +27,8 @@ const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
 const CityWorldInspectionResolver := preload("res://city_game/world/inspection/CityWorldInspectionResolver.gd")
 const CityBuildingSceneExporter := preload("res://city_game/world/serviceability/CityBuildingSceneExporter.gd")
 const CityBuildingOverrideRegistry := preload("res://city_game/world/serviceability/CityBuildingOverrideRegistry.gd")
+const CityNpcInteractionRuntime := preload("res://city_game/world/interactions/CityNpcInteractionRuntime.gd")
+const CityDialogueRuntime := preload("res://city_game/world/interactions/CityDialogueRuntime.gd")
 
 const CONTROL_MODE_PLAYER := "player"
 const CONTROL_MODE_INSPECTION := "inspection"
@@ -91,6 +93,8 @@ var _task_brief_view_model = null
 var _task_pin_projection = null
 var _task_trigger_runtime = null
 var _task_world_marker_runtime: Node3D = null
+var _npc_interaction_runtime: Node = null
+var _dialogue_runtime = null
 var _paused_world_process_entries: Array[Dictionary] = []
 var _minimap_snapshot_cache: Dictionary = {}
 var _minimap_cache_key := ""
@@ -188,6 +192,7 @@ func _ready() -> void:
 	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
 		_inspection_resolver.setup(_world_config, _world_data)
 	_setup_map_ui()
+	_ensure_interaction_runtimes()
 	_ensure_destination_world_marker()
 	_ensure_task_system_runtimes()
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
@@ -212,6 +217,7 @@ func _ready() -> void:
 	_sync_navigation_consumers(true)
 	_update_task_system(0.0)
 	_refresh_hud_status()
+	_update_npc_interaction_system()
 
 func _exit_tree() -> void:
 	if _building_export_thread != null and _building_export_thread.is_started():
@@ -235,6 +241,7 @@ func _process(delta: float) -> void:
 	_collect_completed_building_export_job()
 	_expire_exportable_building_inspection_window()
 	if _world_simulation_paused:
+		_update_npc_interaction_system()
 		return
 	_step_autodrive(delta)
 	_step_active_route_refresh(delta)
@@ -245,6 +252,7 @@ func _process(delta: float) -> void:
 	var frame_started_usec := Time.get_ticks_usec()
 	update_streaming_for_position(player.global_position, delta)
 	_update_task_system(delta)
+	_update_npc_interaction_system()
 	var impact_result := _resolve_player_vehicle_pedestrian_impact_impl()
 	if not impact_result.is_empty():
 		_pending_player_vehicle_impact_result = impact_result.duplicate(true)
@@ -278,6 +286,10 @@ func _unhandled_input(event: InputEvent) -> void:
 					_show_building_export_toast(rejection_message, 3.0)
 			get_viewport().set_input_as_handled()
 			return
+		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_E:
+			if _handle_npc_interaction_shortcut():
+				get_viewport().set_input_as_handled()
+				return
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_F:
 			handle_vehicle_interaction()
 			return
@@ -437,6 +449,18 @@ func get_task_runtime_snapshot() -> Dictionary:
 	if _task_runtime == null or not _task_runtime.has_method("get_state_snapshot"):
 		return {}
 	return _task_runtime.get_state_snapshot()
+
+func get_npc_interaction_state() -> Dictionary:
+	if _npc_interaction_runtime == null or not _npc_interaction_runtime.has_method("get_state"):
+		return {}
+	return _npc_interaction_runtime.get_state()
+
+func get_dialogue_runtime_state() -> Dictionary:
+	if _dialogue_runtime == null or not _dialogue_runtime.has_method("get_state"):
+		return {
+			"status": "idle",
+		}
+	return _dialogue_runtime.get_state()
 
 func get_tracked_task_id() -> String:
 	if _task_runtime == null or not _task_runtime.has_method("get_tracked_task_id"):
@@ -1319,10 +1343,13 @@ func set_full_map_open(is_open: bool) -> void:
 	if _full_map_open == is_open:
 		return
 	_full_map_open = is_open
+	if is_open and is_dialogue_active() and _dialogue_runtime != null and _dialogue_runtime.has_method("close_dialogue"):
+		_dialogue_runtime.close_dialogue()
 	_apply_world_simulation_pause(is_open)
 	if DisplayServer.get_name() != "headless":
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if is_open else Input.MOUSE_MODE_CAPTURED)
 	_sync_navigation_consumers(true)
+	_update_npc_interaction_system()
 
 func is_full_map_open() -> bool:
 	return _full_map_open
@@ -2106,6 +2133,49 @@ func _ensure_task_system_runtimes() -> void:
 	if _task_world_marker_runtime.has_method("setup"):
 		_task_world_marker_runtime.setup(_task_runtime, Callable(self, "_resolve_task_marker_world_position"))
 
+func _ensure_interaction_runtimes() -> void:
+	if _dialogue_runtime == null:
+		_dialogue_runtime = CityDialogueRuntime.new()
+	if _npc_interaction_runtime != null and is_instance_valid(_npc_interaction_runtime):
+		if _npc_interaction_runtime.has_method("setup"):
+			_npc_interaction_runtime.setup(player, _dialogue_runtime)
+		return
+	_npc_interaction_runtime = get_node_or_null("NpcInteractionRuntime")
+	if _npc_interaction_runtime == null:
+		_npc_interaction_runtime = CityNpcInteractionRuntime.new()
+		_npc_interaction_runtime.name = "NpcInteractionRuntime"
+		add_child(_npc_interaction_runtime)
+	if _npc_interaction_runtime.has_method("setup"):
+		_npc_interaction_runtime.setup(player, _dialogue_runtime)
+
+func _update_npc_interaction_system() -> void:
+	_ensure_interaction_runtimes()
+	if _npc_interaction_runtime != null and _npc_interaction_runtime.has_method("refresh"):
+		var prompt_blocked := _full_map_open or _world_simulation_paused or is_dialogue_active()
+		if player != null and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle()):
+			prompt_blocked = true
+		_npc_interaction_runtime.refresh(prompt_blocked)
+	_sync_npc_interaction_ui()
+
+func _sync_npc_interaction_ui() -> void:
+	if hud == null:
+		return
+	if hud.has_method("set_interaction_prompt_state"):
+		hud.set_interaction_prompt_state(get_npc_interaction_state())
+	if hud.has_method("set_dialogue_panel_state"):
+		hud.set_dialogue_panel_state(_build_dialogue_panel_state())
+
+func _build_dialogue_panel_state() -> Dictionary:
+	var dialogue_state := get_dialogue_runtime_state()
+	return {
+		"visible": str(dialogue_state.get("status", "")) == "active",
+		"speaker_name": str(dialogue_state.get("speaker_name", "")),
+		"body_text": str(dialogue_state.get("body_text", "")),
+		"dialogue_id": str(dialogue_state.get("dialogue_id", "")),
+		"owner_actor_id": str(dialogue_state.get("owner_actor_id", "")),
+		"close_hint_text": "按 E 关闭",
+	}
+
 func _update_task_system(delta: float) -> void:
 	if player == null or _task_runtime == null:
 		return
@@ -2134,6 +2204,33 @@ func _resolve_task_marker_world_position(anchor: Vector3) -> Vector3:
 	var surface_position := _resolve_surface_world_position(anchor, DESTINATION_WORLD_MARKER_SURFACE_OFFSET_M)
 	surface_position.y += 0.03
 	return surface_position
+
+func _handle_npc_interaction_shortcut() -> bool:
+	if _full_map_open:
+		return false
+	if is_dialogue_active():
+		if _dialogue_runtime != null and _dialogue_runtime.has_method("close_dialogue"):
+			_dialogue_runtime.close_dialogue()
+			_update_npc_interaction_system()
+			return true
+		return false
+	if player != null and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle()):
+		return false
+	if _npc_interaction_runtime == null or not _npc_interaction_runtime.has_method("get_active_contract"):
+		return false
+	var interaction_contract: Dictionary = _npc_interaction_runtime.get_active_contract()
+	if interaction_contract.is_empty():
+		return false
+	if _dialogue_runtime == null or not _dialogue_runtime.has_method("begin_dialogue"):
+		return false
+	var dialogue_state: Dictionary = _dialogue_runtime.begin_dialogue(interaction_contract)
+	if dialogue_state.is_empty():
+		return false
+	_update_npc_interaction_system()
+	return true
+
+func is_dialogue_active() -> bool:
+	return _dialogue_runtime != null and _dialogue_runtime.has_method("is_active") and bool(_dialogue_runtime.is_active())
 
 func _apply_world_simulation_pause(should_pause: bool) -> void:
 	if _world_simulation_paused == should_pause:

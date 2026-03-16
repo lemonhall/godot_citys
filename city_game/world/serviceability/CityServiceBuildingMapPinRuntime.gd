@@ -1,5 +1,7 @@
 extends RefCounted
 
+const CityWorldConfig := preload("res://city_game/world/model/CityWorldConfig.gd")
+
 const PIN_TYPE := "service_building"
 const PIN_SOURCE := "service_building_manifest"
 const VISIBILITY_SCOPE := "full_map"
@@ -10,6 +12,7 @@ var _processed_signatures: Dictionary = {}
 var _pins_by_building_id: Dictionary = {}
 var _pending_building_ids: Array[String] = []
 var _manifest_read_count := 0
+var _world_config := CityWorldConfig.new()
 
 func configure(entries: Dictionary) -> void:
 	var normalized_entries: Dictionary = {}
@@ -194,17 +197,51 @@ func _build_pin_from_manifest(building_id: String, manifest: Dictionary) -> Dict
 	}
 
 func _resolve_manifest_world_position(manifest: Dictionary) -> Variant:
+	var full_map_pin_variant = manifest.get("full_map_pin", {})
+	if full_map_pin_variant is Dictionary:
+		var explicit_world_position: Variant = _decode_vector3((full_map_pin_variant as Dictionary).get("world_position", null))
+		if explicit_world_position != null:
+			return explicit_world_position
 	var source_contract_variant = manifest.get("source_building_contract", {})
 	if not (source_contract_variant is Dictionary):
 		return null
 	var source_contract: Dictionary = source_contract_variant
+	var local_world_position: Variant = null
 	var inspection_payload_variant = source_contract.get("inspection_payload", {})
 	if inspection_payload_variant is Dictionary:
 		var inspection_payload: Dictionary = inspection_payload_variant
-		var inspection_world_position: Variant = _decode_vector3(inspection_payload.get("world_position", null))
-		if inspection_world_position != null:
-			return inspection_world_position
-	return _decode_vector3(source_contract.get("center", null))
+		local_world_position = _decode_vector3(inspection_payload.get("world_position", null))
+	if local_world_position == null:
+		local_world_position = _decode_vector3(source_contract.get("center", null))
+	if local_world_position == null:
+		return null
+	var chunk_center: Variant = _resolve_manifest_chunk_center(manifest, source_contract)
+	if chunk_center == null:
+		return local_world_position
+	var local_position := local_world_position as Vector3
+	var chunk_center_vector := chunk_center as Vector3
+	return Vector3(
+		chunk_center_vector.x + local_position.x,
+		local_position.y,
+		chunk_center_vector.z + local_position.z
+	)
+
+func _resolve_manifest_chunk_center(manifest: Dictionary, source_contract: Dictionary) -> Variant:
+	var generation_locator_variant = source_contract.get("generation_locator", manifest.get("generation_locator", {}))
+	if not (generation_locator_variant is Dictionary):
+		return null
+	var generation_locator: Dictionary = generation_locator_variant
+	var chunk_key: Variant = _decode_vector2i(generation_locator.get("chunk_key", null))
+	if chunk_key == null:
+		return null
+	var bounds: Rect2 = _world_config.get_world_bounds()
+	var chunk_size_m := float(_world_config.chunk_size_m)
+	var resolved_chunk_key := chunk_key as Vector2i
+	return Vector3(
+		bounds.position.x + (float(resolved_chunk_key.x) + 0.5) * chunk_size_m,
+		0.0,
+		bounds.position.y + (float(resolved_chunk_key.y) + 0.5) * chunk_size_m
+	)
 
 func _decode_vector3(value: Variant) -> Variant:
 	if value is Vector3:
@@ -218,6 +255,19 @@ func _decode_vector3(value: Variant) -> Variant:
 		float(payload.get("x", 0.0)),
 		float(payload.get("y", 0.0)),
 		float(payload.get("z", 0.0))
+	)
+
+func _decode_vector2i(value: Variant) -> Variant:
+	if value is Vector2i:
+		return value
+	if not (value is Dictionary):
+		return null
+	var payload: Dictionary = value
+	if str(payload.get("@type", "")) != "Vector2i":
+		return null
+	return Vector2i(
+		int(payload.get("x", 0)),
+		int(payload.get("y", 0))
 	)
 
 func _build_entry_signature(entry_variant: Variant) -> String:

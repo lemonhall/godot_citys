@@ -5,4 +5,4 @@
 [node name="RadioTowerLandmark" type="Node3D" unique_id=1144910424]
 
 [node name="Model" parent="." unique_id=173644717 instance=ExtResource("1_radio_tower")]
-transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 0.168652, 0)
+transform = Transform3D(30, 0, 0, 0, 30, 0, 0, 0, 30, 0, 0.168652, 0)

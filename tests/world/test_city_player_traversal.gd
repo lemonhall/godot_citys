@@ -20,6 +20,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, player.has_method("request_wall_climb"), "PlayerController must expose request_wall_climb() for building traversal"):
 		return
+	if not T.require_true(self, player.has_method("request_wall_jump"), "PlayerController must expose request_wall_jump() for wall-climb launch traversal"):
+		return
 	if not T.require_true(self, player.has_method("request_ground_slam"), "PlayerController must expose request_ground_slam() for aerial slam attacks"):
 		return
 	if not T.require_true(self, player.has_method("get_traversal_state"), "PlayerController must expose get_traversal_state() for traversal verification"):
@@ -44,7 +46,23 @@ func _run() -> void:
 	var climb_state: Dictionary = player.get_traversal_state()
 	if not T.require_true(self, str(climb_state.get("mode", "")) == "wall_climb", "Player must report wall_climb mode while scaling a building facade"):
 		return
-	if not T.require_true(self, player.global_position.y >= start_height + 3.8, "Wall climb must now pull the player up the facade much faster than the initial prototype"):
+	if not T.require_true(self, player.global_position.y >= start_height + 5.8, "Wall climb must now pull the player up the facade aggressively enough to feel playful instead of sluggish"):
+		return
+
+	var wall_jump_start_position := player.global_position
+	var wall_jump_started: bool = player.request_wall_jump()
+	if not T.require_true(self, wall_jump_started, "Player must be able to launch away from a wall during wall_climb"):
+		return
+
+	for _frame in range(8):
+		await physics_frame
+
+	var wall_jump_state: Dictionary = player.get_traversal_state()
+	if not T.require_true(self, str(wall_jump_state.get("mode", "")) == "airborne", "Wall jump must return traversal mode to airborne after releasing from the wall"):
+		return
+	if not T.require_true(self, float(wall_jump_state.get("vertical_speed", 0.0)) >= 8.5, "Wall jump must preserve a strong upward launch instead of barely popping off the wall"):
+		return
+	if not T.require_true(self, player.global_position.z >= wall_jump_start_position.z + 2.0, "Wall jump must kick the player a readable distance away from the wall face"):
 		return
 
 	var slam_start_height := player.global_position.y
@@ -52,15 +70,18 @@ func _run() -> void:
 	if not T.require_true(self, slam_started, "Player must be able to trigger a ground slam from wall climb / air state"):
 		return
 
-	for _frame in range(6):
-		await physics_frame
-
 	var slam_state: Dictionary = player.get_traversal_state()
 	if not T.require_true(self, str(slam_state.get("mode", "")) == "ground_slam", "Player must switch into ground_slam mode after triggering the aerial slam"):
 		return
 	if not T.require_true(self, float(slam_state.get("vertical_speed", 0.0)) <= -30.0, "Ground slam must now yank the player downward with a much harsher initial velocity"):
 		return
-	if not T.require_true(self, player.global_position.y <= slam_start_height - 2.8, "Ground slam must chew through altitude fast enough to feel like a real dive-bomb"):
+	var slam_descended_enough := false
+	for _frame in range(6):
+		await physics_frame
+		if player.global_position.y <= slam_start_height - 2.8:
+			slam_descended_enough = true
+			break
+	if not T.require_true(self, slam_descended_enough, "Ground slam must chew through altitude fast enough to feel like a real dive-bomb"):
 		return
 
 	for _frame in range(90):

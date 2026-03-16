@@ -84,12 +84,14 @@ func _find_climb_probe_hit(world: Node, tower_root: Node3D) -> Dictionary:
 	if world.get_world_3d() == null or world.get_world_3d().direct_space_state == null:
 		return {}
 	var extents := _collect_visual_extents(tower_root)
-	var half_radius := maxf(float(extents.get("footprint_x_m", 0.0)), float(extents.get("footprint_z_m", 0.0))) * 0.5
+	var footprint_x_m := float(extents.get("footprint_x_m", 0.0))
+	var footprint_z_m := float(extents.get("footprint_z_m", 0.0))
+	var half_radius := Vector2(footprint_x_m * 0.5, footprint_z_m * 0.5).length()
 	if half_radius <= 0.0:
-		half_radius = 32.0
+		half_radius = 48.0
 	var ray_y := TEST_BASE_POSITION.y + 2.0
 	var space_state: PhysicsDirectSpaceState3D = world.get_world_3d().direct_space_state
-	for radius_offset_variant in [1.4, 2.0, 3.0]:
+	for radius_offset_variant in [4.0, 8.0, 16.0]:
 		var radius_offset: float = float(radius_offset_variant)
 		var radius: float = half_radius + radius_offset
 		for index in range(48):

@@ -308,7 +308,7 @@ material_override = SubResource("StandardMaterial3D_wall")
 mesh = SubResource("BoxMesh_side_wall")
 
 [node name="BackWall" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=774818631]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -12.7)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.021141052, 0.01885891, -12.703895)
 material_override = SubResource("StandardMaterial3D_wall")
 mesh = SubResource("BoxMesh_back_wall")
 
@@ -634,3 +634,4 @@ metadata/city_service_actor_role = "cashier"
 metadata/city_service_actor_model = "animated_woman"
 
 [node name="Model" parent="GeneratedBuilding/Staff/Cashier" unique_id=1627778140 instance=ExtResource("3_animated_woman")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.7138462, 0, 0)

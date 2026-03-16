@@ -45,12 +45,14 @@ const SPORTS_CAR_SPEED_MULTIPLIER := 2.0
 @export var ads_camera_fov := 42.0
 @export var ads_transition_speed := 8.0
 @export var ads_mouse_sensitivity_scale := 0.72
-@export var wall_climb_speed := 16.5
+@export var wall_climb_speed := 26.0
 @export var wall_climb_lateral_speed := 6.0
 @export var wall_climb_adhesion_speed := 7.5
 @export var wall_climb_probe_distance_m := 2.3
 @export var wall_climb_attach_distance_m := 0.72
 @export var wall_climb_max_surface_normal_y := 0.3
+@export var wall_jump_vertical_velocity := 14.5
+@export var wall_jump_push_off_speed := 20.0
 @export var ground_slam_initial_speed := 34.0
 @export var ground_slam_accel := 132.0
 @export var ground_slam_max_speed := 92.0
@@ -95,6 +97,7 @@ var _default_camera_local_position := Vector3.ZERO
 var _default_camera_fov := 65.0
 var _camera_rig_base_position := Vector3.ZERO
 var _traversal_mode := TRAVERSAL_MODE_GROUNDED
+var _wall_climb_reentry_block_frames := 0
 var _wall_climb_normal := Vector3.ZERO
 var _wall_climb_contact_point := Vector3.ZERO
 var _traversal_fx_root: Node3D = null
@@ -229,6 +232,8 @@ func _physics_process(delta: float) -> void:
 	if _driving_vehicle:
 		_process_vehicle_drive(delta)
 		return
+	if _wall_climb_reentry_block_frames > 0:
+		_wall_climb_reentry_block_frames -= 1
 	if _stabilization_suspend_frames > 0:
 		_stabilization_suspend_frames -= 1
 	if _traversal_mode == TRAVERSAL_MODE_WALL_CLIMB:
@@ -259,8 +264,12 @@ func _physics_process(delta: float) -> void:
 		move_dir = (right * input_dir.x + forward * input_dir.y).normalized()
 
 	var speed := _current_sprint_speed() if _sprint_requested() else _current_walk_speed()
-	velocity.x = move_dir.x * speed
-	velocity.z = move_dir.z * speed
+	if is_on_floor():
+		velocity.x = move_dir.x * speed
+		velocity.z = move_dir.z * speed
+	elif move_dir.length_squared() > 0.0:
+		velocity.x = move_dir.x * speed
+		velocity.z = move_dir.z * speed
 
 	if velocity.y <= 0.0 and not _jump_requested():
 		apply_floor_snap()
@@ -342,6 +351,8 @@ func get_mobility_tuning() -> Dictionary:
 		"sprint_speed": sprint_speed,
 		"jump_velocity": jump_velocity,
 		"wall_climb_speed": wall_climb_speed,
+		"wall_jump_vertical_velocity": wall_jump_vertical_velocity,
+		"wall_jump_push_off_speed": wall_jump_push_off_speed,
 		"ground_slam_initial_speed": ground_slam_initial_speed,
 		"ground_slam_max_speed": ground_slam_max_speed,
 		"vehicle_drive_forward_speed": vehicle_drive_forward_speed,
@@ -591,10 +602,34 @@ func request_wall_climb() -> bool:
 		return false
 	if _driving_vehicle:
 		return false
+	if _wall_climb_reentry_block_frames > 0:
+		return false
 	var wall_hit := _find_climbable_wall()
 	if wall_hit.is_empty():
 		return false
 	_enter_wall_climb(wall_hit)
+	return true
+
+func request_wall_jump() -> bool:
+	if not _control_enabled:
+		return false
+	if _driving_vehicle:
+		return false
+	if _traversal_mode != TRAVERSAL_MODE_WALL_CLIMB:
+		return false
+	if _wall_climb_normal.length_squared() <= 0.0001:
+		return false
+	var wall_normal := _wall_climb_normal.normalized()
+	var input_dir := _read_move_input() if _control_enabled else Vector2.ZERO
+	var wall_tangent := Vector3(wall_normal.z, 0.0, -wall_normal.x).normalized()
+	velocity = Vector3.UP * wall_jump_vertical_velocity
+	velocity += wall_normal * wall_jump_push_off_speed
+	velocity += wall_tangent * input_dir.x * wall_climb_lateral_speed
+	global_position += wall_normal * maxf(wall_climb_attach_distance_m * 1.15, 0.85)
+	_traversal_mode = TRAVERSAL_MODE_AIRBORNE
+	_wall_climb_contact_point = global_position
+	_wall_climb_reentry_block_frames = 10
+	suspend_ground_stabilization(8)
 	return true
 
 func request_ground_slam() -> bool:
@@ -914,6 +949,9 @@ func _read_move_input() -> Vector2:
 func _jump_requested() -> bool:
 	return Input.is_key_pressed(KEY_SPACE) or Input.is_action_just_pressed("ui_accept")
 
+func _wall_jump_requested() -> bool:
+	return Input.is_action_just_pressed("ui_accept")
+
 func _sprint_requested() -> bool:
 	return Input.is_key_pressed(KEY_SHIFT)
 
@@ -1029,6 +1067,7 @@ func _find_climbable_wall() -> Dictionary:
 
 func _enter_wall_climb(wall_hit: Dictionary) -> void:
 	_traversal_mode = TRAVERSAL_MODE_WALL_CLIMB
+	_wall_climb_reentry_block_frames = 0
 	_wall_climb_normal = wall_hit.get("normal", Vector3.BACK)
 	_wall_climb_contact_point = wall_hit.get("position", global_position)
 	velocity = Vector3.ZERO
@@ -1038,6 +1077,9 @@ func _process_wall_climb(_delta: float) -> void:
 	if _control_enabled and Input.is_key_pressed(KEY_CTRL):
 		request_ground_slam()
 		return
+	if _control_enabled and _wall_jump_requested():
+		if request_wall_jump():
+			return
 	var wall_hit := _find_climbable_wall()
 	if wall_hit.is_empty():
 		_traversal_mode = TRAVERSAL_MODE_AIRBORNE

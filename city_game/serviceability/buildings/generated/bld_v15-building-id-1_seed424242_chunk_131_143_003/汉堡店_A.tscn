@@ -106,9 +106,6 @@ albedo_color = Color(0.780392, 0.682353, 0.607843, 1)
 [sub_resource type="BoxMesh" id="BoxMesh_upper_massing_a"]
 size = Vector3(21.6, 4.2, 20.6)
 
-[sub_resource type="BoxMesh" id="BoxMesh_upper_massing_b"]
-size = Vector3(15.2, 3.2, 14.8)
-
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_accent_yellow"]
 albedo_color = Color(0.92549, 0.760784, 0.313725, 1)
 
@@ -391,11 +388,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 12.1, -0.4)
 material_override = SubResource("StandardMaterial3D_upper")
 mesh = SubResource("BoxMesh_upper_massing_a")
 
-[node name="UpperMassingB" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=466990546]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 15.8, -0.4)
-material_override = SubResource("StandardMaterial3D_roof")
-mesh = SubResource("BoxMesh_upper_massing_b")
-
 [node name="Interior" type="Node3D" parent="GeneratedBuilding" unique_id=826869233]
 
 [node name="FloorRunner" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=1351829203]
@@ -624,22 +616,21 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.9, 0.4)
 metadata/city_service_anchor_id = "dining"
 metadata/city_service_anchor_role = "seat"
 
-[node name="Staff" type="Node3D" parent="GeneratedBuilding"]
+[node name="Staff" type="Node3D" parent="GeneratedBuilding" unique_id=219227040]
 
-[node name="Cashier" type="Node3D" parent="GeneratedBuilding/Staff" groups=["city_interactable_npc"]]
+[node name="Cashier" type="Node3D" parent="GeneratedBuilding/Staff" unique_id=1445954573 groups=["city_interactable_npc"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.8, -9.9, -10.6)
 script = ExtResource("2_idle_service")
+idle_animation_name = "Armature|Idle"
+source_height_m = 5.192957
+source_ground_offset_m = 0.000166
 actor_id = "burger_cashier_01"
 display_name = "汉堡店店员"
 interaction_kind = "dialogue"
 dialogue_id = "burger_shop_opening"
 opening_line = "请问想点儿什么？"
-idle_animation_name = "Armature|Idle"
-source_height_m = 5.192957
-target_visual_height_m = 3.1
-source_ground_offset_m = 0.000166
 metadata/city_service_actor_id = "burger_cashier_01"
 metadata/city_service_actor_role = "cashier"
 metadata/city_service_actor_model = "animated_woman"
 
-[node name="Model" parent="GeneratedBuilding/Staff/Cashier" instance=ExtResource("3_animated_woman")]
+[node name="Model" parent="GeneratedBuilding/Staff/Cashier" unique_id=1627778140 instance=ExtResource("3_animated_woman")]

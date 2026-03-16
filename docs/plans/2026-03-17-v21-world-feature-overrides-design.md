@@ -19,6 +19,7 @@
    - chunk near mount 时实例化 scene
    - `full_map_pin` 可选，喷泉 opt-in，山湖默认不走这里
    - 地图 `pin_type` 继续复用现有 `landmark` 颜色语义，只新增 `icon_id = fountain`
+   - 对电视塔这类 tall landmark，允许 manifest 声明 `far_visibility`，但只能渲染廉价 proxy，不允许完整 scene 远距常驻
 
 3. `terrain_region_feature`
    - 当前只冻结路线，不在 `v21` 实现
@@ -40,6 +41,11 @@
 - `scene_path`
 - `manifest_path`
 - `full_map_pin` 可选
+- `far_visibility` 可选：
+  - `enabled`
+  - `proxy_scene_path`
+  - `visibility_radius_m`
+  - `lod_modes`
 
 喷泉建议落在 `chunk_129_142`，其 chunk center 是 `(-1848, 0, 1480)`。真正 authored 摆放时，不应该只存“这是 `chunk_129_142`”，而应该存：
 
@@ -47,6 +53,14 @@
 - `chunk_local_position`
 
 这样用户后续即使只看 clipboard 文本，也能稳定把一个离散 landmark 放回同一个点。电视塔、雕塑、奇怪建筑以后都能直接复用这套 contract。
+
+如果是电视塔这种“远处也应该看得见”的地标，推荐做法不是扩大 `scene_landmark` 的常驻范围，而是给它单独配一个远距 proxy。也就是说：
+
+- near LOD：挂完整 landmark scene
+- mid/far LOD：按 `far_visibility` 决定是否显示廉价 proxy
+- 超过 `visibility_radius_m`：连 proxy 也不显示
+
+这样既保住世界辨识度，也不把 streaming 纪律击穿。
 
 ## 为什么山和湖不是“同一条实现链”
 

@@ -24,6 +24,7 @@ PRD 入口：[PRD-0012 World Feature Ground Probe And Landmark Overrides](../prd
 - 喷泉目标 chunk 冻结为 `chunk_129_142`。
 - 地面 inspection 必须升级为正式 `ground_probe`，最小字段冻结为：`chunk_id / chunk_key / world_position / chunk_local_position / surface_normal`。
 - `scene_landmark` 的 full-map pin 为 manifest opt-in；喷泉需要 pin，山和湖当前不需要。
+- `scene_landmark` manifest 允许可选 `far_visibility`；其语义冻结为“mid/far LOD 的廉价 proxy 可见”，不是“完整 scene 远距常驻”。
 - minimap 不纳入 `v21` 范围。
 - mountain / lake 的 future route 冻结为 `terrain_region_feature` sibling family，而不是把一个超大 scene 挂到 landmark runtime。
 
@@ -58,3 +59,4 @@ PRD 入口：[PRD-0012 World Feature Ground Probe And Landmark Overrides](../prd
 - `v21` 不实现 mountain / lake 的 terrain / water runtime，只冻结 sibling 路线。
 - `v21` 不做 landmark minimap pin。
 - `v21` 不做 landmark click-to-route / fast travel / autodrive。
+- `v21` 首个 consumer 喷泉不要求启用 `far_visibility`，但 contract 已冻结，供电视塔等 tall landmark 后续直接复用。

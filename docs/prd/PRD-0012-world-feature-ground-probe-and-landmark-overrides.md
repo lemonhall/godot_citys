@@ -16,6 +16,7 @@
   - 离散地标：喷泉、电视塔、雕塑、奇怪标志性建筑
   - 区域特征：山、湖
 - 这两类东西都需要 placement contract，但只有第一类适合 `scene instantiate`；第二类需要改 terrain / water / nav，不能直接复用喷泉式场景挂载。
+- 用户补充了第三个现实约束：像电视塔这类高耸地标，不能因为玩家离远就完全消失；但这也不能靠“完整 landmark scene 永远常驻”来硬顶，否则会直接破坏 streaming 和 LOD 纪律。
 
 ## Scope
 
@@ -27,6 +28,7 @@
 - 新增独立于 `building_id` 的 `scene_landmark` registry / manifest / scene 主链
 - 离散地标在 near chunk mount 时正式挂进世界
 - `full_map_pin` 对 scene landmark 变为可选 contract
+- 为 tall landmark 冻结可选 `far_visibility` contract，允许未来用廉价 proxy 保持远距可见
 - 喷泉作为首个真实 consumer 跑通，目标 chunk 为 `chunk_129_142`
 - 为后续山/湖路线冻结 sibling 设计边界
 
@@ -102,8 +104,14 @@
   - `world_position`
   - `scene_path`
   - `manifest_path`
+- manifest 可选包含 `far_visibility`：
+  - `enabled`
+  - `proxy_scene_path`
+  - `visibility_radius_m`
+  - `lod_modes`
 - chunk near mount 时，若当前 chunk 命中相关 landmark entry，则实例化 landmark scene
 - landmark scene 的挂载必须是事件驱动的 chunk mount，不允许 per-frame 全量扫描
+- `far_visibility.enabled = true` 时，只允许 mid/far LOD 渲染廉价 proxy；不得以“完整近景 scene 远距常驻”代替
 
 **非目标**：
 
@@ -116,6 +124,7 @@
 - 自动化测试至少断言：目标 chunk near mount 时，landmark scene 会被实例化并带有稳定 `landmark_id` 元数据。
 - 自动化测试至少断言：没有 registry entry 的 chunk 不会凭空多挂 landmark scene。
 - 自动化测试至少断言：landmark mount 只发生在 chunk mount / remount 链路，不需要每帧扫描。
+- `far_visibility` 当前先冻结 contract，不要求喷泉在 `v21` 首版启用，但后续电视塔等 tall landmark 不得再另造第二套远距可见系统。
 - 反作弊条款：不得把喷泉偷偷绑到某个 fake `building_id`，也不得在 `_process()` 里扫整个 registry 来宣称完成。
 
 ### REQ-0012-003 scene landmark manifest 必须允许可选的 full-map pin，喷泉必须成为首个真实 consumer
@@ -135,6 +144,7 @@
 - fountain 的 `icon_id` 冻结为 `fountain`
 - fountain 的 pin 只进入 full map scope，不进入 minimap
 - fountain asset 路径冻结为 `res://city_game/assets/environment/source/fountains/Santo Spirito Fountain.glb`
+- tall landmark 可同时声明 `full_map_pin` 和 `far_visibility`，但两者语义不同：前者是地图信息，后者是世界远距可见 proxy
 
 **非目标**：
 
@@ -176,9 +186,11 @@
 
 - mountain / lake 是否要共用同一个 registry 文件。当前答案：不共用实现链，但允许未来共享更上层 `world_feature` 术语与地面 probe 输入。
 - `scene_landmark` 是否默认都有 full-map pin。当前答案：否，保持 manifest opt-in。
+- `far_visibility` 是否意味着完整地标 scene 永远不卸载。当前答案：否，只允许廉价 proxy 在 mid/far LOD 出现。
 - 地面 probe 是否需要立即暴露页级 terrain / road page key。当前答案：首版不是硬要求，但可作为扩展字段。
 
 ## Future Direction
 
 - 山和湖不应复用 `scene_landmark` 挂载链，而应进入后续 sibling family：`terrain_region_feature`。
 - `terrain_region_feature` 共享 `ground_probe` 作为 authored 锚点输入，但 runtime 应接在 terrain / water / nav 页面生成链，而不是简单 instantiate 一个大场景。
+- 电视塔、摩天轮、雕塑这类高辨识度 tall landmark，可以继续走 `scene_landmark`，但建议通过 `far_visibility.proxy_scene_path` 提供低成本 silhouette / proxy，而不是让完整装饰版 scene 超距离常驻。

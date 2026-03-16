@@ -45,9 +45,15 @@
   - `world_position`
   - `scene_path`
   - `manifest_path`
+- scene landmark manifest 可选字段冻结为：
+  - `far_visibility.enabled`
+  - `far_visibility.proxy_scene_path`
+  - `far_visibility.visibility_radius_m`
+  - `far_visibility.lod_modes`
 - `feature_kind` 在 `v21` 首版冻结为 `scene_landmark`。
 - scene landmark `full_map_pin` 复用 `v18` contract，并保持 optional。
 - scene landmark full-map pin 的 `pin_type` 复用现有 `landmark`，具体图标由 `icon_id` 决定。
+- `far_visibility` 的语义冻结为“远距仅渲染廉价 proxy”，禁止把完整近景 scene 直接保活到 mid/far LOD。
 - fountain 的 `icon_id` 冻结为 `fountain`，UI glyph 建议为 `⛲`。
 - future mountain/lake route 冻结为 `terrain_region_feature` sibling family，不进入本版实现。
 
@@ -60,6 +66,7 @@
 - 让 chunk near mount 能实例化 landmark scene
 - 让 fountain 成为第一个真实 landmark consumer
 - 让 fountain 在 full map 上显示 marker
+- 冻结 tall landmark 的 `far_visibility` manifest contract，供电视塔等未来 consumer 直接复用
 - 补齐 world/e2e/perf 级验证计划
 
 不做什么：
@@ -68,6 +75,7 @@
 - 不做 landmark minimap pin
 - 不做 landmark click route / fast travel / autodrive
 - 不做通用世界编辑器 UI
+- 不把 tall landmark 的远距可见实现成“完整 scene 永远不卸载”
 
 ## Acceptance
 
@@ -139,4 +147,5 @@
 - 如果 ground probe 只加文案不加 formal payload，后续 authored placement 仍然不可自动化。
 - 如果 scene landmark runtime 偷偷复用 building override 的 `building_id`，后面会把世界特征和建筑替换身份搅在一起。
 - 如果 fountain pin 直接复用 minimap scope，`v18` 的地图边界会被破坏。
+- 如果 tall landmark 的远距可见偷懒做成完整 scene 常驻，streaming 与 LOD 预算会被直接打穿。
 - 如果 mountain/lake 路线不提前写清，后面很容易为了“快一点出效果”去挂一个超大 scene，直接破坏 terrain/streaming/page provider 纪律。

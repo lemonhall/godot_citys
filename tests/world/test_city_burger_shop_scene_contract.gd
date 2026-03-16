@@ -108,6 +108,41 @@ func _run() -> void:
 		if not T.require_true(self, anchor_ids.has(required_anchor_id), "Burger shop anchors must expose %s" % required_anchor_id):
 			return
 
+	if not T.require_true(self, generated_building.has_node("Staff/Cashier"), "Burger shop scene must place a cashier staff actor behind the counter"):
+		return
+	var cashier := generated_building.get_node("Staff/Cashier") as Node3D
+	if not T.require_true(self, cashier != null, "Burger shop cashier actor must resolve as Node3D"):
+		return
+	if not T.require_true(self, str(cashier.get_meta("city_service_actor_role", "")) == "cashier", "Burger shop cashier actor must expose cashier role metadata"):
+		return
+	if not T.require_true(self, cashier.has_method("get_interaction_contract"), "Burger shop cashier actor must expose a formal interactable NPC contract"):
+		return
+	var interaction_contract: Dictionary = cashier.get_interaction_contract()
+	if not T.require_true(self, str(interaction_contract.get("actor_id", "")) == "burger_cashier_01", "Burger shop cashier actor contract must preserve the formal actor_id"):
+		return
+	if not T.require_true(self, str(interaction_contract.get("interaction_kind", "")) == "dialogue", "Burger shop cashier actor contract must opt into dialogue interaction"):
+		return
+	if not T.require_true(self, float(interaction_contract.get("interaction_radius_m", 0.0)) >= 4.9, "Burger shop cashier actor contract must expose the frozen 5m interaction radius"):
+		return
+	if not T.require_true(self, str(interaction_contract.get("dialogue_id", "")) == "burger_shop_opening", "Burger shop cashier actor contract must expose the stable burger_shop_opening dialogue id"):
+		return
+	if not T.require_true(self, str(interaction_contract.get("opening_line", "")).find("请问想点儿什么") >= 0, "Burger shop cashier actor contract must expose the opening line text"):
+		return
+	var model_root := cashier.get_node_or_null("Model") as Node3D
+	if not T.require_true(self, model_root != null, "Burger shop cashier actor must keep a Model root"):
+		return
+	if not T.require_true(self, str(model_root.scene_file_path) == "res://city_game/assets/pedestrians/civilians/animated_woman.glb", "Burger shop cashier actor must instantiate the curated animated_woman.glb asset"):
+		return
+	var animation_player := _find_animation_player(cashier)
+	if not T.require_true(self, animation_player != null, "Burger shop cashier actor must contain an AnimationPlayer"):
+		return
+	if not T.require_true(self, animation_player.has_animation("Armature|Idle"), "Burger shop cashier actor must expose Armature|Idle"):
+		return
+	if not T.require_true(self, animation_player.is_playing(), "Burger shop cashier actor must start playing an idle animation"):
+		return
+	if not T.require_true(self, animation_player.current_animation == "Armature|Idle", "Burger shop cashier actor must hold the idle clip by default"):
+		return
+
 	scene_root.queue_free()
 	await process_frame
 	T.pass_and_quit(self)
@@ -124,3 +159,17 @@ func _count_nodes_of_type(root: Node, target_type: Variant) -> int:
 			continue
 		count += _count_nodes_of_type(child_node, target_type)
 	return count
+
+func _find_animation_player(root_node: Node) -> AnimationPlayer:
+	if root_node == null:
+		return null
+	if root_node is AnimationPlayer:
+		return root_node as AnimationPlayer
+	for child in root_node.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		var found := _find_animation_player(child_node)
+		if found != null:
+			return found
+	return null

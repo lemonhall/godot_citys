@@ -1,6 +1,8 @@
 [gd_scene format=3 uid="uid://b71yqno40irhq"]
 
 [ext_resource type="PackedScene" uid="uid://b12y1a0pcrl6p" path="res://city_game/assets/food/source/Cheeseburger.glb" id="1_cheeseburger"]
+[ext_resource type="Script" uid="uid://c5n5j6fqnb0bq" path="res://city_game/world/serviceability/CityIdleServicePedestrian.gd" id="2_idle_service"]
+[ext_resource type="PackedScene" uid="uid://3uj4pxc6x05h" path="res://city_game/assets/pedestrians/civilians/animated_woman.glb" id="3_animated_woman"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
 size = Vector3(27.4, 0.2, 25.4)
@@ -621,3 +623,23 @@ metadata/city_service_anchor_role = "seat"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.9, 0.4)
 metadata/city_service_anchor_id = "dining"
 metadata/city_service_anchor_role = "seat"
+
+[node name="Staff" type="Node3D" parent="GeneratedBuilding"]
+
+[node name="Cashier" type="Node3D" parent="GeneratedBuilding/Staff" groups=["city_interactable_npc"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.8, -9.9, -10.6)
+script = ExtResource("2_idle_service")
+actor_id = "burger_cashier_01"
+display_name = "汉堡店店员"
+interaction_kind = "dialogue"
+dialogue_id = "burger_shop_opening"
+opening_line = "请问想点儿什么？"
+idle_animation_name = "Armature|Idle"
+source_height_m = 5.192957
+target_visual_height_m = 3.1
+source_ground_offset_m = 0.000166
+metadata/city_service_actor_id = "burger_cashier_01"
+metadata/city_service_actor_role = "cashier"
+metadata/city_service_actor_model = "animated_woman"
+
+[node name="Model" parent="GeneratedBuilding/Staff/Cashier" instance=ExtResource("3_animated_woman")]

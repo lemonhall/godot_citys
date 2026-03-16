@@ -1,0 +1,623 @@
+[gd_scene format=3 uid="uid://b71yqno40irhq"]
+
+[ext_resource type="PackedScene" uid="uid://b12y1a0pcrl6p" path="res://city_game/assets/food/source/Cheeseburger.glb" id="1_cheeseburger"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
+size = Vector3(27.4, 0.2, 25.4)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_side_wall"]
+size = Vector3(0.6, 19.6, 25.4)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_back_wall"]
+size = Vector3(27.4, 19.6, 0.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_front_column"]
+size = Vector3(4.6, 19.6, 0.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_front_top"]
+size = Vector3(17.6, 12, 0.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_door_jamb"]
+size = Vector3(0.5, 3, 0.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_window"]
+size = Vector3(6.2, 4.8, 0.08)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_door_transom"]
+size = Vector3(4, 2.2, 0.08)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_counter"]
+size = Vector3(9.6, 1.2, 2.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_booth_base"]
+size = Vector3(3.4, 1.3, 8.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_back_plinth"]
+size = Vector3(12, 0.8, 3.2)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_trim"]
+albedo_color = Color(0.243137, 0.188235, 0.14902, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_back_plinth"]
+size = Vector3(12, 0.8, 3.2)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
+albedo_color = Color(0.839216, 0.8, 0.721569, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_floor"]
+size = Vector3(27.4, 0.2, 25.4)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_roof"]
+albedo_color = Color(0.333333, 0.301961, 0.282353, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wall"]
+albedo_color = Color(0.956863, 0.929412, 0.866667, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_side_wall"]
+size = Vector3(0.6, 19.6, 25.4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_back_wall"]
+size = Vector3(27.4, 19.6, 0.6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_front_column"]
+size = Vector3(4.6, 19.6, 0.6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_front_top"]
+size = Vector3(17.6, 12, 0.6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_door_jamb"]
+size = Vector3(0.5, 3, 0.6)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_glass"]
+transparency = 1
+albedo_color = Color(0.360784, 0.470588, 0.521569, 0.62)
+
+[sub_resource type="BoxMesh" id="BoxMesh_door_transom"]
+size = Vector3(4, 2.2, 0.08)
+
+[sub_resource type="BoxMesh" id="BoxMesh_window"]
+size = Vector3(6.2, 4.8, 0.08)
+
+[sub_resource type="BoxMesh" id="BoxMesh_door_leaf"]
+size = Vector3(1.6, 4.8, 0.12)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_accent_red"]
+albedo_color = Color(0.815686, 0.227451, 0.168627, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_awning"]
+size = Vector3(14, 0.35, 2.6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_sign_plate"]
+size = Vector3(12.8, 2.8, 0.18)
+
+[sub_resource type="TextMesh" id="TextMesh_shop_sign"]
+text = "STACK BURGER"
+pixel_size = 0.05
+depth = 0.06
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sign"]
+albedo_color = Color(0.988235, 0.933333, 0.772549, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_upper"]
+albedo_color = Color(0.780392, 0.682353, 0.607843, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_upper_massing_a"]
+size = Vector3(21.6, 4.2, 20.6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_upper_massing_b"]
+size = Vector3(15.2, 3.2, 14.8)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_accent_yellow"]
+albedo_color = Color(0.92549, 0.760784, 0.313725, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_runner"]
+size = Vector3(4.2, 0.04, 6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_counter"]
+size = Vector3(9.6, 1.2, 2.8)
+
+[sub_resource type="BoxMesh" id="BoxMesh_register"]
+size = Vector3(0.8, 0.45, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_metal"]
+albedo_color = Color(0.423529, 0.45098, 0.478431, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_soda_fountain"]
+size = Vector3(1.8, 1.6, 0.8)
+
+[sub_resource type="BoxMesh" id="BoxMesh_grill"]
+size = Vector3(3.2, 1.2, 1.4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_fryer"]
+size = Vector3(1.8, 1, 1.2)
+
+[sub_resource type="BoxMesh" id="BoxMesh_kitchen_hood"]
+size = Vector3(6.6, 0.5, 1.6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_pickup_shelf"]
+size = Vector3(3.4, 1.1, 1.4)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_menu"]
+albedo_color = Color(0.0901961, 0.109804, 0.12549, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_menu_board"]
+size = Vector3(10.8, 3.6, 0.16)
+
+[sub_resource type="TextMesh" id="TextMesh_menu_text"]
+text = "DOUBLE
+CHEESE
+FRIES
+SHAKE"
+pixel_size = 0.027
+depth = 0.03
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_booth"]
+albedo_color = Color(0.694118, 0.152941, 0.133333, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_booth_base"]
+size = Vector3(3.4, 1.3, 8.6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_booth_table_top"]
+size = Vector3(1.8, 0.1, 1.2)
+
+[sub_resource type="BoxMesh" id="BoxMesh_booth_table_leg"]
+size = Vector3(0.22, 1.1, 0.22)
+
+[sub_resource type="BoxMesh" id="BoxMesh_dining_table_top"]
+size = Vector3(1.6, 0.1, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_dining_table_leg"]
+size = Vector3(0.22, 1, 0.22)
+
+[sub_resource type="BoxMesh" id="BoxMesh_stool"]
+size = Vector3(0.62, 0.45, 0.62)
+
+[sub_resource type="BoxMesh" id="BoxMesh_drink_station"]
+size = Vector3(2.4, 1.4, 0.9)
+
+[sub_resource type="BoxMesh" id="BoxMesh_trash_bin"]
+size = Vector3(0.8, 1, 0.8)
+
+[node name="ServiceBuildingRoot" type="Node3D" unique_id=1207146730]
+metadata/city_service_scene_root = true
+metadata/city_building_id = "bld:v15-building-id-1:seed424242:chunk_131_143:003"
+metadata/city_building_display_name = "57659800 Hariridge Street [chunk_131_143#003]"
+metadata/city_service_scene_kind = "burger_shop"
+
+[node name="GeneratedBuilding" type="StaticBody3D" parent="." unique_id=2015585961]
+transform = Transform3D(-4.37114e-08, 0, 1, 0, 1, 0, -1, 0, -4.37114e-08, 0, 10, 0)
+metadata/city_building_id = "bld:v15-building-id-1:seed424242:chunk_131_143:003"
+metadata/city_generated_building = true
+metadata/city_service_scene_profile = "step_midrise_burger_shop"
+metadata/city_inspection_payload = {
+"address_label": "57659800 Hariridge Street",
+"archetype_id": "step_midrise",
+"building_code": "chunk_131_143#003",
+"building_id": "bld:v15-building-id-1:seed424242:chunk_131_143:003",
+"building_local_index": 3,
+"chunk_id": "chunk_131_143",
+"chunk_key": Vector2i(131, 143),
+"detail_seed": 3112907325,
+"display_name": "57659800 Hariridge Street [chunk_131_143#003]",
+"generation_locator": {
+"archetype_id": "step_midrise",
+"building_id": "bld:v15-building-id-1:seed424242:chunk_131_143:003",
+"building_local_index": 3,
+"candidate_kind": "streetfront",
+"chunk_id": "chunk_131_143",
+"chunk_key": Vector2i(131, 143),
+"detail_seed": 3112907325,
+"schema_version": "v15-building-id-1",
+"world_seed": 424242
+},
+"inspection_kind": "building",
+"place_id": "addr:chunk_131_143_block_1_parcel_1:0",
+"world_position": Vector3(-82.96194, 17.440413, 39.407017)
+}
+
+[node name="CollisionFloor" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1181546155]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.9, 0)
+shape = SubResource("BoxShape3D_floor")
+
+[node name="CollisionLeftWall" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1218765040]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13.7, 0, 0)
+shape = SubResource("BoxShape3D_side_wall")
+
+[node name="CollisionRightWall" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1826518723]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.7, 0, 0)
+shape = SubResource("BoxShape3D_side_wall")
+
+[node name="CollisionBackWall" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=170528744]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -12.7)
+shape = SubResource("BoxShape3D_back_wall")
+
+[node name="CollisionFrontColumnLeft" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1340731715]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.4, 0, 12.7)
+shape = SubResource("BoxShape3D_front_column")
+
+[node name="CollisionFrontColumnRight" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1159142207]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.4, 0, 12.7)
+shape = SubResource("BoxShape3D_front_column")
+
+[node name="CollisionFrontTop" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=690315113]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.8, 12.7)
+shape = SubResource("BoxShape3D_front_top")
+
+[node name="CollisionDoorJambLeft" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=154168023]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.65, -6.4, 12.7)
+shape = SubResource("BoxShape3D_door_jamb")
+
+[node name="CollisionDoorJambRight" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1773287465]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.65, -6.4, 12.7)
+shape = SubResource("BoxShape3D_door_jamb")
+
+[node name="CollisionWindowLeft" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1364815980]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, -5.7, 12.96)
+shape = SubResource("BoxShape3D_window")
+
+[node name="CollisionWindowRight" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1716232611]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, -5.7, 12.96)
+shape = SubResource("BoxShape3D_window")
+
+[node name="CollisionDoorTransom" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1324898996]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.3, 12.96)
+shape = SubResource("BoxShape3D_door_transom")
+
+[node name="CollisionCounter" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=419275386]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.8, -9.3, -9.8)
+shape = SubResource("BoxShape3D_counter")
+
+[node name="CollisionBoothLeft" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1818762166]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.4, -9.25, 4.8)
+shape = SubResource("BoxShape3D_booth_base")
+
+[node name="CollisionBoothRight" type="CollisionShape3D" parent="GeneratedBuilding" unique_id=1625101761]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.4, -9.25, 4.8)
+shape = SubResource("BoxShape3D_booth_base")
+
+[node name="TerrainMitigation" type="Node3D" parent="GeneratedBuilding" unique_id=1606830617]
+
+[node name="BackPlinthCollision" type="CollisionShape3D" parent="GeneratedBuilding/TerrainMitigation" unique_id=159950382]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.5, -10.9)
+shape = SubResource("BoxShape3D_back_plinth")
+
+[node name="BackPlinth" type="MeshInstance3D" parent="GeneratedBuilding/TerrainMitigation" unique_id=1842420855]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.5, -10.9)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_back_plinth")
+
+[node name="Shell" type="Node3D" parent="GeneratedBuilding" unique_id=1378115916]
+
+[node name="Floor" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=787352002]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.9, 0)
+material_override = SubResource("StandardMaterial3D_floor")
+mesh = SubResource("BoxMesh_floor")
+
+[node name="Ceiling" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=856406301]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 9.7, 0)
+material_override = SubResource("StandardMaterial3D_roof")
+mesh = SubResource("BoxMesh_floor")
+
+[node name="LeftWall" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=534014069]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -13.7, 0, 0)
+material_override = SubResource("StandardMaterial3D_wall")
+mesh = SubResource("BoxMesh_side_wall")
+
+[node name="RightWall" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=1910471637]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 13.7, 0, 0)
+material_override = SubResource("StandardMaterial3D_wall")
+mesh = SubResource("BoxMesh_side_wall")
+
+[node name="BackWall" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=774818631]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -12.7)
+material_override = SubResource("StandardMaterial3D_wall")
+mesh = SubResource("BoxMesh_back_wall")
+
+[node name="FrontColumnLeft" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=413635913]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.4, 0, 12.7)
+material_override = SubResource("StandardMaterial3D_wall")
+mesh = SubResource("BoxMesh_front_column")
+
+[node name="FrontColumnRight" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=133969235]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.4, 0, 12.7)
+material_override = SubResource("StandardMaterial3D_wall")
+mesh = SubResource("BoxMesh_front_column")
+
+[node name="FrontTop" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=425732153]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.8, 12.7)
+material_override = SubResource("StandardMaterial3D_wall")
+mesh = SubResource("BoxMesh_front_top")
+
+[node name="DoorJambLeft" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=2135938471]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.65, -6.4, 12.7)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_door_jamb")
+
+[node name="DoorJambRight" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=86495965]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.65, -6.4, 12.7)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_door_jamb")
+
+[node name="DoorTransom" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=1995797247]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -4.3, 12.96)
+material_override = SubResource("StandardMaterial3D_glass")
+mesh = SubResource("BoxMesh_door_transom")
+
+[node name="WindowLeft" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=642501741]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, -5.7, 12.96)
+material_override = SubResource("StandardMaterial3D_glass")
+mesh = SubResource("BoxMesh_window")
+
+[node name="WindowRight" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=988929240]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, -5.7, 12.96)
+material_override = SubResource("StandardMaterial3D_glass")
+mesh = SubResource("BoxMesh_window")
+
+[node name="DoorLeafLeft" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=718068207]
+transform = Transform3D(0.819152, 0, -0.573576, 0, 1, 0, 0.573576, 0, 0.819152, -0.82, -6.2, 12.55)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_door_leaf")
+
+[node name="DoorLeafRight" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=962507271]
+transform = Transform3D(0.819152, 0, 0.573576, 0, 1, 0, -0.573576, 0, 0.819152, 0.82, -6.2, 12.55)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_door_leaf")
+
+[node name="Awning" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=789277995]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.6, 11.45)
+material_override = SubResource("StandardMaterial3D_accent_red")
+mesh = SubResource("BoxMesh_awning")
+
+[node name="SignPlate" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=1271266778]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 12.18)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_sign_plate")
+
+[node name="ShopSign" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=1909478911]
+transform = Transform3D(4.7, 0, 0, 0, 4.7, 0, 0, 0, 4.7, -7.2, 1.3500004, 13.930593)
+mesh = SubResource("TextMesh_shop_sign")
+surface_material_override/0 = SubResource("StandardMaterial3D_sign")
+
+[node name="RoofBurgerSign" type="Node3D" parent="GeneratedBuilding/Shell" unique_id=1360495412]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 18.8, 8.4)
+
+[node name="Model" parent="GeneratedBuilding/Shell/RoofBurgerSign" unique_id=661331220 instance=ExtResource("1_cheeseburger")]
+transform = Transform3D(3, 0, 0, 0, 3, 0, 0, 0, 3, -0.8963766, -4.325878, -8.154763)
+
+[node name="UpperMassingA" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=523560200]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 12.1, -0.4)
+material_override = SubResource("StandardMaterial3D_upper")
+mesh = SubResource("BoxMesh_upper_massing_a")
+
+[node name="UpperMassingB" type="MeshInstance3D" parent="GeneratedBuilding/Shell" unique_id=466990546]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 15.8, -0.4)
+material_override = SubResource("StandardMaterial3D_roof")
+mesh = SubResource("BoxMesh_upper_massing_b")
+
+[node name="Interior" type="Node3D" parent="GeneratedBuilding" unique_id=826869233]
+
+[node name="FloorRunner" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=1351829203]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.78, 4.2)
+material_override = SubResource("StandardMaterial3D_accent_yellow")
+mesh = SubResource("BoxMesh_runner")
+
+[node name="Counter" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=588868365]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.8, -9.3, -9.8)
+material_override = SubResource("StandardMaterial3D_accent_yellow")
+mesh = SubResource("BoxMesh_counter")
+
+[node name="Register" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=1393149878]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7.9, -8.48, -9.1)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_register")
+
+[node name="SodaFountain" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=1631240622]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.2, -9.1, -10.2)
+material_override = SubResource("StandardMaterial3D_metal")
+mesh = SubResource("BoxMesh_soda_fountain")
+
+[node name="Grill" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=1487041638]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.6, -9.3, -10.4)
+material_override = SubResource("StandardMaterial3D_metal")
+mesh = SubResource("BoxMesh_grill")
+
+[node name="Fryer" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=1344003768]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.7, -9.4, -10.25)
+material_override = SubResource("StandardMaterial3D_metal")
+mesh = SubResource("BoxMesh_fryer")
+
+[node name="KitchenHood" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=909300051]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.8, -4.6, -11.15)
+material_override = SubResource("StandardMaterial3D_metal")
+mesh = SubResource("BoxMesh_kitchen_hood")
+
+[node name="PickupShelf" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=1578116229]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.6, -9.35, -5.8)
+material_override = SubResource("StandardMaterial3D_accent_red")
+mesh = SubResource("BoxMesh_pickup_shelf")
+
+[node name="MenuBoard" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=339773882]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.2, -12.18)
+material_override = SubResource("StandardMaterial3D_menu")
+mesh = SubResource("BoxMesh_menu_board")
+
+[node name="MenuText" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=215102560]
+transform = Transform3D(3.9, 0, 0, 0, 3.9, 0, 0, 0, 3.9, -4.8, -1, -12.02)
+mesh = SubResource("TextMesh_menu_text")
+surface_material_override/0 = SubResource("StandardMaterial3D_sign")
+
+[node name="BoothLeft" type="Node3D" parent="GeneratedBuilding/Interior" unique_id=1649892283]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.4, 0, 4.8)
+
+[node name="Base" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BoothLeft" unique_id=1284710617]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.25, 0)
+material_override = SubResource("StandardMaterial3D_booth")
+mesh = SubResource("BoxMesh_booth_base")
+
+[node name="TableFront" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BoothLeft" unique_id=2122824457]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.35, -8.55, -2.2)
+material_override = SubResource("StandardMaterial3D_floor")
+mesh = SubResource("BoxMesh_booth_table_top")
+
+[node name="TableFrontLeg" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BoothLeft" unique_id=241961946]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.35, -9.15, -2.2)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_booth_table_leg")
+
+[node name="TableRear" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BoothLeft" unique_id=373650069]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.35, -8.55, 2.2)
+material_override = SubResource("StandardMaterial3D_floor")
+mesh = SubResource("BoxMesh_booth_table_top")
+
+[node name="TableRearLeg" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BoothLeft" unique_id=900547472]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.35, -9.15, 2.2)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_booth_table_leg")
+
+[node name="BoothRight" type="Node3D" parent="GeneratedBuilding/Interior" unique_id=998015412]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.4, 0, 4.8)
+
+[node name="Base" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BoothRight" unique_id=1014785054]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.25, 0)
+material_override = SubResource("StandardMaterial3D_booth")
+mesh = SubResource("BoxMesh_booth_base")
+
+[node name="TableFront" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BoothRight" unique_id=298319367]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.35, -8.55, -2.2)
+material_override = SubResource("StandardMaterial3D_floor")
+mesh = SubResource("BoxMesh_booth_table_top")
+
+[node name="TableFrontLeg" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BoothRight" unique_id=1232616428]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.35, -9.15, -2.2)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_booth_table_leg")
+
+[node name="TableRear" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BoothRight" unique_id=1665164402]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.35, -8.55, 2.2)
+material_override = SubResource("StandardMaterial3D_floor")
+mesh = SubResource("BoxMesh_booth_table_top")
+
+[node name="TableRearLeg" type="MeshInstance3D" parent="GeneratedBuilding/Interior/BoothRight" unique_id=568138054]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.35, -9.15, 2.2)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_booth_table_leg")
+
+[node name="DiningTableA" type="Node3D" parent="GeneratedBuilding/Interior" unique_id=1617223622]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.8, 0, -0.4)
+
+[node name="Top" type="MeshInstance3D" parent="GeneratedBuilding/Interior/DiningTableA" unique_id=458178170]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -8.7, 0)
+material_override = SubResource("StandardMaterial3D_floor")
+mesh = SubResource("BoxMesh_dining_table_top")
+
+[node name="Leg" type="MeshInstance3D" parent="GeneratedBuilding/Interior/DiningTableA" unique_id=1964394602]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.2, 0)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_dining_table_leg")
+
+[node name="StoolA" type="MeshInstance3D" parent="GeneratedBuilding/Interior/DiningTableA" unique_id=42347053]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.15, -9.48, 0)
+material_override = SubResource("StandardMaterial3D_accent_red")
+mesh = SubResource("BoxMesh_stool")
+
+[node name="StoolB" type="MeshInstance3D" parent="GeneratedBuilding/Interior/DiningTableA" unique_id=714160649]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.15, -9.48, 0)
+material_override = SubResource("StandardMaterial3D_accent_red")
+mesh = SubResource("BoxMesh_stool")
+
+[node name="DiningTableB" type="Node3D" parent="GeneratedBuilding/Interior" unique_id=2106642805]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.8, 0, 1.2)
+
+[node name="Top" type="MeshInstance3D" parent="GeneratedBuilding/Interior/DiningTableB" unique_id=1638519826]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -8.7, 0)
+material_override = SubResource("StandardMaterial3D_floor")
+mesh = SubResource("BoxMesh_dining_table_top")
+
+[node name="Leg" type="MeshInstance3D" parent="GeneratedBuilding/Interior/DiningTableB" unique_id=2069376415]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.2, 0)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_dining_table_leg")
+
+[node name="StoolA" type="MeshInstance3D" parent="GeneratedBuilding/Interior/DiningTableB" unique_id=709327683]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.15, -9.48, 0)
+material_override = SubResource("StandardMaterial3D_accent_red")
+mesh = SubResource("BoxMesh_stool")
+
+[node name="StoolB" type="MeshInstance3D" parent="GeneratedBuilding/Interior/DiningTableB" unique_id=1055125967]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.15, -9.48, 0)
+material_override = SubResource("StandardMaterial3D_accent_red")
+mesh = SubResource("BoxMesh_stool")
+
+[node name="DrinkStation" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=1008813159]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.2, -9.2, -5.6)
+material_override = SubResource("StandardMaterial3D_metal")
+mesh = SubResource("BoxMesh_drink_station")
+
+[node name="TrashBin" type="MeshInstance3D" parent="GeneratedBuilding/Interior" unique_id=26440302]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.8, -9.4, 8.8)
+material_override = SubResource("StandardMaterial3D_trim")
+mesh = SubResource("BoxMesh_trash_bin")
+
+[node name="Lighting" type="Node3D" parent="GeneratedBuilding" unique_id=910121688]
+
+[node name="FrontLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting" unique_id=1200298993]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.8, 8.4)
+light_color = Color(1, 0.894118, 0.764706, 1)
+light_energy = 2.6
+omni_range = 16.0
+
+[node name="CounterLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting" unique_id=1196220678]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.8, -2.8, -9)
+light_color = Color(1, 0.870588, 0.717647, 1)
+light_energy = 2.9
+omni_range = 16.0
+
+[node name="BoothLeftLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting" unique_id=1565260365]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.8, -3.5, 4.8)
+light_color = Color(1, 0.917647, 0.811765, 1)
+light_energy = 2.4
+omni_range = 15.0
+
+[node name="BoothRightLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting" unique_id=1472198381]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.8, -3.5, 4.8)
+light_color = Color(1, 0.917647, 0.811765, 1)
+light_energy = 2.4
+omni_range = 15.0
+
+[node name="KitchenLight" type="OmniLight3D" parent="GeneratedBuilding/Lighting" unique_id=1574309418]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.8, -3.8, -10.4)
+light_color = Color(1, 0.85098, 0.701961, 1)
+light_energy = 2.5
+omni_range = 14.0
+
+[node name="ServiceAnchors" type="Node3D" parent="GeneratedBuilding" unique_id=384333079]
+
+[node name="DoorEntryAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors" unique_id=275154929]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.9, 10.4)
+metadata/city_service_anchor_id = "door_entry"
+metadata/city_service_anchor_role = "entry"
+
+[node name="CounterQueueAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors" unique_id=1401830616]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.8, -9.9, -5.8)
+metadata/city_service_anchor_id = "counter_queue"
+metadata/city_service_anchor_role = "queue"
+
+[node name="PickupAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors" unique_id=739267772]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.6, -9.9, -4.2)
+metadata/city_service_anchor_id = "pickup"
+metadata/city_service_anchor_role = "pickup"
+
+[node name="BoothLeftAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors" unique_id=1303195983]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.8, -9.9, 4.8)
+metadata/city_service_anchor_id = "booth_left"
+metadata/city_service_anchor_role = "seat"
+
+[node name="BoothRightAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors" unique_id=921461322]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.8, -9.9, 4.8)
+metadata/city_service_anchor_id = "booth_right"
+metadata/city_service_anchor_role = "seat"
+
+[node name="DiningAnchor" type="Node3D" parent="GeneratedBuilding/ServiceAnchors" unique_id=1333703028]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -9.9, 0.4)
+metadata/city_service_anchor_id = "dining"
+metadata/city_service_anchor_role = "seat"

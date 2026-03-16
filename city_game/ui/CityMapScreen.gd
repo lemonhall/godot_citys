@@ -15,6 +15,7 @@ const PIN_ICON_FONT_NAMES := [
 	"Noto Emoji",
 ]
 const PIN_ICON_GLYPHS := {
+	"burger_shop": "🍔",
 	"cafe": "☕",
 	"clinic": "⚕",
 	"garage": "🔧",

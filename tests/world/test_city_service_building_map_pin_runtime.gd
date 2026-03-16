@@ -27,7 +27,7 @@ func _run() -> void:
 	if not T.require_true(self, registry_variant is Dictionary, "Service building map pin runtime test requires a valid generated building override registry"):
 		return
 	var entries: Dictionary = (registry_variant as Dictionary).get("entries", {})
-	if not T.require_true(self, entries.size() >= 3, "Service building map pin runtime test requires at least three generated building registry entries for multi-building icon coverage"):
+	if not T.require_true(self, entries.size() >= 4, "Service building map pin runtime test requires at least four generated building registry entries for multi-building icon coverage"):
 		return
 
 	runtime.configure(entries)
@@ -60,17 +60,19 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(completed_state.get("loaded_entry_count", -1)) == entries.size(), "Service building map pin runtime must eventually process every queued registry entry"):
 		return
-	if not T.require_true(self, int(completed_state.get("pin_count", -1)) == 2, "Exactly two generated building manifests should currently opt into a full-map icon pin"):
+	if not T.require_true(self, int(completed_state.get("pin_count", -1)) == 3, "Exactly three generated building manifests should currently opt into a full-map icon pin"):
 		return
 	if not T.require_true(self, observed_empty_delta_batch_count >= 1, "The current fixtures must still contain at least one non-pinned building manifest batch"):
 		return
 	if not T.require_true(self, observed_delta_icon_ids.has("cafe"), "The service-building pin deltas must still include the cafe icon contract"):
 		return
+	if not T.require_true(self, observed_delta_icon_ids.has("burger_shop"), "The service-building pin deltas must include the burger shop icon contract"):
+		return
 	if not T.require_true(self, observed_delta_icon_ids.has("gun_shop"), "The service-building pin deltas must include the gun shop icon contract"):
 		return
 
 	var pins: Array = runtime.get_pins()
-	if not T.require_true(self, pins.size() == 2, "Service building map pin runtime must emit exactly two custom-building full-map pins from the current fixtures"):
+	if not T.require_true(self, pins.size() == 3, "Service building map pin runtime must emit exactly three custom-building full-map pins from the current fixtures"):
 		return
 
 	var pins_by_icon_id := {}
@@ -83,10 +85,13 @@ func _run() -> void:
 
 	if not T.require_true(self, pins_by_icon_id.has("cafe"), "Service building map pin runtime must publish the cafe custom-building pin"):
 		return
+	if not T.require_true(self, pins_by_icon_id.has("burger_shop"), "Service building map pin runtime must publish the burger shop custom-building pin"):
+		return
 	if not T.require_true(self, pins_by_icon_id.has("gun_shop"), "Service building map pin runtime must publish the gun shop custom-building pin"):
 		return
 
 	var cafe_pin: Dictionary = pins_by_icon_id.get("cafe", {})
+	var burger_shop_pin: Dictionary = pins_by_icon_id.get("burger_shop", {})
 	var gun_shop_pin: Dictionary = pins_by_icon_id.get("gun_shop", {})
 	if not T.require_true(self, str(cafe_pin.get("pin_type", "")) == "service_building", "Custom building full-map pins must publish the formal service_building pin_type"):
 		return
@@ -95,6 +100,14 @@ func _run() -> void:
 	if not T.require_true(self, str(cafe_pin.get("building_id", "")) == "bld:v15-building-id-1:seed424242:chunk_137_136:003", "Cafe full-map pin must keep the stable building_id owner"):
 		return
 	if not T.require_true(self, cafe_pin.get("world_position", Vector3.ZERO) is Vector3, "Custom building full-map pin must decode a formal Vector3 world_position from the manifest sidecar"):
+		return
+	if not T.require_true(self, str(burger_shop_pin.get("pin_type", "")) == "service_building", "Burger shop full-map pin must share the formal service_building pin_type"):
+		return
+	if not T.require_true(self, str(burger_shop_pin.get("visibility_scope", "")) == "full_map", "Burger shop full-map pin must stay out of minimap scope"):
+		return
+	if not T.require_true(self, str(burger_shop_pin.get("building_id", "")) == "bld:v15-building-id-1:seed424242:chunk_131_143:003", "Burger shop full-map pin must keep the stable building_id owner"):
+		return
+	if not T.require_true(self, burger_shop_pin.get("world_position", Vector3.ZERO) is Vector3, "Burger shop full-map pin must decode a formal Vector3 world_position from the manifest sidecar"):
 		return
 	if not T.require_true(self, str(gun_shop_pin.get("pin_type", "")) == "service_building", "Gun shop full-map pin must share the formal service_building pin_type"):
 		return
@@ -119,6 +132,15 @@ func _run() -> void:
 	if not T.require_true(self, expected_cafe_position is Vector3, "Cafe full-map pin regression test must derive an absolute world position from chunk metadata"):
 		return
 	if not T.require_true(self, _vector3_near(cafe_pin.get("world_position", Vector3.ZERO), expected_cafe_position as Vector3), "Cafe full-map pin must resolve to the building's absolute world position instead of chunk-local export coordinates"):
+		return
+
+	var burger_shop_manifest: Dictionary = _load_manifest(entries.get("bld:v15-building-id-1:seed424242:chunk_131_143:003", {}))
+	if not T.require_true(self, not burger_shop_manifest.is_empty(), "Burger shop full-map pin regression test requires the burger shop manifest fixture"):
+		return
+	var expected_burger_shop_position: Variant = _resolve_expected_absolute_world_position(config, burger_shop_manifest)
+	if not T.require_true(self, expected_burger_shop_position is Vector3, "Burger shop full-map pin regression test must derive an absolute world position from chunk metadata"):
+		return
+	if not T.require_true(self, _vector3_near(burger_shop_pin.get("world_position", Vector3.ZERO), expected_burger_shop_position as Vector3), "Burger shop full-map pin must resolve to the building's absolute world position instead of chunk-local export coordinates"):
 		return
 
 	var gun_shop_manifest: Dictionary = _load_manifest(entries.get("bld:v15-building-id-1:seed424242:chunk_134_130:014", {}))

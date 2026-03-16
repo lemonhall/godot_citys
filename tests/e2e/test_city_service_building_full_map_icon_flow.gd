@@ -25,7 +25,7 @@ func _run() -> void:
 		return
 
 	var runtime_state := await _wait_for_service_building_pin_cache(world)
-	if not T.require_true(self, int(runtime_state.get("pin_count", 0)) >= 1, "Service building full-map icon flow requires at least one cached custom-building pin before opening the map"):
+	if not T.require_true(self, int(runtime_state.get("pin_count", 0)) >= 3, "Service building full-map icon flow requires all custom-building map pins to finish lazy loading before opening the map"):
 		return
 
 	world.set_full_map_open(true)
@@ -38,6 +38,11 @@ func _run() -> void:
 	if not T.require_true(self, not cafe_marker.is_empty(), "Opening the full map must reveal the cafe custom-building icon marker"):
 		return
 	if not T.require_true(self, str(cafe_marker.get("icon_glyph", "")) == "☕", "Cafe custom-building marker must render the coffee glyph in the full-map user flow"):
+		return
+	var burger_shop_marker := _find_marker_by_icon_id(map_state.get("pin_markers", []), "burger_shop")
+	if not T.require_true(self, not burger_shop_marker.is_empty(), "Opening the full map must reveal the burger shop custom-building icon marker"):
+		return
+	if not T.require_true(self, str(burger_shop_marker.get("icon_glyph", "")) == "🍔", "Burger shop custom-building marker must render the burger glyph in the full-map user flow"):
 		return
 
 	world.set_full_map_open(false)

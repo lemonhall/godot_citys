@@ -1,0 +1,146 @@
+{
+	"building_id": "bld:v15-building-id-1:seed424242:chunk_131_143:003",
+	"display_name": "57659800 Hariridge Street [chunk_131_143#003]",
+	"export_root_kind": "preferred",
+	"full_map_pin": {
+		"icon_id": "burger_shop",
+		"priority": 73,
+		"subtitle": "57659800 Hariridge Street",
+		"title": "Hariridge Burgers",
+		"visible": true
+	},
+	"generation_locator": {
+		"archetype_id": "step_midrise",
+		"building_id": "bld:v15-building-id-1:seed424242:chunk_131_143:003",
+		"building_local_index": 3,
+		"candidate_kind": "streetfront",
+		"chunk_id": "chunk_131_143",
+		"chunk_key": {
+			"@type": "Vector2i",
+			"x": 131,
+			"y": 143
+		},
+		"detail_seed": 3112907325,
+		"schema_version": "v15-building-id-1",
+		"world_seed": 424242
+	},
+	"manifest_path": "res://city_game/serviceability/buildings/generated/bld_v15-building-id-1_seed424242_chunk_131_143_003/building_manifest.json",
+	"requested_at_unix_sec": 1773672855,
+	"scene_path": "res://city_game/serviceability/buildings/generated/bld_v15-building-id-1_seed424242_chunk_131_143_003/汉堡店_A.tscn",
+	"schema_version": "v16-building-export-1",
+	"source_building_contract": {
+		"accent_color": {
+			"@type": "Color",
+			"a": 1.0,
+			"b": 0.384596347808838,
+			"g": 0.462005257606506,
+			"r": 0.636176645755768
+		},
+		"address_label": "57659800 Hariridge Street",
+		"archetype_id": "step_midrise",
+		"building_id": "bld:v15-building-id-1:seed424242:chunk_131_143:003",
+		"building_local_index": 3,
+		"candidate_kind": "streetfront",
+		"center": {
+			"@type": "Vector3",
+			"x": -82.9619369506836,
+			"y": 17.4404125213623,
+			"z": 39.4070167541504
+		},
+		"center_2d": {
+			"@type": "Vector2",
+			"x": -82.9619369506836,
+			"y": 39.4070167541504
+		},
+		"collision_size": {
+			"@type": "Vector3",
+			"x": 28.0,
+			"y": 20.0,
+			"z": 26.0
+		},
+		"detail_seed": 3112907325,
+		"display_name": "57659800 Hariridge Street [chunk_131_143#003]",
+		"footprint_radius_m": 19.1049731745428,
+		"generation_locator": {
+			"archetype_id": "step_midrise",
+			"building_id": "bld:v15-building-id-1:seed424242:chunk_131_143:003",
+			"building_local_index": 3,
+			"candidate_kind": "streetfront",
+			"chunk_id": "chunk_131_143",
+			"chunk_key": {
+				"@type": "Vector2i",
+				"x": 131,
+				"y": 143
+			},
+			"detail_seed": 3112907325,
+			"schema_version": "v15-building-id-1",
+			"world_seed": 424242
+		},
+		"inspection_payload": {
+			"address_label": "57659800 Hariridge Street",
+			"archetype_id": "step_midrise",
+			"building_code": "chunk_131_143#003",
+			"building_id": "bld:v15-building-id-1:seed424242:chunk_131_143:003",
+			"building_local_index": 3,
+			"chunk_id": "chunk_131_143",
+			"chunk_key": {
+				"@type": "Vector2i",
+				"x": 131,
+				"y": 143
+			},
+			"detail_seed": 3112907325,
+			"display_name": "57659800 Hariridge Street [chunk_131_143#003]",
+			"generation_locator": {
+				"archetype_id": "step_midrise",
+				"building_id": "bld:v15-building-id-1:seed424242:chunk_131_143:003",
+				"building_local_index": 3,
+				"candidate_kind": "streetfront",
+				"chunk_id": "chunk_131_143",
+				"chunk_key": {
+					"@type": "Vector2i",
+					"x": 131,
+					"y": 143
+				},
+				"detail_seed": 3112907325,
+				"schema_version": "v15-building-id-1",
+				"world_seed": 424242
+			},
+			"inspection_kind": "building",
+			"place_id": "addr:chunk_131_143_block_1_parcel_1:0",
+			"world_position": {
+				"@type": "Vector3",
+				"x": -82.9619369506836,
+				"y": 17.4404125213623,
+				"z": 39.4070167541504
+			}
+		},
+		"main_color": {
+			"@type": "Color",
+			"a": 1.0,
+			"b": 0.631284832954407,
+			"g": 0.690875113010406,
+			"r": 0.783984839916229
+		},
+		"name": "Building_7325_step_midrise",
+		"place_id": "addr:chunk_131_143_block_1_parcel_1:0",
+		"road_alignment_delta_deg": 0.0,
+		"road_angle_rad": -1.25426688918644,
+		"road_clearance_m": 14.8950268254572,
+		"roof_color": {
+			"@type": "Color",
+			"a": 1.0,
+			"b": 0.373442113399506,
+			"g": 0.429457932710648,
+			"r": 0.530287861824036
+		},
+		"size": {
+			"@type": "Vector3",
+			"x": 28.0,
+			"y": 20.0,
+			"z": 26.0
+		},
+		"visual_footprint_radius_m": 19.1049731745428,
+		"visual_road_clearance_m": 14.8950268254572,
+		"yaw_rad": -1.25426688918644
+	}
+}

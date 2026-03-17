@@ -22,6 +22,8 @@ func _run() -> void:
 	]:
 		if not T.require_true(self, InputMap.has_action(action_name), "Vehicle radio quick overlay contract requires InputMap action %s" % action_name):
 			return
+		if not T.require_true(self, InputMap.action_get_events(action_name).size() > 0, "Vehicle radio quick overlay contract requires a physical binding for %s" % action_name):
+			return
 
 	var world := (scene as PackedScene).instantiate()
 	root.add_child(world)

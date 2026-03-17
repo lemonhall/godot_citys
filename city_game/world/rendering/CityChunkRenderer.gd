@@ -23,6 +23,15 @@ const TERRAIN_ASYNC_CONCURRENCY_LIMIT := 1
 const PLAYER_CONTEXT_TELEPORT_DISTANCE_M := 32.0
 const FARFIELD_RENDER_DEFER_SPEED_MPS := 8.0
 const DEFAULT_DEATH_VISUAL_DURATION_SEC := 3.0
+const RENDERER_SYNC_QUEUE_PHASES := [
+	"retire",
+	"terrain_collect",
+	"terrain_dispatch",
+	"surface_collect",
+	"surface_dispatch",
+	"mount",
+	"prepare",
+]
 
 static var _shared_scene_landmark_far_proxy_scene_cache: Dictionary = {}
 
@@ -61,6 +70,27 @@ var _mount_setup_sample_count := 0
 var _mount_setup_total_usec := 0
 var _mount_setup_max_usec := 0
 var _mount_setup_last_usec := 0
+var _renderer_sync_queue_sample_count := 0
+var _renderer_sync_queue_total_usec := 0
+var _renderer_sync_queue_max_usec := 0
+var _renderer_sync_queue_last_usec := 0
+var _renderer_sync_queue_phase_profile: Dictionary = {}
+var _renderer_sync_lod_sample_count := 0
+var _renderer_sync_lod_total_usec := 0
+var _renderer_sync_lod_max_usec := 0
+var _renderer_sync_lod_last_usec := 0
+var _renderer_sync_far_proxy_sample_count := 0
+var _renderer_sync_far_proxy_total_usec := 0
+var _renderer_sync_far_proxy_max_usec := 0
+var _renderer_sync_far_proxy_last_usec := 0
+var _renderer_sync_crowd_sample_count := 0
+var _renderer_sync_crowd_total_usec := 0
+var _renderer_sync_crowd_max_usec := 0
+var _renderer_sync_crowd_last_usec := 0
+var _renderer_sync_traffic_sample_count := 0
+var _renderer_sync_traffic_total_usec := 0
+var _renderer_sync_traffic_max_usec := 0
+var _renderer_sync_traffic_last_usec := 0
 var _surface_async_dispatch_sample_count := 0
 var _surface_async_dispatch_total_usec := 0
 var _surface_async_dispatch_max_usec := 0
@@ -138,6 +168,7 @@ var _scene_landmark_entries_by_chunk_id: Dictionary = {}
 var _scene_landmark_far_proxy_root: Node3D = null
 var _scene_landmark_far_proxy_entries_by_landmark_id: Dictionary = {}
 var _scene_landmark_far_proxy_nodes_by_landmark_id: Dictionary = {}
+var _detailed_streaming_diagnostics_enabled := false
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
@@ -222,6 +253,9 @@ func set_scene_landmark_entries(entries: Dictionary) -> void:
 			continue
 		_scene_landmark_far_proxy_entries_by_landmark_id[landmark_id] = entry.duplicate(true)
 	_prune_scene_landmark_far_proxies()
+
+func set_detailed_streaming_diagnostics_enabled(enabled: bool) -> void:
+	_detailed_streaming_diagnostics_enabled = enabled
 
 func get_building_override_entry(building_id: String) -> Dictionary:
 	if building_id == "":
@@ -379,11 +413,28 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta
 
 	_prune_surface_job_waiters(target_chunk_ids)
 	_prune_terrain_job_waiters(target_chunk_ids)
+	if not _detailed_streaming_diagnostics_enabled:
+		_process_streaming_queues_once_per_frame()
+		_update_lod_states(player_position)
+		_sync_scene_landmark_far_proxies(player_position)
+		_update_pedestrian_crowd(player_position, delta)
+		_update_vehicle_traffic(player_position, delta)
+		return
+	var queue_started_usec := Time.get_ticks_usec()
 	_process_streaming_queues_once_per_frame()
+	_record_renderer_sync_queue_sample(Time.get_ticks_usec() - queue_started_usec)
+	var lod_started_usec := Time.get_ticks_usec()
 	_update_lod_states(player_position)
+	_record_renderer_sync_lod_sample(Time.get_ticks_usec() - lod_started_usec)
+	var far_proxy_started_usec := Time.get_ticks_usec()
 	_sync_scene_landmark_far_proxies(player_position)
+	_record_renderer_sync_far_proxy_sample(Time.get_ticks_usec() - far_proxy_started_usec)
+	var crowd_started_usec := Time.get_ticks_usec()
 	_update_pedestrian_crowd(player_position, delta)
+	_record_renderer_sync_crowd_sample(Time.get_ticks_usec() - crowd_started_usec)
+	var traffic_started_usec := Time.get_ticks_usec()
 	_update_vehicle_traffic(player_position, delta)
+	_record_renderer_sync_traffic_sample(Time.get_ticks_usec() - traffic_started_usec)
 
 func get_chunk_ids() -> Array[String]:
 	if _cached_chunk_ids_dirty:
@@ -475,7 +526,7 @@ func get_streaming_profile_stats() -> Dictionary:
 		crowd_runtime_profile = (_pedestrian_tier_controller.get_global_summary().get("profile_stats", {}) as Dictionary).duplicate(true)
 	if _vehicle_tier_controller != null:
 		traffic_runtime_profile = (_vehicle_tier_controller.get_global_summary().get("profile_stats", {}) as Dictionary).duplicate(true)
-	return {
+	var profile := {
 		"prepare_profile_sample_count": _prepare_profile_sample_count,
 		"prepare_profile_total_usec": _prepare_profile_total_usec,
 		"prepare_profile_avg_usec": _average_usec(_prepare_profile_total_usec, _prepare_profile_sample_count),
@@ -486,6 +537,31 @@ func get_streaming_profile_stats() -> Dictionary:
 		"mount_setup_avg_usec": _average_usec(_mount_setup_total_usec, _mount_setup_sample_count),
 		"mount_setup_max_usec": _mount_setup_max_usec,
 		"mount_setup_last_usec": _mount_setup_last_usec,
+		"renderer_sync_queue_sample_count": _renderer_sync_queue_sample_count,
+		"renderer_sync_queue_total_usec": _renderer_sync_queue_total_usec,
+		"renderer_sync_queue_avg_usec": _average_usec(_renderer_sync_queue_total_usec, _renderer_sync_queue_sample_count),
+		"renderer_sync_queue_max_usec": _renderer_sync_queue_max_usec,
+		"renderer_sync_queue_last_usec": _renderer_sync_queue_last_usec,
+		"renderer_sync_lod_sample_count": _renderer_sync_lod_sample_count,
+		"renderer_sync_lod_total_usec": _renderer_sync_lod_total_usec,
+		"renderer_sync_lod_avg_usec": _average_usec(_renderer_sync_lod_total_usec, _renderer_sync_lod_sample_count),
+		"renderer_sync_lod_max_usec": _renderer_sync_lod_max_usec,
+		"renderer_sync_lod_last_usec": _renderer_sync_lod_last_usec,
+		"renderer_sync_far_proxy_sample_count": _renderer_sync_far_proxy_sample_count,
+		"renderer_sync_far_proxy_total_usec": _renderer_sync_far_proxy_total_usec,
+		"renderer_sync_far_proxy_avg_usec": _average_usec(_renderer_sync_far_proxy_total_usec, _renderer_sync_far_proxy_sample_count),
+		"renderer_sync_far_proxy_max_usec": _renderer_sync_far_proxy_max_usec,
+		"renderer_sync_far_proxy_last_usec": _renderer_sync_far_proxy_last_usec,
+		"renderer_sync_crowd_sample_count": _renderer_sync_crowd_sample_count,
+		"renderer_sync_crowd_total_usec": _renderer_sync_crowd_total_usec,
+		"renderer_sync_crowd_avg_usec": _average_usec(_renderer_sync_crowd_total_usec, _renderer_sync_crowd_sample_count),
+		"renderer_sync_crowd_max_usec": _renderer_sync_crowd_max_usec,
+		"renderer_sync_crowd_last_usec": _renderer_sync_crowd_last_usec,
+		"renderer_sync_traffic_sample_count": _renderer_sync_traffic_sample_count,
+		"renderer_sync_traffic_total_usec": _renderer_sync_traffic_total_usec,
+		"renderer_sync_traffic_avg_usec": _average_usec(_renderer_sync_traffic_total_usec, _renderer_sync_traffic_sample_count),
+		"renderer_sync_traffic_max_usec": _renderer_sync_traffic_max_usec,
+		"renderer_sync_traffic_last_usec": _renderer_sync_traffic_last_usec,
 		"surface_async_dispatch_sample_count": _surface_async_dispatch_sample_count,
 		"surface_async_dispatch_total_usec": _surface_async_dispatch_total_usec,
 		"surface_async_dispatch_avg_usec": _average_usec(_surface_async_dispatch_total_usec, _surface_async_dispatch_sample_count),
@@ -546,6 +622,12 @@ func get_streaming_profile_stats() -> Dictionary:
 		"crowd_assignment_candidate_count": int(crowd_runtime_profile.get("crowd_assignment_candidate_count", 0)),
 		"crowd_threat_broadcast_usec": int(crowd_runtime_profile.get("crowd_threat_broadcast_usec", 0)),
 		"crowd_threat_candidate_count": int(crowd_runtime_profile.get("crowd_threat_candidate_count", 0)),
+		"crowd_assignment_decision": str(crowd_runtime_profile.get("crowd_assignment_decision", "")),
+		"crowd_assignment_rebuild_reason": str(crowd_runtime_profile.get("crowd_assignment_rebuild_reason", "")),
+		"crowd_assignment_player_velocity_mps": float(crowd_runtime_profile.get("crowd_assignment_player_velocity_mps", 0.0)),
+		"crowd_assignment_raw_player_velocity_mps": float(crowd_runtime_profile.get("crowd_assignment_raw_player_velocity_mps", 0.0)),
+		"crowd_assignment_player_speed_delta_mps": float(crowd_runtime_profile.get("crowd_assignment_player_speed_delta_mps", 0.0)),
+		"crowd_assignment_player_speed_cap_mps": float(crowd_runtime_profile.get("crowd_assignment_player_speed_cap_mps", 0.0)),
 		"crowd_chunk_commit_usec": _crowd_chunk_commit_last_usec,
 		"crowd_tier1_transform_writes": _crowd_tier1_transform_writes,
 		"traffic_update_sample_count": _traffic_update_sample_count,
@@ -573,6 +655,8 @@ func get_streaming_profile_stats() -> Dictionary:
 		"traffic_chunk_commit_usec": _traffic_chunk_commit_last_usec,
 		"traffic_tier1_transform_writes": _traffic_tier1_transform_writes,
 	}
+	profile.merge(_build_renderer_sync_queue_phase_profile_stats(), true)
+	return profile
 
 func reset_streaming_profile_stats() -> void:
 	_prepare_profile_sample_count = 0
@@ -583,6 +667,27 @@ func reset_streaming_profile_stats() -> void:
 	_mount_setup_total_usec = 0
 	_mount_setup_max_usec = 0
 	_mount_setup_last_usec = 0
+	_renderer_sync_queue_sample_count = 0
+	_renderer_sync_queue_total_usec = 0
+	_renderer_sync_queue_max_usec = 0
+	_renderer_sync_queue_last_usec = 0
+	_reset_renderer_sync_queue_phase_profile()
+	_renderer_sync_lod_sample_count = 0
+	_renderer_sync_lod_total_usec = 0
+	_renderer_sync_lod_max_usec = 0
+	_renderer_sync_lod_last_usec = 0
+	_renderer_sync_far_proxy_sample_count = 0
+	_renderer_sync_far_proxy_total_usec = 0
+	_renderer_sync_far_proxy_max_usec = 0
+	_renderer_sync_far_proxy_last_usec = 0
+	_renderer_sync_crowd_sample_count = 0
+	_renderer_sync_crowd_total_usec = 0
+	_renderer_sync_crowd_max_usec = 0
+	_renderer_sync_crowd_last_usec = 0
+	_renderer_sync_traffic_sample_count = 0
+	_renderer_sync_traffic_total_usec = 0
+	_renderer_sync_traffic_max_usec = 0
+	_renderer_sync_traffic_last_usec = 0
 	_surface_async_dispatch_sample_count = 0
 	_surface_async_dispatch_total_usec = 0
 	_surface_async_dispatch_max_usec = 0
@@ -912,17 +1017,45 @@ func _queue_retire(chunk_id: String) -> void:
 	_pending_retire_ids.append(chunk_id)
 
 func _process_streaming_queues() -> void:
+	if not _detailed_streaming_diagnostics_enabled:
+		_process_retire_budget()
+		_collect_completed_terrain_jobs()
+		_dispatch_queued_terrain_jobs()
+		_collect_completed_surface_jobs()
+		_dispatch_queued_surface_jobs()
+		_process_mount_budget()
+		if _last_mount_count > 0:
+			_last_prepare_count = 0
+			_last_prepare_usec = 0
+			return
+		_process_prepare_budget()
+		return
+	var phase_started_usec := Time.get_ticks_usec()
 	_process_retire_budget()
+	_record_renderer_sync_queue_phase_sample("retire", Time.get_ticks_usec() - phase_started_usec)
+	phase_started_usec = Time.get_ticks_usec()
 	_collect_completed_terrain_jobs()
+	_record_renderer_sync_queue_phase_sample("terrain_collect", Time.get_ticks_usec() - phase_started_usec)
+	phase_started_usec = Time.get_ticks_usec()
 	_dispatch_queued_terrain_jobs()
+	_record_renderer_sync_queue_phase_sample("terrain_dispatch", Time.get_ticks_usec() - phase_started_usec)
+	phase_started_usec = Time.get_ticks_usec()
 	_collect_completed_surface_jobs()
+	_record_renderer_sync_queue_phase_sample("surface_collect", Time.get_ticks_usec() - phase_started_usec)
+	phase_started_usec = Time.get_ticks_usec()
 	_dispatch_queued_surface_jobs()
+	_record_renderer_sync_queue_phase_sample("surface_dispatch", Time.get_ticks_usec() - phase_started_usec)
+	phase_started_usec = Time.get_ticks_usec()
 	_process_mount_budget()
+	_record_renderer_sync_queue_phase_sample("mount", Time.get_ticks_usec() - phase_started_usec)
 	if _last_mount_count > 0:
 		_last_prepare_count = 0
 		_last_prepare_usec = 0
+		_record_renderer_sync_queue_phase_sample("prepare", 0)
 		return
+	phase_started_usec = Time.get_ticks_usec()
 	_process_prepare_budget()
+	_record_renderer_sync_queue_phase_sample("prepare", Time.get_ticks_usec() - phase_started_usec)
 
 func _process_streaming_queues_once_per_frame() -> void:
 	var process_frame := Engine.get_process_frames()
@@ -932,17 +1065,11 @@ func _process_streaming_queues_once_per_frame() -> void:
 	_process_streaming_queues()
 
 func _process_prepare_budget() -> void:
-	var prepare_ids: Array[String] = []
-	for chunk_id in _pending_prepare.keys():
-		prepare_ids.append(str(chunk_id))
-	prepare_ids.sort_custom(func(a: String, b: String) -> bool:
-		return _distance_to_entry(_last_player_position, _pending_prepare[a]) < _distance_to_entry(_last_player_position, _pending_prepare[b])
-	)
-
 	var started_usec := Time.get_ticks_usec()
 	var prepared_count := 0
-	for chunk_id in prepare_ids:
-		if prepared_count >= PREPARE_BUDGET_PER_TICK:
+	while prepared_count < PREPARE_BUDGET_PER_TICK and not _pending_prepare.is_empty():
+		var chunk_id := _find_nearest_pending_prepare_chunk_id(_last_player_position)
+		if chunk_id == "":
 			break
 		var entry: Dictionary = _pending_prepare[chunk_id]
 		var payload := _build_chunk_payload(entry)
@@ -1288,10 +1415,22 @@ func _has_pending_streaming_work() -> bool:
 		or not _queued_terrain_jobs.is_empty() \
 		or not _pending_mount_ids.is_empty()
 
+func _find_nearest_pending_prepare_chunk_id(player_position: Vector3) -> String:
+	var nearest_chunk_id := ""
+	var nearest_distance_sq := INF
+	for chunk_id_variant in _pending_prepare.keys():
+		var chunk_id := str(chunk_id_variant)
+		var entry: Dictionary = _pending_prepare[chunk_id]
+		var distance_sq := _distance_to_entry(player_position, entry)
+		if nearest_chunk_id == "" or distance_sq < nearest_distance_sq:
+			nearest_chunk_id = chunk_id
+			nearest_distance_sq = distance_sq
+	return nearest_chunk_id
+
 func _distance_to_entry(player_position: Vector3, entry: Dictionary) -> float:
 	var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)
 	var chunk_center := _chunk_center_from_key(chunk_key)
-	return player_position.distance_to(chunk_center)
+	return player_position.distance_squared_to(chunk_center)
 
 func _sync_scene_landmark_far_proxies(player_position: Vector3) -> void:
 	if _scene_landmark_far_proxy_entries_by_landmark_id.is_empty():
@@ -1553,6 +1692,84 @@ func _record_mount_setup_sample(duration_usec: int) -> void:
 	_mount_setup_total_usec += duration_usec
 	_mount_setup_max_usec = maxi(_mount_setup_max_usec, duration_usec)
 	_mount_setup_last_usec = duration_usec
+
+func _record_renderer_sync_queue_sample(duration_usec: int) -> void:
+	if duration_usec < 0:
+		return
+	_renderer_sync_queue_sample_count += 1
+	_renderer_sync_queue_total_usec += duration_usec
+	_renderer_sync_queue_max_usec = maxi(_renderer_sync_queue_max_usec, duration_usec)
+	_renderer_sync_queue_last_usec = duration_usec
+
+func _record_renderer_sync_queue_phase_sample(phase_id: String, duration_usec: int) -> void:
+	if duration_usec < 0:
+		return
+	if not _renderer_sync_queue_phase_profile.has(phase_id):
+		_renderer_sync_queue_phase_profile[phase_id] = _make_renderer_sync_phase_stats()
+	var stats: Dictionary = _renderer_sync_queue_phase_profile[phase_id]
+	stats["sample_count"] = int(stats.get("sample_count", 0)) + 1
+	stats["total_usec"] = int(stats.get("total_usec", 0)) + duration_usec
+	stats["max_usec"] = maxi(int(stats.get("max_usec", 0)), duration_usec)
+	stats["last_usec"] = duration_usec
+	_renderer_sync_queue_phase_profile[phase_id] = stats
+
+func _build_renderer_sync_queue_phase_profile_stats() -> Dictionary:
+	var profile: Dictionary = {}
+	for phase_id_variant in RENDERER_SYNC_QUEUE_PHASES:
+		var phase_id := str(phase_id_variant)
+		var stats: Dictionary = _renderer_sync_queue_phase_profile.get(phase_id, _make_renderer_sync_phase_stats())
+		var key_prefix := "renderer_sync_queue_%s" % phase_id
+		profile["%s_sample_count" % key_prefix] = int(stats.get("sample_count", 0))
+		profile["%s_total_usec" % key_prefix] = int(stats.get("total_usec", 0))
+		profile["%s_avg_usec" % key_prefix] = _average_usec(int(stats.get("total_usec", 0)), int(stats.get("sample_count", 0)))
+		profile["%s_max_usec" % key_prefix] = int(stats.get("max_usec", 0))
+		profile["%s_last_usec" % key_prefix] = int(stats.get("last_usec", 0))
+	return profile
+
+func _reset_renderer_sync_queue_phase_profile() -> void:
+	_renderer_sync_queue_phase_profile.clear()
+	for phase_id_variant in RENDERER_SYNC_QUEUE_PHASES:
+		_renderer_sync_queue_phase_profile[str(phase_id_variant)] = _make_renderer_sync_phase_stats()
+
+func _make_renderer_sync_phase_stats() -> Dictionary:
+	return {
+		"sample_count": 0,
+		"total_usec": 0,
+		"max_usec": 0,
+		"last_usec": 0,
+	}
+
+func _record_renderer_sync_lod_sample(duration_usec: int) -> void:
+	if duration_usec < 0:
+		return
+	_renderer_sync_lod_sample_count += 1
+	_renderer_sync_lod_total_usec += duration_usec
+	_renderer_sync_lod_max_usec = maxi(_renderer_sync_lod_max_usec, duration_usec)
+	_renderer_sync_lod_last_usec = duration_usec
+
+func _record_renderer_sync_far_proxy_sample(duration_usec: int) -> void:
+	if duration_usec < 0:
+		return
+	_renderer_sync_far_proxy_sample_count += 1
+	_renderer_sync_far_proxy_total_usec += duration_usec
+	_renderer_sync_far_proxy_max_usec = maxi(_renderer_sync_far_proxy_max_usec, duration_usec)
+	_renderer_sync_far_proxy_last_usec = duration_usec
+
+func _record_renderer_sync_crowd_sample(duration_usec: int) -> void:
+	if duration_usec < 0:
+		return
+	_renderer_sync_crowd_sample_count += 1
+	_renderer_sync_crowd_total_usec += duration_usec
+	_renderer_sync_crowd_max_usec = maxi(_renderer_sync_crowd_max_usec, duration_usec)
+	_renderer_sync_crowd_last_usec = duration_usec
+
+func _record_renderer_sync_traffic_sample(duration_usec: int) -> void:
+	if duration_usec < 0:
+		return
+	_renderer_sync_traffic_sample_count += 1
+	_renderer_sync_traffic_total_usec += duration_usec
+	_renderer_sync_traffic_max_usec = maxi(_renderer_sync_traffic_max_usec, duration_usec)
+	_renderer_sync_traffic_last_usec = duration_usec
 
 func _record_surface_async_dispatch_sample(duration_usec: int) -> void:
 	_surface_async_dispatch_sample_count += 1

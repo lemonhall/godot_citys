@@ -44,8 +44,8 @@ const HEADLESS_HUD_REFRESH_INTERVAL_USEC := 200000
 const HEADLESS_HUD_REFRESH_INTERVAL_FAST_USEC := 400000
 const HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_USEC := 400000
 const HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_FAST_USEC := 800000
-const ACTOR_PAGE_PREWARM_RING_RADIUS_CHUNKS := 2
-const CHUNK_PAGE_PREWARM_RING_RADIUS_CHUNKS := 4
+const ACTOR_PAGE_PREWARM_RING_RADIUS_CHUNKS := 5
+const CHUNK_PAGE_PREWARM_RING_RADIUS_CHUNKS := 7
 const ABANDONED_HIJACK_VEHICLE_LIFETIME_SEC := 15.0
 const MINIMAP_WORLD_RADIUS_M := 1600.0
 const MANUAL_ROUTE_REFRESH_INTERVAL_SEC := 3.5
@@ -114,6 +114,15 @@ var _update_streaming_sample_count := 0
 var _update_streaming_total_usec := 0
 var _update_streaming_max_usec := 0
 var _update_streaming_last_usec := 0
+var _update_streaming_chunk_streamer_sample_count := 0
+var _update_streaming_chunk_streamer_total_usec := 0
+var _update_streaming_chunk_streamer_max_usec := 0
+var _update_streaming_chunk_streamer_last_usec := 0
+var _update_streaming_renderer_sync_sample_count := 0
+var _update_streaming_renderer_sync_total_usec := 0
+var _update_streaming_renderer_sync_max_usec := 0
+var _update_streaming_renderer_sync_last_usec := 0
+var _performance_diagnostics_enabled := false
 var _hud_refresh_sample_count := 0
 var _hud_refresh_total_usec := 0
 var _hud_refresh_max_usec := 0
@@ -744,6 +753,11 @@ func toggle_fps_overlay() -> void:
 func is_fps_overlay_visible() -> bool:
 	return _fps_overlay_visible
 
+func set_performance_diagnostics_enabled(enabled: bool) -> void:
+	_performance_diagnostics_enabled = enabled
+	if chunk_renderer != null and chunk_renderer.has_method("set_detailed_streaming_diagnostics_enabled"):
+		chunk_renderer.set_detailed_streaming_diagnostics_enabled(enabled)
+
 func get_streaming_snapshot() -> Dictionary:
 	if _chunk_streamer == null:
 		return {}
@@ -1278,14 +1292,18 @@ func update_streaming_for_position(world_position: Vector3, delta: float = 0.0) 
 	var started_usec := Time.get_ticks_usec()
 	if _chunk_streamer == null:
 		return []
+	var chunk_streamer_started_usec := Time.get_ticks_usec()
 	var events: Array = _chunk_streamer.update_for_world_position(world_position)
+	_record_update_streaming_chunk_streamer_sample(Time.get_ticks_usec() - chunk_streamer_started_usec)
 	if chunk_renderer != null and chunk_renderer.has_method("sync_streaming"):
+		var renderer_sync_started_usec := Time.get_ticks_usec()
 		chunk_renderer.sync_streaming(
 			_chunk_streamer.get_active_chunk_entries(),
 			world_position,
 			delta,
 			_build_pedestrian_player_context()
 		)
+		_record_update_streaming_renderer_sync_sample(Time.get_ticks_usec() - renderer_sync_started_usec)
 	var is_headless := DisplayServer.get_name() == "headless"
 	var hud_debug_expanded := hud != null and hud.has_method("is_debug_expanded") and bool(hud.is_debug_expanded())
 	var debug_expanded := debug_overlay != null and debug_overlay.has_method("is_expanded") and bool(debug_overlay.is_expanded())
@@ -1695,6 +1713,14 @@ func reset_performance_profile() -> void:
 	_update_streaming_total_usec = 0
 	_update_streaming_max_usec = 0
 	_update_streaming_last_usec = 0
+	_update_streaming_chunk_streamer_sample_count = 0
+	_update_streaming_chunk_streamer_total_usec = 0
+	_update_streaming_chunk_streamer_max_usec = 0
+	_update_streaming_chunk_streamer_last_usec = 0
+	_update_streaming_renderer_sync_sample_count = 0
+	_update_streaming_renderer_sync_total_usec = 0
+	_update_streaming_renderer_sync_max_usec = 0
+	_update_streaming_renderer_sync_last_usec = 0
 	_hud_refresh_sample_count = 0
 	_hud_refresh_total_usec = 0
 	_hud_refresh_max_usec = 0
@@ -1729,6 +1755,62 @@ func get_performance_profile() -> Dictionary:
 		"update_streaming_avg_usec": _average_usec(_update_streaming_total_usec, _update_streaming_sample_count),
 		"update_streaming_max_usec": _update_streaming_max_usec,
 		"update_streaming_last_usec": _update_streaming_last_usec,
+		"update_streaming_chunk_streamer_sample_count": _update_streaming_chunk_streamer_sample_count,
+		"update_streaming_chunk_streamer_avg_usec": _average_usec(_update_streaming_chunk_streamer_total_usec, _update_streaming_chunk_streamer_sample_count),
+		"update_streaming_chunk_streamer_max_usec": _update_streaming_chunk_streamer_max_usec,
+		"update_streaming_chunk_streamer_last_usec": _update_streaming_chunk_streamer_last_usec,
+		"update_streaming_renderer_sync_sample_count": _update_streaming_renderer_sync_sample_count,
+		"update_streaming_renderer_sync_avg_usec": _average_usec(_update_streaming_renderer_sync_total_usec, _update_streaming_renderer_sync_sample_count),
+		"update_streaming_renderer_sync_max_usec": _update_streaming_renderer_sync_max_usec,
+		"update_streaming_renderer_sync_last_usec": _update_streaming_renderer_sync_last_usec,
+		"update_streaming_renderer_sync_queue_sample_count": int(streaming_profile.get("renderer_sync_queue_sample_count", 0)),
+		"update_streaming_renderer_sync_queue_avg_usec": int(streaming_profile.get("renderer_sync_queue_avg_usec", 0)),
+		"update_streaming_renderer_sync_queue_max_usec": int(streaming_profile.get("renderer_sync_queue_max_usec", 0)),
+		"update_streaming_renderer_sync_queue_last_usec": int(streaming_profile.get("renderer_sync_queue_last_usec", 0)),
+		"update_streaming_renderer_sync_queue_retire_sample_count": int(streaming_profile.get("renderer_sync_queue_retire_sample_count", 0)),
+		"update_streaming_renderer_sync_queue_retire_avg_usec": int(streaming_profile.get("renderer_sync_queue_retire_avg_usec", 0)),
+		"update_streaming_renderer_sync_queue_retire_max_usec": int(streaming_profile.get("renderer_sync_queue_retire_max_usec", 0)),
+		"update_streaming_renderer_sync_queue_retire_last_usec": int(streaming_profile.get("renderer_sync_queue_retire_last_usec", 0)),
+		"update_streaming_renderer_sync_queue_terrain_collect_sample_count": int(streaming_profile.get("renderer_sync_queue_terrain_collect_sample_count", 0)),
+		"update_streaming_renderer_sync_queue_terrain_collect_avg_usec": int(streaming_profile.get("renderer_sync_queue_terrain_collect_avg_usec", 0)),
+		"update_streaming_renderer_sync_queue_terrain_collect_max_usec": int(streaming_profile.get("renderer_sync_queue_terrain_collect_max_usec", 0)),
+		"update_streaming_renderer_sync_queue_terrain_collect_last_usec": int(streaming_profile.get("renderer_sync_queue_terrain_collect_last_usec", 0)),
+		"update_streaming_renderer_sync_queue_terrain_dispatch_sample_count": int(streaming_profile.get("renderer_sync_queue_terrain_dispatch_sample_count", 0)),
+		"update_streaming_renderer_sync_queue_terrain_dispatch_avg_usec": int(streaming_profile.get("renderer_sync_queue_terrain_dispatch_avg_usec", 0)),
+		"update_streaming_renderer_sync_queue_terrain_dispatch_max_usec": int(streaming_profile.get("renderer_sync_queue_terrain_dispatch_max_usec", 0)),
+		"update_streaming_renderer_sync_queue_terrain_dispatch_last_usec": int(streaming_profile.get("renderer_sync_queue_terrain_dispatch_last_usec", 0)),
+		"update_streaming_renderer_sync_queue_surface_collect_sample_count": int(streaming_profile.get("renderer_sync_queue_surface_collect_sample_count", 0)),
+		"update_streaming_renderer_sync_queue_surface_collect_avg_usec": int(streaming_profile.get("renderer_sync_queue_surface_collect_avg_usec", 0)),
+		"update_streaming_renderer_sync_queue_surface_collect_max_usec": int(streaming_profile.get("renderer_sync_queue_surface_collect_max_usec", 0)),
+		"update_streaming_renderer_sync_queue_surface_collect_last_usec": int(streaming_profile.get("renderer_sync_queue_surface_collect_last_usec", 0)),
+		"update_streaming_renderer_sync_queue_surface_dispatch_sample_count": int(streaming_profile.get("renderer_sync_queue_surface_dispatch_sample_count", 0)),
+		"update_streaming_renderer_sync_queue_surface_dispatch_avg_usec": int(streaming_profile.get("renderer_sync_queue_surface_dispatch_avg_usec", 0)),
+		"update_streaming_renderer_sync_queue_surface_dispatch_max_usec": int(streaming_profile.get("renderer_sync_queue_surface_dispatch_max_usec", 0)),
+		"update_streaming_renderer_sync_queue_surface_dispatch_last_usec": int(streaming_profile.get("renderer_sync_queue_surface_dispatch_last_usec", 0)),
+		"update_streaming_renderer_sync_queue_mount_sample_count": int(streaming_profile.get("renderer_sync_queue_mount_sample_count", 0)),
+		"update_streaming_renderer_sync_queue_mount_avg_usec": int(streaming_profile.get("renderer_sync_queue_mount_avg_usec", 0)),
+		"update_streaming_renderer_sync_queue_mount_max_usec": int(streaming_profile.get("renderer_sync_queue_mount_max_usec", 0)),
+		"update_streaming_renderer_sync_queue_mount_last_usec": int(streaming_profile.get("renderer_sync_queue_mount_last_usec", 0)),
+		"update_streaming_renderer_sync_queue_prepare_sample_count": int(streaming_profile.get("renderer_sync_queue_prepare_sample_count", 0)),
+		"update_streaming_renderer_sync_queue_prepare_avg_usec": int(streaming_profile.get("renderer_sync_queue_prepare_avg_usec", 0)),
+		"update_streaming_renderer_sync_queue_prepare_max_usec": int(streaming_profile.get("renderer_sync_queue_prepare_max_usec", 0)),
+		"update_streaming_renderer_sync_queue_prepare_last_usec": int(streaming_profile.get("renderer_sync_queue_prepare_last_usec", 0)),
+		"update_streaming_renderer_sync_lod_sample_count": int(streaming_profile.get("renderer_sync_lod_sample_count", 0)),
+		"update_streaming_renderer_sync_lod_avg_usec": int(streaming_profile.get("renderer_sync_lod_avg_usec", 0)),
+		"update_streaming_renderer_sync_lod_max_usec": int(streaming_profile.get("renderer_sync_lod_max_usec", 0)),
+		"update_streaming_renderer_sync_lod_last_usec": int(streaming_profile.get("renderer_sync_lod_last_usec", 0)),
+		"update_streaming_renderer_sync_far_proxy_sample_count": int(streaming_profile.get("renderer_sync_far_proxy_sample_count", 0)),
+		"update_streaming_renderer_sync_far_proxy_avg_usec": int(streaming_profile.get("renderer_sync_far_proxy_avg_usec", 0)),
+		"update_streaming_renderer_sync_far_proxy_max_usec": int(streaming_profile.get("renderer_sync_far_proxy_max_usec", 0)),
+		"update_streaming_renderer_sync_far_proxy_last_usec": int(streaming_profile.get("renderer_sync_far_proxy_last_usec", 0)),
+		"update_streaming_renderer_sync_crowd_sample_count": int(streaming_profile.get("renderer_sync_crowd_sample_count", 0)),
+		"update_streaming_renderer_sync_crowd_avg_usec": int(streaming_profile.get("renderer_sync_crowd_avg_usec", 0)),
+		"update_streaming_renderer_sync_crowd_max_usec": int(streaming_profile.get("renderer_sync_crowd_max_usec", 0)),
+		"update_streaming_renderer_sync_crowd_last_usec": int(streaming_profile.get("renderer_sync_crowd_last_usec", 0)),
+		"update_streaming_renderer_sync_traffic_sample_count": int(streaming_profile.get("renderer_sync_traffic_sample_count", 0)),
+		"update_streaming_renderer_sync_traffic_avg_usec": int(streaming_profile.get("renderer_sync_traffic_avg_usec", 0)),
+		"update_streaming_renderer_sync_traffic_max_usec": int(streaming_profile.get("renderer_sync_traffic_max_usec", 0)),
+		"update_streaming_renderer_sync_traffic_last_usec": int(streaming_profile.get("renderer_sync_traffic_last_usec", 0)),
 		"hud_refresh_sample_count": _hud_refresh_sample_count,
 		"hud_refresh_avg_usec": _average_usec(_hud_refresh_total_usec, _hud_refresh_sample_count),
 		"hud_refresh_max_usec": _hud_refresh_max_usec,
@@ -1767,6 +1849,12 @@ func get_performance_profile() -> Dictionary:
 		"crowd_assignment_candidate_count": int(streaming_profile.get("crowd_assignment_candidate_count", 0)),
 		"crowd_threat_broadcast_usec": int(streaming_profile.get("crowd_threat_broadcast_usec", 0)),
 		"crowd_threat_candidate_count": int(streaming_profile.get("crowd_threat_candidate_count", 0)),
+		"crowd_assignment_decision": str(streaming_profile.get("crowd_assignment_decision", "")),
+		"crowd_assignment_rebuild_reason": str(streaming_profile.get("crowd_assignment_rebuild_reason", "")),
+		"crowd_assignment_player_velocity_mps": float(streaming_profile.get("crowd_assignment_player_velocity_mps", 0.0)),
+		"crowd_assignment_raw_player_velocity_mps": float(streaming_profile.get("crowd_assignment_raw_player_velocity_mps", 0.0)),
+		"crowd_assignment_player_speed_delta_mps": float(streaming_profile.get("crowd_assignment_player_speed_delta_mps", 0.0)),
+		"crowd_assignment_player_speed_cap_mps": float(streaming_profile.get("crowd_assignment_player_speed_cap_mps", 0.0)),
 		"crowd_chunk_commit_usec": int(streaming_profile.get("crowd_chunk_commit_usec", 0)),
 		"crowd_tier1_transform_writes": int(streaming_profile.get("crowd_tier1_transform_writes", 0)),
 		"ped_tier0_count": int(renderer_stats.get("pedestrian_tier0_total", 0)),
@@ -2044,9 +2132,16 @@ func _build_pedestrian_player_context() -> Dictionary:
 	var speed_profile := _control_mode
 	if player != null and player.has_method("get_speed_profile"):
 		speed_profile = str(player.get_speed_profile())
+	var max_context_speed_mps := 0.0
+	if player != null:
+		if player.has_method("get_sprint_speed_mps"):
+			max_context_speed_mps = float(player.get_sprint_speed_mps())
+		elif player.has_method("get_walk_speed_mps"):
+			max_context_speed_mps = float(player.get_walk_speed_mps())
 	return {
 		"control_mode": _control_mode,
 		"speed_profile": speed_profile,
+		"max_context_speed_mps": max_context_speed_mps,
 	}
 
 func _build_minimap_cache_key(center_world_position: Vector3, world_radius_m: float) -> String:
@@ -2616,6 +2711,18 @@ func _record_update_streaming_sample(duration_usec: int) -> void:
 	_update_streaming_total_usec += duration_usec
 	_update_streaming_max_usec = maxi(_update_streaming_max_usec, duration_usec)
 	_update_streaming_last_usec = duration_usec
+
+func _record_update_streaming_chunk_streamer_sample(duration_usec: int) -> void:
+	_update_streaming_chunk_streamer_sample_count += 1
+	_update_streaming_chunk_streamer_total_usec += duration_usec
+	_update_streaming_chunk_streamer_max_usec = maxi(_update_streaming_chunk_streamer_max_usec, duration_usec)
+	_update_streaming_chunk_streamer_last_usec = duration_usec
+
+func _record_update_streaming_renderer_sync_sample(duration_usec: int) -> void:
+	_update_streaming_renderer_sync_sample_count += 1
+	_update_streaming_renderer_sync_total_usec += duration_usec
+	_update_streaming_renderer_sync_max_usec = maxi(_update_streaming_renderer_sync_max_usec, duration_usec)
+	_update_streaming_renderer_sync_last_usec = duration_usec
 
 func _record_hud_refresh_sample(duration_usec: int) -> void:
 	_hud_refresh_sample_count += 1

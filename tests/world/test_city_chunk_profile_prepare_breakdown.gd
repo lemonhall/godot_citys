@@ -41,6 +41,16 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(stats.get("buildings_usec", 0)) > 0, "Chunk profile breakdown must expose building synthesis cost"):
 		return
+	if not T.require_true(self, int(stats.get("building_candidate_usec", 0)) > 0, "Chunk profile breakdown must expose building candidate generation cost"):
+		return
+	if not T.require_true(self, int(stats.get("building_streetfront_candidate_usec", 0)) > 0, "Chunk profile breakdown must expose streetfront candidate generation cost"):
+		return
+	if not T.require_true(self, int(stats.get("building_infill_candidate_usec", 0)) > 0, "Chunk profile breakdown must expose infill candidate generation cost"):
+		return
+	if not T.require_true(self, int(stats.get("building_selection_usec", 0)) > 0, "Chunk profile breakdown must expose building selection cost"):
+		return
+	if not T.require_true(self, int(stats.get("building_inspection_payload_usec", 0)) > 0, "Chunk profile breakdown must expose building inspection payload cost"):
+		return
 	if not T.require_true(self, int(stats.get("terrain_relief_usec", 0)) > 0, "Chunk profile breakdown must expose terrain relief sampling cost"):
 		return
 	if not T.require_true(self, int(stats.get("signature_usec", 0)) > 0, "Chunk profile breakdown must expose signature assembly cost"):

@@ -129,9 +129,15 @@ foreach($test in $tests){
 
 ```powershell
 & $godot --headless --rendering-driver dummy --path $project --script 'res://tests/world/test_city_chunk_setup_profile_breakdown.gd'
-& $godot --headless --rendering-driver dummy --path $project --script 'res://tests/e2e/test_city_runtime_performance_profile.gd'
 & $godot --headless --rendering-driver dummy --path $project --script 'res://tests/e2e/test_city_first_visit_performance_profile.gd'
+& $godot --headless --rendering-driver dummy --path $project --script 'res://tests/e2e/test_city_runtime_performance_profile.gd'
 ```
+
+说明：
+
+- closeout 默认顺序冻结为 `chunk setup -> first-visit -> warm runtime`
+- 原因：`first-visit` 必须尽量保持“真正冷路径”的解释口径，不要先跑 warm traversal 再回来看 cold case
+- 如需边界定位，额外使用 `tests/world/test_city_runtime_streaming_diagnostic_contract.gd` 与 `tests/world/test_city_chunk_profile_prepare_breakdown.gd`
 
 - 慢速全量回归模板：
 
@@ -299,6 +305,11 @@ CityPrototype
   - 为什么：会污染 `wall_frame`、streaming 和 mount 数据
   - 替代：按顺序隔离执行性能三件套
   - 验证：运行时只有一个 Godot profiling 进程
+
+- 禁止：用 diagnostics mode 的细粒度探针数据直接宣称 redline 过线
+  - 为什么：`update_streaming_renderer_sync_*`、queue 子相位等字段只用于边界定位；开启探针会改变 profiling 口径，和默认 guard mode 不是一回事
+  - 替代：official closeout 一律用默认 guard mode 跑三件套；需要定位时再显式打开 `set_performance_diagnostics_enabled(true)` 或跑 `test_city_runtime_streaming_diagnostic_contract.gd`
+  - 验证：过线结论只看三件套与对应 `docs/plan/vN-mN-verification-YYYY-MM-DD.md`
 
 - 禁止：把导航/任务系统退回成第二套隐藏 target、route、pin 或 marker 栈
   - 为什么：这会直接破坏 `v12` 到 `v14` 收口出来的共享 contract，后续 fast travel、autodrive、task ring 和 HUD 会再次分叉

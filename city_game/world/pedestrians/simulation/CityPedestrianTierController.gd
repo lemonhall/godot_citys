@@ -73,6 +73,12 @@ var _last_profile_stats := {
 	"crowd_assignment_candidate_count": 0,
 	"crowd_threat_broadcast_usec": 0,
 	"crowd_threat_candidate_count": 0,
+	"crowd_assignment_decision": "",
+	"crowd_assignment_rebuild_reason": "",
+	"crowd_assignment_player_velocity_mps": 0.0,
+	"crowd_assignment_raw_player_velocity_mps": 0.0,
+	"crowd_assignment_player_speed_delta_mps": 0.0,
+	"crowd_assignment_player_speed_cap_mps": 0.0,
 }
 
 func setup(config, world_data: Dictionary) -> void:
@@ -133,6 +139,12 @@ func setup(config, world_data: Dictionary) -> void:
 		"crowd_assignment_candidate_count": 0,
 		"crowd_threat_broadcast_usec": 0,
 		"crowd_threat_candidate_count": 0,
+		"crowd_assignment_decision": "",
+		"crowd_assignment_rebuild_reason": "",
+		"crowd_assignment_player_velocity_mps": 0.0,
+		"crowd_assignment_raw_player_velocity_mps": 0.0,
+		"crowd_assignment_player_speed_delta_mps": 0.0,
+		"crowd_assignment_player_speed_cap_mps": 0.0,
 	}
 
 func get_budget_contract() -> Dictionary:
@@ -319,7 +331,10 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 		var player_travel_distance_m := player_position.distance_to(_last_player_position)
 		if player_travel_distance_m <= PLAYER_CONTEXT_TELEPORT_DISTANCE_M:
 			inferred_player_velocity = (player_position - _last_player_position) / delta
+	var raw_player_velocity := inferred_player_velocity
 	set_player_context(player_position, inferred_player_velocity, _last_player_context)
+	var player_speed_cap_mps := _resolve_player_speed_cap_mps(_last_player_context)
+	inferred_player_velocity = _clamp_player_velocity_to_context(inferred_player_velocity, player_speed_cap_mps)
 
 	var active_chunk_ids: Array[String] = []
 	for entry_variant in active_chunk_entries:
@@ -337,7 +352,8 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 		step_profile = _step_active_states(active_states, delta)
 
 	_assignment_rebuild_elapsed_sec += maxf(delta, 0.0)
-	if not _should_rebuild_assignments(active_chunk_ids, player_position, inferred_player_velocity):
+	var assignment_diagnostic := _resolve_assignment_decision(active_chunk_ids, player_position, inferred_player_velocity)
+	if not bool(assignment_diagnostic.get("should_rebuild", true)):
 		var reused_runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_summary()
 		_update_runtime_snapshot(
 			active_chunk_ids.size(),
@@ -359,7 +375,11 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 				_midfield_state_refs.size() + _nearfield_state_refs.size(),
 				_midfield_state_refs.size() + _nearfield_state_refs.size()
 			),
-			update_started_usec
+			update_started_usec,
+			assignment_diagnostic,
+			raw_player_velocity,
+			inferred_player_velocity,
+			player_speed_cap_mps
 		)
 		return get_global_summary()
 
@@ -408,7 +428,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	_tier2_state_refs.clear()
 	_tier3_state_refs.clear()
 	for chunk_id in active_chunk_ids:
-		var chunk_snapshot: Dictionary = _chunk_render_snapshots.get(chunk_id, _make_empty_chunk_render_snapshot(chunk_id))
+		var chunk_snapshot: Dictionary = _existing_chunk_snapshot_or_empty(chunk_id)
 		_reset_chunk_render_snapshot(chunk_snapshot, chunk_id)
 		next_chunk_render_snapshots[chunk_id] = chunk_snapshot
 	for state_variant in assignment_candidate_states:
@@ -425,7 +445,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			continue
 		var pedestrian_id := state.pedestrian_id
 		if not next_chunk_render_snapshots.has(state.chunk_id):
-			var dynamic_chunk_snapshot: Dictionary = _chunk_render_snapshots.get(state.chunk_id, _make_empty_chunk_render_snapshot(state.chunk_id))
+			var dynamic_chunk_snapshot: Dictionary = _existing_chunk_snapshot_or_empty(state.chunk_id)
 			_reset_chunk_render_snapshot(dynamic_chunk_snapshot, state.chunk_id)
 			next_chunk_render_snapshots[state.chunk_id] = dynamic_chunk_snapshot
 		var chunk_snapshot: Dictionary = next_chunk_render_snapshots[state.chunk_id]
@@ -470,7 +490,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 		if state == null:
 			continue
 		if not next_chunk_render_snapshots.has(state.chunk_id):
-			var dynamic_chunk_snapshot: Dictionary = _chunk_render_snapshots.get(state.chunk_id, _make_empty_chunk_render_snapshot(state.chunk_id))
+			var dynamic_chunk_snapshot: Dictionary = _existing_chunk_snapshot_or_empty(state.chunk_id)
 			_reset_chunk_render_snapshot(dynamic_chunk_snapshot, state.chunk_id)
 			next_chunk_render_snapshots[state.chunk_id] = dynamic_chunk_snapshot
 		var chunk_snapshot: Dictionary = next_chunk_render_snapshots[state.chunk_id]
@@ -527,7 +547,11 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			assignment_candidate_states.size(),
 			threat_candidate_states.size()
 		),
-		update_started_usec
+		update_started_usec,
+		assignment_diagnostic,
+		raw_player_velocity,
+		inferred_player_velocity,
+		player_speed_cap_mps
 	)
 	_last_assignment_chunk_ids = active_chunk_ids.duplicate()
 	_last_assignment_player_position = player_position
@@ -839,23 +863,56 @@ func _mark_chunk_render_dirty(chunk_id: String, farfield_only: bool = false) -> 
 	_chunk_render_snapshots[chunk_id] = snapshot
 
 func _should_rebuild_assignments(active_chunk_ids: Array[String], player_position: Vector3, player_velocity: Vector3) -> bool:
+	return bool(_resolve_assignment_decision(active_chunk_ids, player_position, player_velocity).get("should_rebuild", true))
+
+func _resolve_assignment_decision(active_chunk_ids: Array[String], player_position: Vector3, player_velocity: Vector3) -> Dictionary:
+	var player_speed_delta_mps := player_velocity.distance_to(_last_assignment_player_velocity)
+	var reason := "reuse_stable_window"
+	var should_rebuild := false
 	if not _has_assignment_cache:
-		return true
-	if _force_assignment_rebuild:
-		return true
-	if not _string_arrays_equal(_last_assignment_chunk_ids, active_chunk_ids):
-		return true
-	if _can_reuse_farfield_assignments(player_position):
-		return false
-	if _can_reuse_layered_assignments(player_position):
-		return false
-	if player_position.distance_to(_last_assignment_player_position) > PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M:
-		return true
-	if player_velocity.distance_to(_last_assignment_player_velocity) > PLAYER_ASSIGNMENT_REBUILD_SPEED_DELTA_MPS:
-		return true
-	if _last_player_context != _last_assignment_player_context:
-		return true
-	return _assignment_rebuild_elapsed_sec >= ASSIGNMENT_REBUILD_INTERVAL_SEC
+		reason = "no_cache"
+		should_rebuild = true
+	elif _force_assignment_rebuild:
+		reason = "forced"
+		should_rebuild = true
+	elif not _string_arrays_equal(_last_assignment_chunk_ids, active_chunk_ids):
+		reason = "chunk_window_changed"
+		should_rebuild = true
+	elif _can_reuse_farfield_assignments(player_position):
+		reason = "reuse_farfield"
+		should_rebuild = false
+	elif _can_reuse_layered_assignments(player_position):
+		reason = "reuse_layered"
+		should_rebuild = false
+	elif player_position.distance_to(_last_assignment_player_position) > PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M:
+		reason = "player_distance"
+		should_rebuild = true
+	elif player_speed_delta_mps > PLAYER_ASSIGNMENT_REBUILD_SPEED_DELTA_MPS:
+		reason = "player_speed_delta"
+		should_rebuild = true
+	elif _last_player_context != _last_assignment_player_context:
+		reason = "player_context_changed"
+		should_rebuild = true
+	elif _assignment_rebuild_elapsed_sec >= ASSIGNMENT_REBUILD_INTERVAL_SEC:
+		reason = "interval_elapsed"
+		should_rebuild = true
+	return {
+		"should_rebuild": should_rebuild,
+		"decision": "rebuild" if should_rebuild else "reuse",
+		"reason": reason,
+		"player_speed_delta_mps": player_speed_delta_mps,
+	}
+
+func _resolve_player_speed_cap_mps(context: Dictionary) -> float:
+	return maxf(float(context.get("max_context_speed_mps", 0.0)), 0.0)
+
+func _clamp_player_velocity_to_context(player_velocity: Vector3, speed_cap_mps: float) -> Vector3:
+	if speed_cap_mps <= 0.0:
+		return player_velocity
+	var speed_mps := player_velocity.length()
+	if speed_mps <= speed_cap_mps or speed_mps <= 0.0001:
+		return player_velocity
+	return player_velocity.normalized() * speed_cap_mps
 
 func _string_arrays_equal(lhs: Array[String], rhs: Array[String]) -> bool:
 	if lhs.size() != rhs.size():
@@ -901,6 +958,11 @@ func _capture_farfield_render_dirty_chunk_ids() -> Dictionary:
 		if bool(snapshot.get("dirty", false)) and bool(snapshot.get("farfield_render_dirty", false)):
 			dirty_chunk_ids[chunk_id] = true
 	return dirty_chunk_ids
+
+func _existing_chunk_snapshot_or_empty(chunk_id: String) -> Dictionary:
+	if _chunk_render_snapshots.has(chunk_id):
+		return _chunk_render_snapshots[chunk_id]
+	return _make_empty_chunk_render_snapshot(chunk_id)
 
 func _set_layer_state_refs(target: Array[CityPedestrianState], source: Array) -> void:
 	target.clear()
@@ -985,7 +1047,11 @@ func _update_runtime_snapshot(
 	crowd_assignment_rebuild_usec: int,
 	crowd_snapshot_rebuild_usec: int,
 	layer_profile_counts: Dictionary,
-	update_started_usec: int
+	update_started_usec: int,
+	assignment_diagnostic: Dictionary,
+	raw_player_velocity: Vector3,
+	player_velocity: Vector3,
+	player_speed_cap_mps: float
 ) -> void:
 	_global_snapshot = {
 		"preset": str(_budget_contract.get("preset", "lite")),
@@ -1025,6 +1091,12 @@ func _update_runtime_snapshot(
 		"crowd_assignment_candidate_count": int(layer_profile_counts.get("crowd_assignment_candidate_count", 0)),
 		"crowd_threat_broadcast_usec": crowd_threat_broadcast_usec,
 		"crowd_threat_candidate_count": int(layer_profile_counts.get("crowd_threat_candidate_count", 0)),
+		"crowd_assignment_decision": str(assignment_diagnostic.get("decision", "")),
+		"crowd_assignment_rebuild_reason": str(assignment_diagnostic.get("reason", "")),
+		"crowd_assignment_player_velocity_mps": player_velocity.length(),
+		"crowd_assignment_raw_player_velocity_mps": raw_player_velocity.length(),
+		"crowd_assignment_player_speed_delta_mps": float(assignment_diagnostic.get("player_speed_delta_mps", 0.0)),
+		"crowd_assignment_player_speed_cap_mps": player_speed_cap_mps,
 	}
 	_global_snapshot["profile_stats"] = _last_profile_stats.duplicate(true)
 

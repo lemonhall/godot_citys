@@ -119,9 +119,12 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 	var road_segments: Array = road_layout.get("segments", [])
 	var buildings_started_usec := Time.get_ticks_usec()
 	var building_result: Dictionary = _build_buildings(chunk_center, chunk_size_m, chunk_seed, world_seed, road_segments)
-	var buildings_usec := Time.get_ticks_usec() - buildings_started_usec
+	var building_phase_stats: Dictionary = (building_result.get("phase_stats", {}) as Dictionary).duplicate(true)
 	var buildings: Array = building_result.get("buildings", [])
+	var inspection_payload_started_usec := Time.get_ticks_usec()
 	buildings = _attach_building_inspection_payloads(chunk_data, buildings)
+	var inspection_payload_usec := Time.get_ticks_usec() - inspection_payload_started_usec
+	var buildings_usec := Time.get_ticks_usec() - buildings_started_usec
 	var building_layout_stats: Dictionary = (building_result.get("layout_stats", {}) as Dictionary).duplicate(true)
 	var building_archetype_ids := _collect_building_archetypes(buildings)
 	var terrain_relief_started_usec := Time.get_ticks_usec()
@@ -165,6 +168,11 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 	profile["build_profile_stats"] = {
 		"road_layout_usec": road_layout_usec,
 		"buildings_usec": buildings_usec,
+		"building_candidate_usec": int(building_phase_stats.get("candidate_usec", 0)),
+		"building_streetfront_candidate_usec": int(building_phase_stats.get("streetfront_candidate_usec", 0)),
+		"building_infill_candidate_usec": int(building_phase_stats.get("infill_candidate_usec", 0)),
+		"building_selection_usec": int(building_phase_stats.get("selection_usec", 0)),
+		"building_inspection_payload_usec": inspection_payload_usec,
 		"terrain_relief_usec": terrain_relief_usec,
 		"road_semantic_stats_usec": road_semantic_stats_usec,
 		"signature_usec": signature_usec,
@@ -177,10 +185,22 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 		return {
 			"buildings": [],
 			"layout_stats": _build_building_layout_stats([], [], []),
+			"phase_stats": {
+				"candidate_usec": 0,
+				"streetfront_candidate_usec": 0,
+				"infill_candidate_usec": 0,
+				"selection_usec": 0,
+			},
 		}
 	var candidate_keys: Dictionary = {}
-	var streetfront_candidates := _build_streetfront_candidates(chunk_center, chunk_size_m, chunk_seed, road_segments, candidate_keys)
-	var infill_candidates := _build_infill_candidates(chunk_center, chunk_size_m, chunk_seed, road_segments, candidate_keys)
+	var road_distance_edges := _build_road_distance_edges(road_segments)
+	var streetfront_candidate_started_usec := Time.get_ticks_usec()
+	var streetfront_candidates := _build_streetfront_candidates(chunk_center, chunk_size_m, chunk_seed, road_segments, road_distance_edges, candidate_keys)
+	var streetfront_candidate_usec := Time.get_ticks_usec() - streetfront_candidate_started_usec
+	var infill_candidate_started_usec := Time.get_ticks_usec()
+	var infill_candidates := _build_infill_candidates(chunk_center, chunk_size_m, chunk_seed, road_distance_edges, candidate_keys)
+	var infill_candidate_usec := Time.get_ticks_usec() - infill_candidate_started_usec
+	var candidate_usec := streetfront_candidate_usec + infill_candidate_usec
 	var desired_count := mini(MAX_BUILDINGS_PER_CHUNK, 14 + int((chunk_seed >> 1) % 4))
 	var minimum_dense_target := mini(MAX_BUILDINGS_PER_CHUNK, 12)
 	var streetfront_cycle := _build_streetfront_archetype_cycle(chunk_seed)
@@ -190,6 +210,7 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 	var buildings: Array = []
 	var occupied: Array = []
 	var half_extent := chunk_size_m * 0.5 - 10.0
+	var selection_started_usec := Time.get_ticks_usec()
 
 	for candidate_index in range(streetfront_candidates.size()):
 		if buildings.size() >= desired_count:
@@ -248,6 +269,12 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 	return {
 		"buildings": buildings,
 		"layout_stats": _build_building_layout_stats(buildings, streetfront_candidates, infill_candidates),
+		"phase_stats": {
+			"candidate_usec": candidate_usec,
+			"streetfront_candidate_usec": streetfront_candidate_usec,
+			"infill_candidate_usec": infill_candidate_usec,
+			"selection_usec": Time.get_ticks_usec() - selection_started_usec,
+		},
 	}
 
 static func _attach_building_inspection_payloads(chunk_data: Dictionary, buildings: Array) -> Array:
@@ -293,9 +320,11 @@ static func _attach_building_inspection_payloads(chunk_data: Dictionary, buildin
 	var enriched_buildings: Array = []
 	for building_index in range(buildings.size()):
 		var building: Dictionary = (buildings[building_index] as Dictionary).duplicate(true)
-		var payload: Dictionary = payloads_by_index.get(
-			building_index,
-			_resolve_building_inspection_payload(
+		var payload: Dictionary = {}
+		if payloads_by_index.has(building_index):
+			payload = payloads_by_index[building_index]
+		else:
+			payload = _resolve_building_inspection_payload(
 				building,
 				address_targets,
 				chunk_id,
@@ -304,7 +333,6 @@ static func _attach_building_inspection_payloads(chunk_data: Dictionary, buildin
 				building_index + 1,
 				false
 			)
-		)
 		building["building_id"] = str(payload.get("building_id", ""))
 		building["building_local_index"] = int(payload.get("building_local_index", 0))
 		building["display_name"] = str(payload.get("display_name", ""))
@@ -426,7 +454,7 @@ static func _build_building_display_name(address_label: String, building_code: S
 	var resolved_label := address_label if address_label != "" else fallback_name
 	return "%s [%s]" % [resolved_label, building_code]
 
-static func _build_streetfront_candidates(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, road_segments: Array, candidate_keys: Dictionary) -> Array:
+static func _build_streetfront_candidates(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, road_segments: Array, road_distance_edges: Array, candidate_keys: Dictionary) -> Array:
 	var half_extent := chunk_size_m * 0.5 - 18.0
 	var candidates: Array = []
 	for segment_index in range(road_segments.size()):
@@ -467,7 +495,7 @@ static func _build_streetfront_candidates(chunk_center: Vector3, chunk_size_m: f
 					var position_key := _candidate_position_key(center_2d)
 					if candidate_keys.has(position_key):
 						continue
-					var road_metrics := _nearest_road_metrics(center_2d, road_segments)
+					var road_metrics := _nearest_road_metrics(center_2d, road_distance_edges)
 					var clearance := float(road_metrics.get("clearance_m", 9999.0))
 					if clearance < setback_m * 0.7:
 						continue
@@ -490,8 +518,8 @@ static func _build_streetfront_candidates(chunk_center: Vector3, chunk_size_m: f
 	)
 	return candidates
 
-static func _build_infill_candidates(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, road_segments: Array, candidate_keys: Dictionary) -> Array:
-	if road_segments.is_empty():
+static func _build_infill_candidates(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, road_distance_edges: Array, candidate_keys: Dictionary) -> Array:
+	if road_distance_edges.is_empty():
 		return []
 	var half_extent := chunk_size_m * 0.5 - 18.0
 	var candidates: Array = []
@@ -506,7 +534,7 @@ static func _build_infill_candidates(chunk_center: Vector3, chunk_size_m: float,
 			var position_key := _candidate_position_key(center_2d)
 			if candidate_keys.has(position_key):
 				continue
-			var road_metrics := _nearest_road_metrics(center_2d, road_segments, 8.0)
+			var road_metrics := _nearest_road_metrics(center_2d, road_distance_edges, 8.0)
 			var clearance := float(road_metrics.get("clearance_m", 9999.0))
 			if clearance < INFILL_CLEARANCE_MIN_M or clearance > INFILL_CLEARANCE_MAX_M:
 				continue
@@ -527,6 +555,25 @@ static func _build_infill_candidates(chunk_center: Vector3, chunk_size_m: float,
 		return float(a.get("score", 0.0)) > float(b.get("score", 0.0))
 	)
 	return candidates
+
+static func _build_road_distance_edges(road_segments: Array) -> Array:
+	var edges: Array = []
+	for segment_variant in road_segments:
+		var segment: Dictionary = segment_variant
+		var width_half := float(segment.get("width", 0.0)) * 0.5
+		var points: Array = segment.get("points", [])
+		for point_index in range(points.size() - 1):
+			var start_point: Vector3 = points[point_index]
+			var end_point: Vector3 = points[point_index + 1]
+			var start_2d := Vector2(start_point.x, start_point.z)
+			var end_2d := Vector2(end_point.x, end_point.z)
+			edges.append({
+				"a": start_2d,
+				"b": end_2d,
+				"width_half": width_half,
+				"angle_rad": atan2(end_2d.y - start_2d.y, end_2d.x - start_2d.x),
+			})
+	return edges
 
 static func _try_build_building(candidate: Dictionary, archetype: Dictionary, chunk_center: Vector3, half_extent: float, world_seed: int, occupied: Array, building_rng: RandomNumberGenerator, scale_multiplier: float = 1.0) -> Dictionary:
 	var local_seed := int(candidate.get("seed", 0)) ^ int(archetype.get("id", "").hash())
@@ -622,8 +669,8 @@ static func _streetfront_candidate_seed(chunk_seed: int, road_class: String, cen
 		+ int(sign(side_sign)) * 83492791
 	) & 0x7fffffff)
 
-static func _candidate_position_key(center_2d: Vector2) -> String:
-	return "%d:%d" % [int(round(center_2d.x / 2.0)), int(round(center_2d.y / 2.0))]
+static func _candidate_position_key(center_2d: Vector2) -> Vector2i:
+	return Vector2i(int(round(center_2d.x / 2.0)), int(round(center_2d.y / 2.0)))
 
 static func _streetfront_step_for_class(road_class: String) -> float:
 	match road_class:
@@ -720,25 +767,28 @@ static func _collect_building_archetypes(buildings: Array) -> Array:
 	archetypes.sort()
 	return archetypes
 
-static func _nearest_road_metrics(point: Vector2, road_segments: Array, early_exit_clearance: float = -1.0) -> Dictionary:
+static func _nearest_road_metrics(point: Vector2, road_distance_edges: Array, early_exit_clearance: float = -1.0) -> Dictionary:
 	var min_distance := INF
 	var best_angle_rad := 0.0
-	for segment in road_segments:
-		var segment_dict: Dictionary = segment
-		var width := float(segment_dict.get("width", 0.0))
-		var points: Array = segment_dict.get("points", [])
-		for point_index in range(points.size() - 1):
-			var a: Vector3 = points[point_index]
-			var b: Vector3 = points[point_index + 1]
-			var distance := _distance_to_segment(point, Vector2(a.x, a.z), Vector2(b.x, b.z)) - width * 0.5
-			if distance < min_distance:
-				min_distance = distance
-				best_angle_rad = atan2(b.z - a.z, b.x - a.x)
-				if early_exit_clearance >= 0.0 and min_distance <= early_exit_clearance:
-					return {
-						"clearance_m": min_distance,
-						"angle_rad": best_angle_rad,
-					}
+	for edge_variant in road_distance_edges:
+		var edge: Dictionary = edge_variant
+		var edge_start: Vector2 = edge.get("a", Vector2.ZERO)
+		var edge_end: Vector2 = edge.get("b", Vector2.ZERO)
+		var width_half := float(edge.get("width_half", 0.0))
+		var distance_sq := _distance_squared_to_segment(point, edge_start, edge_end)
+		if min_distance != INF:
+			var best_raw_distance := min_distance + width_half
+			if best_raw_distance > 0.0 and distance_sq >= best_raw_distance * best_raw_distance:
+				continue
+		var distance := sqrt(distance_sq) - width_half
+		if distance < min_distance:
+			min_distance = distance
+			best_angle_rad = float(edge.get("angle_rad", 0.0))
+			if early_exit_clearance >= 0.0 and min_distance <= early_exit_clearance:
+				return {
+					"clearance_m": min_distance,
+					"angle_rad": best_angle_rad,
+				}
 	if min_distance == INF:
 		return {
 			"clearance_m": 9999.0,
@@ -749,13 +799,13 @@ static func _nearest_road_metrics(point: Vector2, road_segments: Array, early_ex
 		"angle_rad": best_angle_rad,
 	}
 
-static func _distance_to_segment(point: Vector2, a: Vector2, b: Vector2) -> float:
+static func _distance_squared_to_segment(point: Vector2, a: Vector2, b: Vector2) -> float:
 	var segment := b - a
 	var length_squared := segment.length_squared()
 	if length_squared <= 0.0001:
-		return point.distance_to(a)
+		return point.distance_squared_to(a)
 	var t: float = clampf((point - a).dot(segment) / length_squared, 0.0, 1.0)
-	return point.distance_to(a + segment * t)
+	return point.distance_squared_to(a + segment * t)
 
 static func _clamp_to_chunk(point: Vector2, half_extent: float) -> Vector2:
 	return Vector2(

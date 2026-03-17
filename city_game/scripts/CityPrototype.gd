@@ -65,6 +65,15 @@ const DESTINATION_WORLD_MARKER_SURFACE_OFFSET_M := 0.12
 const ROUTE_STYLE_DESTINATION := "destination"
 const ROUTE_STYLE_TASK_AVAILABLE := "task_available"
 const ROUTE_STYLE_TASK_ACTIVE := "task_active"
+const VEHICLE_RADIO_INPUT_ACTIONS := [
+	"vehicle_radio_quick_open",
+	"vehicle_radio_next",
+	"vehicle_radio_prev",
+	"vehicle_radio_power_toggle",
+	"vehicle_radio_browser_open",
+	"vehicle_radio_confirm",
+	"vehicle_radio_cancel",
+]
 const BUILDING_EXPORT_WINDOW_SEC := 10.0
 const BUILDING_EXPORT_TOAST_DURATION_SEC := 6.0
 const BUILDING_EXPORT_SCENE_ROOT_PREFERRED := "res://city_game/serviceability/buildings/generated"
@@ -98,6 +107,7 @@ var _last_map_selection_contract: Dictionary = {}
 var _map_screen: Control = null
 var _map_pin_registry = null
 var _full_map_open := false
+var _controls_help_open := false
 var _world_simulation_paused := false
 var _task_catalog = null
 var _task_slot_index = null
@@ -285,6 +295,7 @@ func _ready() -> void:
 	_sync_navigation_consumers(true)
 	_sync_vehicle_radio_browser()
 	_sync_vehicle_radio_quick_overlay()
+	_sync_controls_help_overlay()
 	_update_task_system(0.0)
 	_update_music_road_runtime(0.0)
 	_refresh_hud_status()
@@ -340,13 +351,17 @@ func _process(delta: float) -> void:
 		hud.set_fps_overlay_sample(_last_fps_sample)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventAction:
-		var action_event := event as InputEventAction
-		if action_event.pressed and _handle_vehicle_radio_action(str(action_event.action)):
-			get_viewport().set_input_as_handled()
-			return
+	if _handle_vehicle_radio_bound_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey:
 		var key_event := event as InputEventKey
+		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_F1:
+			toggle_controls_help()
+			get_viewport().set_input_as_handled()
+			return
+		if _controls_help_open:
+			return
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_M:
 			toggle_full_map()
 			get_viewport().set_input_as_handled()
@@ -678,6 +693,13 @@ func _handle_vehicle_radio_action(action_name: String) -> bool:
 			_sync_vehicle_radio_browser()
 			_sync_vehicle_radio_quick_overlay()
 			return true
+	return false
+
+func _handle_vehicle_radio_bound_input(event: InputEvent) -> bool:
+	for action_name_variant in VEHICLE_RADIO_INPUT_ACTIONS:
+		var action_name := str(action_name_variant)
+		if event.is_action_pressed(action_name, false, true):
+			return _handle_vehicle_radio_action(action_name)
 	return false
 
 func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false) -> void:
@@ -1690,6 +1712,9 @@ func toggle_full_map() -> void:
 func set_full_map_open(is_open: bool) -> void:
 	if _full_map_open == is_open:
 		return
+	if is_open and _controls_help_open:
+		_controls_help_open = false
+		_sync_controls_help_overlay()
 	_full_map_open = is_open
 	if is_open and is_dialogue_active() and _dialogue_runtime != null and _dialogue_runtime.has_method("close_dialogue"):
 		_dialogue_runtime.close_dialogue()
@@ -1702,8 +1727,37 @@ func set_full_map_open(is_open: bool) -> void:
 func is_full_map_open() -> bool:
 	return _full_map_open
 
+func toggle_controls_help() -> void:
+	set_controls_help_open(not _controls_help_open)
+
+func set_controls_help_open(is_open: bool) -> void:
+	if _controls_help_open == is_open:
+		return
+	if is_open:
+		if _full_map_open:
+			set_full_map_open(false)
+		if _vehicle_radio_browser_open:
+			close_vehicle_radio_browser()
+		if _vehicle_radio_quick_overlay_open:
+			close_vehicle_radio_quick_overlay()
+		if is_dialogue_active() and _dialogue_runtime != null and _dialogue_runtime.has_method("close_dialogue"):
+			_dialogue_runtime.close_dialogue()
+	_controls_help_open = is_open
+	_apply_world_simulation_pause(is_open)
+	if DisplayServer.get_name() != "headless":
+		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if is_open else Input.MOUSE_MODE_CAPTURED)
+	_sync_controls_help_overlay()
+	_sync_navigation_consumers(true)
+	_update_npc_interaction_system()
+
+func is_controls_help_open() -> bool:
+	return _controls_help_open
+
 func is_world_simulation_paused() -> bool:
 	return _world_simulation_paused
+
+func get_controls_help_state() -> Dictionary:
+	return _build_controls_help_state().duplicate(true)
 
 func select_map_destination_from_world_point(world_position: Vector3) -> Dictionary:
 	var clamped_world_position := _clamp_world_position_to_bounds(world_position)
@@ -2539,6 +2593,92 @@ func _sync_navigation_consumers(force_minimap_refresh: bool = false) -> void:
 	if force_minimap_refresh and hud != null and hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
 		_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
+
+func _sync_controls_help_overlay() -> void:
+	if hud != null and hud.has_method("set_controls_help_state"):
+		hud.set_controls_help_state(_build_controls_help_state())
+
+func _build_controls_help_state() -> Dictionary:
+	return {
+		"visible": _controls_help_open,
+		"title": "键位说明",
+		"subtitle": "全屏说明层；打开时世界暂停。电台浏览器当前是信息浏览面板，切台仍以 quick overlay 为主。",
+		"close_hint": "F1 关闭",
+		"sections": _build_controls_help_sections(),
+	}
+
+func _build_controls_help_sections() -> Array:
+	return [
+		{
+			"title": "基础移动与视角",
+			"entries": [
+				{"binding": "W / A / S / D 或 方向键", "description": "步行移动；驾车时对应油门/转向"},
+				{"binding": "Shift", "description": "步行冲刺"},
+				{"binding": "Space", "description": "跳跃；驾车时刹车"},
+				{"binding": "鼠标移动", "description": "控制视角；驾车时鼠标左右辅助转向"},
+				{"binding": "Esc", "description": "释放 / 重新捕获鼠标"},
+			],
+		},
+		{
+			"title": "世界交互与导航",
+			"entries": [
+				{"binding": "E", "description": "与 NPC 互动；对话中再次按下可关闭"},
+				{"binding": "F", "description": "进入 / 退出 / 劫持车辆"},
+				{"binding": "M", "description": "打开全屏地图"},
+				{"binding": "T", "description": "传送到当前目的地"},
+				{"binding": "G", "description": "驾车时开启 / 停止自动驾驶"},
+				{"binding": "C", "description": "切换普通 / inspection 速度档"},
+			],
+		},
+		{
+			"title": "战斗与装备",
+			"entries": [
+				{"binding": "左键", "description": "开火 / 投掷 / 发射激光指示"},
+				{"binding": "右键", "description": "瞄准；手雷模式下为预备投掷"},
+				{"binding": "0 / 1 / 2", "description": "切换激光指示 / 步枪 / 手雷"},
+				{"binding": "Ctrl", "description": "地面重击"},
+			],
+		},
+		{
+			"title": "车辆电台（驾驶时）",
+			"entries": [
+				{"binding": _format_input_action_binding("vehicle_radio_quick_open"), "description": "打开 quick overlay"},
+				{"binding": _format_input_action_binding("vehicle_radio_prev"), "description": "quick overlay 上一台"},
+				{"binding": _format_input_action_binding("vehicle_radio_next"), "description": "quick overlay 下一台"},
+				{"binding": _format_input_action_binding("vehicle_radio_confirm"), "description": "确认当前 quick slot"},
+				{"binding": _format_input_action_binding("vehicle_radio_power_toggle"), "description": "电台开 / 关"},
+				{"binding": _format_input_action_binding("vehicle_radio_browser_open"), "description": "打开电台浏览器面板"},
+				{"binding": _format_input_action_binding("vehicle_radio_cancel"), "description": "关闭 quick overlay / browser"},
+			],
+		},
+		{
+			"title": "调试与显示",
+			"entries": [
+				{"binding": "F1", "description": "打开这份键位说明"},
+				{"binding": "小键盘 +", "description": "建筑导出调试快捷键"},
+				{"binding": "小键盘 *", "description": "切换行人显示"},
+				{"binding": "小键盘 -", "description": "切换 FPS 叠层"},
+				{"binding": "小键盘 /", "description": "生成 trauma enemy"},
+			],
+		},
+	]
+
+func _format_input_action_binding(action_name: String) -> String:
+	if not InputMap.has_action(action_name):
+		return "未绑定"
+	var labels := PackedStringArray()
+	for event_variant in InputMap.action_get_events(action_name):
+		var key_event := event_variant as InputEventKey
+		if key_event == null:
+			continue
+		var keycode := key_event.keycode if key_event.keycode != 0 else key_event.physical_keycode
+		var label := OS.get_keycode_string(keycode)
+		if label == "" or labels.has(label):
+			continue
+		labels.append(label)
+	if labels.is_empty():
+		return "未绑定"
+	return " / ".join(labels)
 
 func _get_map_pins(scope: String = "all") -> Array[Dictionary]:
 	if _map_pin_registry == null or not _map_pin_registry.has_method("get_pins"):

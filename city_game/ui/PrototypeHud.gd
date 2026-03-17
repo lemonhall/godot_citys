@@ -1,6 +1,7 @@
 extends CanvasLayer
 
 const CityCrosshairViewScript := preload("res://city_game/ui/CityCrosshairView.gd")
+const CityControlsHelpOverlayScript := preload("res://city_game/ui/CityControlsHelpOverlay.gd")
 const CityDialoguePanelScript := preload("res://city_game/ui/CityDialoguePanel.gd")
 const CityVehicleRadioBrowserScript := preload("res://city_game/ui/CityVehicleRadioBrowser.gd")
 const CityVehicleRadioQuickOverlayScript := preload("res://city_game/ui/CityVehicleRadioQuickOverlay.gd")
@@ -64,6 +65,13 @@ var _vehicle_radio_browser_state: Dictionary = {
 		"stations": [],
 	},
 }
+var _controls_help_state: Dictionary = {
+	"visible": false,
+	"title": "键位说明",
+	"subtitle": "",
+	"close_hint": "按 F1 关闭",
+	"sections": [],
+}
 
 func _ready() -> void:
 	_ensure_mouse_passthrough()
@@ -74,6 +82,7 @@ func _ready() -> void:
 	_ensure_dialogue_panel_view()
 	_ensure_vehicle_radio_browser_view()
 	_ensure_vehicle_radio_quick_overlay_view()
+	_ensure_controls_help_view()
 	var toggle_button := get_node_or_null("Root/ToggleButton") as Button
 	if toggle_button != null and not toggle_button.pressed.is_connected(_on_toggle_pressed):
 		toggle_button.pressed.connect(_on_toggle_pressed)
@@ -216,6 +225,19 @@ func set_vehicle_radio_quick_overlay_state(state: Dictionary) -> void:
 func get_vehicle_radio_quick_overlay_state() -> Dictionary:
 	return _vehicle_radio_quick_overlay_state.duplicate(true)
 
+func set_controls_help_state(state: Dictionary) -> void:
+	_controls_help_state = {
+		"visible": bool(state.get("visible", false)),
+		"title": str(state.get("title", "键位说明")),
+		"subtitle": str(state.get("subtitle", "")),
+		"close_hint": str(state.get("close_hint", "按 F1 关闭")),
+		"sections": (state.get("sections", []) as Array).duplicate(true),
+	}
+	_apply_controls_help_state()
+
+func get_controls_help_state() -> Dictionary:
+	return _controls_help_state.duplicate(true)
+
 func toggle_debug_expanded() -> void:
 	_debug_expanded = not _debug_expanded
 	_apply_panel_state()
@@ -238,6 +260,7 @@ func _apply_state() -> void:
 	_apply_dialogue_panel_state()
 	_apply_vehicle_radio_browser_state()
 	_apply_vehicle_radio_quick_overlay_state()
+	_apply_controls_help_state()
 
 func _apply_panel_state() -> void:
 	var panel := get_node_or_null("Root/Panel") as PanelContainer
@@ -310,6 +333,11 @@ func _apply_vehicle_radio_quick_overlay_state() -> void:
 	var overlay := get_node_or_null("Root/VehicleRadioQuickOverlay")
 	if overlay != null and overlay.has_method("set_state"):
 		overlay.set_state(_vehicle_radio_quick_overlay_state)
+
+func _apply_controls_help_state() -> void:
+	var overlay := get_node_or_null("Root/ControlsHelp")
+	if overlay != null and overlay.has_method("set_state"):
+		overlay.set_state(_controls_help_state)
 
 func _ensure_mouse_passthrough() -> void:
 	var root := get_node_or_null("Root") as Control
@@ -491,6 +519,17 @@ func _ensure_vehicle_radio_quick_overlay_view() -> void:
 	var overlay := Control.new()
 	overlay.name = "VehicleRadioQuickOverlay"
 	overlay.set_script(CityVehicleRadioQuickOverlayScript)
+	root.add_child(overlay)
+
+func _ensure_controls_help_view() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("ControlsHelp") != null:
+		return
+	var overlay := Control.new()
+	overlay.name = "ControlsHelp"
+	overlay.set_script(CityControlsHelpOverlayScript)
 	root.add_child(overlay)
 
 func _resolve_fps_color_state(fps: float) -> Dictionary:

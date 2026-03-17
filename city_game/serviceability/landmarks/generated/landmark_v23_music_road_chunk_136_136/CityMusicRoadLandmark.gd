@@ -16,6 +16,8 @@ const RAIL_HEIGHT_M := 0.64
 const VISIBLE_WINDOW_BACK_M := 28.0
 const VISIBLE_WINDOW_FORWARD_M := 132.0
 const VISIBLE_WINDOW_REBUILD_MARGIN_M := 18.0
+const VISUAL_CLUSTER_SPACING_M := 2.4
+const VISUAL_CLUSTER_MAX_LENGTH_M := 2.8
 
 var _music_road_entry: Dictionary = {}
 var _definition = null
@@ -29,7 +31,8 @@ var _adopted_asset_paths: Array[String] = []
 var _adopted_road_texture: Texture2D = null
 var _configured_landmark_id := ""
 var _configured_definition_path := ""
-var _visible_strip_ids: Array[String] = []
+var _visible_cluster_ids: Array[String] = []
+var _visible_cluster_members_by_id: Dictionary = {}
 var _visible_window_min_z := -INF
 var _visible_window_max_z := INF
 
@@ -245,11 +248,12 @@ func _apply_visual_phases() -> void:
 		return
 	var multimesh := _strip_visual_root.multimesh
 	var instance_index := 0
-	for strip_id in _visible_strip_ids:
+	for cluster_id in _visible_cluster_ids:
 		if instance_index >= multimesh.visible_instance_count:
 			break
-		var phase_state := _run_state.get_strip_phase(strip_id)
-		var strip: Dictionary = _definition.get_strip(strip_id)
+		var member_ids: Array = _visible_cluster_members_by_id.get(cluster_id, [])
+		var phase_state := _resolve_cluster_phase(member_ids)
+		var strip: Dictionary = _definition.get_strip(cluster_id)
 		var key_kind := 1.0 if str(strip.get("visual_key_kind", "white")) == "black" else 0.0
 		var encoded_phase_index := clampf(float(phase_state.get("phase_index", 0.0)) / 3.0, 0.0, 1.0)
 		var phase_strength := clampf(float(phase_state.get("phase_strength", 0.0)), 0.0, 1.0)
@@ -281,28 +285,116 @@ func _refresh_visible_strip_window(local_vehicle_state: Dictionary, force: bool 
 			selected_strips.append(strip_variant as Dictionary)
 	var multimesh := _strip_visual_root.multimesh
 	var instance_index := 0
-	_visible_strip_ids.clear()
-	for strip_variant in selected_strips:
-		var strip: Dictionary = strip_variant
-		var strip_id := str(strip.get("strip_id", ""))
-		var local_center: Vector3 = strip.get("local_center", Vector3.ZERO)
-		var is_black_key := str(strip.get("visual_key_kind", "white")) == "black"
-		var visual_width_m := maxf(float(strip.get("visual_width_m", 1.0)) * (1.18 if is_black_key else 1.52), 2.8 if is_black_key else 4.2)
-		var visual_length_m := maxf(float(strip.get("visual_length_m", 1.0)) * (1.08 if is_black_key else 1.24), 1.34 if is_black_key else 1.56)
+	_visible_cluster_ids.clear()
+	_visible_cluster_members_by_id.clear()
+	var clusters := _build_visual_clusters(selected_strips)
+	for cluster_variant in clusters:
+		var cluster: Dictionary = cluster_variant
+		var cluster_id := str(cluster.get("cluster_id", ""))
+		var center_z := float(cluster.get("center_z", 0.0))
+		var cluster_length_m := float(cluster.get("length_m", 1.8))
+		var is_black_key := bool(cluster.get("is_black_key", false))
+		var visual_width_m := 8.4 if is_black_key else 14.2
 		var visual_height_m := 0.18 if is_black_key else 0.14
 		var key_center_y := ROAD_SURFACE_TOP_Y + visual_height_m * 0.5 + KEY_SURFACE_CLEARANCE_M + (0.055 if is_black_key else 0.0)
 		var transform := Transform3D(
-			Basis.IDENTITY.scaled(Vector3(visual_width_m, visual_height_m, visual_length_m)),
-			Vector3(local_center.x, maxf(local_center.y, key_center_y), local_center.z)
+			Basis.IDENTITY.scaled(Vector3(visual_width_m, visual_height_m, cluster_length_m)),
+			Vector3(0.0, key_center_y, center_z)
 		)
 		multimesh.set_instance_transform(instance_index, transform)
 		var key_kind := 1.0 if is_black_key else 0.0
 		multimesh.set_instance_custom_data(instance_index, Color(key_kind, 0.0, 0.0, 1.0))
-		_visible_strip_ids.append(strip_id)
+		_visible_cluster_ids.append(cluster_id)
+		_visible_cluster_members_by_id[cluster_id] = (cluster.get("member_ids", []) as Array).duplicate(true)
 		instance_index += 1
 	multimesh.visible_instance_count = instance_index
 	_visible_window_min_z = next_min_z
 	_visible_window_max_z = next_max_z
+
+func _build_visual_clusters(selected_strips: Array[Dictionary]) -> Array[Dictionary]:
+	var clusters: Array[Dictionary] = []
+	var current_cluster := {}
+	for strip in selected_strips:
+		var strip_id := str(strip.get("strip_id", ""))
+		var local_center: Vector3 = strip.get("local_center", Vector3.ZERO)
+		var is_black_key := str(strip.get("visual_key_kind", "white")) == "black"
+		if current_cluster.is_empty():
+			current_cluster = {
+				"cluster_id": strip_id,
+				"member_ids": [strip_id],
+				"min_z": local_center.z,
+				"max_z": local_center.z,
+				"center_sum_z": local_center.z,
+				"count": 1,
+				"black_count": 1 if is_black_key else 0,
+			}
+			continue
+		var cluster_max_z := float(current_cluster.get("max_z", local_center.z))
+		if local_center.z - cluster_max_z > VISUAL_CLUSTER_SPACING_M:
+			clusters.append(_finalize_visual_cluster(current_cluster))
+			current_cluster = {
+				"cluster_id": strip_id,
+				"member_ids": [strip_id],
+				"min_z": local_center.z,
+				"max_z": local_center.z,
+				"center_sum_z": local_center.z,
+				"count": 1,
+				"black_count": 1 if is_black_key else 0,
+			}
+			continue
+		var member_ids: Array = current_cluster.get("member_ids", [])
+		member_ids.append(strip_id)
+		current_cluster["member_ids"] = member_ids
+		current_cluster["max_z"] = local_center.z
+		current_cluster["center_sum_z"] = float(current_cluster.get("center_sum_z", 0.0)) + local_center.z
+		current_cluster["count"] = int(current_cluster.get("count", 0)) + 1
+		if is_black_key:
+			current_cluster["black_count"] = int(current_cluster.get("black_count", 0)) + 1
+	if not current_cluster.is_empty():
+		clusters.append(_finalize_visual_cluster(current_cluster))
+	return clusters
+
+func _finalize_visual_cluster(cluster: Dictionary) -> Dictionary:
+	var min_z: float = float(cluster.get("min_z", 0.0))
+	var max_z: float = float(cluster.get("max_z", min_z))
+	var count: int = max(int(cluster.get("count", 1)), 1)
+	var center_z: float = float(cluster.get("center_sum_z", min_z)) / float(count)
+	var length_m: float = clampf((max_z - min_z) + 1.2, 1.4, VISUAL_CLUSTER_MAX_LENGTH_M)
+	var black_count: int = int(cluster.get("black_count", 0))
+	return {
+		"cluster_id": str(cluster.get("cluster_id", "")),
+		"member_ids": (cluster.get("member_ids", []) as Array).duplicate(true),
+		"center_z": center_z,
+		"length_m": length_m,
+		"is_black_key": black_count * 2 >= count,
+	}
+
+func _resolve_cluster_phase(member_ids: Array) -> Dictionary:
+	var best_rank := -1
+	var best_phase := {
+		"phase": "idle",
+		"phase_index": 0,
+		"phase_strength": 0.0,
+	}
+	for member_id_variant in member_ids:
+		var phase_state := _run_state.get_strip_phase(str(member_id_variant))
+		var phase_name := str(phase_state.get("phase", "idle"))
+		var rank := 0
+		match phase_name:
+			"active":
+				rank = 3
+			"approach":
+				rank = 2
+			"decay":
+				rank = 1
+			_:
+				rank = 0
+		if rank > best_rank:
+			best_rank = rank
+			best_phase = phase_state
+		elif rank == best_rank and float(phase_state.get("phase_strength", 0.0)) > float(best_phase.get("phase_strength", 0.0)):
+			best_phase = phase_state
+	return best_phase
 
 func _uses_project_owned_assets() -> bool:
 	if _adopted_asset_paths.is_empty():

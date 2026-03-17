@@ -4,7 +4,7 @@
 
 当前仓库已经有两条足够强的基础链。第一条是 `v21` 的 `scene_landmark registry -> manifest -> near chunk mount -> optional full_map_pin`，它证明一个独立 authored 世界内容完全可以不依赖 `building_id` 而正式进入大世界。第二条是 `v9` 之后的 driving state 暴露，玩家在驾驶时能稳定给出 `driving / world_position / heading / speed_mps`。把这两条链拼起来，理论上已经足够承载“地图找到一个特殊地点 -> 开车过去 -> 驶过一连串按顺序触发的路面 strip -> 形成旋律”这种玩法。
 
-真正的问题不在“能不能发出声音”，而在“应该把哪一层当成正式资产”。如果把《诀别书》的旋律和条带顺序写进脚本常量，首版也许很快，但第二首歌一来就会返工。如果直接把一条 procedural 生成道路升级成音乐道路，则会立刻碰到 `road_graph / lane graph / route_result / profiling` 这一整套冻结主链，范围失控风险极高。用户已经明确给了一个更稳的方向：先做一条独立 authored 的直线道路 scene，在独立场景里把玩法跑通，再通过 landmark 机制挂进世界。所以 `v23` 最该守住的不是“尽量复用现有道路”，而是“不要为了复用而破坏已有世界底盘”。
+真正的问题不在“能不能发出声音”，而在“应该把哪一层当成正式资产”。如果把《诀别书》的旋律和条带顺序写进脚本常量，首版也许很快，但第二首歌一来就会返工。如果直接把一条 procedural 生成道路升级成音乐道路，则会立刻碰到 `road_graph / lane graph / route_result / profiling` 这一整套冻结主链，范围失控风险极高。用户已经明确给了一个更稳的方向：先做一条独立 authored 的直线道路 scene，在独立场景里把玩法跑通，再通过 landmark 机制挂进世界。所以 `v23` 最该守住的不是“强行复用现有道路”，而是“不要为了复用而破坏已有世界底盘”。
 
 ## 方案比较
 

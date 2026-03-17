@@ -121,8 +121,9 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 	var building_result: Dictionary = _build_buildings(chunk_center, chunk_size_m, chunk_seed, world_seed, road_segments)
 	var building_phase_stats: Dictionary = (building_result.get("phase_stats", {}) as Dictionary).duplicate(true)
 	var buildings: Array = building_result.get("buildings", [])
+	var local_named_road_edges := _build_local_named_road_edges(road_segments, chunk_center, chunk_data.get("street_cluster_catalog"))
 	var inspection_payload_started_usec := Time.get_ticks_usec()
-	buildings = _attach_building_inspection_payloads(chunk_data, buildings)
+	buildings = _attach_building_inspection_payloads(chunk_data, buildings, local_named_road_edges)
 	var inspection_payload_usec := Time.get_ticks_usec() - inspection_payload_started_usec
 	var buildings_usec := Time.get_ticks_usec() - buildings_started_usec
 	var building_layout_stats: Dictionary = (building_result.get("layout_stats", {}) as Dictionary).duplicate(true)
@@ -277,13 +278,13 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 		},
 	}
 
-static func _attach_building_inspection_payloads(chunk_data: Dictionary, buildings: Array) -> Array:
+static func _attach_building_inspection_payloads(chunk_data: Dictionary, buildings: Array, local_named_road_edges: Array = []) -> Array:
 	if buildings.is_empty():
 		return []
 	var chunk_id := str(chunk_data.get("chunk_id", ""))
 	var chunk_key: Vector2i = chunk_data.get("chunk_key", Vector2i.ZERO)
 	var world_seed := int(chunk_data.get("world_seed", 0))
-	var address_targets := _build_chunk_address_targets(chunk_data, maxi(buildings.size(), 1))
+	var address_targets := _build_chunk_address_targets(chunk_data, maxi(buildings.size(), 1), local_named_road_edges)
 	var ordered_entries: Array = []
 	for building_index in range(buildings.size()):
 		ordered_entries.append({
@@ -343,30 +344,39 @@ static func _attach_building_inspection_payloads(chunk_data: Dictionary, buildin
 		enriched_buildings.append(building)
 	return enriched_buildings
 
-static func _build_chunk_address_targets(chunk_data: Dictionary, desired_target_count: int) -> Array:
+static func _build_chunk_address_targets(chunk_data: Dictionary, desired_target_count: int, local_named_road_edges: Array = []) -> Array:
 	var block_layout = chunk_data.get("block_layout")
 	var road_graph = chunk_data.get("road_graph")
 	var street_cluster_catalog = chunk_data.get("street_cluster_catalog")
+	var chunk_center: Vector3 = chunk_data.get("chunk_center", Vector3.ZERO)
 	var chunk_key: Vector2i = chunk_data.get("chunk_key", Vector2i.ZERO)
 	if block_layout == null or road_graph == null or street_cluster_catalog == null:
 		return []
 	if not block_layout.has_method("get_blocks_for_chunk") or not block_layout.has_method("get_parcels_for_block"):
 		return []
 	var address_targets: Array = []
+	var target_cap := maxi(desired_target_count, 1)
 	var grammar := CityAddressGrammar.new()
 	var chunk_blocks: Array = block_layout.get_blocks_for_chunk(chunk_key)
 	var parcel_count := maxi(chunk_blocks.size() * 4, 1)
-	var slots_per_parcel := maxi(int(ceil(float(desired_target_count) / float(parcel_count))), 1)
+	var slots_per_parcel := maxi(int(ceil(float(target_cap) / float(parcel_count))), 1)
 	for block_variant in chunk_blocks:
 		var block_data: Dictionary = block_variant
 		for parcel_variant in block_layout.get_parcels_for_block(block_data):
 			var parcel_data: Dictionary = parcel_variant
-			var canonical_road_name := CityPlaceIndexBuilder.resolve_canonical_road_name_for_parcel(
-				road_graph,
-				street_cluster_catalog,
+			var canonical_road_name := _resolve_canonical_road_name_for_local_parcel(
+				chunk_center,
 				block_data,
-				parcel_data
+				parcel_data,
+				local_named_road_edges
 			)
+			if canonical_road_name == "":
+				canonical_road_name = CityPlaceIndexBuilder.resolve_canonical_road_name_for_parcel(
+					road_graph,
+					street_cluster_catalog,
+					block_data,
+					parcel_data
+				)
 			if canonical_road_name == "":
 				continue
 			var parcel_center_2d: Vector2 = parcel_data.get("center_2d", block_data.get("center_2d", Vector2.ZERO))
@@ -386,7 +396,120 @@ static func _build_chunk_address_targets(chunk_data: Dictionary, desired_target_
 					"world_position": world_anchor,
 					"frontage_slot_index": frontage_slot_index,
 				})
+				if address_targets.size() >= target_cap:
+					return address_targets
 	return address_targets
+
+static func _build_local_named_road_edges(road_segments: Array, chunk_center: Vector3, street_cluster_catalog) -> Array:
+	var local_named_road_edges: Array = []
+	if street_cluster_catalog == null:
+		return local_named_road_edges
+	var chunk_center_2d := Vector2(chunk_center.x, chunk_center.z)
+	for segment_variant in road_segments:
+		var segment: Dictionary = segment_variant
+		var edge_id := str(segment.get("edge_id", ""))
+		if edge_id == "":
+			continue
+		var canonical_name := str(street_cluster_catalog.get_edge_canonical_name(edge_id))
+		if canonical_name == "":
+			continue
+		var local_points_2d: Array = []
+		for point_variant in segment.get("points", []):
+			var point: Vector3 = point_variant
+			local_points_2d.append(Vector2(point.x, point.z))
+		if local_points_2d.size() < 2:
+			continue
+		local_named_road_edges.append({
+			"canonical_name": canonical_name,
+			"road_class": str(segment.get("class", "secondary")),
+			"orientation_bucket": _orientation_bucket_from_points_2d(local_points_2d),
+			"bounds": _build_local_polyline_bounds(local_points_2d),
+			"points_2d": local_points_2d,
+			"world_center": chunk_center_2d,
+		})
+	return local_named_road_edges
+
+static func _resolve_canonical_road_name_for_local_parcel(chunk_center: Vector3, block_data: Dictionary, parcel_data: Dictionary, local_named_road_edges: Array) -> String:
+	if local_named_road_edges.is_empty():
+		return ""
+	var center_2d: Vector2 = parcel_data.get("center_2d", block_data.get("center_2d", Vector2.ZERO))
+	var chunk_center_2d := Vector2(chunk_center.x, chunk_center.z)
+	var local_center := center_2d - chunk_center_2d
+	var block_rect: Rect2 = block_data.get("world_rect", Rect2())
+	var local_block_rect := Rect2(block_rect.position - chunk_center_2d, block_rect.size)
+	var preferred_orientation := _preferred_orientation_for_frontage(str(parcel_data.get("frontage_side", "")))
+	var best_name := ""
+	var best_score := INF
+	for edge_variant in local_named_road_edges:
+		var edge: Dictionary = edge_variant
+		var points_2d: Array = edge.get("points_2d", [])
+		var distance_m := _distance_point_to_polyline_2d(local_center, points_2d)
+		if distance_m == INF:
+			continue
+		var road_class := str(edge.get("road_class", "secondary"))
+		var score := distance_m + _road_class_penalty(road_class)
+		if str(edge.get("orientation_bucket", "")) == preferred_orientation:
+			score -= 18.0
+		var edge_bounds := edge.get("bounds", Rect2()) as Rect2
+		if local_block_rect.intersects(edge_bounds.grow(24.0)):
+			score -= 8.0
+		if score < best_score:
+			best_score = score
+			best_name = str(edge.get("canonical_name", ""))
+	return best_name
+
+static func _orientation_bucket_from_points_2d(points: Array) -> String:
+	if points.size() < 2:
+		return "horizontal"
+	var first := points[0] as Vector2
+	var last := points[points.size() - 1] as Vector2
+	return "horizontal" if absf(last.x - first.x) >= absf(last.y - first.y) else "vertical"
+
+static func _build_local_polyline_bounds(points: Array) -> Rect2:
+	if points.is_empty():
+		return Rect2()
+	var first := points[0] as Vector2
+	var min_x := first.x
+	var max_x := first.x
+	var min_y := first.y
+	var max_y := first.y
+	for point_variant in points:
+		var point := point_variant as Vector2
+		min_x = minf(min_x, point.x)
+		max_x = maxf(max_x, point.x)
+		min_y = minf(min_y, point.y)
+		max_y = maxf(max_y, point.y)
+	return Rect2(Vector2(min_x, min_y), Vector2(max_x - min_x, max_y - min_y))
+
+static func _preferred_orientation_for_frontage(frontage_side: String) -> String:
+	match frontage_side.to_lower():
+		"east", "west":
+			return "vertical"
+		"north", "south":
+			return "horizontal"
+	return "horizontal"
+
+static func _road_class_penalty(road_class: String) -> float:
+	match road_class:
+		"collector":
+			return -6.0
+		"secondary":
+			return 0.0
+		"arterial":
+			return 12.0
+		"expressway_elevated":
+			return 36.0
+	return 8.0
+
+static func _distance_point_to_polyline_2d(point: Vector2, points: Array) -> float:
+	if points.size() < 2:
+		return INF
+	var best_distance := INF
+	for point_index in range(points.size() - 1):
+		var a := points[point_index] as Vector2
+		var b := points[point_index + 1] as Vector2
+		best_distance = minf(best_distance, sqrt(_distance_squared_to_segment(point, a, b)))
+	return best_distance
 
 static func _resolve_building_inspection_payload(building: Dictionary, address_targets: Array, chunk_id: String, chunk_key: Vector2i, world_seed: int, building_local_index: int, consume_target: bool) -> Dictionary:
 	var building_center: Vector3 = building.get("center", Vector3.ZERO)

@@ -121,6 +121,15 @@ var _vehicle_radio_selection_sources := {
 }
 var _vehicle_radio_browser_open := false
 var _vehicle_radio_browser_selected_tab_id := "browse"
+var _vehicle_radio_browser_selected_country_code := ""
+var _vehicle_radio_browser_filter_text := ""
+var _vehicle_radio_browser_cached_countries: Array = []
+var _vehicle_radio_browser_cached_country_code := ""
+var _vehicle_radio_browser_cached_station_rows: Array = []
+var _vehicle_radio_debug_state := {
+	"browser_country_load_count": 0,
+	"browser_station_page_load_count": 0,
+}
 var _vehicle_radio_quick_slots: Array = []
 var _vehicle_radio_quick_overlay_open := false
 var _vehicle_radio_quick_selected_index := -1
@@ -236,6 +245,8 @@ func _ready() -> void:
 	_vehicle_radio_user_state_store = CityRadioUserStateStore.new()
 	if _vehicle_radio_controller != null and _vehicle_radio_controller.has_method("configure"):
 		_vehicle_radio_controller.configure(_vehicle_radio_backend)
+	_reload_vehicle_radio_selection_sources_from_store()
+	_restore_vehicle_radio_session_state_from_store()
 	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
 	_inspection_resolver = CityWorldInspectionResolver.new()
 	_building_scene_exporter = CityBuildingSceneExporter.new()
@@ -439,6 +450,9 @@ func get_vehicle_radio_runtime_state() -> Dictionary:
 		return _vehicle_radio_controller.get_runtime_state()
 	return {}
 
+func get_vehicle_radio_debug_state() -> Dictionary:
+	return _vehicle_radio_debug_state.duplicate(true)
+
 func open_vehicle_radio_browser() -> Dictionary:
 	if player == null or not player.has_method("is_driving_vehicle") or not bool(player.is_driving_vehicle()):
 		_sync_vehicle_radio_browser()
@@ -455,6 +469,8 @@ func open_vehicle_radio_browser() -> Dictionary:
 		close_vehicle_radio_quick_overlay()
 	_vehicle_radio_browser_open = true
 	_vehicle_radio_browser_selected_tab_id = "browse"
+	_vehicle_radio_browser_selected_country_code = ""
+	_vehicle_radio_browser_filter_text = ""
 	_apply_world_simulation_pause(true)
 	_sync_vehicle_radio_browser()
 	return {
@@ -479,6 +495,117 @@ func close_vehicle_radio_browser() -> Dictionary:
 
 func get_vehicle_radio_browser_state() -> Dictionary:
 	return _build_vehicle_radio_browser_state()
+
+func set_vehicle_radio_browser_tab(tab_id: String) -> Dictionary:
+	if not _is_vehicle_radio_browser_tab_id_valid(tab_id):
+		return {
+			"success": false,
+			"error": "invalid_tab",
+		}
+	_vehicle_radio_browser_selected_tab_id = tab_id
+	_sync_vehicle_radio_browser()
+	return {
+		"success": true,
+	}
+
+func select_vehicle_radio_browser_country(country_code: String) -> Dictionary:
+	if not _vehicle_radio_browser_open:
+		return {
+			"success": false,
+			"error": "browser_closed",
+		}
+	var normalized_country_code := country_code.strip_edges().to_upper()
+	if normalized_country_code == "":
+		return {
+			"success": false,
+			"error": "invalid_country",
+		}
+	_vehicle_radio_browser_selected_tab_id = "browse"
+	_vehicle_radio_browser_selected_country_code = normalized_country_code
+	_vehicle_radio_browser_filter_text = ""
+	_ensure_vehicle_radio_browser_station_rows_loaded(normalized_country_code)
+	_sync_vehicle_radio_browser()
+	return {
+		"success": true,
+		"selected_country_code": normalized_country_code,
+	}
+
+func set_vehicle_radio_browser_filter_text(filter_text: String) -> void:
+	_vehicle_radio_browser_filter_text = filter_text.strip_edges()
+	_sync_vehicle_radio_browser()
+
+func toggle_vehicle_radio_browser_favorite(station_id: String) -> Dictionary:
+	var station_snapshot := _find_vehicle_radio_station_snapshot_by_id(station_id)
+	if station_snapshot.is_empty():
+		return {
+			"success": false,
+			"error": "station_not_found",
+		}
+	var favorites: Array = (_vehicle_radio_selection_sources.get("favorites", []) as Array).duplicate(true)
+	var existing_index := _find_station_snapshot_index(favorites, station_id)
+	if existing_index >= 0:
+		favorites.remove_at(existing_index)
+	else:
+		favorites.append(station_snapshot)
+	var save_result := _save_vehicle_radio_favorites(favorites)
+	if not bool(save_result.get("success", false)):
+		return save_result
+	_reload_vehicle_radio_selection_sources_from_store()
+	_sync_vehicle_radio_browser()
+	_sync_vehicle_radio_quick_overlay()
+	return {
+		"success": true,
+		"favorite_count": favorites.size(),
+	}
+
+func assign_vehicle_radio_browser_preset(slot_index: int, station_id: String) -> Dictionary:
+	if slot_index < 0 or slot_index >= CityRadioQuickBank.MAX_SLOT_COUNT:
+		return {
+			"success": false,
+			"error": "invalid_slot",
+		}
+	var station_snapshot := _find_vehicle_radio_station_snapshot_by_id(station_id)
+	if station_snapshot.is_empty():
+		return {
+			"success": false,
+			"error": "station_not_found",
+		}
+	var presets := _normalize_vehicle_radio_preset_entries(_vehicle_radio_selection_sources.get("presets", []) as Array)
+	presets[slot_index] = {
+		"slot_index": slot_index,
+		"station_snapshot": station_snapshot,
+	}
+	var save_result := _save_vehicle_radio_presets(presets)
+	if not bool(save_result.get("success", false)):
+		return save_result
+	_reload_vehicle_radio_selection_sources_from_store()
+	_rebuild_vehicle_radio_quick_slots()
+	_sync_vehicle_radio_browser()
+	_sync_vehicle_radio_quick_overlay()
+	return {
+		"success": true,
+		"slot_index": slot_index,
+	}
+
+func select_vehicle_radio_browser_station(station_id: String) -> Dictionary:
+	var station_snapshot := _find_vehicle_radio_station_snapshot_by_id(station_id)
+	if station_snapshot.is_empty():
+		return {
+			"success": false,
+			"error": "station_not_found",
+		}
+	_sync_vehicle_radio_runtime_driving_context()
+	if _vehicle_radio_controller != null and _vehicle_radio_controller.has_method("select_station"):
+		_vehicle_radio_controller.select_station(station_snapshot, _build_vehicle_radio_resolved_stream(station_snapshot))
+	_record_vehicle_radio_recent_station(station_snapshot)
+	_persist_vehicle_radio_session_state()
+	_vehicle_radio_browser_selected_tab_id = "now_playing"
+	_sync_vehicle_radio_browser()
+	_sync_vehicle_radio_quick_overlay()
+	return {
+		"success": true,
+		"selected_station_id": str(station_snapshot.get("station_id", "")),
+	}
 
 func set_vehicle_radio_selection_sources(presets: Array, favorites: Array, recents: Array) -> void:
 	_vehicle_radio_selection_sources = {
@@ -521,7 +648,14 @@ func _handle_vehicle_radio_action(action_name: String) -> bool:
 		"vehicle_radio_quick_open":
 			return bool(open_vehicle_radio_quick_overlay().get("success", false))
 		"vehicle_radio_cancel":
+			if _vehicle_radio_browser_open:
+				return bool(close_vehicle_radio_browser().get("success", false))
 			return bool(close_vehicle_radio_quick_overlay().get("success", false))
+		"vehicle_radio_browser_open":
+			_vehicle_radio_browser_request_count += 1
+			if _vehicle_radio_quick_overlay_open:
+				close_vehicle_radio_quick_overlay()
+			return bool(open_vehicle_radio_browser().get("success", false))
 	if not _vehicle_radio_quick_overlay_open:
 		return false
 	match action_name:
@@ -535,17 +669,10 @@ func _handle_vehicle_radio_action(action_name: String) -> bool:
 			_vehicle_radio_power_on = not _vehicle_radio_power_on
 			if _vehicle_radio_controller != null and _vehicle_radio_controller.has_method("set_power_state"):
 				_vehicle_radio_controller.set_power_state(_vehicle_radio_power_on)
+			_persist_vehicle_radio_session_state()
 			_sync_vehicle_radio_browser()
 			_sync_vehicle_radio_quick_overlay()
 			return true
-		"vehicle_radio_browser_open":
-			_vehicle_radio_browser_request_count += 1
-			if _vehicle_radio_quick_overlay_open:
-				close_vehicle_radio_quick_overlay()
-			var open_browser_result: Dictionary = open_vehicle_radio_browser()
-			if not bool(open_browser_result.get("success", false)):
-				_sync_vehicle_radio_quick_overlay()
-			return bool(open_browser_result.get("success", false))
 		"vehicle_radio_confirm":
 			_commit_vehicle_radio_quick_selection()
 			_sync_vehicle_radio_browser()
@@ -2666,12 +2793,7 @@ func _build_vehicle_radio_browser_state() -> Dictionary:
 		"presets": _load_vehicle_radio_browser_presets(),
 		"favorites": _load_vehicle_radio_browser_favorites(),
 		"recents": _load_vehicle_radio_browser_recents(),
-		"browse": {
-			"root_kind": "countries",
-			"countries": _load_vehicle_radio_browser_countries(),
-			"stations": [],
-			"selected_country_code": "",
-		},
+		"browse": _build_vehicle_radio_browser_browse_state(),
 	}
 
 func _sync_vehicle_radio_browser() -> void:
@@ -2700,6 +2822,8 @@ func _commit_vehicle_radio_quick_selection() -> void:
 		return
 	_sync_vehicle_radio_runtime_driving_context()
 	_vehicle_radio_controller.select_station(slot, _build_vehicle_radio_resolved_stream(slot))
+	_record_vehicle_radio_recent_station(slot)
+	_persist_vehicle_radio_session_state()
 	close_vehicle_radio_quick_overlay()
 
 func _build_vehicle_radio_resolved_stream(station_snapshot: Dictionary) -> Dictionary:
@@ -2717,24 +2841,242 @@ func _build_vehicle_radio_resolved_stream(station_snapshot: Dictionary) -> Dicti
 	}
 
 func _load_vehicle_radio_browser_countries() -> Array:
+	if not _vehicle_radio_browser_cached_countries.is_empty():
+		return _vehicle_radio_browser_cached_countries.duplicate(true)
 	if _vehicle_radio_catalog_store == null or not _vehicle_radio_catalog_store.has_method("load_countries_index"):
 		return []
-	return (_vehicle_radio_catalog_store.load_countries_index().get("countries", []) as Array).duplicate(true)
+	var load_result: Dictionary = _vehicle_radio_catalog_store.load_countries_index()
+	_vehicle_radio_debug_state["browser_country_load_count"] = int(_vehicle_radio_debug_state.get("browser_country_load_count", 0)) + 1
+	_vehicle_radio_browser_cached_countries = (load_result.get("countries", []) as Array).duplicate(true)
+	return _vehicle_radio_browser_cached_countries.duplicate(true)
 
 func _load_vehicle_radio_browser_presets() -> Array:
-	if _vehicle_radio_user_state_store == null or not _vehicle_radio_user_state_store.has_method("load_presets"):
-		return []
-	return (_vehicle_radio_user_state_store.load_presets().get("slots", []) as Array).duplicate(true)
+	return (_vehicle_radio_selection_sources.get("presets", []) as Array).duplicate(true)
 
 func _load_vehicle_radio_browser_favorites() -> Array:
-	if _vehicle_radio_user_state_store == null or not _vehicle_radio_user_state_store.has_method("load_favorites"):
-		return []
-	return (_vehicle_radio_user_state_store.load_favorites().get("stations", []) as Array).duplicate(true)
+	return (_vehicle_radio_selection_sources.get("favorites", []) as Array).duplicate(true)
 
 func _load_vehicle_radio_browser_recents() -> Array:
-	if _vehicle_radio_user_state_store == null or not _vehicle_radio_user_state_store.has_method("load_recents"):
-		return []
-	return (_vehicle_radio_user_state_store.load_recents().get("stations", []) as Array).duplicate(true)
+	return (_vehicle_radio_selection_sources.get("recents", []) as Array).duplicate(true)
+
+func _build_vehicle_radio_browser_browse_state() -> Dictionary:
+	if _vehicle_radio_browser_selected_country_code == "":
+		return {
+			"root_kind": "countries",
+			"countries": _load_vehicle_radio_browser_countries(),
+			"stations": [],
+			"selected_country_code": "",
+			"filter_text": _vehicle_radio_browser_filter_text,
+		}
+	_ensure_vehicle_radio_browser_station_rows_loaded(_vehicle_radio_browser_selected_country_code)
+	return {
+		"root_kind": "stations",
+		"countries": [],
+		"stations": _filter_vehicle_radio_browser_station_rows(_vehicle_radio_browser_cached_station_rows),
+		"selected_country_code": _vehicle_radio_browser_selected_country_code,
+		"filter_text": _vehicle_radio_browser_filter_text,
+	}
+
+func _ensure_vehicle_radio_browser_station_rows_loaded(country_code: String) -> void:
+	var normalized_country_code := country_code.strip_edges().to_upper()
+	if normalized_country_code == "":
+		_vehicle_radio_browser_cached_country_code = ""
+		_vehicle_radio_browser_cached_station_rows = []
+		return
+	if _vehicle_radio_browser_cached_country_code == normalized_country_code and not _vehicle_radio_browser_cached_station_rows.is_empty():
+		return
+	if _vehicle_radio_catalog_store == null or not _vehicle_radio_catalog_store.has_method("load_country_station_page"):
+		_vehicle_radio_browser_cached_country_code = normalized_country_code
+		_vehicle_radio_browser_cached_station_rows = []
+		return
+	var load_result: Dictionary = _vehicle_radio_catalog_store.load_country_station_page(normalized_country_code)
+	_vehicle_radio_debug_state["browser_station_page_load_count"] = int(_vehicle_radio_debug_state.get("browser_station_page_load_count", 0)) + 1
+	_vehicle_radio_browser_cached_country_code = normalized_country_code
+	_vehicle_radio_browser_cached_station_rows = _build_vehicle_radio_browser_station_rows(load_result.get("stations", []) as Array)
+
+func _build_vehicle_radio_browser_station_rows(stations: Array) -> Array:
+	var rows: Array = []
+	for station_variant in stations:
+		if not (station_variant is Dictionary):
+			continue
+		rows.append(_build_vehicle_radio_browser_station_row(station_variant as Dictionary))
+	return rows
+
+func _build_vehicle_radio_browser_station_row(station_snapshot: Dictionary) -> Dictionary:
+	var row := station_snapshot.duplicate(true)
+	var station_id := str(row.get("station_id", ""))
+	row["favorite_state"] = _find_station_snapshot_index(_vehicle_radio_selection_sources.get("favorites", []) as Array, station_id) >= 0
+	row["preset_slot"] = _find_station_snapshot_preset_slot(_vehicle_radio_selection_sources.get("presets", []) as Array, station_id)
+	row["availability_hint"] = "cached"
+	return row
+
+func _filter_vehicle_radio_browser_station_rows(rows: Array) -> Array:
+	var filter_text := _vehicle_radio_browser_filter_text.strip_edges().to_lower()
+	if filter_text == "":
+		return rows.duplicate(true)
+	var filtered: Array = []
+	for row_variant in rows:
+		if not (row_variant is Dictionary):
+			continue
+		var row := _build_vehicle_radio_browser_station_row(row_variant as Dictionary)
+		var haystack := " ".join([
+			str(row.get("station_name", "")),
+			str(row.get("country", "")),
+			str(row.get("language", "")),
+			str(row.get("codec", "")),
+		]).to_lower()
+		if haystack.contains(filter_text):
+			filtered.append(row.duplicate(true))
+	return filtered
+
+func _is_vehicle_radio_browser_tab_id_valid(tab_id: String) -> bool:
+	return tab_id in ["now_playing", "presets", "favorites", "recents", "browse"]
+
+func _reload_vehicle_radio_selection_sources_from_store() -> void:
+	if _vehicle_radio_user_state_store == null:
+		return
+	_vehicle_radio_selection_sources = {
+		"presets": _normalize_vehicle_radio_preset_entries((_vehicle_radio_user_state_store.load_presets().get("slots", []) as Array).duplicate(true)),
+		"favorites": (_vehicle_radio_user_state_store.load_favorites().get("stations", []) as Array).duplicate(true),
+		"recents": (_vehicle_radio_user_state_store.load_recents().get("stations", []) as Array).duplicate(true),
+	}
+	_rebuild_vehicle_radio_quick_slots()
+
+func _restore_vehicle_radio_session_state_from_store() -> void:
+	if _vehicle_radio_user_state_store == null or _vehicle_radio_controller == null:
+		return
+	var session_state: Dictionary = _vehicle_radio_user_state_store.load_session_state()
+	_vehicle_radio_power_on = str(session_state.get("power_state", "off")) == "on"
+	if _vehicle_radio_controller.has_method("set_power_state"):
+		_vehicle_radio_controller.set_power_state(_vehicle_radio_power_on)
+	var selected_station_snapshot := (session_state.get("selected_station_snapshot", {}) as Dictionary).duplicate(true)
+	if selected_station_snapshot.is_empty():
+		return
+	if _vehicle_radio_controller.has_method("select_station"):
+		_vehicle_radio_controller.select_station(selected_station_snapshot, _build_vehicle_radio_resolved_stream(selected_station_snapshot))
+
+func _persist_vehicle_radio_session_state() -> void:
+	if _vehicle_radio_user_state_store == null or _vehicle_radio_controller == null or not _vehicle_radio_controller.has_method("get_runtime_state"):
+		return
+	var runtime_state: Dictionary = _vehicle_radio_controller.get_runtime_state()
+	var selected_station_snapshot := (runtime_state.get("selected_station_snapshot", {}) as Dictionary).duplicate(true)
+	_vehicle_radio_user_state_store.save_session_state({
+		"power_state": "on" if _vehicle_radio_power_on else "off",
+		"selected_station_id": str(runtime_state.get("selected_station_id", "")),
+		"selected_station_snapshot": selected_station_snapshot,
+	}, int(Time.get_unix_time_from_system()))
+
+func _save_vehicle_radio_presets(presets: Array) -> Dictionary:
+	if _vehicle_radio_user_state_store == null or not _vehicle_radio_user_state_store.has_method("save_presets"):
+		return {
+			"success": false,
+			"error": "store_unavailable",
+		}
+	return _vehicle_radio_user_state_store.save_presets(presets, int(Time.get_unix_time_from_system()))
+
+func _save_vehicle_radio_favorites(favorites: Array) -> Dictionary:
+	if _vehicle_radio_user_state_store == null or not _vehicle_radio_user_state_store.has_method("save_favorites"):
+		return {
+			"success": false,
+			"error": "store_unavailable",
+		}
+	return _vehicle_radio_user_state_store.save_favorites(favorites, int(Time.get_unix_time_from_system()))
+
+func _save_vehicle_radio_recents(recents: Array) -> Dictionary:
+	if _vehicle_radio_user_state_store == null or not _vehicle_radio_user_state_store.has_method("save_recents"):
+		return {
+			"success": false,
+			"error": "store_unavailable",
+		}
+	return _vehicle_radio_user_state_store.save_recents(recents, int(Time.get_unix_time_from_system()))
+
+func _record_vehicle_radio_recent_station(station_snapshot: Dictionary) -> void:
+	if station_snapshot.is_empty():
+		return
+	var recents: Array = (_vehicle_radio_selection_sources.get("recents", []) as Array).duplicate(true)
+	var station_id := str(station_snapshot.get("station_id", ""))
+	var existing_index := _find_station_snapshot_index(recents, station_id)
+	if existing_index >= 0:
+		recents.remove_at(existing_index)
+	recents.insert(0, station_snapshot.duplicate(true))
+	if recents.size() > 12:
+		recents.resize(12)
+	var save_result := _save_vehicle_radio_recents(recents)
+	if bool(save_result.get("success", false)):
+		_reload_vehicle_radio_selection_sources_from_store()
+
+func _normalize_vehicle_radio_preset_entries(presets: Array) -> Array:
+	var normalized: Array = []
+	for slot_index in range(CityRadioQuickBank.MAX_SLOT_COUNT):
+		normalized.append({
+			"slot_index": slot_index,
+			"station_snapshot": {},
+		})
+	for entry_variant in presets:
+		if not (entry_variant is Dictionary):
+			continue
+		var entry: Dictionary = (entry_variant as Dictionary).duplicate(true)
+		var resolved_slot_index := int(entry.get("slot_index", normalized.size()))
+		if resolved_slot_index < 0 or resolved_slot_index >= normalized.size():
+			continue
+		if entry.has("station_snapshot") and entry.get("station_snapshot") is Dictionary:
+			normalized[resolved_slot_index] = {
+				"slot_index": resolved_slot_index,
+				"station_snapshot": (entry.get("station_snapshot", {}) as Dictionary).duplicate(true),
+			}
+			continue
+		normalized[resolved_slot_index] = {
+			"slot_index": resolved_slot_index,
+			"station_snapshot": entry.duplicate(true),
+		}
+	return normalized
+
+func _find_vehicle_radio_station_snapshot_by_id(station_id: String) -> Dictionary:
+	var normalized_station_id := station_id.strip_edges()
+	if normalized_station_id == "":
+		return {}
+	for source in [
+		_filter_vehicle_radio_browser_station_rows(_vehicle_radio_browser_cached_station_rows),
+		_vehicle_radio_selection_sources.get("favorites", []),
+		_vehicle_radio_selection_sources.get("recents", []),
+	]:
+		for entry_variant in source:
+			if not (entry_variant is Dictionary):
+				continue
+			var entry: Dictionary = entry_variant as Dictionary
+			if str(entry.get("station_id", "")) == normalized_station_id:
+				return entry.duplicate(true)
+	for preset_variant in _vehicle_radio_selection_sources.get("presets", []):
+		if not (preset_variant is Dictionary):
+			continue
+		var preset_entry: Dictionary = preset_variant as Dictionary
+		var preset_snapshot := (preset_entry.get("station_snapshot", {}) as Dictionary).duplicate(true)
+		if str(preset_snapshot.get("station_id", "")) == normalized_station_id:
+			return preset_snapshot
+	var runtime_state := get_vehicle_radio_runtime_state()
+	var current_snapshot := (runtime_state.get("selected_station_snapshot", {}) as Dictionary).duplicate(true)
+	if str(current_snapshot.get("station_id", "")) == normalized_station_id:
+		return current_snapshot
+	return {}
+
+func _find_station_snapshot_index(stations: Array, station_id: String) -> int:
+	for index in range(stations.size()):
+		if not (stations[index] is Dictionary):
+			continue
+		var station: Dictionary = stations[index] as Dictionary
+		if str(station.get("station_id", "")) == station_id:
+			return index
+	return -1
+
+func _find_station_snapshot_preset_slot(presets: Array, station_id: String) -> int:
+	for preset_variant in presets:
+		if not (preset_variant is Dictionary):
+			continue
+		var preset_entry: Dictionary = preset_variant as Dictionary
+		var preset_snapshot := preset_entry.get("station_snapshot", {}) as Dictionary
+		if str(preset_snapshot.get("station_id", "")) == station_id:
+			return int(preset_entry.get("slot_index", -1))
+	return -1
 
 func _collect_world_pause_nodes() -> Array[Node]:
 	var nodes: Array[Node] = []

@@ -1,11 +1,13 @@
 extends SceneTree
 
 const T := preload("res://tests/_test_util.gd")
+const UserStateStore := preload("res://city_game/world/radio/CityRadioUserStateStore.gd")
 
 func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	_reset_radio_user_state()
 	var scene := load("res://city_game/scenes/CityPrototype.tscn")
 	if scene == null or not (scene is PackedScene):
 		T.fail_and_quit(self, "Missing CityPrototype.tscn for vehicle radio quick switch flow")
@@ -63,6 +65,21 @@ func _run() -> void:
 
 	world.queue_free()
 	T.pass_and_quit(self)
+
+func _reset_radio_user_state() -> void:
+	var store := UserStateStore.new()
+	if not bool(store.save_presets([], 100).get("success", false)):
+		T.fail_and_quit(self, "Vehicle radio quick switch flow failed to reset presets")
+		return
+	if not bool(store.save_favorites([], 100).get("success", false)):
+		T.fail_and_quit(self, "Vehicle radio quick switch flow failed to reset favorites")
+		return
+	if not bool(store.save_recents([], 100).get("success", false)):
+		T.fail_and_quit(self, "Vehicle radio quick switch flow failed to reset recents")
+		return
+	if not bool(store.save_session_state({"power_state": "off"}, 100).get("success", false)):
+		T.fail_and_quit(self, "Vehicle radio quick switch flow failed to reset session state")
+		return
 
 func _press_action(world: Node, action_name: String) -> void:
 	var event := InputEventAction.new()

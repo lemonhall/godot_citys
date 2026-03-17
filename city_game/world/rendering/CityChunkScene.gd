@@ -30,6 +30,7 @@ static var _shared_box_mesh_cache: Dictionary = {}
 static var _shared_box_material_cache: Dictionary = {}
 static var _shared_building_override_scene_cache: Dictionary = {}
 static var _shared_scene_landmark_scene_cache: Dictionary = {}
+static var _shared_ground_overlay_material_template: ShaderMaterial = null
 
 var _chunk_data: Dictionary = {}
 var _profile: Dictionary = {}
@@ -96,6 +97,30 @@ static func prewarm_scene_landmark_entries(entries: Dictionary) -> void:
 		var preview_instance: Variant = packed_scene.instantiate()
 		if preview_instance is Node:
 			(preview_instance as Node).free()
+
+static func prewarm_ground_overlay_material() -> void:
+	if _shared_ground_overlay_material_template != null:
+		return
+	var material := ShaderMaterial.new()
+	material.shader = CityGroundRoadOverlayShader
+	material.set_shader_parameter("chunk_size_m", 256.0)
+	material.set_shader_parameter("ground_color", Color(0.12549, 0.333333, 0.168627, 1.0))
+	material.set_shader_parameter("road_color", Color(0.16, 0.17, 0.19, 1.0))
+	material.set_shader_parameter("stripe_color", Color(0.9, 0.8, 0.5, 1.0))
+	material.set_shader_parameter("stripe_enabled", true)
+	material.set_shader_parameter("surface_uv_offset", Vector2.ZERO)
+	material.set_shader_parameter("surface_uv_scale", Vector2.ONE)
+	_shared_ground_overlay_material_template = material
+
+static func _instantiate_ground_overlay_material() -> ShaderMaterial:
+	prewarm_ground_overlay_material()
+	if _shared_ground_overlay_material_template != null:
+		var duplicated_material := _shared_ground_overlay_material_template.duplicate()
+		if duplicated_material is ShaderMaterial:
+			return duplicated_material as ShaderMaterial
+	var material := ShaderMaterial.new()
+	material.shader = CityGroundRoadOverlayShader
+	return material
 
 func set_lod_mode(mode: String) -> void:
 	var normalized_mode := _normalize_lod_mode(mode)
@@ -941,8 +966,7 @@ func _build_ground_material(chunk_size_m: float, profile: Dictionary, detail_mod
 		"page_origin_chunk_key": _chunk_data.get("chunk_key", Vector2i.ZERO),
 	}) as Dictionary).duplicate(true)
 	var material_started_usec := Time.get_ticks_usec()
-	var material := ShaderMaterial.new()
-	material.shader = CityGroundRoadOverlayShader
+	var material := _instantiate_ground_overlay_material()
 	material.set_shader_parameter("chunk_size_m", chunk_size_m)
 	material.set_shader_parameter("ground_color", palette.get("ground", Color(0.12549, 0.333333, 0.168627, 1.0)))
 	material.set_shader_parameter("road_color", palette.get("road", Color(0.16, 0.17, 0.19, 1.0)))

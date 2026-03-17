@@ -180,6 +180,10 @@ func setup(config, world_data: Dictionary) -> void:
 	_surface_page_provider.setup(_config, _world_data)
 	_terrain_page_provider = CityTerrainPageProvider.new()
 	_terrain_page_provider.setup(_config, _world_data)
+	CityChunkScene.prewarm_ground_overlay_material()
+	var street_cluster_catalog = _world_data.get("street_cluster_catalog")
+	if street_cluster_catalog != null and street_cluster_catalog.has_method("get_cluster_count"):
+		street_cluster_catalog.get_cluster_count()
 	_prepared_payloads.clear()
 	_pending_prepare.clear()
 	_surface_waiting_payloads.clear()

@@ -18,8 +18,10 @@ const CityMinimapProjector := preload("res://city_game/world/map/CityMinimapProj
 const CityMapScreenScene := preload("res://city_game/ui/CityMapScreen.tscn")
 const CityMapPinRegistry := preload("res://city_game/world/map/CityMapPinRegistry.gd")
 const CityVehicleRadioController := preload("res://city_game/world/radio/CityVehicleRadioController.gd")
+const CityRadioCatalogStore := preload("res://city_game/world/radio/CityRadioCatalogStore.gd")
 const CityRadioMockBackend := preload("res://city_game/world/radio/backend/CityRadioMockBackend.gd")
 const CityRadioQuickBank := preload("res://city_game/world/radio/CityRadioQuickBank.gd")
+const CityRadioUserStateStore := preload("res://city_game/world/radio/CityRadioUserStateStore.gd")
 const CityTaskBriefViewModel := preload("res://city_game/world/tasks/presentation/CityTaskBriefViewModel.gd")
 const CityTaskPinProjection := preload("res://city_game/world/tasks/presentation/CityTaskPinProjection.gd")
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
@@ -109,12 +111,16 @@ var _dialogue_runtime = null
 var _paused_world_process_entries: Array[Dictionary] = []
 var _vehicle_radio_quick_bank = null
 var _vehicle_radio_controller = null
+var _vehicle_radio_catalog_store = null
 var _vehicle_radio_backend = null
+var _vehicle_radio_user_state_store = null
 var _vehicle_radio_selection_sources := {
 	"presets": [],
 	"favorites": [],
 	"recents": [],
 }
+var _vehicle_radio_browser_open := false
+var _vehicle_radio_browser_selected_tab_id := "browse"
 var _vehicle_radio_quick_slots: Array = []
 var _vehicle_radio_quick_overlay_open := false
 var _vehicle_radio_quick_selected_index := -1
@@ -225,7 +231,9 @@ func _ready() -> void:
 	_minimap_projector = CityMinimapProjector.new(_world_config, _world_data)
 	_vehicle_radio_quick_bank = CityRadioQuickBank.new()
 	_vehicle_radio_controller = CityVehicleRadioController.new()
+	_vehicle_radio_catalog_store = CityRadioCatalogStore.new()
 	_vehicle_radio_backend = CityRadioMockBackend.new()
+	_vehicle_radio_user_state_store = CityRadioUserStateStore.new()
 	if _vehicle_radio_controller != null and _vehicle_radio_controller.has_method("configure"):
 		_vehicle_radio_controller.configure(_vehicle_radio_backend)
 	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
@@ -264,6 +272,7 @@ func _ready() -> void:
 	if hud != null and hud.has_method("set_fps_overlay_visible"):
 		hud.set_fps_overlay_visible(_fps_overlay_visible)
 	_sync_navigation_consumers(true)
+	_sync_vehicle_radio_browser()
 	_sync_vehicle_radio_quick_overlay()
 	_update_task_system(0.0)
 	_update_music_road_runtime(0.0)
@@ -387,6 +396,8 @@ func open_vehicle_radio_quick_overlay() -> Dictionary:
 			"success": false,
 			"error": "full_map_open",
 		}
+	if _vehicle_radio_browser_open:
+		close_vehicle_radio_browser()
 	if _vehicle_radio_quick_slots.is_empty():
 		_rebuild_vehicle_radio_quick_slots()
 	if _vehicle_radio_quick_slots.is_empty():
@@ -428,6 +439,47 @@ func get_vehicle_radio_runtime_state() -> Dictionary:
 		return _vehicle_radio_controller.get_runtime_state()
 	return {}
 
+func open_vehicle_radio_browser() -> Dictionary:
+	if player == null or not player.has_method("is_driving_vehicle") or not bool(player.is_driving_vehicle()):
+		_sync_vehicle_radio_browser()
+		return {
+			"success": false,
+			"error": "not_driving",
+		}
+	if _full_map_open:
+		return {
+			"success": false,
+			"error": "full_map_open",
+		}
+	if _vehicle_radio_quick_overlay_open:
+		close_vehicle_radio_quick_overlay()
+	_vehicle_radio_browser_open = true
+	_vehicle_radio_browser_selected_tab_id = "browse"
+	_apply_world_simulation_pause(true)
+	_sync_vehicle_radio_browser()
+	return {
+		"success": true,
+		"tab_count": int((_build_vehicle_radio_browser_state().get("tabs", []) as Array).size()),
+	}
+
+func close_vehicle_radio_browser() -> Dictionary:
+	if not _vehicle_radio_browser_open:
+		_sync_vehicle_radio_browser()
+		return {
+			"success": false,
+			"error": "not_open",
+		}
+	_vehicle_radio_browser_open = false
+	if not _full_map_open and not _vehicle_radio_quick_overlay_open:
+		_apply_world_simulation_pause(false)
+	_sync_vehicle_radio_browser()
+	return {
+		"success": true,
+	}
+
+func get_vehicle_radio_browser_state() -> Dictionary:
+	return _build_vehicle_radio_browser_state()
+
 func set_vehicle_radio_selection_sources(presets: Array, favorites: Array, recents: Array) -> void:
 	_vehicle_radio_selection_sources = {
 		"presets": presets.duplicate(true),
@@ -435,6 +487,7 @@ func set_vehicle_radio_selection_sources(presets: Array, favorites: Array, recen
 		"recents": recents.duplicate(true),
 	}
 	_rebuild_vehicle_radio_quick_slots()
+	_sync_vehicle_radio_browser()
 	_sync_vehicle_radio_quick_overlay()
 
 func _handle_fast_travel_shortcut() -> bool:
@@ -482,14 +535,20 @@ func _handle_vehicle_radio_action(action_name: String) -> bool:
 			_vehicle_radio_power_on = not _vehicle_radio_power_on
 			if _vehicle_radio_controller != null and _vehicle_radio_controller.has_method("set_power_state"):
 				_vehicle_radio_controller.set_power_state(_vehicle_radio_power_on)
+			_sync_vehicle_radio_browser()
 			_sync_vehicle_radio_quick_overlay()
 			return true
 		"vehicle_radio_browser_open":
 			_vehicle_radio_browser_request_count += 1
-			_sync_vehicle_radio_quick_overlay()
-			return true
+			if _vehicle_radio_quick_overlay_open:
+				close_vehicle_radio_quick_overlay()
+			var open_browser_result: Dictionary = open_vehicle_radio_browser()
+			if not bool(open_browser_result.get("success", false)):
+				_sync_vehicle_radio_quick_overlay()
+			return bool(open_browser_result.get("success", false))
 		"vehicle_radio_confirm":
 			_commit_vehicle_radio_quick_selection()
+			_sync_vehicle_radio_browser()
 			_sync_vehicle_radio_quick_overlay()
 			return true
 	return false
@@ -2592,6 +2651,33 @@ func _sync_vehicle_radio_quick_overlay() -> void:
 	if hud != null and hud.has_method("set_vehicle_radio_quick_overlay_state"):
 		hud.set_vehicle_radio_quick_overlay_state(_build_vehicle_radio_quick_overlay_state())
 
+func _build_vehicle_radio_browser_state() -> Dictionary:
+	return {
+		"visible": _vehicle_radio_browser_open,
+		"selected_tab_id": _vehicle_radio_browser_selected_tab_id,
+		"tabs": [
+			{"tab_id": "now_playing", "label": "当前播放"},
+			{"tab_id": "presets", "label": "Presets"},
+			{"tab_id": "favorites", "label": "Favorites"},
+			{"tab_id": "recents", "label": "Recents"},
+			{"tab_id": "browse", "label": "Browse"},
+		],
+		"current_playing": get_vehicle_radio_runtime_state(),
+		"presets": _load_vehicle_radio_browser_presets(),
+		"favorites": _load_vehicle_radio_browser_favorites(),
+		"recents": _load_vehicle_radio_browser_recents(),
+		"browse": {
+			"root_kind": "countries",
+			"countries": _load_vehicle_radio_browser_countries(),
+			"stations": [],
+			"selected_country_code": "",
+		},
+	}
+
+func _sync_vehicle_radio_browser() -> void:
+	if hud != null and hud.has_method("set_vehicle_radio_browser_state"):
+		hud.set_vehicle_radio_browser_state(_build_vehicle_radio_browser_state())
+
 func _sync_vehicle_radio_runtime_driving_context() -> void:
 	if _vehicle_radio_controller == null or not _vehicle_radio_controller.has_method("set_driving_context"):
 		return
@@ -2599,6 +2685,8 @@ func _sync_vehicle_radio_runtime_driving_context() -> void:
 		_vehicle_radio_controller.set_driving_context(true, player.get_driving_vehicle_state())
 		return
 	_vehicle_radio_controller.set_driving_context(false, {})
+	if _vehicle_radio_browser_open:
+		close_vehicle_radio_browser()
 	if _vehicle_radio_quick_overlay_open:
 		close_vehicle_radio_quick_overlay()
 
@@ -2627,6 +2715,26 @@ func _build_vehicle_radio_resolved_stream(station_snapshot: Dictionary) -> Dicti
 		}],
 		"resolved_at_unix_sec": int(Time.get_unix_time_from_system()),
 	}
+
+func _load_vehicle_radio_browser_countries() -> Array:
+	if _vehicle_radio_catalog_store == null or not _vehicle_radio_catalog_store.has_method("load_countries_index"):
+		return []
+	return (_vehicle_radio_catalog_store.load_countries_index().get("countries", []) as Array).duplicate(true)
+
+func _load_vehicle_radio_browser_presets() -> Array:
+	if _vehicle_radio_user_state_store == null or not _vehicle_radio_user_state_store.has_method("load_presets"):
+		return []
+	return (_vehicle_radio_user_state_store.load_presets().get("slots", []) as Array).duplicate(true)
+
+func _load_vehicle_radio_browser_favorites() -> Array:
+	if _vehicle_radio_user_state_store == null or not _vehicle_radio_user_state_store.has_method("load_favorites"):
+		return []
+	return (_vehicle_radio_user_state_store.load_favorites().get("stations", []) as Array).duplicate(true)
+
+func _load_vehicle_radio_browser_recents() -> Array:
+	if _vehicle_radio_user_state_store == null or not _vehicle_radio_user_state_store.has_method("load_recents"):
+		return []
+	return (_vehicle_radio_user_state_store.load_recents().get("stations", []) as Array).duplicate(true)
 
 func _collect_world_pause_nodes() -> Array[Node]:
 	var nodes: Array[Node] = []

@@ -2,6 +2,7 @@ extends CanvasLayer
 
 const CityCrosshairViewScript := preload("res://city_game/ui/CityCrosshairView.gd")
 const CityDialoguePanelScript := preload("res://city_game/ui/CityDialoguePanel.gd")
+const CityVehicleRadioBrowserScript := preload("res://city_game/ui/CityVehicleRadioBrowser.gd")
 const CityVehicleRadioQuickOverlayScript := preload("res://city_game/ui/CityVehicleRadioQuickOverlay.gd")
 
 var _status_text := "Booting city skeleton..."
@@ -49,6 +50,20 @@ var _vehicle_radio_quick_overlay_state: Dictionary = {
 	"browser_action_available": false,
 	"power_state": "off",
 }
+var _vehicle_radio_browser_state: Dictionary = {
+	"visible": false,
+	"selected_tab_id": "browse",
+	"tabs": [],
+	"current_playing": {},
+	"presets": [],
+	"favorites": [],
+	"recents": [],
+	"browse": {
+		"root_kind": "countries",
+		"countries": [],
+		"stations": [],
+	},
+}
 
 func _ready() -> void:
 	_ensure_mouse_passthrough()
@@ -57,6 +72,7 @@ func _ready() -> void:
 	_ensure_focus_message_view()
 	_ensure_interaction_prompt_view()
 	_ensure_dialogue_panel_view()
+	_ensure_vehicle_radio_browser_view()
 	_ensure_vehicle_radio_quick_overlay_view()
 	var toggle_button := get_node_or_null("Root/ToggleButton") as Button
 	if toggle_button != null and not toggle_button.pressed.is_connected(_on_toggle_pressed):
@@ -170,6 +186,22 @@ func get_focus_message_state() -> Dictionary:
 func get_crosshair_state() -> Dictionary:
 	return _crosshair_state.duplicate(true)
 
+func set_vehicle_radio_browser_state(state: Dictionary) -> void:
+	_vehicle_radio_browser_state = {
+		"visible": bool(state.get("visible", false)),
+		"selected_tab_id": str(state.get("selected_tab_id", "browse")),
+		"tabs": (state.get("tabs", []) as Array).duplicate(true),
+		"current_playing": (state.get("current_playing", {}) as Dictionary).duplicate(true),
+		"presets": (state.get("presets", []) as Array).duplicate(true),
+		"favorites": (state.get("favorites", []) as Array).duplicate(true),
+		"recents": (state.get("recents", []) as Array).duplicate(true),
+		"browse": (state.get("browse", {}) as Dictionary).duplicate(true),
+	}
+	_apply_vehicle_radio_browser_state()
+
+func get_vehicle_radio_browser_state() -> Dictionary:
+	return _vehicle_radio_browser_state.duplicate(true)
+
 func set_vehicle_radio_quick_overlay_state(state: Dictionary) -> void:
 	_vehicle_radio_quick_overlay_state = {
 		"visible": bool(state.get("visible", false)),
@@ -204,6 +236,7 @@ func _apply_state() -> void:
 	_apply_focus_message_state()
 	_apply_interaction_prompt_state()
 	_apply_dialogue_panel_state()
+	_apply_vehicle_radio_browser_state()
 	_apply_vehicle_radio_quick_overlay_state()
 
 func _apply_panel_state() -> void:
@@ -268,6 +301,11 @@ func _apply_dialogue_panel_state() -> void:
 	if panel != null and panel.has_method("set_state"):
 		panel.set_state(_dialogue_panel_state)
 
+func _apply_vehicle_radio_browser_state() -> void:
+	var browser := get_node_or_null("Root/VehicleRadioBrowser")
+	if browser != null and browser.has_method("set_state"):
+		browser.set_state(_vehicle_radio_browser_state)
+
 func _apply_vehicle_radio_quick_overlay_state() -> void:
 	var overlay := get_node_or_null("Root/VehicleRadioQuickOverlay")
 	if overlay != null and overlay.has_method("set_state"):
@@ -292,6 +330,9 @@ func _ensure_mouse_passthrough() -> void:
 	var dialogue_panel := get_node_or_null("Root/DialoguePanel") as Control
 	if dialogue_panel != null:
 		dialogue_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var radio_browser := get_node_or_null("Root/VehicleRadioBrowser") as Control
+	if radio_browser != null:
+		radio_browser.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var radio_overlay := get_node_or_null("Root/VehicleRadioQuickOverlay") as Control
 	if radio_overlay != null:
 		radio_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -429,6 +470,17 @@ func _ensure_dialogue_panel_view() -> void:
 	panel.name = "DialoguePanel"
 	panel.set_script(CityDialoguePanelScript)
 	root.add_child(panel)
+
+func _ensure_vehicle_radio_browser_view() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("VehicleRadioBrowser") != null:
+		return
+	var browser := Control.new()
+	browser.name = "VehicleRadioBrowser"
+	browser.set_script(CityVehicleRadioBrowserScript)
+	root.add_child(browser)
 
 func _ensure_vehicle_radio_quick_overlay_view() -> void:
 	var root := get_node_or_null("Root") as Control

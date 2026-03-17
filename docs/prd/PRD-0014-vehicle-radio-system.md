@@ -210,7 +210,7 @@
 - 自动化测试至少断言：输出 JSON 为多行 pretty-print，而不是单行紧凑 JSON。
 - 反作弊条款：不得只把数据留在内存里却宣称“有缓存”；不得把用户 favorites 写进易失 `cache/` 目录；不得每次启动都无条件重拉整个国家索引。
 
-### REQ-0014-005 播放链必须是真实直播链路，并正式覆盖 `http/https`、playlist wrapper、resolver trace 与可配置代理
+### REQ-0014-005 播放链必须是真实直播链路，并正式覆盖 `http/https`、playlist wrapper 与 resolver trace
 
 **动机**：全球电台最难的部分不是 UI，而是 URL、协议和解码的现实脏活；这一层如果不写进 requirement，后面一定会被“先放本地 MP3”偷换掉。
 
@@ -240,7 +240,6 @@
   - `underflow_count`
   - `error_code`
   - `error_message`
-- backend transport 必须允许显式 `http_proxy / https_proxy` 配置；默认不写死任何仓库内代理
 - `v24` 必须把“Godot 侧 catalog/UI/runtime”和“实际 stream decode backend”解耦成两个层次
 
 **非目标**：
@@ -253,9 +252,8 @@
 - 自动化测试至少断言：resolver 对 `direct / pls / m3u / hls / asx / xspf` 都能给出稳定 classification 与 trace。
 - 自动化测试至少断言：同一个 station snapshot 的 resolve 结果能命中 TTL cache，而不是每次切台都重新展开。
 - 自动化测试至少断言：backend interface 与 UI/controller 解耦，UI 层不会直接拼接 HTTP 请求。
-- 自动化测试至少断言：proxy 配置为空时不强制走代理；显式配置后 transport 层会读取并使用对应设置。
 - 自动化验证至少要求在 Windows 主线环境上成功覆盖三类真实样本：direct stream、playlist-wrapped stream、HLS stream。
-- 反作弊条款：不得用本地预录 MP3、一次性整段下载完成后才播放、或只支持单一裸 MP3 URL 来宣称“全球电台已接入”；不得把代理地址硬编码进仓库源码。
+- 反作弊条款：不得用本地预录 MP3、一次性整段下载完成后才播放、或只支持单一裸 MP3 URL 来宣称“全球电台已接入”；不得把任何机器本地网络假设硬编码进仓库源码。
 
 ### REQ-0014-006 `v24` 不得破坏 driving/HUD/performance 主链，且热路径禁止扫描全量 catalog
 

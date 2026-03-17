@@ -52,7 +52,7 @@ per-country station page 当前冻结为按热度排序的 `top 200`。这不是
 
 ## 播放 backend 与可行性关口
 
-真正最硬的一层在这里。`kotlinagentapp` 之所以能把全球电台跑起来，是因为它背后有 Android 媒体栈；而当前 `godot_citys` 仓库没有现成 native audio backend。Godot 官方文档可以支撑我们做两件事：一是通过 `HTTPRequest` 处理 `http/https`、header 与 proxy 之类的 transport 配置；二是通过 `AudioStreamGenerator` 之类的 PCM 入口承接外部解码后的音频数据。但这并不等于 Godot 现成就有一个能稳稳播放 `PLS / M3U / HLS / internet radio` 的完整 live stack。也就是说，backend 必须被当成独立里程碑，而不是“UI 做完顺手接一下”。
+真正最硬的一层在这里。`kotlinagentapp` 之所以能把全球电台跑起来，是因为它背后有 Android 媒体栈；而当前 `godot_citys` 仓库没有现成 native audio backend。Godot 官方文档可以支撑我们做两件事：一是通过 `HTTPRequest` 处理 `http/https` 和基础 transport 请求；二是通过 `AudioStreamGenerator` 之类的 PCM 入口承接外部解码后的音频数据。但这并不等于 Godot 现成就有一个能稳稳播放 `PLS / M3U / HLS / internet radio` 的完整 live stack。也就是说，backend 必须被当成独立里程碑，而不是“UI 做完顺手接一下”。
 
 因此 `v24` 最稳的做法是：先冻结 backend interface，再用 `M1` feasibility gate 决定实现形态。接口上，Godot 侧只依赖：
 

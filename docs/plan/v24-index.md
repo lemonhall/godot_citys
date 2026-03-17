@@ -45,7 +45,7 @@ PRD 入口：[PRD-0014 Vehicle Radio System](../prd/PRD-0014-vehicle-radio-syste
 | 里程碑 | 范围 | DoD | 验证命令/测试 | 状态 |
 |---|---|---|---|---|
 | M0 docs freeze | PRD、design、v24 plan、traceability | `PRD-0014`、`v24-index`、`v24-vehicle-radio-system`、design doc 全部落地且 Req ID 可追溯 | `rg -n "REQ-0014" docs/prd/PRD-0014-vehicle-radio-system.md docs/plan/v24-index.md docs/plan/v24-vehicle-radio-system.md` | done |
-| M1 backend feasibility + transport contract | live stream backend interface、resolver contract、Windows 样本可播性基线 | direct / playlist / HLS 三类样本都有正式验证路径；backend interface 冻结；UI 不直接触网 | `tests/world/test_city_vehicle_radio_stream_resolution_contract.gd`、手动/自动 backend sample verification | todo |
+| M1 backend feasibility + transport contract | live stream backend interface、resolver contract、Windows 样本可播性基线 | direct / playlist / HLS 三类样本都有正式验证路径；backend interface 冻结；UI 不直接触网 | `tests/world/test_city_vehicle_radio_stream_resolution_contract.gd`、`tests/world/test_city_vehicle_radio_backend_interface_contract.gd`、手动/自动 backend sample verification | in_progress |
 | M2 catalog cache + persistence | countries index、station pages、favorites、recents、presets、session_state、resolve cache | `user://cache/radio/` 与 `user://radio/` 正式写入；TTL 与 stale fallback 成立 | `tests/world/test_city_vehicle_radio_catalog_cache_contract.gd`、`tests/world/test_city_vehicle_radio_preset_persistence.gd` | todo |
 | M3 quick-select overlay + input contract | 8-slot quick bank、pause semantics、keyboard/controller action family | driving 中可快速切台、开关电台、next/prev，不实例化大列表 | `tests/world/test_city_vehicle_radio_quick_overlay_contract.gd`、`tests/e2e/test_city_vehicle_radio_quick_switch_flow.gd` | todo |
 | M4 radio browser UX | `当前播放 / Presets / Favorites / Recents / Browse`、国家目录、局部过滤、虚拟化/分页 | 海量目录浏览成立，不污染 quick overlay，不一次性构造几千 rows | `tests/world/test_city_vehicle_radio_browser_state_contract.gd`、`tests/e2e/test_city_vehicle_radio_browser_flow.gd` | todo |
@@ -64,7 +64,7 @@ PRD 入口：[PRD-0014 Vehicle Radio System](../prd/PRD-0014-vehicle-radio-syste
 | REQ-0014-002 | `v24-vehicle-radio-system.md` | `tests/world/test_city_vehicle_radio_quick_overlay_contract.gd` | `--script res://tests/e2e/test_city_vehicle_radio_quick_switch_flow.gd` | [2026-03-17-v24-vehicle-radio-design.md](../plans/2026-03-17-v24-vehicle-radio-design.md) | todo |
 | REQ-0014-003 | `v24-vehicle-radio-system.md` | `tests/world/test_city_vehicle_radio_browser_state_contract.gd` | `--script res://tests/e2e/test_city_vehicle_radio_browser_flow.gd` | [2026-03-17-v24-vehicle-radio-design.md](../plans/2026-03-17-v24-vehicle-radio-design.md) | todo |
 | REQ-0014-004 | `v24-vehicle-radio-system.md` | `tests/world/test_city_vehicle_radio_catalog_cache_contract.gd`、`tests/world/test_city_vehicle_radio_preset_persistence.gd` | `--script res://tests/e2e/test_city_vehicle_radio_browser_flow.gd` | [2026-03-17-v24-vehicle-radio-design.md](../plans/2026-03-17-v24-vehicle-radio-design.md) | todo |
-| REQ-0014-005 | `v24-vehicle-radio-system.md` | `tests/world/test_city_vehicle_radio_stream_resolution_contract.gd` | Windows direct / playlist / HLS sample verification | [2026-03-17-v24-vehicle-radio-design.md](../plans/2026-03-17-v24-vehicle-radio-design.md) | todo |
+| REQ-0014-005 | `v24-vehicle-radio-system.md` | `tests/world/test_city_vehicle_radio_stream_resolution_contract.gd`、`tests/world/test_city_vehicle_radio_backend_interface_contract.gd` | Windows direct / playlist / HLS sample verification | [2026-03-17-v24-vehicle-radio-design.md](../plans/2026-03-17-v24-vehicle-radio-design.md) | in_progress |
 | REQ-0014-006 | `v24-vehicle-radio-system.md` | `tests/world/test_city_vehicle_radio_hud_idle_contract.gd` | `--script res://tests/world/test_city_chunk_setup_profile_breakdown.gd`、`--script res://tests/e2e/test_city_runtime_performance_profile.gd`、`--script res://tests/e2e/test_city_first_visit_performance_profile.gd` | [2026-03-17-v24-vehicle-radio-design.md](../plans/2026-03-17-v24-vehicle-radio-design.md) | todo |
 
 ## ECN 索引
@@ -73,7 +73,7 @@ PRD 入口：[PRD-0014 Vehicle Radio System](../prd/PRD-0014-vehicle-radio-syste
 
 ## 差异列表
 
-- 当前只有文档冻结，尚无任何实现、测试产物或 closeout 证据。
+- `M1` 已进入实现中：resolver contract、backend interface contract、最小 drive-mode controller contract 已有首批 world tests 与实现骨架，但真实直播 backend sample verification 仍未完成。
 - `v24` 当前不包含虚构 DJ 电台、广告、录音、转录、翻译、同传、站点推荐或跨设备同步。
 - backend 库选型尚未冻结；`M1` 之前只冻结 interface、resolver contract 与验证样本。
 - 默认物理按键映射尚未冻结；当前只冻结 `InputMap action` 家族，避免过早把 raw keycode 写进主链。

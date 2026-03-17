@@ -113,6 +113,7 @@
 - Create: `tests/world/test_city_vehicle_radio_catalog_cache_contract.gd`
 - Create: `tests/world/test_city_vehicle_radio_preset_persistence.gd`
 - Create: `tests/world/test_city_vehicle_radio_stream_resolution_contract.gd`
+- Create: `tests/world/test_city_vehicle_radio_backend_interface_contract.gd`
 - Create: `tests/world/test_city_vehicle_radio_hud_idle_contract.gd`
 - Create: `tests/e2e/test_city_vehicle_radio_quick_switch_flow.gd`
 - Create: `tests/e2e/test_city_vehicle_radio_browser_flow.gd`
@@ -122,7 +123,7 @@
 
 1. Analysis
    - 审计 `CityPrototype.gd`、`PrototypeHud.gd`、`PlayerController.gd`、`project.godot` 的当前输入与 HUD 接口，确认 radio action 可安全接入而不踩现有 `M/T/E/F/G` 主链。
-   - 审计 Godot 4.6 当前可用的 HTTP、proxy、PCM playback 能力，形成 backend feasibility checklist。
+   - 审计 Godot 4.6 当前可用的 HTTP、PCM playback 能力，形成 backend feasibility checklist。
    - 从 `kotlinagentapp` 提取正式参考点：countries/stations TTL、`RadioStationFileV1` schema、`StreamUrlResolver` 分类策略、playlist wrapper 支持范围。
 2. Design
    - 冻结“双界面模型”：quick-select 只负责 8-slot 切台，browser 负责海量目录。

@@ -324,10 +324,17 @@ func _rebuild_list_content() -> void:
 func _rebuild_browse_content(list_vbox: VBoxContainer) -> void:
 	var browse_state: Dictionary = _state.get("browse", {}) as Dictionary
 	var root_kind := str(browse_state.get("root_kind", "countries"))
+	var loading := bool(browse_state.get("loading", false))
+	var load_error := str(browse_state.get("load_error", "")).strip_edges()
 	if root_kind == "countries":
 		var countries := browse_state.get("countries", []) as Array
 		if countries.is_empty():
-			_add_placeholder_label(list_vbox, "没有可浏览的国家索引。")
+			if loading:
+				_add_placeholder_label(list_vbox, "国家目录同步中...")
+			elif load_error != "":
+				_add_placeholder_label(list_vbox, "国家目录加载失败：%s" % load_error)
+			else:
+				_add_placeholder_label(list_vbox, "没有可浏览的国家索引。")
 			return
 		for country_variant in countries:
 			var country: Dictionary = country_variant as Dictionary
@@ -344,7 +351,16 @@ func _rebuild_browse_content(list_vbox: VBoxContainer) -> void:
 			)
 			list_vbox.add_child(button)
 		return
-	_rebuild_station_collection(list_vbox, browse_state.get("stations", []) as Array, "当前筛选条件下没有可用电台。")
+	var stations := browse_state.get("stations", []) as Array
+	if stations.is_empty():
+		if loading:
+			_add_placeholder_label(list_vbox, "电台目录同步中...")
+		elif load_error != "":
+			_add_placeholder_label(list_vbox, "电台目录加载失败：%s" % load_error)
+		else:
+			_add_placeholder_label(list_vbox, "当前筛选条件下没有可用电台。")
+		return
+	_rebuild_station_collection(list_vbox, stations, "当前筛选条件下没有可用电台。")
 
 func _rebuild_station_collection(list_vbox: VBoxContainer, stations: Array, empty_text: String) -> void:
 	if stations.is_empty():

@@ -64,21 +64,22 @@ func _run() -> void:
 func _seed_browser_catalog() -> void:
 	var store := CatalogStore.new()
 	var user_state_store := UserStateStore.new()
-	if not bool(user_state_store.save_presets([], 100).get("success", false)):
+	var seeded_at := int(Time.get_unix_time_from_system())
+	if not bool(user_state_store.save_presets([], seeded_at).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio HUD idle contract failed to reset presets")
 		return
-	if not bool(user_state_store.save_favorites([], 100).get("success", false)):
+	if not bool(user_state_store.save_favorites([], seeded_at).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio HUD idle contract failed to reset favorites")
 		return
-	if not bool(user_state_store.save_recents([], 100).get("success", false)):
+	if not bool(user_state_store.save_recents([], seeded_at).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio HUD idle contract failed to reset recents")
 		return
-	if not bool(user_state_store.save_session_state({"power_state": "off"}, 100).get("success", false)):
+	if not bool(user_state_store.save_session_state({"power_state": "off"}, seeded_at).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio HUD idle contract failed to reset session state")
 		return
 	if not bool(store.save_countries_index([
 		{"country_code": "CN", "display_name": "China", "station_count": 2},
-	], 100, 72 * 3600).get("success", false)):
+	], seeded_at, 72 * 3600).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio HUD idle contract failed to seed countries index")
 		return
 	if not bool(store.save_country_station_page("CN", [
@@ -100,7 +101,7 @@ func _seed_browser_catalog() -> void:
 			"votes": 64,
 			"stream_url": "https://radio.example/shaanxi_news.mp3",
 		},
-	], 100, 72 * 3600).get("success", false)):
+	], seeded_at, 72 * 3600).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio HUD idle contract failed to seed CN station page")
 		return
 

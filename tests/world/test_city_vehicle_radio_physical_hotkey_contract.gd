@@ -35,18 +35,18 @@ func _run() -> void:
 	if not T.require_true(self, browser_control != null, "Physical hotkey contract requires a dedicated VehicleRadioBrowser control under the HUD"):
 		return
 
-	_press_key(world, KEY_R)
+	_press_key(world, KEY_O)
 	await process_frame
 	var quick_overlay_state: Dictionary = hud.get_vehicle_radio_quick_overlay_state()
-	if not T.require_true(self, bool(quick_overlay_state.get("visible", false)), "Pressing R while driving must open the radio quick overlay through the physical key path"):
+	if not T.require_true(self, bool(quick_overlay_state.get("visible", false)), "Pressing O while driving must open the radio quick overlay through the physical key path"):
 		return
 	if not T.require_true(self, bool(world.is_world_simulation_paused()), "Opening the radio quick overlay through the physical key path must pause world simulation"):
 		return
 
-	_press_key(world, KEY_R)
+	_press_key(world, KEY_O)
 	await process_frame
 	quick_overlay_state = hud.get_vehicle_radio_quick_overlay_state()
-	if not T.require_true(self, not bool(quick_overlay_state.get("visible", true)), "Pressing R again must close the radio quick overlay through the physical key path"):
+	if not T.require_true(self, not bool(quick_overlay_state.get("visible", true)), "Pressing O again must close the radio quick overlay through the physical key path"):
 		return
 	if not T.require_true(self, not bool(world.is_world_simulation_paused()), "Closing the radio quick overlay through the physical key path must resume world simulation"):
 		return
@@ -69,7 +69,7 @@ func _run() -> void:
 	if not T.require_true(self, not bool(world.is_world_simulation_paused()), "Closing the radio browser through the physical key path must resume world simulation"):
 		return
 
-	_press_key(world, KEY_R)
+	_press_key(world, KEY_O)
 	await process_frame
 	_press_key(world, KEY_ESCAPE)
 	await process_frame

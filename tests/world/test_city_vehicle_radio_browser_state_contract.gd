@@ -28,10 +28,14 @@ func _run() -> void:
 	if not T.require_true(self, world.has_method("is_world_simulation_paused"), "Vehicle radio browser state contract requires is_world_simulation_paused()"):
 		return
 
-	var blocked_result: Dictionary = world.open_vehicle_radio_browser()
-	if not T.require_true(self, not bool(blocked_result.get("success", true)), "Vehicle radio browser must stay closed while the player is not driving"):
+	var open_on_foot_result: Dictionary = world.open_vehicle_radio_browser()
+	if not T.require_true(self, bool(open_on_foot_result.get("success", false)), "Vehicle radio browser must now be openable even while the player is not driving"):
 		return
-	if not T.require_true(self, not bool(world.is_world_simulation_paused()), "Blocked browser open must not pause world simulation"):
+	if not T.require_true(self, bool(world.is_world_simulation_paused()), "Opening vehicle radio browser on foot must still share world pause semantics"):
+		return
+	if not T.require_true(self, bool(world.close_vehicle_radio_browser().get("success", false)), "Vehicle radio browser state contract requires browser close support after opening on foot"):
+		return
+	if not T.require_true(self, not bool(world.is_world_simulation_paused()), "Closing the on-foot browser must restore world simulation pause state"):
 		return
 
 	var player := world.get_node_or_null("Player")
@@ -40,7 +44,7 @@ func _run() -> void:
 	player.enter_vehicle_drive_mode(_build_synthetic_vehicle_state(player))
 
 	var open_result: Dictionary = world.open_vehicle_radio_browser()
-	if not T.require_true(self, bool(open_result.get("success", false)), "Vehicle radio browser must open in driving mode"):
+	if not T.require_true(self, bool(open_result.get("success", false)), "Vehicle radio browser must still open in driving mode"):
 		return
 	if not T.require_true(self, bool(world.is_world_simulation_paused()), "Opening vehicle radio browser must share world pause semantics"):
 		return
@@ -80,6 +84,7 @@ func _run() -> void:
 func _seed_radio_browser_sources() -> void:
 	var catalog_store := CatalogStore.new()
 	var user_state_store := UserStateStore.new()
+	var seeded_at := int(Time.get_unix_time_from_system())
 	var countries := [
 		{"country_code": "CN", "display_name": "China", "station_count": 200},
 		{"country_code": "JP", "display_name": "Japan", "station_count": 180},
@@ -108,16 +113,16 @@ func _seed_radio_browser_sources() -> void:
 			"country": "CN",
 		}
 	]
-	if not bool(catalog_store.save_countries_index(countries, 100, 72 * 3600).get("success", false)):
+	if not bool(catalog_store.save_countries_index(countries, seeded_at, 72 * 3600).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio browser state contract failed to seed countries index")
 		return
-	if not bool(user_state_store.save_presets(presets, 100).get("success", false)):
+	if not bool(user_state_store.save_presets(presets, seeded_at).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio browser state contract failed to seed presets")
 		return
-	if not bool(user_state_store.save_favorites(favorites, 100).get("success", false)):
+	if not bool(user_state_store.save_favorites(favorites, seeded_at).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio browser state contract failed to seed favorites")
 		return
-	if not bool(user_state_store.save_recents(recents, 100).get("success", false)):
+	if not bool(user_state_store.save_recents(recents, seeded_at).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio browser state contract failed to seed recents")
 		return
 

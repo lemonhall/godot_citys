@@ -31,6 +31,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("assign_vehicle_radio_browser_preset"), "Vehicle radio browser flow requires assign_vehicle_radio_browser_preset()"):
 		return
+	if not T.require_true(self, world.has_method("select_vehicle_radio_browser_station"), "Vehicle radio browser flow requires select_vehicle_radio_browser_station()"):
+		return
+	if not T.require_true(self, world.has_method("get_vehicle_radio_runtime_state"), "Vehicle radio browser flow requires get_vehicle_radio_runtime_state()"):
+		return
 	if not T.require_true(self, world.has_method("open_vehicle_radio_quick_overlay"), "Vehicle radio browser flow requires open_vehicle_radio_quick_overlay()"):
 		return
 	if not T.require_true(self, world.has_method("get_vehicle_radio_quick_overlay_state"), "Vehicle radio browser flow requires get_vehicle_radio_quick_overlay_state()"):
@@ -58,6 +62,17 @@ func _run() -> void:
 		return
 	var filtered_station: Dictionary = station_rows[0] as Dictionary
 	if not T.require_true(self, str(filtered_station.get("station_id", "")) == "station:cn:traffic", "Browser filter must keep Xi'an Traffic FM as the remaining station row"):
+		return
+
+	var select_result: Dictionary = world.select_vehicle_radio_browser_station("station:cn:traffic")
+	if not T.require_true(self, bool(select_result.get("success", false)), "Browser flow must allow clicking a station row to enter the playback chain immediately"):
+		return
+	var runtime_state: Dictionary = world.get_vehicle_radio_runtime_state()
+	if not T.require_true(self, str(runtime_state.get("selected_station_id", "")) == "station:cn:traffic", "Browser flow must promote the clicked station into the runtime selected_station_id"):
+		return
+	if not T.require_true(self, str(runtime_state.get("power_state", "")) == "on", "Clicking a station in browser flow must auto-power the radio on"):
+		return
+	if not T.require_true(self, str(runtime_state.get("playback_state", "")) == "playing", "Clicking a station in browser flow must transition the backend into playing state while driving"):
 		return
 
 	var favorite_result: Dictionary = world.toggle_vehicle_radio_browser_favorite("station:cn:traffic")
@@ -94,22 +109,23 @@ func _run() -> void:
 func _seed_browser_catalog() -> void:
 	var store := CatalogStore.new()
 	var user_state_store := UserStateStore.new()
-	if not bool(user_state_store.save_presets([], 100).get("success", false)):
+	var seeded_at := int(Time.get_unix_time_from_system())
+	if not bool(user_state_store.save_presets([], seeded_at).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio browser flow failed to reset presets")
 		return
-	if not bool(user_state_store.save_favorites([], 100).get("success", false)):
+	if not bool(user_state_store.save_favorites([], seeded_at).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio browser flow failed to reset favorites")
 		return
-	if not bool(user_state_store.save_recents([], 100).get("success", false)):
+	if not bool(user_state_store.save_recents([], seeded_at).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio browser flow failed to reset recents")
 		return
-	if not bool(user_state_store.save_session_state({"power_state": "off"}, 100).get("success", false)):
+	if not bool(user_state_store.save_session_state({"power_state": "off"}, seeded_at).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio browser flow failed to reset session state")
 		return
 	if not bool(store.save_countries_index([
 		{"country_code": "CN", "display_name": "China", "station_count": 2},
 		{"country_code": "JP", "display_name": "Japan", "station_count": 1},
-	], 100, 72 * 3600).get("success", false)):
+	], seeded_at, 72 * 3600).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio browser flow failed to seed countries index")
 		return
 	if not bool(store.save_country_station_page("CN", [
@@ -131,7 +147,7 @@ func _seed_browser_catalog() -> void:
 			"votes": 64,
 			"stream_url": "https://radio.example/shaanxi_news.mp3",
 		},
-	], 100, 72 * 3600).get("success", false)):
+	], seeded_at, 72 * 3600).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio browser flow failed to seed CN station page")
 		return
 

@@ -19,6 +19,7 @@ const CityMapScreenScene := preload("res://city_game/ui/CityMapScreen.tscn")
 const CityMapPinRegistry := preload("res://city_game/world/map/CityMapPinRegistry.gd")
 const CityVehicleRadioController := preload("res://city_game/world/radio/CityVehicleRadioController.gd")
 const CityRadioCatalogStore := preload("res://city_game/world/radio/CityRadioCatalogStore.gd")
+const CityRadioCatalogRepository := preload("res://city_game/world/radio/CityRadioCatalogRepository.gd")
 const CityRadioMockBackend := preload("res://city_game/world/radio/backend/CityRadioMockBackend.gd")
 const CityRadioQuickBank := preload("res://city_game/world/radio/CityRadioQuickBank.gd")
 const CityRadioUserStateStore := preload("res://city_game/world/radio/CityRadioUserStateStore.gd")
@@ -65,6 +66,7 @@ const DESTINATION_WORLD_MARKER_SURFACE_OFFSET_M := 0.12
 const ROUTE_STYLE_DESTINATION := "destination"
 const ROUTE_STYLE_TASK_AVAILABLE := "task_available"
 const ROUTE_STYLE_TASK_ACTIVE := "task_active"
+const VEHICLE_RADIO_MIN_REAL_COUNTRY_COUNT := 50
 const VEHICLE_RADIO_INPUT_ACTIONS := [
 	"vehicle_radio_quick_open",
 	"vehicle_radio_next",
@@ -122,6 +124,7 @@ var _paused_world_process_entries: Array[Dictionary] = []
 var _vehicle_radio_quick_bank = null
 var _vehicle_radio_controller = null
 var _vehicle_radio_catalog_store = null
+var _vehicle_radio_catalog_repository = null
 var _vehicle_radio_backend = null
 var _vehicle_radio_user_state_store = null
 var _vehicle_radio_selection_sources := {
@@ -136,6 +139,15 @@ var _vehicle_radio_browser_filter_text := ""
 var _vehicle_radio_browser_cached_countries: Array = []
 var _vehicle_radio_browser_cached_country_code := ""
 var _vehicle_radio_browser_cached_station_rows: Array = []
+var _vehicle_radio_catalog_sync_thread: Thread = null
+var _vehicle_radio_catalog_sync_job: Dictionary = {}
+var _vehicle_radio_catalog_sync_pending_result: Dictionary = {}
+var _vehicle_radio_catalog_sync_queued_job: Dictionary = {}
+var _vehicle_radio_browser_countries_loading := false
+var _vehicle_radio_browser_countries_error := ""
+var _vehicle_radio_browser_stations_loading := false
+var _vehicle_radio_browser_station_loading_country_code := ""
+var _vehicle_radio_browser_stations_error := ""
 var _vehicle_radio_debug_state := {
 	"browser_country_load_count": 0,
 	"browser_station_page_load_count": 0,
@@ -251,6 +263,7 @@ func _ready() -> void:
 	_vehicle_radio_quick_bank = CityRadioQuickBank.new()
 	_vehicle_radio_controller = CityVehicleRadioController.new()
 	_vehicle_radio_catalog_store = CityRadioCatalogStore.new()
+	_vehicle_radio_catalog_repository = CityRadioCatalogRepository.new(_vehicle_radio_catalog_store)
 	_vehicle_radio_backend = CityRadioMockBackend.new()
 	_vehicle_radio_user_state_store = CityRadioUserStateStore.new()
 	if _vehicle_radio_controller != null and _vehicle_radio_controller.has_method("configure"):
@@ -303,6 +316,12 @@ func _ready() -> void:
 	_update_npc_interaction_system()
 
 func _exit_tree() -> void:
+	if _vehicle_radio_catalog_sync_thread != null and _vehicle_radio_catalog_sync_thread.is_started():
+		_vehicle_radio_catalog_sync_thread.wait_to_finish()
+	_vehicle_radio_catalog_sync_thread = null
+	_vehicle_radio_catalog_sync_job.clear()
+	_vehicle_radio_catalog_sync_pending_result.clear()
+	_vehicle_radio_catalog_sync_queued_job.clear()
 	if _building_export_thread != null and _building_export_thread.is_started():
 		var thread_result: Variant = _building_export_thread.wait_to_finish()
 		if thread_result is Dictionary:
@@ -321,6 +340,7 @@ func _exit_tree() -> void:
 	_building_export_pending_result.clear()
 
 func _process(delta: float) -> void:
+	_collect_completed_vehicle_radio_catalog_sync_job()
 	_collect_completed_building_export_job()
 	_expire_exportable_building_inspection_window()
 	_update_service_building_map_pins()
@@ -470,12 +490,6 @@ func get_vehicle_radio_debug_state() -> Dictionary:
 	return _vehicle_radio_debug_state.duplicate(true)
 
 func open_vehicle_radio_browser() -> Dictionary:
-	if player == null or not player.has_method("is_driving_vehicle") or not bool(player.is_driving_vehicle()):
-		_sync_vehicle_radio_browser()
-		return {
-			"success": false,
-			"error": "not_driving",
-		}
 	if _full_map_open:
 		return {
 			"success": false,
@@ -487,6 +501,7 @@ func open_vehicle_radio_browser() -> Dictionary:
 	_vehicle_radio_browser_selected_tab_id = "browse"
 	_vehicle_radio_browser_selected_country_code = ""
 	_vehicle_radio_browser_filter_text = ""
+	_ensure_vehicle_radio_browser_countries_ready()
 	_apply_world_simulation_pause(true)
 	if DisplayServer.get_name() != "headless":
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -558,6 +573,7 @@ func show_vehicle_radio_browser_country_root() -> void:
 	_vehicle_radio_browser_selected_tab_id = "browse"
 	_vehicle_radio_browser_selected_country_code = ""
 	_vehicle_radio_browser_filter_text = ""
+	_ensure_vehicle_radio_browser_countries_ready()
 	_sync_vehicle_radio_browser()
 
 func toggle_vehicle_radio_browser_favorite(station_id: String) -> Dictionary:
@@ -620,9 +636,18 @@ func select_vehicle_radio_browser_station(station_id: String) -> Dictionary:
 			"success": false,
 			"error": "station_not_found",
 		}
+	var resolved_stream := _build_vehicle_radio_resolved_stream(station_snapshot)
+	if resolved_stream.is_empty():
+		return {
+			"success": false,
+			"error": "stream_unavailable",
+		}
+	_vehicle_radio_power_on = true
 	_sync_vehicle_radio_runtime_driving_context()
+	if _vehicle_radio_controller != null and _vehicle_radio_controller.has_method("set_power_state"):
+		_vehicle_radio_controller.set_power_state(true)
 	if _vehicle_radio_controller != null and _vehicle_radio_controller.has_method("select_station"):
-		_vehicle_radio_controller.select_station(station_snapshot, _build_vehicle_radio_resolved_stream(station_snapshot))
+		_vehicle_radio_controller.select_station(station_snapshot, resolved_stream)
 	_record_vehicle_radio_recent_station(station_snapshot)
 	_persist_vehicle_radio_session_state()
 	_vehicle_radio_browser_selected_tab_id = "now_playing"
@@ -2642,7 +2667,7 @@ func _build_controls_help_state() -> Dictionary:
 	return {
 		"visible": _controls_help_open,
 		"title": "键位说明",
-		"subtitle": "全屏说明层；打开时世界暂停。电台浏览器当前是信息浏览面板，切台仍以 quick overlay 为主。",
+		"subtitle": "全屏说明层；打开时世界暂停。电台浏览器可随时打开，quick overlay 仍只在驾驶时可用。",
 		"close_hint": "F1 关闭",
 		"sections": _build_controls_help_sections(),
 	}
@@ -2680,14 +2705,14 @@ func _build_controls_help_sections() -> Array:
 			],
 		},
 		{
-			"title": "车辆电台（驾驶时）",
+			"title": "车辆电台与浏览器",
 			"entries": [
-				{"binding": _format_input_action_binding("vehicle_radio_quick_open"), "description": "打开 quick overlay"},
+				{"binding": _format_input_action_binding("vehicle_radio_quick_open"), "description": "驾驶时打开 quick overlay"},
 				{"binding": _format_input_action_binding("vehicle_radio_prev"), "description": "quick overlay 上一台"},
 				{"binding": _format_input_action_binding("vehicle_radio_next"), "description": "quick overlay 下一台"},
 				{"binding": _format_input_action_binding("vehicle_radio_confirm"), "description": "确认当前 quick slot"},
 				{"binding": _format_input_action_binding("vehicle_radio_power_toggle"), "description": "电台开 / 关"},
-				{"binding": _format_input_action_binding("vehicle_radio_browser_open"), "description": "打开电台浏览器面板"},
+				{"binding": _format_input_action_binding("vehicle_radio_browser_open"), "description": "随时打开 / 关闭电台浏览器"},
 				{"binding": _format_input_action_binding("vehicle_radio_cancel"), "description": "关闭 quick overlay / browser"},
 			],
 		},
@@ -2987,8 +3012,6 @@ func _sync_vehicle_radio_runtime_driving_context() -> void:
 		_vehicle_radio_controller.set_driving_context(true, player.get_driving_vehicle_state())
 		return
 	_vehicle_radio_controller.set_driving_context(false, {})
-	if _vehicle_radio_browser_open:
-		close_vehicle_radio_browser()
 	if _vehicle_radio_quick_overlay_open:
 		close_vehicle_radio_quick_overlay()
 
@@ -3000,8 +3023,14 @@ func _commit_vehicle_radio_quick_selection() -> void:
 	var slot: Dictionary = (_vehicle_radio_quick_slots[_vehicle_radio_quick_selected_index] as Dictionary).duplicate(true)
 	if slot.is_empty():
 		return
+	_vehicle_radio_power_on = true
 	_sync_vehicle_radio_runtime_driving_context()
-	_vehicle_radio_controller.select_station(slot, _build_vehicle_radio_resolved_stream(slot))
+	if _vehicle_radio_controller.has_method("set_power_state"):
+		_vehicle_radio_controller.set_power_state(true)
+	var resolved_stream := _build_vehicle_radio_resolved_stream(slot)
+	if resolved_stream.is_empty():
+		return
+	_vehicle_radio_controller.select_station(slot, resolved_stream)
 	_record_vehicle_radio_recent_station(slot)
 	_persist_vehicle_radio_session_state()
 	close_vehicle_radio_quick_overlay()
@@ -3009,7 +3038,7 @@ func _commit_vehicle_radio_quick_selection() -> void:
 func _build_vehicle_radio_resolved_stream(station_snapshot: Dictionary) -> Dictionary:
 	var final_url := str(station_snapshot.get("stream_url", station_snapshot.get("final_url", ""))).strip_edges()
 	if final_url == "":
-		final_url = "https://radio.example/%s.mp3" % str(station_snapshot.get("station_id", "fallback"))
+		return {}
 	return {
 		"classification": "direct",
 		"final_url": final_url,
@@ -3023,12 +3052,41 @@ func _build_vehicle_radio_resolved_stream(station_snapshot: Dictionary) -> Dicti
 func _load_vehicle_radio_browser_countries() -> Array:
 	if not _vehicle_radio_browser_cached_countries.is_empty():
 		return _vehicle_radio_browser_cached_countries.duplicate(true)
-	if _vehicle_radio_catalog_store == null or not _vehicle_radio_catalog_store.has_method("load_countries_index"):
-		return []
-	var load_result: Dictionary = _vehicle_radio_catalog_store.load_countries_index()
-	_vehicle_radio_debug_state["browser_country_load_count"] = int(_vehicle_radio_debug_state.get("browser_country_load_count", 0)) + 1
-	_vehicle_radio_browser_cached_countries = (load_result.get("countries", []) as Array).duplicate(true)
+	_vehicle_radio_browser_cached_countries = _load_vehicle_radio_browser_countries_from_store(true)
 	return _vehicle_radio_browser_cached_countries.duplicate(true)
+
+func _ensure_vehicle_radio_browser_countries_ready(force: bool = false) -> void:
+	if _vehicle_radio_catalog_repository == null or not _vehicle_radio_catalog_repository.has_method("ensure_countries_ready"):
+		return
+	_vehicle_radio_browser_cached_country_code = ""
+	_vehicle_radio_browser_cached_station_rows = []
+	_vehicle_radio_browser_stations_loading = false
+	_vehicle_radio_browser_station_loading_country_code = ""
+	_vehicle_radio_browser_stations_error = ""
+	var load_result: Dictionary = _vehicle_radio_catalog_store.load_countries_index() if _vehicle_radio_catalog_store != null and _vehicle_radio_catalog_store.has_method("load_countries_index") else {
+		"hit": false,
+		"stale": true,
+		"countries": [],
+	}
+	var cached_countries := (load_result.get("countries", []) as Array).duplicate(true)
+	var fixture_countries := _looks_like_vehicle_radio_fixture_country_directory(cached_countries)
+	var has_fresh_cached_countries := bool(load_result.get("hit", false)) and not bool(load_result.get("stale", true)) and not cached_countries.is_empty() and not fixture_countries
+	var resolved_force := force or fixture_countries
+	_vehicle_radio_browser_cached_countries = [] if fixture_countries else cached_countries
+	if has_fresh_cached_countries and not resolved_force:
+		_vehicle_radio_browser_countries_loading = false
+		_vehicle_radio_browser_countries_error = ""
+		return
+	if _should_background_vehicle_radio_catalog_sync():
+		_vehicle_radio_browser_countries_loading = true
+		_vehicle_radio_browser_countries_error = ""
+		_queue_vehicle_radio_catalog_sync_job("countries", "", resolved_force)
+		return
+	_apply_vehicle_radio_catalog_sync_result({
+		"kind": "countries",
+		"country_code": "",
+		"result": _vehicle_radio_catalog_repository.ensure_countries_ready(resolved_force),
+	})
 
 func _load_vehicle_radio_browser_presets() -> Array:
 	return (_vehicle_radio_selection_sources.get("presets", []) as Array).duplicate(true)
@@ -3047,6 +3105,8 @@ func _build_vehicle_radio_browser_browse_state() -> Dictionary:
 			"stations": [],
 			"selected_country_code": "",
 			"filter_text": _vehicle_radio_browser_filter_text,
+			"loading": _vehicle_radio_browser_countries_loading,
+			"load_error": _vehicle_radio_browser_countries_error,
 		}
 	_ensure_vehicle_radio_browser_station_rows_loaded(_vehicle_radio_browser_selected_country_code)
 	return {
@@ -3055,6 +3115,8 @@ func _build_vehicle_radio_browser_browse_state() -> Dictionary:
 		"stations": _filter_vehicle_radio_browser_station_rows(_vehicle_radio_browser_cached_station_rows),
 		"selected_country_code": _vehicle_radio_browser_selected_country_code,
 		"filter_text": _vehicle_radio_browser_filter_text,
+		"loading": _vehicle_radio_browser_stations_loading and _vehicle_radio_browser_station_loading_country_code == _vehicle_radio_browser_selected_country_code,
+		"load_error": _vehicle_radio_browser_stations_error if _vehicle_radio_browser_station_loading_country_code == _vehicle_radio_browser_selected_country_code else "",
 	}
 
 func _ensure_vehicle_radio_browser_station_rows_loaded(country_code: String) -> void:
@@ -3062,17 +3124,154 @@ func _ensure_vehicle_radio_browser_station_rows_loaded(country_code: String) -> 
 	if normalized_country_code == "":
 		_vehicle_radio_browser_cached_country_code = ""
 		_vehicle_radio_browser_cached_station_rows = []
+		_vehicle_radio_browser_stations_loading = false
+		_vehicle_radio_browser_station_loading_country_code = ""
+		_vehicle_radio_browser_stations_error = ""
 		return
 	if _vehicle_radio_browser_cached_country_code == normalized_country_code and not _vehicle_radio_browser_cached_station_rows.is_empty():
 		return
-	if _vehicle_radio_catalog_store == null or not _vehicle_radio_catalog_store.has_method("load_country_station_page"):
-		_vehicle_radio_browser_cached_country_code = normalized_country_code
-		_vehicle_radio_browser_cached_station_rows = []
-		return
-	var load_result: Dictionary = _vehicle_radio_catalog_store.load_country_station_page(normalized_country_code)
-	_vehicle_radio_debug_state["browser_station_page_load_count"] = int(_vehicle_radio_debug_state.get("browser_station_page_load_count", 0)) + 1
+	var load_result: Dictionary = _vehicle_radio_catalog_store.load_country_station_page(normalized_country_code) if _vehicle_radio_catalog_store != null and _vehicle_radio_catalog_store.has_method("load_country_station_page") else {
+		"hit": false,
+		"stale": true,
+		"stations": [],
+	}
+	var cached_stations := (load_result.get("stations", []) as Array).duplicate(true)
+	var fixture_station_page := _looks_like_vehicle_radio_fixture_station_page(cached_stations)
+	var has_fresh_cached_stations := bool(load_result.get("hit", false)) and not bool(load_result.get("stale", true)) and not cached_stations.is_empty() and not fixture_station_page
+	var resolved_force := fixture_station_page
 	_vehicle_radio_browser_cached_country_code = normalized_country_code
-	_vehicle_radio_browser_cached_station_rows = _build_vehicle_radio_browser_station_rows(load_result.get("stations", []) as Array)
+	_vehicle_radio_browser_cached_station_rows = [] if fixture_station_page else (_load_vehicle_radio_browser_station_rows_from_store(normalized_country_code, bool(load_result.get("hit", false))) if bool(load_result.get("hit", false)) else _build_vehicle_radio_browser_station_rows(cached_stations))
+	if has_fresh_cached_stations:
+		_vehicle_radio_browser_stations_loading = false
+		_vehicle_radio_browser_station_loading_country_code = normalized_country_code
+		_vehicle_radio_browser_stations_error = ""
+		return
+	if _should_background_vehicle_radio_catalog_sync():
+		_vehicle_radio_browser_stations_loading = true
+		_vehicle_radio_browser_station_loading_country_code = normalized_country_code
+		_vehicle_radio_browser_stations_error = ""
+		_queue_vehicle_radio_catalog_sync_job("stations", normalized_country_code, resolved_force)
+		return
+	_apply_vehicle_radio_catalog_sync_result({
+		"kind": "stations",
+		"country_code": normalized_country_code,
+		"result": _vehicle_radio_catalog_repository.ensure_country_station_page_ready(normalized_country_code, resolved_force),
+	})
+
+func _load_vehicle_radio_browser_countries_from_store(count_as_browser_load: bool) -> Array:
+	if _vehicle_radio_catalog_store == null or not _vehicle_radio_catalog_store.has_method("load_countries_index"):
+		return []
+	var load_result: Dictionary = _vehicle_radio_catalog_store.load_countries_index()
+	if count_as_browser_load:
+		_vehicle_radio_debug_state["browser_country_load_count"] = int(_vehicle_radio_debug_state.get("browser_country_load_count", 0)) + 1
+	var countries := (load_result.get("countries", []) as Array).duplicate(true)
+	return [] if _looks_like_vehicle_radio_fixture_country_directory(countries) else countries
+
+func _load_vehicle_radio_browser_station_rows_from_store(country_code: String, count_as_browser_load: bool) -> Array:
+	if _vehicle_radio_catalog_store == null or not _vehicle_radio_catalog_store.has_method("load_country_station_page"):
+		return []
+	var load_result: Dictionary = _vehicle_radio_catalog_store.load_country_station_page(country_code)
+	if count_as_browser_load:
+		_vehicle_radio_debug_state["browser_station_page_load_count"] = int(_vehicle_radio_debug_state.get("browser_station_page_load_count", 0)) + 1
+	var stations := (load_result.get("stations", []) as Array).duplicate(true)
+	return [] if _looks_like_vehicle_radio_fixture_station_page(stations) else _build_vehicle_radio_browser_station_rows(stations)
+
+func _should_background_vehicle_radio_catalog_sync() -> bool:
+	if DisplayServer.get_name() == "headless":
+		return false
+	if _vehicle_radio_catalog_repository == null or not _vehicle_radio_catalog_repository.has_method("supports_background_sync"):
+		return false
+	return bool(_vehicle_radio_catalog_repository.supports_background_sync())
+
+func _queue_vehicle_radio_catalog_sync_job(kind: String, country_code: String = "", force: bool = false) -> void:
+	var job := {
+		"kind": kind,
+		"country_code": country_code.strip_edges().to_upper(),
+		"force": force,
+	}
+	if _vehicle_radio_catalog_sync_thread != null and _vehicle_radio_catalog_sync_thread.is_alive():
+		_vehicle_radio_catalog_sync_queued_job = job.duplicate(true)
+		return
+	_start_vehicle_radio_catalog_sync_job(job)
+
+func _start_vehicle_radio_catalog_sync_job(job: Dictionary) -> void:
+	_vehicle_radio_catalog_sync_job = job.duplicate(true)
+	var thread := Thread.new()
+	var start_error := thread.start(Callable(self, "_run_vehicle_radio_catalog_sync_job").bind(job.duplicate(true)))
+	if start_error != OK:
+		_vehicle_radio_catalog_sync_thread = null
+		_apply_vehicle_radio_catalog_sync_result(_run_vehicle_radio_catalog_sync_job(job))
+		return
+	_vehicle_radio_catalog_sync_thread = thread
+
+func _run_vehicle_radio_catalog_sync_job(job: Dictionary) -> Dictionary:
+	var kind := str(job.get("kind", ""))
+	var country_code := str(job.get("country_code", "")).strip_edges().to_upper()
+	var force := bool(job.get("force", false))
+	var result := {
+		"success": false,
+		"error": "repository_unavailable",
+	}
+	if _vehicle_radio_catalog_repository != null:
+		match kind:
+			"countries":
+				result = _vehicle_radio_catalog_repository.ensure_countries_ready(force)
+			"stations":
+				result = _vehicle_radio_catalog_repository.ensure_country_station_page_ready(country_code, force)
+	return {
+		"kind": kind,
+		"country_code": country_code,
+		"result": result.duplicate(true),
+	}
+
+func _collect_completed_vehicle_radio_catalog_sync_job() -> void:
+	if _vehicle_radio_catalog_sync_thread != null:
+		if _vehicle_radio_catalog_sync_thread.is_alive():
+			return
+		var thread_result: Variant = _vehicle_radio_catalog_sync_thread.wait_to_finish()
+		_vehicle_radio_catalog_sync_thread = null
+		if thread_result is Dictionary:
+			_vehicle_radio_catalog_sync_pending_result = (thread_result as Dictionary).duplicate(true)
+		else:
+			_vehicle_radio_catalog_sync_pending_result = {
+				"kind": str(_vehicle_radio_catalog_sync_job.get("kind", "")),
+				"country_code": str(_vehicle_radio_catalog_sync_job.get("country_code", "")),
+				"result": {
+					"success": false,
+					"error": "invalid_thread_result",
+				},
+			}
+	if not _vehicle_radio_catalog_sync_pending_result.is_empty():
+		_apply_vehicle_radio_catalog_sync_result(_vehicle_radio_catalog_sync_pending_result)
+		_vehicle_radio_catalog_sync_pending_result.clear()
+	if _vehicle_radio_catalog_sync_thread == null and not _vehicle_radio_catalog_sync_queued_job.is_empty():
+		var queued_job := _vehicle_radio_catalog_sync_queued_job.duplicate(true)
+		_vehicle_radio_catalog_sync_queued_job.clear()
+		_start_vehicle_radio_catalog_sync_job(queued_job)
+
+func _apply_vehicle_radio_catalog_sync_result(sync_result_payload: Dictionary) -> void:
+	var kind := str(sync_result_payload.get("kind", ""))
+	var country_code := str(sync_result_payload.get("country_code", "")).strip_edges().to_upper()
+	var result := (sync_result_payload.get("result", {}) as Dictionary).duplicate(true)
+	match kind:
+		"countries":
+			_vehicle_radio_browser_countries_loading = false
+			_vehicle_radio_browser_countries_error = str(result.get("error", ""))
+			_vehicle_radio_browser_cached_countries = _load_vehicle_radio_browser_countries_from_store(false)
+			if bool(result.get("success", false)):
+				var synced_countries := (result.get("countries", []) as Array).duplicate(true)
+				_vehicle_radio_browser_cached_countries = [] if _looks_like_vehicle_radio_fixture_country_directory(synced_countries) else synced_countries
+			_sync_vehicle_radio_browser()
+		"stations":
+			_vehicle_radio_browser_stations_loading = false
+			_vehicle_radio_browser_station_loading_country_code = country_code
+			_vehicle_radio_browser_stations_error = str(result.get("error", ""))
+			_vehicle_radio_browser_cached_country_code = country_code
+			_vehicle_radio_browser_cached_station_rows = _load_vehicle_radio_browser_station_rows_from_store(country_code, false)
+			if bool(result.get("success", false)):
+				var synced_stations := (result.get("stations", []) as Array).duplicate(true)
+				_vehicle_radio_browser_cached_station_rows = [] if _looks_like_vehicle_radio_fixture_station_page(synced_stations) else _build_vehicle_radio_browser_station_rows(synced_stations)
+			_sync_vehicle_radio_browser()
 
 func _build_vehicle_radio_browser_station_rows(stations: Array) -> Array:
 	var rows: Array = []
@@ -3115,25 +3314,41 @@ func _is_vehicle_radio_browser_tab_id_valid(tab_id: String) -> bool:
 func _reload_vehicle_radio_selection_sources_from_store() -> void:
 	if _vehicle_radio_user_state_store == null:
 		return
+	var loaded_presets := _normalize_vehicle_radio_preset_entries((_vehicle_radio_user_state_store.load_presets().get("slots", []) as Array).duplicate(true))
+	var loaded_favorites := _sanitize_vehicle_radio_station_list((_vehicle_radio_user_state_store.load_favorites().get("stations", []) as Array).duplicate(true))
+	var loaded_recents := _sanitize_vehicle_radio_station_list((_vehicle_radio_user_state_store.load_recents().get("stations", []) as Array).duplicate(true))
 	_vehicle_radio_selection_sources = {
-		"presets": _normalize_vehicle_radio_preset_entries((_vehicle_radio_user_state_store.load_presets().get("slots", []) as Array).duplicate(true)),
-		"favorites": (_vehicle_radio_user_state_store.load_favorites().get("stations", []) as Array).duplicate(true),
-		"recents": (_vehicle_radio_user_state_store.load_recents().get("stations", []) as Array).duplicate(true),
+		"presets": loaded_presets,
+		"favorites": loaded_favorites,
+		"recents": loaded_recents,
 	}
+	if _should_reject_vehicle_radio_fixture_data():
+		_vehicle_radio_user_state_store.save_presets(loaded_presets, int(Time.get_unix_time_from_system()))
+		_vehicle_radio_user_state_store.save_favorites(loaded_favorites, int(Time.get_unix_time_from_system()))
+		_vehicle_radio_user_state_store.save_recents(loaded_recents, int(Time.get_unix_time_from_system()))
 	_rebuild_vehicle_radio_quick_slots()
 
 func _restore_vehicle_radio_session_state_from_store() -> void:
 	if _vehicle_radio_user_state_store == null or _vehicle_radio_controller == null:
 		return
 	var session_state: Dictionary = _vehicle_radio_user_state_store.load_session_state()
-	_vehicle_radio_power_on = str(session_state.get("power_state", "off")) == "on"
+	var selected_station_snapshot := _sanitize_vehicle_radio_station_snapshot((session_state.get("selected_station_snapshot", {}) as Dictionary).duplicate(true))
+	_vehicle_radio_power_on = str(session_state.get("power_state", "off")) == "on" and not selected_station_snapshot.is_empty()
 	if _vehicle_radio_controller.has_method("set_power_state"):
 		_vehicle_radio_controller.set_power_state(_vehicle_radio_power_on)
-	var selected_station_snapshot := (session_state.get("selected_station_snapshot", {}) as Dictionary).duplicate(true)
 	if selected_station_snapshot.is_empty():
+		if _should_reject_vehicle_radio_fixture_data():
+			_vehicle_radio_user_state_store.save_session_state({
+				"power_state": "off",
+				"selected_station_id": "",
+				"selected_station_snapshot": {},
+			}, int(Time.get_unix_time_from_system()))
+		return
+	var resolved_stream := _build_vehicle_radio_resolved_stream(selected_station_snapshot)
+	if resolved_stream.is_empty():
 		return
 	if _vehicle_radio_controller.has_method("select_station"):
-		_vehicle_radio_controller.select_station(selected_station_snapshot, _build_vehicle_radio_resolved_stream(selected_station_snapshot))
+		_vehicle_radio_controller.select_station(selected_station_snapshot, resolved_stream)
 
 func _persist_vehicle_radio_session_state() -> void:
 	if _vehicle_radio_user_state_store == null or _vehicle_radio_controller == null or not _vehicle_radio_controller.has_method("get_runtime_state"):
@@ -3202,14 +3417,52 @@ func _normalize_vehicle_radio_preset_entries(presets: Array) -> Array:
 		if entry.has("station_snapshot") and entry.get("station_snapshot") is Dictionary:
 			normalized[resolved_slot_index] = {
 				"slot_index": resolved_slot_index,
-				"station_snapshot": (entry.get("station_snapshot", {}) as Dictionary).duplicate(true),
+				"station_snapshot": _sanitize_vehicle_radio_station_snapshot((entry.get("station_snapshot", {}) as Dictionary).duplicate(true)),
 			}
 			continue
 		normalized[resolved_slot_index] = {
 			"slot_index": resolved_slot_index,
-			"station_snapshot": entry.duplicate(true),
+			"station_snapshot": _sanitize_vehicle_radio_station_snapshot(entry.duplicate(true)),
 		}
 	return normalized
+
+func _should_reject_vehicle_radio_fixture_data() -> bool:
+	return DisplayServer.get_name() != "headless"
+
+func _looks_like_vehicle_radio_fixture_country_directory(countries: Array) -> bool:
+	return _should_reject_vehicle_radio_fixture_data() and not countries.is_empty() and countries.size() < VEHICLE_RADIO_MIN_REAL_COUNTRY_COUNT
+
+func _looks_like_vehicle_radio_fixture_station_page(stations: Array) -> bool:
+	if not _should_reject_vehicle_radio_fixture_data():
+		return false
+	for station_variant in stations:
+		if not (station_variant is Dictionary):
+			continue
+		if _looks_like_vehicle_radio_fixture_station_snapshot(station_variant as Dictionary):
+			return true
+	return false
+
+func _looks_like_vehicle_radio_fixture_station_snapshot(station_snapshot: Dictionary) -> bool:
+	var station_id := str(station_snapshot.get("station_id", "")).strip_edges()
+	return _should_reject_vehicle_radio_fixture_data() and station_id != "" and not station_id.begins_with("radio-browser:")
+
+func _sanitize_vehicle_radio_station_snapshot(station_snapshot: Dictionary) -> Dictionary:
+	if station_snapshot.is_empty():
+		return {}
+	if _looks_like_vehicle_radio_fixture_station_snapshot(station_snapshot):
+		return {}
+	return station_snapshot.duplicate(true)
+
+func _sanitize_vehicle_radio_station_list(stations: Array) -> Array:
+	var sanitized: Array = []
+	for station_variant in stations:
+		if not (station_variant is Dictionary):
+			continue
+		var station_snapshot := _sanitize_vehicle_radio_station_snapshot(station_variant as Dictionary)
+		if station_snapshot.is_empty():
+			continue
+		sanitized.append(station_snapshot)
+	return sanitized
 
 func _find_vehicle_radio_station_snapshot_by_id(station_id: String) -> Dictionary:
 	var normalized_station_id := station_id.strip_edges()

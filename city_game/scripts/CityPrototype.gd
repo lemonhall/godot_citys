@@ -269,6 +269,7 @@ func _ready() -> void:
 	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
 		_inspection_resolver.setup(_world_config, _world_data)
 	_setup_map_ui()
+	_connect_vehicle_radio_browser_ui()
 	_ensure_interaction_runtimes()
 	_ensure_destination_world_marker()
 	_ensure_task_system_runtimes()
@@ -487,6 +488,8 @@ func open_vehicle_radio_browser() -> Dictionary:
 	_vehicle_radio_browser_selected_country_code = ""
 	_vehicle_radio_browser_filter_text = ""
 	_apply_world_simulation_pause(true)
+	if DisplayServer.get_name() != "headless":
+		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	_sync_vehicle_radio_browser()
 	return {
 		"success": true,
@@ -503,6 +506,8 @@ func close_vehicle_radio_browser() -> Dictionary:
 	_vehicle_radio_browser_open = false
 	if not _full_map_open and not _vehicle_radio_quick_overlay_open:
 		_apply_world_simulation_pause(false)
+		if DisplayServer.get_name() != "headless" and not _controls_help_open:
+			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	_sync_vehicle_radio_browser()
 	return {
 		"success": true,
@@ -547,6 +552,12 @@ func select_vehicle_radio_browser_country(country_code: String) -> Dictionary:
 
 func set_vehicle_radio_browser_filter_text(filter_text: String) -> void:
 	_vehicle_radio_browser_filter_text = filter_text.strip_edges()
+	_sync_vehicle_radio_browser()
+
+func show_vehicle_radio_browser_country_root() -> void:
+	_vehicle_radio_browser_selected_tab_id = "browse"
+	_vehicle_radio_browser_selected_country_code = ""
+	_vehicle_radio_browser_filter_text = ""
 	_sync_vehicle_radio_browser()
 
 func toggle_vehicle_radio_browser_favorite(station_id: String) -> Dictionary:
@@ -661,6 +672,10 @@ func handle_debug_keypress(keycode: int, physical_keycode: int = 0) -> bool:
 func _handle_vehicle_radio_action(action_name: String) -> bool:
 	match action_name:
 		"vehicle_radio_quick_open":
+			if _vehicle_radio_quick_overlay_open:
+				return bool(close_vehicle_radio_quick_overlay().get("success", false))
+			if _vehicle_radio_browser_open:
+				close_vehicle_radio_browser()
 			return bool(open_vehicle_radio_quick_overlay().get("success", false))
 		"vehicle_radio_cancel":
 			if _vehicle_radio_browser_open:
@@ -668,6 +683,8 @@ func _handle_vehicle_radio_action(action_name: String) -> bool:
 			return bool(close_vehicle_radio_quick_overlay().get("success", false))
 		"vehicle_radio_browser_open":
 			_vehicle_radio_browser_request_count += 1
+			if _vehicle_radio_browser_open:
+				return bool(close_vehicle_radio_browser().get("success", false))
 			if _vehicle_radio_quick_overlay_open:
 				close_vehicle_radio_quick_overlay()
 			return bool(open_vehicle_radio_browser().get("success", false))
@@ -2572,6 +2589,29 @@ func _setup_map_ui() -> void:
 		_map_screen.connect("map_world_point_selected", Callable(self, "_on_map_world_point_selected"))
 	if _map_screen.has_signal("task_selected") and not _map_screen.is_connected("task_selected", Callable(self, "_on_task_selected")):
 		_map_screen.connect("task_selected", Callable(self, "_on_task_selected"))
+
+func _connect_vehicle_radio_browser_ui() -> void:
+	if hud == null:
+		return
+	var browser := hud.get_node_or_null("Root/VehicleRadioBrowser")
+	if browser == null:
+		return
+	if browser.has_signal("close_requested") and not browser.is_connected("close_requested", Callable(self, "close_vehicle_radio_browser")):
+		browser.connect("close_requested", Callable(self, "close_vehicle_radio_browser"))
+	if browser.has_signal("tab_selected") and not browser.is_connected("tab_selected", Callable(self, "set_vehicle_radio_browser_tab")):
+		browser.connect("tab_selected", Callable(self, "set_vehicle_radio_browser_tab"))
+	if browser.has_signal("browse_country_selected") and not browser.is_connected("browse_country_selected", Callable(self, "select_vehicle_radio_browser_country")):
+		browser.connect("browse_country_selected", Callable(self, "select_vehicle_radio_browser_country"))
+	if browser.has_signal("browse_root_requested") and not browser.is_connected("browse_root_requested", Callable(self, "show_vehicle_radio_browser_country_root")):
+		browser.connect("browse_root_requested", Callable(self, "show_vehicle_radio_browser_country_root"))
+	if browser.has_signal("filter_text_changed") and not browser.is_connected("filter_text_changed", Callable(self, "set_vehicle_radio_browser_filter_text")):
+		browser.connect("filter_text_changed", Callable(self, "set_vehicle_radio_browser_filter_text"))
+	if browser.has_signal("station_selected") and not browser.is_connected("station_selected", Callable(self, "select_vehicle_radio_browser_station")):
+		browser.connect("station_selected", Callable(self, "select_vehicle_radio_browser_station"))
+	if browser.has_signal("current_station_favorite_toggled") and not browser.is_connected("current_station_favorite_toggled", Callable(self, "toggle_vehicle_radio_browser_favorite")):
+		browser.connect("current_station_favorite_toggled", Callable(self, "toggle_vehicle_radio_browser_favorite"))
+	if browser.has_signal("preset_assign_requested") and not browser.is_connected("preset_assign_requested", Callable(self, "assign_vehicle_radio_browser_preset")):
+		browser.connect("preset_assign_requested", Callable(self, "assign_vehicle_radio_browser_preset"))
 
 func _sync_navigation_consumers(force_minimap_refresh: bool = false) -> void:
 	_sync_task_presentation_state()

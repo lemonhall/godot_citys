@@ -358,9 +358,6 @@ func _ensure_mouse_passthrough() -> void:
 	var dialogue_panel := get_node_or_null("Root/DialoguePanel") as Control
 	if dialogue_panel != null:
 		dialogue_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var radio_browser := get_node_or_null("Root/VehicleRadioBrowser") as Control
-	if radio_browser != null:
-		radio_browser.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var radio_overlay := get_node_or_null("Root/VehicleRadioQuickOverlay") as Control
 	if radio_overlay != null:
 		radio_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE

@@ -43,7 +43,36 @@
   - countries / station pages：`72h`
   - stream resolve cache：`6h`
 - resolver 必须覆盖 `direct / pls / m3u / hls / asx / xspf`。
-- backend 只冻结接口与验证样本；库选型留给 `M1`。
+- backend 选型现已冻结为 `GDExtension + C++ + FFmpeg(libavformat/libavcodec/libswresample/libavutil)`，并坚持 `LGPL-only build`；不允许 helper/bridge、`ffplay/mpv` 子进程、`libVLC/GStreamer` 大依赖或任何 `127.0.0.1` 本地代理假设。
+
+## Current Reality Snapshot (2026-03-18)
+
+- 已落地且真实成立的部分：
+  - `countries index / per-country station page / user://radio state` 已有正式持久化 contract
+  - quick overlay / browser shell / browser countries root / country drill-down / local filter / preset/favorite/recent 编辑链已接进主 UI
+  - browser 已改成 repository 驱动，不再允许内置 demo country list 冒充“全球目录”
+  - 非 headless 运行时会拒绝 headless 测试残留的 `China / Japan / Quick2` fixture 数据
+  - 当前物理键主链已经收口为：`B=browser`、`O=quick overlay`、`Esc=cancel`
+- 当前仍未完成且必须正视的部分：
+  - `CityRadioMockBackend.gd` 仍是当前真实 backend
+  - `playback_state=playing` 目前只代表 runtime state，不代表已经有真实 live audio decode/output
+  - `REQ-0014-005` 的 direct / playlist / HLS 真播验证仍未成立
+
+## M6 / M7 / M8 Split
+
+- `M6 native backend`：
+  - 交付 `GDExtension + FFmpeg` 真播 backend
+  - 后台线程拉流/解码
+  - Godot 音频出口消费 PCM
+  - reconnect / metadata / error / buffer_state 正式进入 runtime contract
+- `M7 native playback closeout`：
+  - browser -> detail -> playback 真链路全部接上 native backend
+  - session recovery / favorites / recents / presets / driving lifecycle 不再走 mock 歧义路径
+  - mock path 不再能伪装成完成态
+- `M8 verification`：
+  - 三件套 profiling
+  - driving/HUD/runtime fresh regression
+  - `v24` closeout evidence 文档
 
 ## Scope
 
@@ -77,7 +106,7 @@
 8. 自动化验证必须证明：Windows 主线环境至少有一条 direct stream、一条 playlist-wrapped stream、一条 HLS stream 能走通正式 backend。
 9. 自动化测试必须证明：quick-select idle 与 browser hidden 时，不会触发 catalog 全量扫描或大列表重建。
 10. 自动化测试必须证明：radio lifecycle 与 `v9` 的 enter/exit vehicle 主链一致，不会下车后继续误播。
-11. profiling 三件套必须继续串行给出 fresh 结果。
+11. `M8` profiling 三件套必须继续串行给出 fresh 结果。
 12. 反作弊条款：不得通过本地 MP3 假播、8 条静态演示台、全局内存临时字典、或测试时关闭 radio runtime 来宣称完成。
 
 ## Files
@@ -106,7 +135,9 @@
 - Create: `city_game/world/radio/backend/CityRadioStreamBackend.gd.uid`
 - Create: `city_game/world/radio/backend/CityRadioMockBackend.gd`
 - Create: `city_game/world/radio/backend/CityRadioMockBackend.gd.uid`
-- Future Create: `city_game/native/radio_backend/*`
+- Create in M6: `city_game/native/radio_backend/*`
+- Create in M6: `city_game/world/radio/backend/CityRadioNativeBackend.gd`
+- Create in M6: `city_game/world/radio/backend/CityRadioNativeBackend.gd.uid`
 - Create: `tests/world/test_city_vehicle_radio_drive_mode_contract.gd`
 - Create: `tests/world/test_city_vehicle_radio_quick_overlay_contract.gd`
 - Create: `tests/world/test_city_vehicle_radio_browser_state_contract.gd`
@@ -141,19 +172,23 @@
 5. Refactor
    - 把 quick overlay state、browser state、catalog/cache IO、backend playback、drive lifecycle 分层，避免 `CityPrototype.gd` 变成 radio 巨石。
    - 热路径只保留 compact runtime snapshot；Favorites / Recents / station pages 的完整 payload 留在冷路径。
-6. E2E
+6. M6 Native Backend
+   - 以 `GDExtension + FFmpeg` 真播 backend 替换 `CityRadioMockBackend.gd`
+   - direct / playlist-wrapped / HLS 三类样本必须走通正式 decode path
+   - browser/quick overlay 关闭时播放继续，停播/下车/切台时后台线程与音频出口干净回收
+7. M7 Closeout
    - 跑 `test_city_vehicle_radio_quick_switch_flow.gd`：上车 -> 打开 quick-select -> 切台 -> 关机 -> 下车。
    - 跑 `test_city_vehicle_radio_browser_flow.gd`：上车 -> 打开 browser -> 浏览国家目录 -> 加收藏 -> 设为 preset -> quick-select 生效。
-   - 在 Windows 主线环境补 direct / playlist / HLS 三类样本验证。
-7. Review
+   - 在 Windows 主线环境补 direct / playlist / HLS 三类样本验证，并把真实 backend metadata / error / buffer_state 接到 UI。
+8. Review / M8 Verification
    - 回填 `v24-index` 追溯矩阵。
    - fresh 重跑 profiling 三件套。
    - 对照 `PRD-0014` 检查是否出现“quick overlay 被大目录污染”“catalog state 写进 cache 目录”“本地 MP3 冒充直播”等 scope drift。
 
 ## Risks
 
-- 最大技术风险不在 UI，而在 Godot 侧 live stream backend；若 `M1` 不先打掉 feasibility，后续 UI 再漂亮也会被空后端拖死。
+- 最大技术风险不在 UI，而在 `GDExtension + FFmpeg + Godot 音频出口` 的线程与缓冲边界；若 `M6` 不先打掉 native backend，这条线后续再做任何 UI 都是在空后端上堆壳子。
 - 如果不把 quick-select 与 browser 分离，几千个站点一定会污染车内切台体验。
 - 如果 favorites / recents / presets 只存 `station_id` 不存 snapshot，一旦 catalog refresh 失败，整个车载电台会出现“看得见按钮但无内容”的假恢复。
 - 如果热路径每帧去 deep-copy country pages 或 favorites 列表，性能问题会比 UI 更早爆。
-- 如果把代理配置、backend 选型、resolve cache 这些脏活都推迟到 UI 完成后再说，返工会非常大。
+- 如果继续容忍 mock backend 伪装“已能播放”，团队会持续误判完成度；`M6` 开始后必须明确区分“runtime state 在播”和“真声音在播”。

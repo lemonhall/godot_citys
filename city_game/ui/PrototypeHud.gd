@@ -2,6 +2,7 @@ extends CanvasLayer
 
 const CityCrosshairViewScript := preload("res://city_game/ui/CityCrosshairView.gd")
 const CityDialoguePanelScript := preload("res://city_game/ui/CityDialoguePanel.gd")
+const CityVehicleRadioQuickOverlayScript := preload("res://city_game/ui/CityVehicleRadioQuickOverlay.gd")
 
 var _status_text := "Booting city skeleton..."
 var _debug_text := ""
@@ -40,6 +41,14 @@ var _crosshair_state: Dictionary = {
 	"world_target": Vector3.ZERO,
 	"aim_down_sights_active": false,
 }
+var _vehicle_radio_quick_overlay_state: Dictionary = {
+	"visible": false,
+	"slots": [],
+	"selected_slot_index": -1,
+	"power_action_available": false,
+	"browser_action_available": false,
+	"power_state": "off",
+}
 
 func _ready() -> void:
 	_ensure_mouse_passthrough()
@@ -48,6 +57,7 @@ func _ready() -> void:
 	_ensure_focus_message_view()
 	_ensure_interaction_prompt_view()
 	_ensure_dialogue_panel_view()
+	_ensure_vehicle_radio_quick_overlay_view()
 	var toggle_button := get_node_or_null("Root/ToggleButton") as Button
 	if toggle_button != null and not toggle_button.pressed.is_connected(_on_toggle_pressed):
 		toggle_button.pressed.connect(_on_toggle_pressed)
@@ -160,6 +170,20 @@ func get_focus_message_state() -> Dictionary:
 func get_crosshair_state() -> Dictionary:
 	return _crosshair_state.duplicate(true)
 
+func set_vehicle_radio_quick_overlay_state(state: Dictionary) -> void:
+	_vehicle_radio_quick_overlay_state = {
+		"visible": bool(state.get("visible", false)),
+		"slots": (state.get("slots", []) as Array).duplicate(true),
+		"selected_slot_index": int(state.get("selected_slot_index", -1)),
+		"power_action_available": bool(state.get("power_action_available", false)),
+		"browser_action_available": bool(state.get("browser_action_available", false)),
+		"power_state": str(state.get("power_state", "off")),
+	}
+	_apply_vehicle_radio_quick_overlay_state()
+
+func get_vehicle_radio_quick_overlay_state() -> Dictionary:
+	return _vehicle_radio_quick_overlay_state.duplicate(true)
+
 func toggle_debug_expanded() -> void:
 	_debug_expanded = not _debug_expanded
 	_apply_panel_state()
@@ -180,6 +204,7 @@ func _apply_state() -> void:
 	_apply_focus_message_state()
 	_apply_interaction_prompt_state()
 	_apply_dialogue_panel_state()
+	_apply_vehicle_radio_quick_overlay_state()
 
 func _apply_panel_state() -> void:
 	var panel := get_node_or_null("Root/Panel") as PanelContainer
@@ -243,6 +268,11 @@ func _apply_dialogue_panel_state() -> void:
 	if panel != null and panel.has_method("set_state"):
 		panel.set_state(_dialogue_panel_state)
 
+func _apply_vehicle_radio_quick_overlay_state() -> void:
+	var overlay := get_node_or_null("Root/VehicleRadioQuickOverlay")
+	if overlay != null and overlay.has_method("set_state"):
+		overlay.set_state(_vehicle_radio_quick_overlay_state)
+
 func _ensure_mouse_passthrough() -> void:
 	var root := get_node_or_null("Root") as Control
 	if root != null:
@@ -262,6 +292,9 @@ func _ensure_mouse_passthrough() -> void:
 	var dialogue_panel := get_node_or_null("Root/DialoguePanel") as Control
 	if dialogue_panel != null:
 		dialogue_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var radio_overlay := get_node_or_null("Root/VehicleRadioQuickOverlay") as Control
+	if radio_overlay != null:
+		radio_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 func _ensure_crosshair_view() -> void:
 	var root := get_node_or_null("Root") as Control
@@ -396,6 +429,17 @@ func _ensure_dialogue_panel_view() -> void:
 	panel.name = "DialoguePanel"
 	panel.set_script(CityDialoguePanelScript)
 	root.add_child(panel)
+
+func _ensure_vehicle_radio_quick_overlay_view() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("VehicleRadioQuickOverlay") != null:
+		return
+	var overlay := Control.new()
+	overlay.name = "VehicleRadioQuickOverlay"
+	overlay.set_script(CityVehicleRadioQuickOverlayScript)
+	root.add_child(overlay)
 
 func _resolve_fps_color_state(fps: float) -> Dictionary:
 	if fps < 30.0:

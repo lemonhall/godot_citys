@@ -20,6 +20,37 @@ window/size/viewport_width=1600
 window/size/viewport_height=900
 window/stretch/mode="canvas_items"
 
+[input]
+
+vehicle_radio_quick_open={
+"deadzone": 0.5,
+"events": []
+}
+vehicle_radio_next={
+"deadzone": 0.5,
+"events": []
+}
+vehicle_radio_prev={
+"deadzone": 0.5,
+"events": []
+}
+vehicle_radio_power_toggle={
+"deadzone": 0.5,
+"events": []
+}
+vehicle_radio_browser_open={
+"deadzone": 0.5,
+"events": []
+}
+vehicle_radio_confirm={
+"deadzone": 0.5,
+"events": []
+}
+vehicle_radio_cancel={
+"deadzone": 0.5,
+"events": []
+}
+
 [rendering]
 
 environment/defaults/default_clear_color=Color(0.54902, 0.729412, 0.941176, 1)

@@ -71,6 +71,7 @@
 - 把 shader 预点亮 / 命中发光 / 衰减熄灭直接纳入 `v23`
 - 新增《诀别书》试听渲染 QA 工具与中间产物
 - 为《诀别书》冻结当前唯一曲目配置
+- 冻结当前正式谱源为完整的 `reports/v23/music_road/source_private/jue_bie_shu_aigei_source.mid`，不做 `110` 秒裁切。[已由 ECN-0023 变更]
 - 补齐 manifest / definition / visual / runtime / e2e / profiling 计划
 
 不做什么：
@@ -92,7 +93,7 @@
 7. 自动化测试必须证明：reverse traversal 会按真实 crossing 顺序逆序触发音符；慢速与快速 run 会产出不同的 note event 时间间隔。
 8. 自动化测试必须证明：速度超窗、逆向进入、非 driving 状态都不会被误判成正式成功 run。
 9. 自动化测试必须证明：同一条 strip 在同一 run 内不会 double-fire。
-10. 自动化测试必须证明：存在《诀别书》试听渲染 QA 工具与 `wav` 中间产物，且 drive runtime 与试听工具消费的是同一份 normalized note sequence。
+10. 自动化测试必须证明：存在《诀别书》试听渲染 QA 工具与 `wav` 中间产物，且 drive runtime 与试听工具消费的是同一份完整 normalized note sequence，而不是“110 秒裁切版”的历史残留。
 11. 自动化测试必须证明：scene landmark / map pin / driving 既有主链不回退。
 12. profiling 三件套必须串行给出 fresh 结果。
 13. 反作弊条款：不得通过“run 开始即播放整段音频”“脚本硬编码《诀别书》全部条带”“把地图 glyph 直接写死在 UI 不走 icon_id”“把音乐公路塞进 road_graph 测试夹具”“只给曲谱截图不给试听产物”来宣称完成。
@@ -134,7 +135,7 @@
    - 盘点 driving state、scene landmark runtime、full-map pin、audio 路径的现有 consumer
    - 记录 `refs/godot-road-generator` 可借鉴点：独立道路 scene、custom material、museum demo；明确不直接接插件
    - 筛选可用 highway mesh / material 候选，并约定一旦视觉级验证通过就复制到 `city_game/assets/environment/source/music_road/road_generator_frozen/`
-   - 自行搜索《诀别书》谱源，采用“官方音频锚点 + 机读谱源 + 人类可读谱预览”三角校验
+   - 冻结用户提供的完整本地 MIDI 为当前正式谱源，并确认仓库内稳定归档路径
 2. Design
    - 冻结“独立 authored straight corridor music road”路线
    - 冻结 `music_road_definition` 最小字段、shader 相位字段与《诀别书》唯一 `song_id`
@@ -154,7 +155,7 @@
    - 再写 runtime sequence / speed window / reverse traversal tests
    - 最后写 full-map flow 与 drive-song flow e2e
 5. TDD Green
-   - 固定谱源与 normalized note sequence，并导出 `wav` 试听产物
+   - 固定完整 MIDI 谱源与 normalized note sequence，并导出 `wav` 试听产物
    - author landmark scene / manifest / registry
    - 把通过视觉验证的 refs-lineage highway mesh / material 复制并整理到 `city_game/assets/environment/source/music_road/road_generator_frozen/`
    - author `music_road_definition`

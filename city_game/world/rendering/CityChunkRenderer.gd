@@ -165,6 +165,9 @@ var _chunk_death_visual_records: Dictionary = {}
 var _pedestrian_visual_catalog: CityPedestrianVisualCatalog = null
 var _building_override_entries: Dictionary = {}
 var _scene_landmark_entries_by_chunk_id: Dictionary = {}
+var _persistent_scene_landmark_root: Node3D = null
+var _persistent_scene_landmark_entries_by_landmark_id: Dictionary = {}
+var _persistent_scene_landmark_nodes_by_landmark_id: Dictionary = {}
 var _scene_landmark_far_proxy_root: Node3D = null
 var _scene_landmark_far_proxy_entries_by_landmark_id: Dictionary = {}
 var _scene_landmark_far_proxy_nodes_by_landmark_id: Dictionary = {}
@@ -207,6 +210,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_pedestrian_visual_catalog = null
 	_building_override_entries.clear()
 	_scene_landmark_entries_by_chunk_id.clear()
+	_clear_persistent_scene_landmarks()
 	_clear_scene_landmark_far_proxies()
 	if _world_data.has("pedestrian_query"):
 		CityPedestrianVisualInstance.prewarm_shared_catalog()
@@ -226,6 +230,7 @@ func set_building_override_entries(entries: Dictionary) -> void:
 
 func set_scene_landmark_entries(entries: Dictionary) -> void:
 	_scene_landmark_entries_by_chunk_id.clear()
+	_persistent_scene_landmark_entries_by_landmark_id.clear()
 	_scene_landmark_far_proxy_entries_by_landmark_id.clear()
 	# Landmark manifests are cached at sync time, but the scene itself only loads on chunk mount.
 	var normalized_entries: Dictionary = entries.duplicate(true)
@@ -234,6 +239,11 @@ func set_scene_landmark_entries(entries: Dictionary) -> void:
 			continue
 		var entry: Dictionary = entry_variant
 		var landmark_id := str(entry.get("landmark_id", "")).strip_edges()
+		var persistent_mount_variant = entry.get("persistent_mount", {})
+		if persistent_mount_variant is Dictionary and bool((persistent_mount_variant as Dictionary).get("enabled", false)):
+			if landmark_id != "":
+				_persistent_scene_landmark_entries_by_landmark_id[landmark_id] = entry.duplicate(true)
+			continue
 		var chunk_id := str(entry.get("anchor_chunk_id", "")).strip_edges()
 		if chunk_id == "":
 			continue
@@ -252,6 +262,7 @@ func set_scene_landmark_entries(entries: Dictionary) -> void:
 		if proxy_scene_path == "":
 			continue
 		_scene_landmark_far_proxy_entries_by_landmark_id[landmark_id] = entry.duplicate(true)
+	_prune_persistent_scene_landmarks()
 	_prune_scene_landmark_far_proxies()
 
 func set_detailed_streaming_diagnostics_enabled(enabled: bool) -> void:
@@ -416,6 +427,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta
 	if not _detailed_streaming_diagnostics_enabled:
 		_process_streaming_queues_once_per_frame()
 		_update_lod_states(player_position)
+		_sync_persistent_scene_landmarks(player_position)
 		_sync_scene_landmark_far_proxies(player_position)
 		_update_pedestrian_crowd(player_position, delta)
 		_update_vehicle_traffic(player_position, delta)
@@ -426,6 +438,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta
 	var lod_started_usec := Time.get_ticks_usec()
 	_update_lod_states(player_position)
 	_record_renderer_sync_lod_sample(Time.get_ticks_usec() - lod_started_usec)
+	_sync_persistent_scene_landmarks(player_position)
 	var far_proxy_started_usec := Time.get_ticks_usec()
 	_sync_scene_landmark_far_proxies(player_position)
 	_record_renderer_sync_far_proxy_sample(Time.get_ticks_usec() - far_proxy_started_usec)
@@ -450,6 +463,21 @@ func get_chunk_scene_count() -> int:
 
 func get_chunk_scene(chunk_id: String):
 	return _chunk_scenes.get(chunk_id)
+
+func find_scene_landmark_node(landmark_id: String) -> Node:
+	if landmark_id == "":
+		return null
+	var persistent_node := _persistent_scene_landmark_nodes_by_landmark_id.get(landmark_id) as Node
+	if persistent_node != null and is_instance_valid(persistent_node):
+		return persistent_node
+	for chunk_id in get_chunk_ids():
+		var chunk_scene: Node = _chunk_scenes.get(chunk_id) as Node
+		if chunk_scene == null or not chunk_scene.has_method("find_scene_landmark_node"):
+			continue
+		var landmark_node := chunk_scene.find_scene_landmark_node(landmark_id) as Node
+		if landmark_node != null:
+			return landmark_node
+	return null
 
 func get_building_generation_contract(building_id: String) -> Dictionary:
 	if building_id == "":
@@ -1505,6 +1533,108 @@ func _resolve_scene_landmark_far_proxy_lod_mode(distance_m: float) -> String:
 	if distance_m < float(CityChunkScene.MID_THRESHOLD_M):
 		return CityChunkScene.LOD_MID
 	return CityChunkScene.LOD_FAR
+
+func _sync_persistent_scene_landmarks(player_position: Vector3) -> void:
+	for landmark_id_variant in _persistent_scene_landmark_entries_by_landmark_id.keys():
+		var landmark_id := str(landmark_id_variant)
+		var entry: Dictionary = (_persistent_scene_landmark_entries_by_landmark_id.get(landmark_id, {}) as Dictionary).duplicate(true)
+		var existing_node := _persistent_scene_landmark_nodes_by_landmark_id.get(landmark_id) as Node3D
+		if not _should_mount_persistent_scene_landmark(player_position, entry):
+			if existing_node != null and is_instance_valid(existing_node):
+				existing_node.queue_free()
+			_persistent_scene_landmark_nodes_by_landmark_id.erase(landmark_id)
+			continue
+		var persistent_node := _ensure_persistent_scene_landmark_node(entry)
+		if persistent_node == null:
+			continue
+		_apply_persistent_scene_landmark_transform(persistent_node, entry)
+
+func _should_mount_persistent_scene_landmark(player_position: Vector3, entry: Dictionary) -> bool:
+	var persistent_mount_variant = entry.get("persistent_mount", {})
+	if not (persistent_mount_variant is Dictionary):
+		return false
+	var persistent_mount: Dictionary = persistent_mount_variant
+	if not bool(persistent_mount.get("enabled", false)):
+		return false
+	var world_position_variant: Variant = entry.get("world_position", Vector3.ZERO)
+	if not (world_position_variant is Vector3):
+		return false
+	var activation_radius_m := float(persistent_mount.get("activation_radius_m", 0.0))
+	if activation_radius_m <= 0.0:
+		return true
+	return (world_position_variant as Vector3).distance_to(player_position) <= activation_radius_m
+
+func _ensure_persistent_scene_landmark_root() -> Node3D:
+	if _persistent_scene_landmark_root != null and is_instance_valid(_persistent_scene_landmark_root):
+		return _persistent_scene_landmark_root
+	_persistent_scene_landmark_root = get_node_or_null("PersistentSceneLandmarks") as Node3D
+	if _persistent_scene_landmark_root != null:
+		return _persistent_scene_landmark_root
+	_persistent_scene_landmark_root = Node3D.new()
+	_persistent_scene_landmark_root.name = "PersistentSceneLandmarks"
+	add_child(_persistent_scene_landmark_root)
+	return _persistent_scene_landmark_root
+
+func _ensure_persistent_scene_landmark_node(entry: Dictionary) -> Node3D:
+	var landmark_id := str(entry.get("landmark_id", "")).strip_edges()
+	if landmark_id == "":
+		return null
+	var existing_node := _persistent_scene_landmark_nodes_by_landmark_id.get(landmark_id) as Node3D
+	if existing_node != null and is_instance_valid(existing_node):
+		return existing_node
+	var scene_path := str(entry.get("scene_path", "")).strip_edges()
+	if scene_path == "":
+		return null
+	var packed_scene := CityChunkScene._load_cached_scene_landmark_scene(scene_path)
+	if packed_scene == null:
+		return null
+	var instantiated_variant: Variant = packed_scene.instantiate()
+	var landmark_root := instantiated_variant as Node3D
+	if landmark_root == null:
+		if not (instantiated_variant is Node):
+			return null
+		landmark_root = Node3D.new()
+		landmark_root.name = "SceneLandmarkRoot"
+		landmark_root.add_child(instantiated_variant as Node)
+	var persistent_root := _ensure_persistent_scene_landmark_root()
+	persistent_root.add_child(landmark_root)
+	landmark_root.set_meta("city_scene_landmark_id", landmark_id)
+	landmark_root.set_meta("city_scene_landmark", true)
+	landmark_root.set_meta("city_scene_landmark_scene_path", scene_path)
+	landmark_root.set_meta("city_scene_landmark_feature_kind", str(entry.get("feature_kind", "")))
+	landmark_root.set_meta("city_scene_landmark_manifest_path", str(entry.get("manifest_path", "")))
+	landmark_root.set_meta("city_scene_landmark_persistent_mount", true)
+	_persistent_scene_landmark_nodes_by_landmark_id[landmark_id] = landmark_root
+	return landmark_root
+
+func _apply_persistent_scene_landmark_transform(landmark_root: Node3D, entry: Dictionary) -> void:
+	var world_position_variant: Variant = entry.get("world_position", Vector3.ZERO)
+	if world_position_variant is Vector3:
+		landmark_root.global_position = world_position_variant as Vector3
+	landmark_root.rotation.y = float(entry.get("yaw_rad", 0.0))
+
+func _prune_persistent_scene_landmarks() -> void:
+	for landmark_id_variant in _persistent_scene_landmark_nodes_by_landmark_id.keys():
+		var landmark_id := str(landmark_id_variant)
+		if _persistent_scene_landmark_entries_by_landmark_id.has(landmark_id):
+			continue
+		var landmark_node := _persistent_scene_landmark_nodes_by_landmark_id.get(landmark_id) as Node
+		if landmark_node != null and is_instance_valid(landmark_node):
+			landmark_node.queue_free()
+		_persistent_scene_landmark_nodes_by_landmark_id.erase(landmark_id)
+	if _persistent_scene_landmark_entries_by_landmark_id.is_empty():
+		_clear_persistent_scene_landmarks()
+
+func _clear_persistent_scene_landmarks() -> void:
+	for landmark_variant in _persistent_scene_landmark_nodes_by_landmark_id.values():
+		var landmark_node := landmark_variant as Node
+		if landmark_node != null and is_instance_valid(landmark_node):
+			landmark_node.queue_free()
+	_persistent_scene_landmark_nodes_by_landmark_id.clear()
+	_persistent_scene_landmark_entries_by_landmark_id.clear()
+	if _persistent_scene_landmark_root != null and is_instance_valid(_persistent_scene_landmark_root):
+		_persistent_scene_landmark_root.queue_free()
+	_persistent_scene_landmark_root = null
 
 func _ensure_scene_landmark_far_proxy_root() -> Node3D:
 	if _scene_landmark_far_proxy_root != null and is_instance_valid(_scene_landmark_far_proxy_root):

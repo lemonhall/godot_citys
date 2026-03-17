@@ -1,0 +1,16 @@
+{
+  "song_id": "jue_bie_shu",
+  "source_kind": "midi",
+  "source_midi_name": "jue_bie_shu_aigei_source.mid",
+  "note_count": 949,
+  "source_note_end_sec": 108.408854,
+  "rendered_note_end_sec": 108.408854,
+  "preview_duration_sec": 110.712744,
+  "was_trimmed": false,
+  "trim_seconds": null,
+  "sample_rate_hz": 44100,
+  "soundfont_path": "E:\\soundfont2\\FluidR3 GM.sf2",
+  "fluidsynth_bin": "C:\\tools\\fluidsynth\\bin\\fluidsynth.exe",
+  "ffmpeg_bin": "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.EXE",
+  "generated_at_utc": "2026-03-17T07:02:37.082937Z"
+}

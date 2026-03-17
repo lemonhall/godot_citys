@@ -30,6 +30,7 @@ const CityBuildingOverrideRegistry := preload("res://city_game/world/serviceabil
 const CityServiceBuildingMapPinRuntime := preload("res://city_game/world/serviceability/CityServiceBuildingMapPinRuntime.gd")
 const CitySceneLandmarkRegistry := preload("res://city_game/world/features/CitySceneLandmarkRegistry.gd")
 const CitySceneLandmarkRuntime := preload("res://city_game/world/features/CitySceneLandmarkRuntime.gd")
+const CityMusicRoadRuntime := preload("res://city_game/world/features/music_road/CityMusicRoadRuntime.gd")
 const CityNpcInteractionRuntime := preload("res://city_game/world/interactions/CityNpcInteractionRuntime.gd")
 const CityDialogueRuntime := preload("res://city_game/world/interactions/CityDialogueRuntime.gd")
 
@@ -168,6 +169,8 @@ var _building_export_started_process_frame := -1
 var _service_building_map_pin_runtime = null
 var _scene_landmark_registry = null
 var _scene_landmark_runtime = null
+var _music_road_runtime = null
+var _music_road_runtime_time_sec := 0.0
 var _building_export_state: Dictionary = {
 	"running": false,
 	"status": "idle",
@@ -211,6 +214,8 @@ func _ready() -> void:
 	_service_building_map_pin_runtime = CityServiceBuildingMapPinRuntime.new()
 	_scene_landmark_registry = CitySceneLandmarkRegistry.new()
 	_scene_landmark_runtime = CitySceneLandmarkRuntime.new()
+	_music_road_runtime = CityMusicRoadRuntime.new()
+	_music_road_runtime_time_sec = 0.0
 	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
 		_inspection_resolver.setup(_world_config, _world_data)
 	_setup_map_ui()
@@ -239,6 +244,7 @@ func _ready() -> void:
 		hud.set_fps_overlay_visible(_fps_overlay_visible)
 	_sync_navigation_consumers(true)
 	_update_task_system(0.0)
+	_update_music_road_runtime(0.0)
 	_refresh_hud_status()
 	_update_npc_interaction_system()
 
@@ -276,6 +282,7 @@ func _process(delta: float) -> void:
 	var frame_started_usec := Time.get_ticks_usec()
 	update_streaming_for_position(player.global_position, delta)
 	_update_task_system(delta)
+	_update_music_road_runtime(delta)
 	_update_npc_interaction_system()
 	var impact_result := _resolve_player_vehicle_pedestrian_impact_impl()
 	if not impact_result.is_empty():
@@ -1436,6 +1443,14 @@ func get_scene_landmark_runtime_state() -> Dictionary:
 	if _scene_landmark_runtime == null or not _scene_landmark_runtime.has_method("get_state"):
 		return {}
 	return _scene_landmark_runtime.get_state()
+
+func get_music_road_runtime_state() -> Dictionary:
+	if _music_road_runtime == null or not _music_road_runtime.has_method("get_state"):
+		return {}
+	return _music_road_runtime.get_state()
+
+func debug_step_music_road_runtime(delta_sec: float, vehicle_state_override: Dictionary = {}) -> Dictionary:
+	return _advance_music_road_runtime(delta_sec, vehicle_state_override)
 
 func register_task_pin(pin_id: String, world_position: Vector3, title: String, subtitle: String = "", pin_type: String = "task") -> Dictionary:
 	if _map_pin_registry == null or not _map_pin_registry.has_method("register_task_pin"):
@@ -2807,6 +2822,8 @@ func _sync_scene_landmark_entries(entries: Dictionary) -> void:
 	var runtime_entries: Dictionary = entries.duplicate(true)
 	if _scene_landmark_runtime != null and _scene_landmark_runtime.has_method("get_entries_snapshot"):
 		runtime_entries = _scene_landmark_runtime.get_entries_snapshot()
+	if _music_road_runtime != null and _music_road_runtime.has_method("configure"):
+		_music_road_runtime.configure(runtime_entries.duplicate(true))
 	if chunk_renderer != null and chunk_renderer.has_method("set_scene_landmark_entries"):
 		chunk_renderer.set_scene_landmark_entries(runtime_entries)
 	if _map_pin_registry != null and _map_pin_registry.has_method("replace_scene_landmark_pins"):
@@ -2816,6 +2833,30 @@ func _sync_scene_landmark_entries(entries: Dictionary) -> void:
 		_map_pin_registry.replace_scene_landmark_pins(pins)
 	if _full_map_open and _map_screen != null and _map_screen.has_method("set_pins"):
 		_map_screen.set_pins(_get_map_pins("full_map"))
+
+func _update_music_road_runtime(_delta: float) -> void:
+	_advance_music_road_runtime(_delta)
+
+func _advance_music_road_runtime(delta_sec: float, vehicle_state_override: Dictionary = {}) -> Dictionary:
+	if _music_road_runtime == null or not _music_road_runtime.has_method("update"):
+		return {}
+	var runtime_vehicle_state := _build_music_road_runtime_vehicle_state(vehicle_state_override)
+	_music_road_runtime_time_sec += maxf(delta_sec, 0.0)
+	_music_road_runtime.update(chunk_renderer, runtime_vehicle_state, _music_road_runtime_time_sec)
+	return _music_road_runtime.get_state()
+
+func _build_music_road_runtime_vehicle_state(vehicle_state_override: Dictionary = {}) -> Dictionary:
+	if not vehicle_state_override.is_empty():
+		return vehicle_state_override.duplicate(true)
+	var runtime_vehicle_state := {
+		"driving": false,
+		"world_position": player.global_position if player != null else Vector3.ZERO,
+	}
+	if player != null and player.has_method("get_driving_vehicle_state") and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle()):
+		return player.get_driving_vehicle_state()
+	if player != null:
+		runtime_vehicle_state["world_position"] = player.global_position
+	return runtime_vehicle_state
 
 func _collect_completed_building_export_job() -> void:
 	if _building_export_thread != null:

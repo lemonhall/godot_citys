@@ -35,7 +35,7 @@ runtime 这一层解决“玩家这次到底有没有按正确方式跑完这条
 
 资产落地策略也要说得更具体。“尽量能用则用”的真正含义不是“运行时先引用 `refs/`，以后再整理”，而是“把 `refs/` 当候选池做视觉级筛选”。一旦某个 highway mesh / material 被证明视觉上可用，并决定进入正式音乐公路方案，它就必须被复制并整理到 `city_game/assets/environment/source/music_road/road_generator_frozen/`。之后正式 landmark scene、材质引用和 import 链都只允许指向这份项目自有复制件，而不再回指 `res://refs/...`。如果筛出来的候选在视觉上不够好，那就放弃复用，回到 first-party fallback；不能因为“先跑得通”就把参考目录路径带进正式交付。
 
-还有一个必须单独拉出来说的点：谱源不能再交给用户。用户已经明确说自己不识谱，只能听。因此 `v23` 需要一个独立的 authoring QA tool。它不进入游戏，但它要消费和 runtime 完全相同的 normalized note sequence，并渲染出一个 `wav` 试听产物。谱源策略应采用三角校验：用官方发布信息确认曲目身份和时长锚点，用可机读 MIDI 候选拿到可编辑 note data，再用人类可读简谱/五线谱预览做肉眼交叉。这样最后用户听到的 `wav`，才能真正成为“我塞进高速路里的就是这个版本”的验收锚点，而不是另起一套人工示意音频。
+还有一个必须单独拉出来说的点：试听 QA 不能缺，但谱源搜索这件事在当前阶段已经被用户提供的本地 MIDI 收口了。现在正式冻结输入是 `reports/v23/music_road/source_private/jue_bie_shu_aigei_source.mid`，它来自用户确认过的 `诀别书（Cover 邓垚）_爱给网_aigei_com.mid`，并且用户已明确说明这个版本不需要 `110` 秒裁切。[已由 ECN-0023 变更] 这意味着 `v23` 需要的不是继续外找谱，而是做一个独立的 authoring QA tool。它不进入游戏，但它要消费和 runtime 完全相同的 normalized note sequence，并渲染出一个 `wav` 试听产物。这样最后用户听到的 `wav`，才能真正成为“我塞进高速路里的就是这个版本”的验收锚点，而不是另起一套人工示意音频。
 
 ## 验证与边界
 

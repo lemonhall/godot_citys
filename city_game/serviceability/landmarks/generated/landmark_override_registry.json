@@ -12,6 +12,12 @@
 			"feature_kind": "scene_landmark",
 			"manifest_path": "res://city_game/serviceability/landmarks/generated/landmark_v21_radio_tower_chunk_131_138/landmark_manifest.json",
 			"scene_path": "res://city_game/serviceability/landmarks/generated/landmark_v21_radio_tower_chunk_131_138/radio_tower_landmark.tscn"
+		},
+		"landmark:v23:music_road:chunk_136_136": {
+			"landmark_id": "landmark:v23:music_road:chunk_136_136",
+			"feature_kind": "scene_landmark",
+			"manifest_path": "res://city_game/serviceability/landmarks/generated/landmark_v23_music_road_chunk_136_136/landmark_manifest.json",
+			"scene_path": "res://city_game/serviceability/landmarks/generated/landmark_v23_music_road_chunk_136_136/music_road_landmark.tscn"
 		}
 	}
 }

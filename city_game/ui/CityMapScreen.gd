@@ -21,6 +21,7 @@ const PIN_ICON_GLYPHS := {
 	"garage": "🔧",
 	"fountain": "⛲",
 	"gun_shop": "🔫",
+	"music_road": "🎵",
 	"radio_tower": "📡",
 	"shop": "🛍",
 	"restaurant": "🍽",

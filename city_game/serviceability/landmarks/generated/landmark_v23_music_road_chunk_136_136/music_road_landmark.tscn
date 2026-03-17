@@ -1,0 +1,31 @@
+[gd_scene load_steps=2 format=3 uid="uid://d1mx6mu5p4j47"]
+
+[ext_resource type="Script" path="res://city_game/serviceability/landmarks/generated/landmark_v23_music_road_chunk_136_136/CityMusicRoadLandmark.gd" id="1_music_road_script"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_road"]
+size = Vector3(18, 0.4, 1320)
+
+[sub_resource type="BoxMesh" id="BoxMesh_entry"]
+size = Vector3(18, 0.2, 12)
+
+[sub_resource type="BoxMesh" id="BoxMesh_marker"]
+size = Vector3(1.2, 3.4, 0.35)
+
+[node name="MusicRoadLandmark" type="Node3D"]
+script = ExtResource("1_music_road_script")
+
+[node name="RoadDeck" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.2, 660)
+mesh = SubResource("BoxMesh_road")
+
+[node name="EntryPlate" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.31, 6)
+mesh = SubResource("BoxMesh_entry")
+
+[node name="EntryMarkerLeft" type="MeshInstance3D" parent="."]
+position = Vector3(-8.2, 1.7, 2.4)
+mesh = SubResource("BoxMesh_marker")
+
+[node name="EntryMarkerRight" type="MeshInstance3D" parent="."]
+position = Vector3(8.2, 1.7, 2.4)
+mesh = SubResource("BoxMesh_marker")

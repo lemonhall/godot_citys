@@ -232,11 +232,7 @@
 
 **范围**：
 
-- 谱源搜索由实现侧自行完成，不能转嫁给用户
-- 谱源选择必须采用至少三类输入做交叉校验：
-  - 官方音频发布信息
-  - 可机读的 MIDI / 可编辑谱源
-  - 人类可读的简谱或五线谱预览
+- `v23` 当前正式谱源冻结为用户提供并归档的本地 MIDI：`reports/v23/music_road/source_private/jue_bie_shu_aigei_source.mid`。[已由 ECN-0023 变更]
 - 必须新增一个本地 Python 工具，把最终采用的 normalized note sequence 渲染为 `wav`；如环境允许，可额外导出 `mp3`
 - 中间试听产物建议落地到 `reports/v23/music_road/`
 - 中间试听产物不是玩家功能，不要求进入游戏 UI
@@ -248,7 +244,7 @@
 
 **验收口径**：
 
-- 自动化检查至少断言：仓库内存在正式的谱源选择说明，记录采用了哪些来源、为什么选它。
+- 自动化检查至少断言：仓库内存在正式的谱源冻结说明，记录当前采用的是哪一份本地 MIDI、归档路径是什么，以及为什么不再需要裁切。[已由 ECN-0023 变更]
 - 自动化检查至少断言：本地 Python 工具能从 normalized note sequence 确定性输出 `jue_bie_shu_preview.wav`。
 - 自动化检查至少断言：同一输入重复渲染时，试听产物的事件数、总时长与导出元数据稳定一致。
 - 自动化检查至少断言：drive runtime 所消费的 note sequence 与试听工具所消费的 normalized note sequence 是同一份正式数据，而不是两套各自维护的副本。
@@ -259,7 +255,7 @@
 - 最终挂载 chunk 和精确 `world_position.y` 需要在实现前通过 fresh `ground_probe` 锁定；当前 PRD 只冻结路线，不提前伪造高程。
 - 音符输出最终采用简易 synth、单音 sample bank 还是别的 audio 资源组织方式，当前不作为 PRD 硬约束；但 `note_id / sample_id` authored contract 必须先存在。
 - `music_road` 是否未来进入 place search。当前答案：不是 `v23` 范围。
-- 《诀别书》最终采用哪一份 community arrangement 作为 normalized source。当前答案：由实现侧基于官方音频锚点 + 机读 MIDI + 人类可读谱预览交叉校验后确定，并用试听产物让用户用听觉验收。
+- 《诀别书》当前正式采用哪一份 normalized source。当前答案：冻结为用户提供并归档的 `reports/v23/music_road/source_private/jue_bie_shu_aigei_source.mid`，不做 `110` 秒裁切。[已由 ECN-0023 变更]
 
 ## Future Direction
 

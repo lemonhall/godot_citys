@@ -116,6 +116,10 @@ func _resolve_registry_entry(landmark_id: String, registry_entry: Dictionary) ->
 	var far_visibility_variant = manifest.get("far_visibility", {})
 	if far_visibility_variant is Dictionary:
 		far_visibility = (far_visibility_variant as Dictionary).duplicate(true)
+	var persistent_mount: Dictionary = {}
+	var persistent_mount_variant = manifest.get("persistent_mount", {})
+	if persistent_mount_variant is Dictionary:
+		persistent_mount = (persistent_mount_variant as Dictionary).duplicate(true)
 	return {
 		"landmark_id": resolved_landmark_id,
 		"display_name": str(manifest.get("display_name", resolved_landmark_id)),
@@ -125,8 +129,10 @@ func _resolve_registry_entry(landmark_id: String, registry_entry: Dictionary) ->
 		"world_position": world_position,
 		"scene_path": scene_path,
 		"manifest_path": manifest_path,
+		"music_road_definition_path": str(manifest.get("music_road_definition_path", "")),
 		"full_map_pin": full_map_pin,
 		"far_visibility": far_visibility,
+		"persistent_mount": persistent_mount,
 		"yaw_rad": float(manifest.get("yaw_rad", 0.0)),
 	}
 

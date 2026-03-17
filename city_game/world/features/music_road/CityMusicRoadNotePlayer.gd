@@ -1,30 +1,38 @@
 extends Node
 class_name CityMusicRoadNotePlayer
 
-const DEFAULT_VOICE_COUNT := 28
+const DEFAULT_VOICE_COUNT := 16
 const FALLBACK_SAMPLE_RATE := 44100
-const FALLBACK_MIN_DURATION_SEC := 0.16
-const FALLBACK_MAX_DURATION_SEC := 0.92
+const FALLBACK_MIN_DURATION_SEC := 0.12
+const FALLBACK_MAX_DURATION_SEC := 0.68
 const FALLBACK_ATTACK_SEC := 0.006
-const FALLBACK_MIN_RELEASE_SEC := 0.08
-const FALLBACK_MAX_RELEASE_SEC := 0.22
+const FALLBACK_MIN_RELEASE_SEC := 0.05
+const FALLBACK_MAX_RELEASE_SEC := 0.14
+const FALLBACK_DURATION_BUCKETS_SEC := [0.14, 0.22, 0.34, 0.52, 0.82]
 
 var _sample_bank_manifest_path := ""
 var _sample_paths_by_id: Dictionary = {}
 var _stream_cache: Dictionary = {}
 var _players: Array[AudioStreamPlayer] = []
 var _next_player_index := 0
+var _playback_enabled := true
+var _triggered_note_count := 0
 var _played_note_count := 0
+var _suppressed_note_count := 0
 var _last_sample_id := ""
 var _bank_status := "unconfigured"
+var _peak_active_voice_count := 0
 
 func configure(sample_bank_manifest_path: String, voice_count: int = DEFAULT_VOICE_COUNT) -> void:
 	_sample_bank_manifest_path = sample_bank_manifest_path
 	_sample_paths_by_id.clear()
 	_stream_cache.clear()
+	_triggered_note_count = 0
 	_played_note_count = 0
+	_suppressed_note_count = 0
 	_last_sample_id = ""
 	_bank_status = "missing"
+	_peak_active_voice_count = 0
 	_ensure_players(voice_count)
 	if _sample_bank_manifest_path == "":
 		return
@@ -55,6 +63,7 @@ func play_note_event(note_event: Dictionary) -> bool:
 	var sample_id := str(note_event.get("sample_id", "")).strip_edges()
 	if sample_id == "":
 		return false
+	_triggered_note_count += 1
 	var sample_path := str(_sample_paths_by_id.get(sample_id, "")).strip_edges()
 	var stream = null
 	if sample_path != "":
@@ -77,22 +86,59 @@ func play_note_event(note_event: Dictionary) -> bool:
 	player.stop()
 	player.stream = stream
 	player.volume_db = _velocity_to_volume_db(int(note_event.get("velocity", 100)))
+	if not _playback_enabled:
+		_suppressed_note_count += 1
+		_last_sample_id = sample_id
+		_bank_status = "ready" if sample_path != "" else "fallback_synth"
+		return true
 	player.play()
+	_peak_active_voice_count = maxi(_peak_active_voice_count, _count_active_voices())
 	_played_note_count += 1
 	_last_sample_id = sample_id
 	_bank_status = "ready" if sample_path != "" else "fallback_synth"
 	return true
 
+func set_playback_enabled(enabled: bool) -> void:
+	_playback_enabled = enabled
+	if enabled:
+		return
+	for player in _players:
+		if player != null and is_instance_valid(player):
+			player.stop()
+
 func get_state() -> Dictionary:
+	var active_voice_count := _count_active_voices()
+	var peak_active_voice_count := maxi(_peak_active_voice_count, active_voice_count)
 	return {
+		"playback_enabled": _playback_enabled,
 		"bank_status": _bank_status,
 		"manifest_path": _sample_bank_manifest_path,
 		"available_sample_count": _sample_paths_by_id.size(),
 		"loaded_sample_count": _stream_cache.size(),
+		"triggered_note_count": _triggered_note_count,
 		"played_note_count": _played_note_count,
+		"suppressed_note_count": _suppressed_note_count,
 		"last_sample_id": _last_sample_id,
 		"voice_count": _players.size(),
+		"active_voice_count": active_voice_count,
+		"peak_active_voice_count": peak_active_voice_count,
 	}
+
+func prewarm_fallback_bank(note_event_like_items: Array) -> void:
+	if not _sample_paths_by_id.is_empty():
+		return
+	var seen_keys: Dictionary = {}
+	for item_variant in note_event_like_items:
+		if not (item_variant is Dictionary):
+			continue
+		var item: Dictionary = item_variant
+		var midi_note := int(item.get("midi_note", 0))
+		var quantized_duration_sec := _quantize_note_duration_sec(float(item.get("duration_sec", 0.25)))
+		var cache_key := "fallback_%03d_%04d" % [clampi(midi_note, 21, 108), int(round(quantized_duration_sec * 1000.0))]
+		if seen_keys.has(cache_key):
+			continue
+		seen_keys[cache_key] = true
+		_build_fallback_stream(midi_note, quantized_duration_sec)
 
 func _ensure_players(voice_count: int) -> void:
 	var resolved_voice_count := maxi(voice_count, 1)
@@ -116,10 +162,10 @@ func _load_stream(sample_id: String, sample_path: String):
 
 func _build_fallback_stream(midi_note: int, note_duration_sec: float):
 	var resolved_midi_note := clampi(midi_note, 21, 108)
-	var resolved_duration_sec := clampf(note_duration_sec, 0.05, 1.4)
-	var release_sec := clampf(resolved_duration_sec * 0.35 + 0.045, FALLBACK_MIN_RELEASE_SEC, FALLBACK_MAX_RELEASE_SEC)
-	var total_duration_sec := clampf(resolved_duration_sec * 0.88 + release_sec, FALLBACK_MIN_DURATION_SEC, FALLBACK_MAX_DURATION_SEC)
-	var duration_bucket_ms := int(round(total_duration_sec * 100.0)) * 10
+	var resolved_duration_sec := _quantize_note_duration_sec(note_duration_sec)
+	var release_sec := clampf(resolved_duration_sec * 0.22 + 0.03, FALLBACK_MIN_RELEASE_SEC, FALLBACK_MAX_RELEASE_SEC)
+	var total_duration_sec := clampf(resolved_duration_sec * 0.52 + release_sec, FALLBACK_MIN_DURATION_SEC, FALLBACK_MAX_DURATION_SEC)
+	var duration_bucket_ms := int(round(resolved_duration_sec * 1000.0))
 	var cache_key := "fallback_%03d_%04d" % [resolved_midi_note, duration_bucket_ms]
 	if _stream_cache.has(cache_key):
 		return _stream_cache.get(cache_key)
@@ -153,6 +199,25 @@ func _build_fallback_stream(midi_note: int, note_duration_sec: float):
 	_stream_cache[cache_key] = stream
 	return stream
 
+func _quantize_note_duration_sec(note_duration_sec: float) -> float:
+	var resolved_duration_sec := clampf(note_duration_sec, 0.05, 1.4)
+	var best_bucket := FALLBACK_DURATION_BUCKETS_SEC[0]
+	var best_distance := absf(resolved_duration_sec - float(best_bucket))
+	for bucket_variant in FALLBACK_DURATION_BUCKETS_SEC:
+		var bucket := float(bucket_variant)
+		var distance := absf(resolved_duration_sec - bucket)
+		if distance < best_distance:
+			best_distance = distance
+			best_bucket = bucket
+	return best_bucket
+
 func _velocity_to_volume_db(velocity: int) -> float:
 	var normalized := clampf(float(velocity) / 127.0, 0.0, 1.0)
 	return lerpf(-14.0, -4.0, normalized)
+
+func _count_active_voices() -> int:
+	var active_voice_count := 0
+	for player in _players:
+		if player != null and is_instance_valid(player) and player.playing:
+			active_voice_count += 1
+	return active_voice_count

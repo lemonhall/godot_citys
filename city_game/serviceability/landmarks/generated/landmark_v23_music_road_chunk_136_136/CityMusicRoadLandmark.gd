@@ -18,6 +18,7 @@ const VISIBLE_WINDOW_FORWARD_M := 132.0
 const VISIBLE_WINDOW_REBUILD_MARGIN_M := 18.0
 const VISUAL_CLUSTER_SPACING_M := 2.4
 const VISUAL_CLUSTER_MAX_LENGTH_M := 2.8
+const ROAD_COLLISION_HEIGHT_M := 0.72
 
 var _music_road_entry: Dictionary = {}
 var _definition = null
@@ -35,6 +36,8 @@ var _visible_cluster_ids: Array[String] = []
 var _visible_cluster_members_by_id: Dictionary = {}
 var _visible_window_min_z := -INF
 var _visible_window_max_z := INF
+var _road_collision_body: StaticBody3D = null
+var _key_visuals_enabled := true
 
 func _ready() -> void:
 	_ensure_runtime_ready()
@@ -78,10 +81,20 @@ func get_music_road_strip_phase(strip_id: String) -> Dictionary:
 
 func get_music_road_runtime_state() -> Dictionary:
 	_ensure_runtime_ready()
-	var state := _run_state.get_state()
+	var state := _run_state.get_runtime_snapshot() if _run_state.has_method("get_runtime_snapshot") else _run_state.get_state()
 	if _note_player != null:
 		state["note_player"] = _note_player.get_state()
 	return state
+
+func set_note_playback_enabled(enabled: bool) -> void:
+	_ensure_runtime_ready()
+	if _note_player != null and _note_player.has_method("set_playback_enabled"):
+		_note_player.set_playback_enabled(enabled)
+
+func set_key_visuals_enabled(enabled: bool) -> void:
+	_key_visuals_enabled = enabled
+	if _strip_visual_root != null and is_instance_valid(_strip_visual_root):
+		_strip_visual_root.visible = enabled
 
 func get_music_road_debug_state() -> Dictionary:
 	_ensure_runtime_ready()
@@ -100,6 +113,7 @@ func get_music_road_debug_state() -> Dictionary:
 		"visual_instance_count": _count_visual_instances(),
 		"key_instance_count": _get_key_instance_count(),
 		"visible_key_instance_count": _get_visible_key_instance_count(),
+		"key_visuals_enabled": _key_visuals_enabled,
 		"render_backend": "multimesh" if _strip_visual_root != null else "none",
 		"uses_project_owned_assets": _uses_project_owned_assets(),
 		"adopted_asset_paths": _adopted_asset_paths.duplicate(),
@@ -114,6 +128,7 @@ func _ensure_runtime_ready() -> void:
 	_ensure_note_player()
 	_ensure_adopted_road_texture()
 	_ensure_deck_materials()
+	_ensure_collision_body()
 	_ensure_barrier_visuals()
 	_ensure_strip_visuals()
 	_apply_visual_phases()
@@ -131,6 +146,8 @@ func _ensure_note_player() -> void:
 	_note_player.name = "MusicRoadNotePlayer"
 	add_child(_note_player)
 	_note_player.configure(SAMPLE_BANK_MANIFEST_PATH)
+	if _definition != null and _note_player.has_method("prewarm_fallback_bank"):
+		_note_player.prewarm_fallback_bank(_definition.get_note_strips())
 
 func _ensure_adopted_road_texture() -> void:
 	if _adopted_road_texture != null:
@@ -153,6 +170,7 @@ func _ensure_strip_visuals() -> void:
 	_strip_visual_root.name = "KeyStrips"
 	_strip_visual_root.material_override = _shared_key_material
 	_strip_visual_root.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_strip_visual_root.visible = _key_visuals_enabled
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_custom_data = true
@@ -228,6 +246,25 @@ func _ensure_barrier_visuals() -> void:
 		barrier_material.metallic = 0.08
 		barrier_mesh.material_override = barrier_material
 		add_child(barrier_mesh)
+
+func _ensure_collision_body() -> void:
+	if _road_collision_body != null and is_instance_valid(_road_collision_body):
+		return
+	if _definition == null:
+		return
+	var road_width_m := float(_definition.get_value("road_width_m", 18.0))
+	var road_length_m := float(_definition.get_value("road_length_m", 1320.0))
+	var body := StaticBody3D.new()
+	body.name = "RoadCollisionBody"
+	var collision_shape := CollisionShape3D.new()
+	collision_shape.name = "CollisionShape3D"
+	var box_shape := BoxShape3D.new()
+	box_shape.size = Vector3(road_width_m, ROAD_COLLISION_HEIGHT_M, road_length_m)
+	collision_shape.shape = box_shape
+	collision_shape.position = Vector3(0.0, ROAD_COLLISION_HEIGHT_M * 0.5 - 0.02, road_length_m * 0.5)
+	body.add_child(collision_shape)
+	add_child(body)
+	_road_collision_body = body
 
 func _build_local_vehicle_state(vehicle_state: Dictionary) -> Dictionary:
 	var local_position := Vector3.ZERO
@@ -421,5 +458,7 @@ func _get_key_instance_count() -> int:
 
 func _get_visible_key_instance_count() -> int:
 	if _strip_visual_root == null or _strip_visual_root.multimesh == null:
+		return 0
+	if not _key_visuals_enabled or not _strip_visual_root.visible:
 		return 0
 	return _strip_visual_root.multimesh.visible_instance_count

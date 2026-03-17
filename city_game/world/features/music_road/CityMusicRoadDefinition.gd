@@ -35,17 +35,29 @@ func get_note_strips() -> Array[Dictionary]:
 		snapshot.append(strip.duplicate(true))
 	return snapshot
 
+func get_note_strips_shared() -> Array[Dictionary]:
+	return _note_strips
+
 func get_note_strips_descending() -> Array[Dictionary]:
 	var snapshot: Array[Dictionary] = []
 	for strip in _note_strips_desc:
 		snapshot.append(strip.duplicate(true))
 	return snapshot
 
+func get_note_strips_descending_shared() -> Array[Dictionary]:
+	return _note_strips_desc
+
 func get_strip(strip_id: String) -> Dictionary:
 	var strip_variant = _strip_by_id.get(strip_id, {})
 	if not (strip_variant is Dictionary):
 		return {}
 	return (strip_variant as Dictionary).duplicate(true)
+
+func get_strip_shared(strip_id: String) -> Dictionary:
+	var strip_variant = _strip_by_id.get(strip_id, {})
+	if not (strip_variant is Dictionary):
+		return {}
+	return strip_variant as Dictionary
 
 func get_strip_count() -> int:
 	return _note_strips.size()

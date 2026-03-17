@@ -276,6 +276,14 @@ CityPrototype
   - `task pin / minimap / task panel / HUD` 默认按事件刷新理解；它们可能造成瞬时尖峰，但一般不是持续掉 FPS 的首嫌
   - `world marker update / ground resolve / route refresh / renderer tick` 才是持续波动时优先怀疑的每帧链路
 
+- 先排除“payload 膨胀型”每帧成本，再怀疑 shader / 音频 / draw call
+  - 对 `get_state() / get_runtime_state() / get_debug_state() / snapshot` 这类每帧可见链路，优先检查是否偷偷 deep-copy 大 `Array/Dictionary`，尤其是累计事件列表、全量 strip/marker/task 列表、全量 runtime snapshot
+  - 如果症状是“越到后段越卡 / 时间越久越卡 / 内容越多越卡”，先量 getter/build-state 自身耗时，再去看 shader、音频 overlap、draw call、object count
+
+- 热路径禁止调用 defensive-copy getter；冷热接口要分离
+  - `definition / query / registry / catalog` 这类静态或低频数据，允许保留对外 snapshot getter，但热路径必须额外提供 shared view / compact runtime snapshot，不能在 `_process()`、runtime tick、renderer sync 里每帧复制全量数据
+  - 一旦某个修复依赖“只给测试/文档方便看”的完整 payload，默认把完整 payload 留在冷路径，把紧凑 summary 留在热路径
+
 - 手工 destination 与 task route 必须做差分验证
   - 只测 task route 或只测 manual destination 都不够；任何 marker / route visual 改动后，至少比较：
     - manual destination
@@ -310,6 +318,11 @@ CityPrototype
   - 为什么：`update_streaming_renderer_sync_*`、queue 子相位等字段只用于边界定位；开启探针会改变 profiling 口径，和默认 guard mode 不是一回事
   - 替代：official closeout 一律用默认 guard mode 跑三件套；需要定位时再显式打开 `set_performance_diagnostics_enabled(true)` 或跑 `test_city_runtime_streaming_diagnostic_contract.gd`
   - 验证：过线结论只看三件套与对应 `docs/plan/vN-mN-verification-YYYY-MM-DD.md`
+
+- 禁止：在局部掉帧问题里先怪 shader / 音频 / mesh 数，而不先排查 per-frame deep-copy / full-scan / eager rebuild
+  - 为什么：这类仓库里更常见的真根因是 runtime payload 膨胀、全量列表复制、每帧全量 phase/cache 重建；它们会伪装成“到了某段路/某个特效区域才卡”
+  - 替代：先做 A/B 定位，再量 `getter/build-state`、`full-scan`、`eager cache rebuild` 的微成本；确认不是 CPU 热路径后，再往 GPU/音频方向下钻
+  - 验证：至少留下一组 before/after profiling 证据，能证明根因收敛的是哪条热路径
 
 - 禁止：把导航/任务系统退回成第二套隐藏 target、route、pin 或 marker 栈
   - 为什么：这会直接破坏 `v12` 到 `v14` 收口出来的共享 contract，后续 fast travel、autodrive、task ring 和 HUD 会再次分叉

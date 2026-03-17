@@ -4,9 +4,13 @@ class_name CityMusicRoadRunState
 const CROSSING_EPSILON_M := 0.0001
 
 var _definition = null
+var _note_strips: Array[Dictionary] = []
+var _note_strips_desc: Array[Dictionary] = []
+var _strip_by_id: Dictionary = {}
 var _triggered_note_events: Array[Dictionary] = []
 var _strip_trigger_time_sec_by_id: Dictionary = {}
 var _strip_phase_cache: Dictionary = {}
+var _strip_phase_cache_dirty := true
 var _double_fire_count := 0
 var _song_success := false
 var _last_completed_direction := ""
@@ -25,12 +29,21 @@ func setup(definition_variant: Variant) -> void:
 		_definition = definition_variant
 	else:
 		_definition = null
+	_note_strips.clear()
+	_note_strips_desc.clear()
+	_strip_by_id.clear()
+	if _definition != null:
+		_note_strips = _definition.get_note_strips_shared() if _definition.has_method("get_note_strips_shared") else _definition.get_note_strips()
+		_note_strips_desc = _definition.get_note_strips_descending_shared() if _definition.has_method("get_note_strips_descending_shared") else _definition.get_note_strips_descending()
+		for strip in _note_strips:
+			_strip_by_id[str(strip.get("strip_id", ""))] = strip
 	reset()
 
 func reset() -> void:
 	_triggered_note_events.clear()
 	_strip_trigger_time_sec_by_id.clear()
 	_strip_phase_cache.clear()
+	_strip_phase_cache_dirty = true
 	_double_fire_count = 0
 	_song_success = false
 	_last_completed_direction = ""
@@ -45,7 +58,7 @@ func reset() -> void:
 	_active_session = _build_empty_session()
 	if _definition == null:
 		return
-	for strip in _definition.get_note_strips():
+	for strip in _note_strips:
 		_strip_trigger_time_sec_by_id[str(strip.get("strip_id", ""))] = -1.0
 
 func advance_local_vehicle_state(vehicle_state: Dictionary, time_sec: float) -> Dictionary:
@@ -64,7 +77,7 @@ func advance_local_vehicle_state(vehicle_state: Dictionary, time_sec: float) -> 
 		_previous_local_position = next_local_position
 		_previous_time_sec = _current_time_sec
 		_current_motion_direction_sign = 0
-		_refresh_phase_cache()
+		_mark_phase_cache_dirty()
 		return {
 			"frame_triggered_events": frame_triggered_events,
 		}
@@ -79,7 +92,7 @@ func advance_local_vehicle_state(vehicle_state: Dictionary, time_sec: float) -> 
 	_current_motion_direction_sign = direction_sign
 
 	if not next_driving:
-		_refresh_phase_cache()
+		_mark_phase_cache_dirty()
 		_previous_local_position = next_local_position
 		_previous_time_sec = _current_time_sec
 		return {
@@ -137,7 +150,7 @@ func advance_local_vehicle_state(vehicle_state: Dictionary, time_sec: float) -> 
 		if int(_active_session.get("triggered_count", 0)) >= _definition.get_strip_count():
 			_finalize_session()
 
-	_refresh_phase_cache()
+	_mark_phase_cache_dirty()
 	_previous_local_position = next_local_position
 	_previous_time_sec = _current_time_sec
 	return {
@@ -145,20 +158,30 @@ func advance_local_vehicle_state(vehicle_state: Dictionary, time_sec: float) -> 
 	}
 
 func get_strip_phase(strip_id: String) -> Dictionary:
-	var cached = _strip_phase_cache.get(strip_id, {})
-	if not (cached is Dictionary):
+	if _strip_phase_cache_dirty:
+		_strip_phase_cache.clear()
+		_strip_phase_cache_dirty = false
+	if _strip_phase_cache.has(strip_id):
+		return (_strip_phase_cache.get(strip_id, {}) as Dictionary).duplicate(true)
+	var strip_variant: Variant = _strip_by_id.get(strip_id, {})
+	if not (strip_variant is Dictionary):
 		return {}
-	return (cached as Dictionary).duplicate(true)
+	var strip: Dictionary = strip_variant
+	var phase_state := _build_strip_phase(strip)
+	_strip_phase_cache[strip_id] = phase_state
+	return phase_state.duplicate(true)
 
 func get_state() -> Dictionary:
-	var triggered_events: Array[Dictionary] = []
-	for event in _triggered_note_events:
-		triggered_events.append(event.duplicate(true))
-	return {
+	return _build_state(true)
+
+func get_runtime_snapshot() -> Dictionary:
+	return _build_state(false)
+
+func _build_state(include_triggered_note_events: bool) -> Dictionary:
+	var state := {
 		"song_id": str(_definition.get_value("song_id", "")) if _definition != null else "",
 		"strip_count": _definition.get_strip_count() if _definition != null else 0,
-		"triggered_note_count": triggered_events.size(),
-		"triggered_note_events": triggered_events,
+		"triggered_note_count": _triggered_note_events.size(),
 		"song_success": _song_success,
 		"double_fire_count": _double_fire_count,
 		"last_completed_direction": _last_completed_direction,
@@ -166,6 +189,12 @@ func get_state() -> Dictionary:
 		"road_length_m": float(_definition.get_value("road_length_m", 0.0)) if _definition != null else 0.0,
 		"target_speed_mps": float(_definition.get_value("target_speed_mps", 0.0)) if _definition != null else 0.0,
 	}
+	if include_triggered_note_events:
+		var triggered_events: Array[Dictionary] = []
+		for event in _triggered_note_events:
+			triggered_events.append(event.duplicate(true))
+		state["triggered_note_events"] = triggered_events
+	return state
 
 func _build_empty_session() -> Dictionary:
 	return {
@@ -193,6 +222,7 @@ func _start_new_session(direction_sign: int, gate_armed: bool) -> void:
 	_last_completed_run.clear()
 	for strip_id in _strip_trigger_time_sec_by_id.keys():
 		_strip_trigger_time_sec_by_id[strip_id] = -1.0
+	_mark_phase_cache_dirty()
 
 func _finalize_session() -> void:
 	if not bool(_active_session.get("active", false)):
@@ -219,7 +249,7 @@ func _collect_crossed_strips(previous_position: Vector3, next_position: Vector3,
 	if direction_sign == 0:
 		return []
 	var crossed: Array[Dictionary] = []
-	var strips: Array[Dictionary] = _definition.get_note_strips() if direction_sign > 0 else _definition.get_note_strips_descending()
+	var strips: Array[Dictionary] = _note_strips if direction_sign > 0 else _note_strips_desc
 	var lateral_x := next_position.x
 	for strip in strips:
 		var local_center: Vector3 = strip.get("local_center", Vector3.ZERO)
@@ -227,7 +257,7 @@ func _collect_crossed_strips(previous_position: Vector3, next_position: Vector3,
 			continue
 		if absf(lateral_x - local_center.x) > float(strip.get("trigger_width_m", 0.0)) * 0.5:
 			continue
-		crossed.append(strip.duplicate(true))
+		crossed.append(strip)
 	return crossed
 
 func _strip_center_crossed(previous_z: float, next_z: float, target_z: float, direction_sign: int) -> bool:
@@ -268,14 +298,8 @@ func _resolve_local_position(vehicle_state: Dictionary) -> Vector3:
 		return world_position_variant
 	return Vector3.ZERO
 
-func _refresh_phase_cache() -> void:
-	if _definition == null:
-		_strip_phase_cache.clear()
-		return
-	_strip_phase_cache.clear()
-	for strip in _definition.get_note_strips():
-		var strip_id := str(strip.get("strip_id", ""))
-		_strip_phase_cache[strip_id] = _build_strip_phase(strip)
+func _mark_phase_cache_dirty() -> void:
+	_strip_phase_cache_dirty = true
 
 func _build_strip_phase(strip: Dictionary) -> Dictionary:
 	var strip_id := str(strip.get("strip_id", ""))

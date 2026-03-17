@@ -2,17 +2,17 @@
 	"landmark_id": "landmark:v23:music_road:chunk_136_136",
 	"display_name": "诀别书钢琴道路",
 	"feature_kind": "scene_landmark",
-	"anchor_chunk_id": "chunk_108_210",
+	"anchor_chunk_id": "chunk_108_209",
 	"anchor_chunk_key": {
 		"@type": "Vector2i",
 		"x": 108,
-		"y": 210
+		"y": 209
 	},
 	"world_position": {
 		"@type": "Vector3",
-		"x": -7202.77,
-		"y": -9.82,
-		"z": 18962.72
+		"x": -7278.5,
+		"y": -6.33,
+		"z": 18504.83
 	},
 	"yaw_rad": 1.5707963267948966,
 	"scene_path": "res://city_game/serviceability/landmarks/generated/landmark_v23_music_road_chunk_136_136/music_road_landmark.tscn",

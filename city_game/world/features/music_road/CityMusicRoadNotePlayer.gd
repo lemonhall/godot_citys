@@ -1,11 +1,13 @@
 extends Node
 class_name CityMusicRoadNotePlayer
 
-const DEFAULT_VOICE_COUNT := 48
+const DEFAULT_VOICE_COUNT := 28
 const FALLBACK_SAMPLE_RATE := 44100
-const FALLBACK_DURATION_SEC := 1.6
-const FALLBACK_ATTACK_SEC := 0.01
-const FALLBACK_RELEASE_SEC := 1.45
+const FALLBACK_MIN_DURATION_SEC := 0.16
+const FALLBACK_MAX_DURATION_SEC := 0.92
+const FALLBACK_ATTACK_SEC := 0.006
+const FALLBACK_MIN_RELEASE_SEC := 0.08
+const FALLBACK_MAX_RELEASE_SEC := 0.22
 
 var _sample_bank_manifest_path := ""
 var _sample_paths_by_id: Dictionary = {}
@@ -58,7 +60,10 @@ func play_note_event(note_event: Dictionary) -> bool:
 	if sample_path != "":
 		stream = _load_stream(sample_id, sample_path)
 	if stream == null:
-		stream = _build_fallback_stream(int(note_event.get("midi_note", 0)))
+		stream = _build_fallback_stream(
+			int(note_event.get("midi_note", 0)),
+			float(note_event.get("duration_sec", 0.25))
+		)
 		if stream == null:
 			_bank_status = "missing_sample" if sample_path == "" else "load_failed"
 			_last_sample_id = sample_id
@@ -109,12 +114,16 @@ func _load_stream(sample_id: String, sample_path: String):
 	_stream_cache[sample_id] = stream
 	return stream
 
-func _build_fallback_stream(midi_note: int):
+func _build_fallback_stream(midi_note: int, note_duration_sec: float):
 	var resolved_midi_note := clampi(midi_note, 21, 108)
-	var cache_key := "fallback_%03d" % resolved_midi_note
+	var resolved_duration_sec := clampf(note_duration_sec, 0.05, 1.4)
+	var release_sec := clampf(resolved_duration_sec * 0.35 + 0.045, FALLBACK_MIN_RELEASE_SEC, FALLBACK_MAX_RELEASE_SEC)
+	var total_duration_sec := clampf(resolved_duration_sec * 0.88 + release_sec, FALLBACK_MIN_DURATION_SEC, FALLBACK_MAX_DURATION_SEC)
+	var duration_bucket_ms := int(round(total_duration_sec * 100.0)) * 10
+	var cache_key := "fallback_%03d_%04d" % [resolved_midi_note, duration_bucket_ms]
 	if _stream_cache.has(cache_key):
 		return _stream_cache.get(cache_key)
-	var frame_count := int(round(FALLBACK_SAMPLE_RATE * FALLBACK_DURATION_SEC))
+	var frame_count := int(round(FALLBACK_SAMPLE_RATE * total_duration_sec))
 	if frame_count <= 0:
 		return null
 	var frequency_hz := 440.0 * pow(2.0, float(resolved_midi_note - 69) / 12.0)
@@ -123,14 +132,14 @@ func _build_fallback_stream(midi_note: int):
 	for frame_index in range(frame_count):
 		var time_sec := float(frame_index) / float(FALLBACK_SAMPLE_RATE)
 		var attack_t := clampf(time_sec / maxf(FALLBACK_ATTACK_SEC, 0.0001), 0.0, 1.0)
-		var release_t := clampf((FALLBACK_DURATION_SEC - time_sec) / maxf(FALLBACK_RELEASE_SEC, 0.0001), 0.0, 1.0)
+		var release_t := clampf((total_duration_sec - time_sec) / maxf(release_sec, 0.0001), 0.0, 1.0)
 		var envelope := minf(attack_t, release_t)
-		envelope = pow(envelope, 0.72)
+		envelope = pow(envelope, 0.88)
+		var tone_decay := exp(-time_sec * 2.4)
 		var waveform := sin(TAU * frequency_hz * time_sec)
-		waveform += sin(TAU * frequency_hz * 2.0 * time_sec) * 0.28
-		waveform += sin(TAU * frequency_hz * 3.0 * time_sec) * 0.14
-		waveform += sin(TAU * frequency_hz * 4.0 * time_sec) * 0.07
-		var sample_value := clampf(waveform * envelope * 0.34, -1.0, 1.0)
+		waveform += sin(TAU * frequency_hz * 2.0 * time_sec) * 0.12 * tone_decay
+		waveform += sin(TAU * frequency_hz * 3.0 * time_sec) * 0.04 * tone_decay
+		var sample_value := clampf(waveform * envelope * 0.22, -1.0, 1.0)
 		var sample_int := int(round(sample_value * 32767.0))
 		var byte_offset := frame_index * 2
 		pcm_data[byte_offset] = sample_int & 0xFF
@@ -146,4 +155,4 @@ func _build_fallback_stream(midi_note: int):
 
 func _velocity_to_volume_db(velocity: int) -> float:
 	var normalized := clampf(float(velocity) / 127.0, 0.0, 1.0)
-	return lerpf(-9.0, 1.5, normalized)
+	return lerpf(-14.0, -4.0, normalized)

@@ -7,9 +7,9 @@ const MUSIC_ROAD_LANDMARK_ID := "landmark:v23:music_road:chunk_136_136"
 const EXPECTED_SCENE_PATH := "res://city_game/serviceability/landmarks/generated/landmark_v23_music_road_chunk_136_136/music_road_landmark.tscn"
 const EXPECTED_MANIFEST_PATH := "res://city_game/serviceability/landmarks/generated/landmark_v23_music_road_chunk_136_136/landmark_manifest.json"
 const EXPECTED_DEFINITION_PATH := "res://city_game/serviceability/landmarks/generated/landmark_v23_music_road_chunk_136_136/music_road_definition.json"
-const EXPECTED_ANCHOR_CHUNK_ID := "chunk_108_210"
-const EXPECTED_ANCHOR_CHUNK_KEY := Vector2i(108, 210)
-const EXPECTED_WORLD_POSITION := Vector3(-7202.77, -9.82, 18962.72)
+const EXPECTED_ANCHOR_CHUNK_ID := "chunk_108_209"
+const EXPECTED_ANCHOR_CHUNK_KEY := Vector2i(108, 209)
+const EXPECTED_WORLD_POSITION := Vector3(-7278.5, -6.33, 18504.83)
 const EXPECTED_YAW_RAD := PI * 0.5
 
 func _init() -> void:

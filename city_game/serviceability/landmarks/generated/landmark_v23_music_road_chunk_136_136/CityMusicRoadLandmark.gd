@@ -11,6 +11,8 @@ const ADOPTED_EDGE_BARRIER_SCENE_PATH := "res://city_game/assets/environment/sou
 const SAMPLE_BANK_MANIFEST_PATH := "res://city_game/assets/audio/music_road/grand_piano/grand_piano_sample_bank.json"
 const ROAD_SURFACE_TOP_Y := 0.4
 const KEY_SURFACE_CLEARANCE_M := 0.035
+const RAIL_WIDTH_M := 0.22
+const RAIL_HEIGHT_M := 0.64
 
 var _music_road_entry: Dictionary = {}
 var _definition = null
@@ -141,7 +143,7 @@ func _ensure_strip_visuals() -> void:
 	_strip_visual_root = MultiMeshInstance3D.new()
 	_strip_visual_root.name = "KeyStrips"
 	_strip_visual_root.material_override = _shared_key_material
-	_strip_visual_root.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	_strip_visual_root.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_custom_data = true
@@ -180,9 +182,11 @@ func _build_shared_key_material() -> ShaderMaterial:
 func _ensure_deck_materials() -> void:
 	var road_deck := get_node_or_null("RoadDeck") as MeshInstance3D
 	if road_deck != null:
+		road_deck.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		road_deck.material_override = _build_road_material()
 	var entry_plate := get_node_or_null("EntryPlate") as MeshInstance3D
 	if entry_plate != null:
+		entry_plate.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var entry_material := StandardMaterial3D.new()
 		entry_material.albedo_color = Color(0.175, 0.184, 0.209, 1.0)
 		entry_material.emission_enabled = true
@@ -193,6 +197,7 @@ func _ensure_deck_materials() -> void:
 		var marker := get_node_or_null(marker_name) as MeshInstance3D
 		if marker == null:
 			continue
+		marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var marker_material := StandardMaterial3D.new()
 		marker_material.albedo_color = Color(0.98, 0.91, 0.68, 1.0)
 		marker_material.emission_enabled = true
@@ -213,27 +218,24 @@ func _build_road_material() -> StandardMaterial3D:
 func _ensure_barrier_visuals() -> void:
 	if get_node_or_null("BarrierLeft") != null or get_node_or_null("BarrierRight") != null:
 		return
-	if not ResourceLoader.exists(ADOPTED_EDGE_BARRIER_SCENE_PATH):
-		return
-	var barrier_scene = load(ADOPTED_EDGE_BARRIER_SCENE_PATH)
-	if barrier_scene == null or not (barrier_scene is PackedScene):
-		return
 	var road_length_m := float(_definition.get_value("road_length_m", 0.0)) if _definition != null else 0.0
 	for barrier_config in [
-		{"name": "BarrierLeft", "x": -8.85, "rotation_y": PI},
-		{"name": "BarrierRight", "x": 8.85, "rotation_y": 0.0},
+		{"name": "BarrierLeft", "x": -8.85},
+		{"name": "BarrierRight", "x": 8.85},
 	]:
-		var path := Path3D.new()
-		path.name = str(barrier_config.get("name", "Barrier"))
-		path.position = Vector3(float(barrier_config.get("x", 0.0)), 0.25, 0.0)
-		var curve := Curve3D.new()
-		curve.add_point(Vector3.ZERO)
-		curve.add_point(Vector3(0.0, 0.0, road_length_m))
-		path.curve = curve
-		var barrier = (barrier_scene as PackedScene).instantiate()
-		barrier.rotation.y = float(barrier_config.get("rotation_y", 0.0))
-		path.add_child(barrier)
-		add_child(path)
+		var barrier_mesh := MeshInstance3D.new()
+		barrier_mesh.name = str(barrier_config.get("name", "Barrier"))
+		barrier_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var box_mesh := BoxMesh.new()
+		box_mesh.size = Vector3(RAIL_WIDTH_M, RAIL_HEIGHT_M, maxf(road_length_m, 1.0))
+		barrier_mesh.mesh = box_mesh
+		barrier_mesh.position = Vector3(float(barrier_config.get("x", 0.0)), RAIL_HEIGHT_M * 0.5, road_length_m * 0.5)
+		var barrier_material := StandardMaterial3D.new()
+		barrier_material.albedo_color = Color(0.72, 0.74, 0.77, 1.0)
+		barrier_material.roughness = 0.82
+		barrier_material.metallic = 0.08
+		barrier_mesh.material_override = barrier_material
+		add_child(barrier_mesh)
 
 func _build_local_vehicle_state(vehicle_state: Dictionary) -> Dictionary:
 	var local_position := Vector3.ZERO

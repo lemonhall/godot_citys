@@ -111,6 +111,8 @@ func advance_local_vehicle_state(vehicle_state: Dictionary, time_sec: float) -> 
 				"note_id": str(strip.get("note_id", "")),
 				"sample_id": str(strip.get("sample_id", "")),
 				"midi_note": int(strip.get("midi_note", 0)),
+				"duration_sec": float(strip.get("duration_sec", 0.25)),
+				"velocity": 96,
 				"event_time_sec": event_time_sec,
 				"observed_speed_mps": observed_speed_mps,
 				"direction": "forward" if direction_sign > 0 else "reverse",

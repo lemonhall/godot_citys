@@ -13,14 +13,15 @@ const ROAD_SURFACE_TOP_Y := 0.4
 const KEY_SURFACE_CLEARANCE_M := 0.035
 const RAIL_WIDTH_M := 0.22
 const RAIL_HEIGHT_M := 0.64
+const VISIBLE_WINDOW_BACK_M := 28.0
+const VISIBLE_WINDOW_FORWARD_M := 132.0
+const VISIBLE_WINDOW_REBUILD_MARGIN_M := 18.0
 
 var _music_road_entry: Dictionary = {}
 var _definition = null
 var _run_state := CityMusicRoadRunState.new()
 var _note_player = null
 var _strip_visual_root: MultiMeshInstance3D = null
-var _strip_instance_index_by_id: Dictionary = {}
-var _strip_key_kind_by_id: Dictionary = {}
 var _visuals_built := false
 var _shared_key_material: ShaderMaterial = null
 var _shared_key_mesh: BoxMesh = null
@@ -28,6 +29,9 @@ var _adopted_asset_paths: Array[String] = []
 var _adopted_road_texture: Texture2D = null
 var _configured_landmark_id := ""
 var _configured_definition_path := ""
+var _visible_strip_ids: Array[String] = []
+var _visible_window_min_z := -INF
+var _visible_window_max_z := INF
 
 func _ready() -> void:
 	_ensure_runtime_ready()
@@ -58,6 +62,7 @@ func debug_apply_music_road_vehicle_state(vehicle_state: Dictionary, time_sec: f
 	_ensure_runtime_ready()
 	var local_vehicle_state := _build_local_vehicle_state(vehicle_state)
 	var update_result: Dictionary = _run_state.advance_local_vehicle_state(local_vehicle_state, time_sec)
+	_refresh_visible_strip_window(local_vehicle_state)
 	for note_event in update_result.get("frame_triggered_events", []):
 		if _note_player != null:
 			_note_player.play_note_event(note_event)
@@ -91,6 +96,7 @@ func get_music_road_debug_state() -> Dictionary:
 		"black_key_count": black_key_count,
 		"visual_instance_count": _count_visual_instances(),
 		"key_instance_count": _get_key_instance_count(),
+		"visible_key_instance_count": _get_visible_key_instance_count(),
 		"render_backend": "multimesh" if _strip_visual_root != null else "none",
 		"uses_project_owned_assets": _uses_project_owned_assets(),
 		"adopted_asset_paths": _adopted_asset_paths.duplicate(),
@@ -149,28 +155,11 @@ func _ensure_strip_visuals() -> void:
 	multimesh.use_custom_data = true
 	multimesh.mesh = _shared_key_mesh
 	multimesh.instance_count = _definition.get_strip_count()
+	multimesh.visible_instance_count = 0
 	_strip_visual_root.multimesh = multimesh
 	add_child(_strip_visual_root)
-	var instance_index := 0
-	for strip in _definition.get_note_strips():
-		var strip_id := str(strip.get("strip_id", ""))
-		var local_center: Vector3 = strip.get("local_center", Vector3.ZERO)
-		var is_black_key := str(strip.get("visual_key_kind", "white")) == "black"
-		var visual_width_m := maxf(float(strip.get("visual_width_m", 1.0)) * (1.18 if is_black_key else 1.52), 2.8 if is_black_key else 4.2)
-		var visual_length_m := maxf(float(strip.get("visual_length_m", 1.0)) * (1.08 if is_black_key else 1.24), 1.34 if is_black_key else 1.56)
-		var visual_height_m := 0.18 if is_black_key else 0.14
-		var key_center_y := ROAD_SURFACE_TOP_Y + visual_height_m * 0.5 + KEY_SURFACE_CLEARANCE_M + (0.055 if is_black_key else 0.0)
-		var transform := Transform3D(
-			Basis.IDENTITY.scaled(Vector3(visual_width_m, visual_height_m, visual_length_m)),
-			Vector3(local_center.x, maxf(local_center.y, key_center_y), local_center.z)
-		)
-		multimesh.set_instance_transform(instance_index, transform)
-		var key_kind := 1.0 if is_black_key else 0.0
-		multimesh.set_instance_custom_data(instance_index, Color(key_kind, 0.0, 0.0, 1.0))
-		_strip_instance_index_by_id[strip_id] = instance_index
-		_strip_key_kind_by_id[strip_id] = key_kind
-		instance_index += 1
 	_visuals_built = true
+	_refresh_visible_strip_window({}, true)
 
 func _build_shared_key_material() -> ShaderMaterial:
 	var shader_material := ShaderMaterial.new()
@@ -255,16 +244,65 @@ func _apply_visual_phases() -> void:
 	if _strip_visual_root == null or _strip_visual_root.multimesh == null:
 		return
 	var multimesh := _strip_visual_root.multimesh
-	for strip_id_variant in _strip_instance_index_by_id.keys():
-		var strip_id := str(strip_id_variant)
-		var instance_index := int(_strip_instance_index_by_id.get(strip_id, -1))
-		if instance_index < 0 or instance_index >= multimesh.instance_count:
-			continue
+	var instance_index := 0
+	for strip_id in _visible_strip_ids:
+		if instance_index >= multimesh.visible_instance_count:
+			break
 		var phase_state := _run_state.get_strip_phase(strip_id)
-		var key_kind := float(_strip_key_kind_by_id.get(strip_id, 0.0))
+		var strip: Dictionary = _definition.get_strip(strip_id)
+		var key_kind := 1.0 if str(strip.get("visual_key_kind", "white")) == "black" else 0.0
 		var encoded_phase_index := clampf(float(phase_state.get("phase_index", 0.0)) / 3.0, 0.0, 1.0)
 		var phase_strength := clampf(float(phase_state.get("phase_strength", 0.0)), 0.0, 1.0)
 		multimesh.set_instance_custom_data(instance_index, Color(key_kind, encoded_phase_index, phase_strength, 1.0))
+		instance_index += 1
+
+func _refresh_visible_strip_window(local_vehicle_state: Dictionary, force: bool = false) -> void:
+	if _definition == null or _strip_visual_root == null or _strip_visual_root.multimesh == null:
+		return
+	var focus_local_z := float(_definition.get_value("lead_in_m", 20.0)) + 12.0
+	var local_position_variant = local_vehicle_state.get("local_position", null)
+	if local_position_variant is Vector3:
+		focus_local_z = float((local_position_variant as Vector3).z)
+	if not force:
+		if focus_local_z >= _visible_window_min_z + VISIBLE_WINDOW_REBUILD_MARGIN_M \
+				and focus_local_z <= _visible_window_max_z - VISIBLE_WINDOW_REBUILD_MARGIN_M:
+			return
+	var next_min_z := focus_local_z - VISIBLE_WINDOW_BACK_M
+	var next_max_z := focus_local_z + VISIBLE_WINDOW_FORWARD_M
+	var selected_strips: Array[Dictionary] = []
+	for strip_variant in _definition.get_note_strips():
+		var strip: Dictionary = strip_variant
+		var local_center: Vector3 = strip.get("local_center", Vector3.ZERO)
+		if local_center.z < next_min_z or local_center.z > next_max_z:
+			continue
+		selected_strips.append(strip)
+	if selected_strips.is_empty():
+		for strip_variant in _definition.get_note_strips().slice(0, min(96, _definition.get_strip_count())):
+			selected_strips.append(strip_variant as Dictionary)
+	var multimesh := _strip_visual_root.multimesh
+	var instance_index := 0
+	_visible_strip_ids.clear()
+	for strip_variant in selected_strips:
+		var strip: Dictionary = strip_variant
+		var strip_id := str(strip.get("strip_id", ""))
+		var local_center: Vector3 = strip.get("local_center", Vector3.ZERO)
+		var is_black_key := str(strip.get("visual_key_kind", "white")) == "black"
+		var visual_width_m := maxf(float(strip.get("visual_width_m", 1.0)) * (1.18 if is_black_key else 1.52), 2.8 if is_black_key else 4.2)
+		var visual_length_m := maxf(float(strip.get("visual_length_m", 1.0)) * (1.08 if is_black_key else 1.24), 1.34 if is_black_key else 1.56)
+		var visual_height_m := 0.18 if is_black_key else 0.14
+		var key_center_y := ROAD_SURFACE_TOP_Y + visual_height_m * 0.5 + KEY_SURFACE_CLEARANCE_M + (0.055 if is_black_key else 0.0)
+		var transform := Transform3D(
+			Basis.IDENTITY.scaled(Vector3(visual_width_m, visual_height_m, visual_length_m)),
+			Vector3(local_center.x, maxf(local_center.y, key_center_y), local_center.z)
+		)
+		multimesh.set_instance_transform(instance_index, transform)
+		var key_kind := 1.0 if is_black_key else 0.0
+		multimesh.set_instance_custom_data(instance_index, Color(key_kind, 0.0, 0.0, 1.0))
+		_visible_strip_ids.append(strip_id)
+		instance_index += 1
+	multimesh.visible_instance_count = instance_index
+	_visible_window_min_z = next_min_z
+	_visible_window_max_z = next_max_z
 
 func _uses_project_owned_assets() -> bool:
 	if _adopted_asset_paths.is_empty():
@@ -288,3 +326,8 @@ func _get_key_instance_count() -> int:
 	if _strip_visual_root == null or _strip_visual_root.multimesh == null:
 		return 0
 	return _strip_visual_root.multimesh.instance_count
+
+func _get_visible_key_instance_count() -> int:
+	if _strip_visual_root == null or _strip_visual_root.multimesh == null:
+		return 0
+	return _strip_visual_root.multimesh.visible_instance_count

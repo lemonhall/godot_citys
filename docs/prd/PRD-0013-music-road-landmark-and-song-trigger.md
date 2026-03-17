@@ -20,6 +20,7 @@
   - 倒着开要能听到逆序效果，故意减速要能听到旋律真的变慢
   - 键位 shader 预点亮在 `v23` 内直接交付，而不是未来再补
   - 谱源搜索和试听检查由实现侧负责，不能把“找谱子”甩给用户
+  - `refs/godot-road-generator` 里的 highway 资产如果经视觉级验证可用，就必须复制进项目自有 `assets` 目录并安置好，不能直接拿 `refs/` 路径交付
 - `refs/godot-road-generator` 证明“独立道路场景 + 自定义 road material / road mesh”这类 authoring 路线是可行的，但该参考仓库没有现成的“钢琴道路”资产或曲目系统，因此只能借鉴组织方式与材质/道路 authoring 思路，不能当成现成功能直接接入。
 
 ## Scope
@@ -35,6 +36,7 @@
 - 新增正式 `music_road_definition` contract，当前只承载 `song_id = jue_bie_shu`
 - 玩家驾驶车辆通过时，按真实 traversal 顺序与时间间隔触发音符
 - 新增中间检查步骤：把最终采用的《诀别书》音符序列渲染成试听产物供人工验耳
+- 若复用 `refs/godot-road-generator` 的 highway mesh / material 候选，通过视觉级验证后必须复制到 `city_game/assets/environment/source/music_road/road_generator_frozen/`
 - 补齐 world / e2e / performance 级验证计划
 
 不包含：
@@ -206,7 +208,7 @@
 - 音乐公路 runtime 只允许在 landmark 已 mounted 时工作
 - 不得在 `_process()` 中全城扫描所有 music road definition
 - full-map pin 继续沿现有 `icon_id -> glyph` UI contract 走，不得新开第二套地图图标链
-- 高速路视觉资产优先复用 `refs/godot-road-generator` 中可稳定抽取的 straight-highway mesh / material 体系；若候选资源必须依赖插件 runtime，必须把所需资产固化到正式产品目录
+- 高速路视觉资产优先复用 `refs/godot-road-generator` 中可稳定抽取的 straight-highway mesh / material 体系；但 `refs/` 里的 highway 资产只允许作为候选输入，任何经视觉级验证后被正式采用的资源都必须复制到 `city_game/assets/environment/source/music_road/road_generator_frozen/`
 - profiling 三件套继续作为 guard
 
 **非目标**：
@@ -220,8 +222,9 @@
 - 新增音乐公路 manifest / definition / runtime / e2e tests 必须通过。
 - 串行运行 `test_city_chunk_setup_profile_breakdown.gd`、`test_city_runtime_performance_profile.gd`、`test_city_first_visit_performance_profile.gd` 仍需给出 fresh 结果。
 - 自动化测试至少断言：音乐公路 pin 不会污染 minimap，landmark loader 不会退化成 per-frame registry scan。
+- 自动化测试至少断言：若正式音乐公路 scene 采用了 `refs/godot-road-generator` lineage 的 highway 资产，则这些被采用的文件都位于 `city_game/assets/environment/source/music_road/road_generator_frozen/`，且 scene / material 引用全部指向项目自有复制件。
 - 自动化测试至少断言：最终产品运行时不依赖 `res://refs/...` 路径直接加载 highway 资产。
-- 反作弊条款：不得为了 profiling 过线而临时关闭音乐公路 loader、禁用音符触发或跳过 full-map pin；不得把音乐公路偷塞进 `road_graph` 现有测试夹具里并宣称“没有新增成本”；不得把正式游戏运行时直接绑到 `refs/` 参考目录。
+- 反作弊条款：不得为了 profiling 过线而临时关闭音乐公路 loader、禁用音符触发或跳过 full-map pin；不得把音乐公路偷塞进 `road_graph` 现有测试夹具里并宣称“没有新增成本”；不得把正式游戏运行时直接绑到 `refs/` 参考目录；不得视觉上用了 `refs` 候选资产却不复制进项目自有 `assets` 目录。
 
 ### REQ-0013-006 v23 必须提供一个中间试听产物，让用户可以靠听觉检查《诀别书》音符序列是否正确
 

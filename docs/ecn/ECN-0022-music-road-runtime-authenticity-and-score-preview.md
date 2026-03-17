@@ -25,7 +25,8 @@
   - 新增本地 Python 渲染工具，把 normalized note sequence 输出为 `wav`，必要时附带 `mp3`
 - 高速路视觉资产路线升级为：
   - 优先复用 `refs/godot-road-generator` 中可稳定抽取的 straight-highway mesh / material 体系
-  - 若某个候选资源依赖插件 runtime 才能成立，则将所需资产固化到正式产品目录，不能让 `godot_citys` 运行时直接依赖 `refs/`
+  - `refs/` 内的 highway 资产只允许作为候选输入；只要某个 mesh / material 经过视觉级验证后被正式采用，就必须复制并整理到 `city_game/assets/environment/source/music_road/road_generator_frozen/`
+  - 正式音乐公路 scene / material / import 链只允许引用项目自有复制件，不能让 `godot_citys` 运行时直接依赖 `refs/`
 
 ## Still Out Of Scope
 

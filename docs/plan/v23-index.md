@@ -29,7 +29,7 @@ PRD 入口：[PRD-0013 Music Road Landmark And Song Trigger](../prd/PRD-0013-mus
 - note timing 必须来自真实 crossing 时间，不能量化成固定节拍。
 - 视觉 cue 冻结为“钢琴键提示 + shader 预点亮/命中/衰减”，不是机械可动琴键。
 - `music_road_definition` 必须独立存在，不允许把歌曲数据硬编码进 landmark script。
-- 高速路视觉资产优先复用 `refs/godot-road-generator` 中可稳定抽取的 mesh / material 体系，但正式运行时不得直接依赖 `res://refs/...`。
+- 高速路视觉资产优先复用 `refs/godot-road-generator` 中可稳定抽取的 mesh / material 体系，但 `refs/` 内资源只允许作为候选输入；只要视觉级验证通过并被正式采用，就必须复制到 `city_game/assets/environment/source/music_road/road_generator_frozen/`，且正式运行时不得直接依赖 `res://refs/...`。
 - 必须新增中间试听 QA gate：把最终采用的 normalized 《诀别书》音符序列渲染成可试听 `wav` 产物，供用户用听觉检查。
 - 最终 placement 的 `chunk_id / world_position.y` 需在实现阶段通过 fresh `ground_probe` 冻结。
 
@@ -40,7 +40,7 @@ PRD 入口：[PRD-0013 Music Road Landmark And Song Trigger](../prd/PRD-0013-mus
 | M0 docs freeze | PRD、design、v23 plan、traceability | `PRD-0013`、`v23-index`、`v23-music-road-landmark`、design doc 全部落地且 Req ID 可追溯 | `rg -n "REQ-0013" docs/prd/PRD-0013-music-road-landmark-and-song-trigger.md docs/plan/v23-index.md docs/plan/v23-music-road-landmark.md` | done |
 | M1 score-source QA gate | 官方音频锚点、机读谱源候选、人类可读谱预览、试听产物 | 选定 normalized 《诀别书》音符序列；导出 `wav` 试听产物供人工验耳 | `tools/music_score_preview/render_jue_bie_shu_preview.py`、`reports/v23/music_road/jue_bie_shu_preview.wav` | todo |
 | M2 landmark placement + map pin | 音乐公路 registry/manifest/scene、full-map 起点 pin | 音乐公路可作为 scene_landmark mount，full map 出现 `music_road` 起点 icon，minimap 不泄漏 | `tests/world/test_city_music_road_manifest_contract.gd`、`tests/e2e/test_city_music_road_full_map_flow.gd` | todo |
-| M3 visual road cue | 独立 authored 直线道路、钢琴键视觉、shader 预点亮、ground alignment | 驾驶视角下可读出钢琴道路语义；键位具备 `approach / active / decay` 视觉相位 | `tests/world/test_city_music_road_visual_envelope.gd`、`tests/world/test_city_music_road_visual_phase_contract.gd` | todo |
+| M3 visual road cue | 独立 authored 直线道路、钢琴键视觉、shader 预点亮、ground alignment、冻结 adopted highway assets | 驾驶视角下可读出钢琴道路语义；键位具备 `approach / active / decay` 视觉相位；若采用 refs lineage 资产则已复制进项目自有 assets 目录 | `tests/world/test_city_music_road_visual_envelope.gd`、`tests/world/test_city_music_road_visual_phase_contract.gd` | todo |
 | M4 song trigger runtime | definition contract、entry gate、真实 timing、`诀别书` 正反向 audition | 正向目标速度窗口内完整 run 触发正式 note sequence 并标记 success；逆向与变速产生真实可听结果 | `tests/world/test_city_music_road_definition_contract.gd`、`tests/world/test_city_music_road_runtime_sequence_contract.gd`、`tests/world/test_city_music_road_speed_window_contract.gd`、`tests/world/test_city_music_road_reverse_traversal_contract.gd`、`tests/e2e/test_city_music_road_drive_song_flow.gd` | todo |
 | M5 verification | landmark / map / driving / profiling 回归 | 受影响主链不回退，profiling 三件套产出 fresh evidence | `tests/world/test_city_chunk_setup_profile_breakdown.gd`、`tests/e2e/test_city_runtime_performance_profile.gd`、`tests/e2e/test_city_first_visit_performance_profile.gd` | todo |
 

@@ -30,6 +30,7 @@ static var _shared_box_mesh_cache: Dictionary = {}
 static var _shared_box_material_cache: Dictionary = {}
 static var _shared_building_override_scene_cache: Dictionary = {}
 static var _shared_scene_landmark_scene_cache: Dictionary = {}
+static var _shared_scene_interactive_prop_scene_cache: Dictionary = {}
 static var _shared_ground_overlay_material_template: ShaderMaterial = null
 
 var _chunk_data: Dictionary = {}
@@ -265,6 +266,14 @@ func find_scene_landmark_node(landmark_id: String) -> Node:
 	if near_group == null:
 		return null
 	return _find_scene_landmark_node_recursive(near_group, landmark_id)
+
+func find_scene_interactive_prop_node(prop_id: String) -> Node:
+	if prop_id == "":
+		return null
+	var near_group := get_node_or_null("NearGroup") as Node
+	if near_group == null:
+		return null
+	return _find_scene_interactive_prop_node_recursive(near_group, prop_id)
 
 func get_road_collision_shape_count() -> int:
 	var road_overlay := get_node_or_null("NearGroup/RoadOverlay") as Node
@@ -642,6 +651,15 @@ func _build_near_group() -> Dictionary:
 		var landmark_node := _build_scene_landmark(landmark_entry_variant as Dictionary)
 		if landmark_node != null:
 			scene_landmarks.add_child(landmark_node)
+	var scene_interactive_props := Node3D.new()
+	scene_interactive_props.name = "SceneInteractiveProps"
+	near_group.add_child(scene_interactive_props)
+	for prop_entry_variant in _chunk_data.get("scene_interactive_prop_entries", []):
+		if not (prop_entry_variant is Dictionary):
+			continue
+		var prop_node := _build_scene_interactive_prop(prop_entry_variant as Dictionary)
+		if prop_node != null:
+			scene_interactive_props.add_child(prop_node)
 	stats["props_usec"] = int(Time.get_ticks_usec() - phase_started_usec)
 	return stats
 
@@ -723,6 +741,43 @@ func _build_scene_landmark(entry: Dictionary) -> Node3D:
 	landmark_root.set_meta("city_scene_landmark_manifest_path", str(entry.get("manifest_path", "")))
 	return landmark_root
 
+func _build_scene_interactive_prop(entry: Dictionary) -> Node3D:
+	var scene_path := str(entry.get("scene_path", "")).strip_edges()
+	if scene_path == "":
+		return null
+	var scene_resource := _load_cached_scene_interactive_prop_scene(scene_path)
+	if scene_resource == null:
+		return null
+	var instantiated_variant: Variant = scene_resource.instantiate()
+	var prop_root := instantiated_variant as Node3D
+	if prop_root == null:
+		if not (instantiated_variant is Node):
+			return null
+		prop_root = Node3D.new()
+		prop_root.name = "SceneInteractivePropRoot"
+		prop_root.add_child(instantiated_variant as Node)
+	if prop_root.has_method("configure_interactive_prop"):
+		prop_root.configure_interactive_prop(entry.duplicate(true))
+	var world_position_variant: Variant = entry.get("world_position", Vector3.ZERO)
+	var world_position := Vector3.ZERO
+	if world_position_variant is Vector3:
+		world_position = world_position_variant as Vector3
+	var root_offset_variant: Variant = entry.get("scene_root_offset", Vector3.ZERO)
+	var root_offset := Vector3.ZERO
+	if root_offset_variant is Vector3:
+		root_offset = root_offset_variant as Vector3
+	var chunk_center: Vector3 = _chunk_data.get("chunk_center", Vector3.ZERO)
+	prop_root.position = world_position + root_offset - chunk_center
+	prop_root.rotation.y = float(entry.get("yaw_rad", 0.0))
+	var prop_id := str(entry.get("prop_id", "")).strip_edges()
+	if prop_id != "":
+		prop_root.set_meta("city_scene_interactive_prop_id", prop_id)
+	prop_root.set_meta("city_scene_interactive_prop", true)
+	prop_root.set_meta("city_scene_interactive_prop_scene_path", scene_path)
+	prop_root.set_meta("city_scene_interactive_prop_feature_kind", str(entry.get("feature_kind", "")))
+	prop_root.set_meta("city_scene_interactive_prop_manifest_path", str(entry.get("manifest_path", "")))
+	return prop_root
+
 func _register_building_collision_shapes(root: Node) -> void:
 	var shapes: Array[CollisionShape3D] = CityBuildingSceneBuilder.collect_collision_shapes(root)
 	for collision_shape in shapes:
@@ -757,6 +812,20 @@ func _find_scene_landmark_node_recursive(root: Node, landmark_id: String) -> Nod
 			return match_node
 	return null
 
+func _find_scene_interactive_prop_node_recursive(root: Node, prop_id: String) -> Node:
+	if root == null:
+		return null
+	if bool(root.get_meta("city_scene_interactive_prop", false)) and str(root.get_meta("city_scene_interactive_prop_id", "")) == prop_id:
+		return root
+	for child in root.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		var match_node := _find_scene_interactive_prop_node_recursive(child_node, prop_id)
+		if match_node != null:
+			return match_node
+	return null
+
 static func _load_cached_building_override_scene(scene_path: String) -> PackedScene:
 	if scene_path == "":
 		return null
@@ -781,6 +850,19 @@ static func _load_cached_scene_landmark_scene(scene_path: String) -> PackedScene
 		return null
 	var packed_scene := scene_resource as PackedScene
 	_shared_scene_landmark_scene_cache[scene_path] = packed_scene
+	return packed_scene
+
+static func _load_cached_scene_interactive_prop_scene(scene_path: String) -> PackedScene:
+	if scene_path == "":
+		return null
+	if _shared_scene_interactive_prop_scene_cache.has(scene_path):
+		return _shared_scene_interactive_prop_scene_cache.get(scene_path) as PackedScene
+	var scene_resource := load(scene_path)
+	if scene_resource == null or not (scene_resource is PackedScene):
+		_shared_scene_interactive_prop_scene_cache[scene_path] = null
+		return null
+	var packed_scene := scene_resource as PackedScene
+	_shared_scene_interactive_prop_scene_cache[scene_path] = packed_scene
 	return packed_scene
 
 func _build_static_box(node_name: String, center: Vector3, size: Vector3, color: Color, yaw_rad: float = 0.0, collision_size: Vector3 = Vector3.ZERO) -> StaticBody3D:

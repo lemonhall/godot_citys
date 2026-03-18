@@ -1,0 +1,30 @@
+[gd_scene format=3 uid="uid://cfiwb2ggtt0lr"]
+
+[ext_resource type="Script" uid="uid://bgnekjti1vw8k" path="res://city_game/serviceability/interactive_props/generated/prop_v25_soccer_ball_chunk_129_139/SoccerBallProp.gd" id="1"]
+[ext_resource type="PackedScene" uid="uid://diww5wvtbrlcu" path="res://city_game/assets/environment/source/interactive_props/soccer_ball/Simple soccer football.glb" id="2"]
+
+[sub_resource type="PhysicsMaterial" id="2"]
+friction = 0.9
+bounce = 0.35
+
+[sub_resource type="SphereShape3D" id="1"]
+radius = 0.6
+
+[node name="SoccerBallProp" type="RigidBody3D" unique_id=1052610100]
+mass = 0.43
+physics_material_override = SubResource("2")
+sleeping = true
+continuous_cd = true
+contact_monitor = true
+max_contacts_reported = 4
+linear_damp = 0.18
+angular_damp = 0.12
+script = ExtResource("1")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1422166984]
+shape = SubResource("1")
+
+[node name="VisualRoot" type="Node3D" parent="." unique_id=1515342483]
+
+[node name="SoccerBallModel" parent="VisualRoot" unique_id=1372269549 instance=ExtResource("2")]
+transform = Transform3D(5, 0, 0, 0, 5, 0, 0, 0, 5, 0, 0, 0)

@@ -165,6 +165,7 @@ var _chunk_death_visual_records: Dictionary = {}
 var _pedestrian_visual_catalog: CityPedestrianVisualCatalog = null
 var _building_override_entries: Dictionary = {}
 var _scene_landmark_entries_by_chunk_id: Dictionary = {}
+var _scene_interactive_prop_entries_by_chunk_id: Dictionary = {}
 var _persistent_scene_landmark_root: Node3D = null
 var _persistent_scene_landmark_entries_by_landmark_id: Dictionary = {}
 var _persistent_scene_landmark_nodes_by_landmark_id: Dictionary = {}
@@ -214,6 +215,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_pedestrian_visual_catalog = null
 	_building_override_entries.clear()
 	_scene_landmark_entries_by_chunk_id.clear()
+	_scene_interactive_prop_entries_by_chunk_id.clear()
 	_clear_persistent_scene_landmarks()
 	_clear_scene_landmark_far_proxies()
 	if _world_data.has("pedestrian_query"):
@@ -268,6 +270,20 @@ func set_scene_landmark_entries(entries: Dictionary) -> void:
 		_scene_landmark_far_proxy_entries_by_landmark_id[landmark_id] = entry.duplicate(true)
 	_prune_persistent_scene_landmarks()
 	_prune_scene_landmark_far_proxies()
+
+func set_scene_interactive_prop_entries(entries: Dictionary) -> void:
+	_scene_interactive_prop_entries_by_chunk_id.clear()
+	var normalized_entries: Dictionary = entries.duplicate(true)
+	for entry_variant in normalized_entries.values():
+		if not (entry_variant is Dictionary):
+			continue
+		var entry: Dictionary = entry_variant
+		var chunk_id := str(entry.get("anchor_chunk_id", "")).strip_edges()
+		if chunk_id == "":
+			continue
+		var chunk_entries: Array = _scene_interactive_prop_entries_by_chunk_id.get(chunk_id, [])
+		chunk_entries.append(entry.duplicate(true))
+		_scene_interactive_prop_entries_by_chunk_id[chunk_id] = chunk_entries
 
 func set_detailed_streaming_diagnostics_enabled(enabled: bool) -> void:
 	_detailed_streaming_diagnostics_enabled = enabled
@@ -349,6 +365,7 @@ func _notification(what: int) -> void:
 	_pedestrian_visual_catalog = null
 	_clear_global_death_visuals()
 	_chunk_death_visual_records.clear()
+	_scene_interactive_prop_entries_by_chunk_id.clear()
 	_clear_scene_landmark_far_proxies()
 
 func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0, player_context: Dictionary = {}) -> void:
@@ -481,6 +498,18 @@ func find_scene_landmark_node(landmark_id: String) -> Node:
 		var landmark_node := chunk_scene.find_scene_landmark_node(landmark_id) as Node
 		if landmark_node != null:
 			return landmark_node
+	return null
+
+func find_scene_interactive_prop_node(prop_id: String) -> Node:
+	if prop_id == "":
+		return null
+	for chunk_id in get_chunk_ids():
+		var chunk_scene: Node = _chunk_scenes.get(chunk_id) as Node
+		if chunk_scene == null or not chunk_scene.has_method("find_scene_interactive_prop_node"):
+			continue
+		var prop_node := chunk_scene.find_scene_interactive_prop_node(prop_id) as Node
+		if prop_node != null:
+			return prop_node
 	return null
 
 func get_building_generation_contract(building_id: String) -> Dictionary:
@@ -1750,6 +1779,7 @@ func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 		"vehicle_query": _world_data.get("vehicle_query"),
 		"building_override_entries": _building_override_entries.duplicate(true),
 		"scene_landmark_entries": _get_scene_landmark_entries_for_chunk(chunk_id),
+		"scene_interactive_prop_entries": _get_scene_interactive_prop_entries_for_chunk(chunk_id),
 		"pedestrian_chunk_snapshot": {},
 		"vehicle_chunk_snapshot": {},
 	}
@@ -1804,6 +1834,16 @@ func _get_scene_landmark_entries_for_chunk(chunk_id: String) -> Array:
 	if chunk_id == "":
 		return []
 	var chunk_entries: Array = _scene_landmark_entries_by_chunk_id.get(chunk_id, [])
+	var snapshot: Array = []
+	for entry_variant in chunk_entries:
+		var entry: Dictionary = entry_variant
+		snapshot.append(entry.duplicate(true))
+	return snapshot
+
+func _get_scene_interactive_prop_entries_for_chunk(chunk_id: String) -> Array:
+	if chunk_id == "":
+		return []
+	var chunk_entries: Array = _scene_interactive_prop_entries_by_chunk_id.get(chunk_id, [])
 	var snapshot: Array = []
 	for entry_variant in chunk_entries:
 		var entry: Dictionary = entry_variant

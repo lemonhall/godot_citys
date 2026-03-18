@@ -24,7 +24,9 @@ var _focus_message_state: Dictionary = {
 }
 var _interaction_prompt_state: Dictionary = {
 	"visible": false,
+	"owner_kind": "",
 	"actor_id": "",
+	"prop_id": "",
 	"prompt_text": "",
 	"distance_m": 0.0,
 }
@@ -144,7 +146,9 @@ func clear_focus_message() -> void:
 func set_interaction_prompt_state(state: Dictionary) -> void:
 	_interaction_prompt_state = {
 		"visible": bool(state.get("visible", false)),
+		"owner_kind": str(state.get("owner_kind", "")),
 		"actor_id": str(state.get("actor_id", "")),
+		"prop_id": str(state.get("prop_id", "")),
 		"prompt_text": str(state.get("prompt_text", "")),
 		"distance_m": float(state.get("distance_m", 0.0)),
 	}

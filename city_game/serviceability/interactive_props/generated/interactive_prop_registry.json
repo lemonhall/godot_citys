@@ -1,0 +1,11 @@
+{
+	"schema_version": "v25-scene-interactive-prop-registry-1",
+	"entries": {
+		"prop:v25:soccer_ball:chunk_129_139": {
+			"prop_id": "prop:v25:soccer_ball:chunk_129_139",
+			"feature_kind": "scene_interactive_prop",
+			"scene_path": "res://city_game/serviceability/interactive_props/generated/prop_v25_soccer_ball_chunk_129_139/soccer_ball_prop.tscn",
+			"manifest_path": "res://city_game/serviceability/interactive_props/generated/prop_v25_soccer_ball_chunk_129_139/interactive_prop_manifest.json"
+		}
+	}
+}

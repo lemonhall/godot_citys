@@ -38,8 +38,11 @@ const CityBuildingOverrideRegistry := preload("res://city_game/world/serviceabil
 const CityServiceBuildingMapPinRuntime := preload("res://city_game/world/serviceability/CityServiceBuildingMapPinRuntime.gd")
 const CitySceneLandmarkRegistry := preload("res://city_game/world/features/CitySceneLandmarkRegistry.gd")
 const CitySceneLandmarkRuntime := preload("res://city_game/world/features/CitySceneLandmarkRuntime.gd")
+const CitySceneInteractivePropRegistry := preload("res://city_game/world/features/CitySceneInteractivePropRegistry.gd")
+const CitySceneInteractivePropRuntime := preload("res://city_game/world/features/CitySceneInteractivePropRuntime.gd")
 const CityMusicRoadRuntime := preload("res://city_game/world/features/music_road/CityMusicRoadRuntime.gd")
 const CityNpcInteractionRuntime := preload("res://city_game/world/interactions/CityNpcInteractionRuntime.gd")
+const CityInteractivePropRuntime := preload("res://city_game/world/interactions/CityInteractivePropRuntime.gd")
 const CityDialogueRuntime := preload("res://city_game/world/interactions/CityDialogueRuntime.gd")
 
 const CONTROL_MODE_PLAYER := "player"
@@ -99,6 +102,7 @@ const BUILDING_EXPORT_TOAST_DURATION_SEC := 6.0
 const BUILDING_EXPORT_SCENE_ROOT_PREFERRED := "res://city_game/serviceability/buildings/generated"
 const BUILDING_EXPORT_SCENE_ROOT_FALLBACK := "user://serviceability/buildings/generated"
 const SCENE_LANDMARK_REGISTRY_PATH := "res://city_game/serviceability/landmarks/generated/landmark_override_registry.json"
+const SCENE_INTERACTIVE_PROP_REGISTRY_PATH := "res://city_game/serviceability/interactive_props/generated/interactive_prop_registry.json"
 const SERVICE_BUILDING_MAP_PIN_STARTUP_DELAY_FRAMES := 120
 const SERVICE_BUILDING_MAP_PIN_BATCH_SIZE := 1
 const SERVICE_BUILDING_MAP_PIN_BATCH_BUDGET_USEC := 1200
@@ -137,6 +141,7 @@ var _task_pin_projection = null
 var _task_trigger_runtime = null
 var _task_world_marker_runtime: Node3D = null
 var _npc_interaction_runtime: Node = null
+var _interactive_prop_runtime: Node = null
 var _dialogue_runtime = null
 var _paused_world_process_entries: Array[Dictionary] = []
 var _vehicle_radio_quick_bank = null
@@ -241,6 +246,8 @@ var _building_export_started_process_frame := -1
 var _service_building_map_pin_runtime = null
 var _scene_landmark_registry = null
 var _scene_landmark_runtime = null
+var _scene_interactive_prop_registry = null
+var _scene_interactive_prop_runtime = null
 var _music_road_runtime = null
 var _music_road_runtime_time_sec := 0.0
 var _building_export_state: Dictionary = {
@@ -298,6 +305,8 @@ func _ready() -> void:
 	_service_building_map_pin_runtime = CityServiceBuildingMapPinRuntime.new()
 	_scene_landmark_registry = CitySceneLandmarkRegistry.new()
 	_scene_landmark_runtime = CitySceneLandmarkRuntime.new()
+	_scene_interactive_prop_registry = CitySceneInteractivePropRegistry.new()
+	_scene_interactive_prop_runtime = CitySceneInteractivePropRuntime.new()
 	_music_road_runtime = CityMusicRoadRuntime.new()
 	_music_road_runtime_time_sec = 0.0
 	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
@@ -312,6 +321,7 @@ func _ready() -> void:
 		chunk_renderer.setup(_world_config, _world_data)
 		_reload_building_override_registry()
 		_reload_scene_landmark_registry()
+		_reload_scene_interactive_prop_registry()
 		if chunk_renderer.has_method("set_pedestrians_visible"):
 			chunk_renderer.set_pedestrians_visible(_pedestrians_visible)
 	if debug_overlay != null:
@@ -431,7 +441,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_E:
-			if _handle_npc_interaction_shortcut():
+			var interaction_result: Dictionary = handle_primary_interaction()
+			if bool(interaction_result.get("success", false)):
 				get_viewport().set_input_as_handled()
 				return
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_F:
@@ -966,6 +977,14 @@ func get_npc_interaction_state() -> Dictionary:
 	if _npc_interaction_runtime == null or not _npc_interaction_runtime.has_method("get_state"):
 		return {}
 	return _npc_interaction_runtime.get_state()
+
+func get_interactive_prop_interaction_state() -> Dictionary:
+	if _interactive_prop_runtime == null or not _interactive_prop_runtime.has_method("get_state"):
+		return {}
+	return _interactive_prop_runtime.get_state()
+
+func get_primary_interaction_state() -> Dictionary:
+	return _resolve_primary_interaction_prompt_state()
 
 func get_dialogue_runtime_state() -> Dictionary:
 	if _dialogue_runtime == null or not _dialogue_runtime.has_method("get_state"):
@@ -1956,6 +1975,11 @@ func get_scene_landmark_runtime_state() -> Dictionary:
 	if _scene_landmark_runtime == null or not _scene_landmark_runtime.has_method("get_state"):
 		return {}
 	return _scene_landmark_runtime.get_state()
+
+func get_scene_interactive_prop_runtime_state() -> Dictionary:
+	if _scene_interactive_prop_runtime == null or not _scene_interactive_prop_runtime.has_method("get_state"):
+		return {}
+	return _scene_interactive_prop_runtime.get_state()
 
 func get_music_road_runtime_state() -> Dictionary:
 	if _music_road_runtime == null or not _music_road_runtime.has_method("get_state"):
@@ -2988,34 +3012,62 @@ func _ensure_task_system_runtimes() -> void:
 func _ensure_interaction_runtimes() -> void:
 	if _dialogue_runtime == null:
 		_dialogue_runtime = CityDialogueRuntime.new()
-	if _npc_interaction_runtime != null and is_instance_valid(_npc_interaction_runtime):
-		if _npc_interaction_runtime.has_method("setup"):
-			_npc_interaction_runtime.setup(player, _dialogue_runtime)
-		return
-	_npc_interaction_runtime = get_node_or_null("NpcInteractionRuntime")
-	if _npc_interaction_runtime == null:
-		_npc_interaction_runtime = CityNpcInteractionRuntime.new()
-		_npc_interaction_runtime.name = "NpcInteractionRuntime"
-		add_child(_npc_interaction_runtime)
+	if _npc_interaction_runtime == null or not is_instance_valid(_npc_interaction_runtime):
+		_npc_interaction_runtime = get_node_or_null("NpcInteractionRuntime")
+		if _npc_interaction_runtime == null:
+			_npc_interaction_runtime = CityNpcInteractionRuntime.new()
+			_npc_interaction_runtime.name = "NpcInteractionRuntime"
+			add_child(_npc_interaction_runtime)
 	if _npc_interaction_runtime.has_method("setup"):
 		_npc_interaction_runtime.setup(player, _dialogue_runtime)
+	if _interactive_prop_runtime == null or not is_instance_valid(_interactive_prop_runtime):
+		_interactive_prop_runtime = get_node_or_null("InteractivePropRuntime")
+		if _interactive_prop_runtime == null:
+			_interactive_prop_runtime = CityInteractivePropRuntime.new()
+			_interactive_prop_runtime.name = "InteractivePropRuntime"
+			add_child(_interactive_prop_runtime)
+	if _interactive_prop_runtime.has_method("setup"):
+		_interactive_prop_runtime.setup(player)
 
 func _update_npc_interaction_system() -> void:
 	_ensure_interaction_runtimes()
+	var prompt_blocked := _is_primary_interaction_prompt_blocked()
 	if _npc_interaction_runtime != null and _npc_interaction_runtime.has_method("refresh"):
-		var prompt_blocked := _full_map_open or _world_simulation_paused or is_dialogue_active()
-		if player != null and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle()):
-			prompt_blocked = true
 		_npc_interaction_runtime.refresh(prompt_blocked)
+	if _interactive_prop_runtime != null and _interactive_prop_runtime.has_method("refresh"):
+		_interactive_prop_runtime.refresh(prompt_blocked)
 	_sync_npc_interaction_ui()
 
 func _sync_npc_interaction_ui() -> void:
 	if hud == null:
 		return
 	if hud.has_method("set_interaction_prompt_state"):
-		hud.set_interaction_prompt_state(get_npc_interaction_state())
+		hud.set_interaction_prompt_state(_resolve_primary_interaction_prompt_state())
 	if hud.has_method("set_dialogue_panel_state"):
 		hud.set_dialogue_panel_state(_build_dialogue_panel_state())
+
+func _is_primary_interaction_prompt_blocked() -> bool:
+	var prompt_blocked := _full_map_open or _world_simulation_paused or is_dialogue_active()
+	if player != null and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle()):
+		prompt_blocked = true
+	return prompt_blocked
+
+func _resolve_primary_interaction_prompt_state() -> Dictionary:
+	var npc_state: Dictionary = get_npc_interaction_state()
+	if bool(npc_state.get("visible", false)):
+		npc_state["owner_kind"] = "npc"
+	var prop_state: Dictionary = get_interactive_prop_interaction_state()
+	if bool(prop_state.get("visible", false)):
+		prop_state["owner_kind"] = "interactive_prop"
+	if not bool(npc_state.get("visible", false)):
+		return prop_state
+	if not bool(prop_state.get("visible", false)):
+		return npc_state
+	var npc_distance := float(npc_state.get("distance_m", INF))
+	var prop_distance := float(prop_state.get("distance_m", INF))
+	if npc_distance <= prop_distance:
+		return npc_state
+	return prop_state
 
 func _build_dialogue_panel_state() -> Dictionary:
 	var dialogue_state := get_dialogue_runtime_state()
@@ -3058,28 +3110,88 @@ func _resolve_task_marker_world_position(anchor: Vector3) -> Vector3:
 	return surface_position
 
 func _handle_npc_interaction_shortcut() -> bool:
+	var interaction_result: Dictionary = _handle_npc_primary_interaction()
+	return bool(interaction_result.get("success", false))
+
+func handle_primary_interaction() -> Dictionary:
 	if _full_map_open:
-		return false
+		return {
+			"success": false,
+			"error": "full_map_open",
+		}
 	if is_dialogue_active():
 		if _dialogue_runtime != null and _dialogue_runtime.has_method("close_dialogue"):
 			_dialogue_runtime.close_dialogue()
 			_update_npc_interaction_system()
-			return true
-		return false
+			return {
+				"success": true,
+				"owner_kind": "dialogue",
+				"interaction_kind": "close_dialogue",
+			}
+		return {
+			"success": false,
+			"error": "dialogue_runtime_unavailable",
+		}
 	if player != null and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle()):
-		return false
+		return {
+			"success": false,
+			"error": "player_driving_vehicle",
+		}
+	var primary_state := _resolve_primary_interaction_prompt_state()
+	var owner_kind := str(primary_state.get("owner_kind", ""))
+	if owner_kind == "interactive_prop":
+		return _handle_interactive_prop_primary_interaction()
+	if owner_kind == "npc":
+		return _handle_npc_primary_interaction()
+	return {
+		"success": false,
+		"error": "missing_primary_candidate",
+	}
+
+func _handle_npc_primary_interaction() -> Dictionary:
 	if _npc_interaction_runtime == null or not _npc_interaction_runtime.has_method("get_active_contract"):
-		return false
+		return {
+			"success": false,
+			"error": "missing_npc_runtime",
+		}
 	var interaction_contract: Dictionary = _npc_interaction_runtime.get_active_contract()
 	if interaction_contract.is_empty():
-		return false
+		return {
+			"success": false,
+			"error": "missing_npc_contract",
+		}
 	if _dialogue_runtime == null or not _dialogue_runtime.has_method("begin_dialogue"):
-		return false
+		return {
+			"success": false,
+			"error": "missing_dialogue_runtime",
+			"actor_id": str(interaction_contract.get("actor_id", "")),
+		}
 	var dialogue_state: Dictionary = _dialogue_runtime.begin_dialogue(interaction_contract)
 	if dialogue_state.is_empty():
-		return false
+		return {
+			"success": false,
+			"error": "dialogue_begin_failed",
+			"actor_id": str(interaction_contract.get("actor_id", "")),
+		}
 	_update_npc_interaction_system()
-	return true
+	return {
+		"success": true,
+		"owner_kind": "npc",
+		"interaction_kind": str(interaction_contract.get("interaction_kind", "")),
+		"actor_id": str(interaction_contract.get("actor_id", "")),
+	}
+
+func _handle_interactive_prop_primary_interaction() -> Dictionary:
+	if _interactive_prop_runtime == null or not _interactive_prop_runtime.has_method("trigger_active_interaction"):
+		return {
+			"success": false,
+			"error": "missing_interactive_prop_runtime",
+		}
+	var interaction_result: Dictionary = _interactive_prop_runtime.trigger_active_interaction(player)
+	if not interaction_result.has("owner_kind"):
+		interaction_result["owner_kind"] = "interactive_prop"
+	_update_npc_interaction_system()
+	return interaction_result
 
 func is_dialogue_active() -> bool:
 	return _dialogue_runtime != null and _dialogue_runtime.has_method("is_active") and bool(_dialogue_runtime.is_active())
@@ -4232,6 +4344,15 @@ func _reload_scene_landmark_registry() -> Dictionary:
 	_sync_scene_landmark_entries(entries)
 	return entries
 
+func _reload_scene_interactive_prop_registry() -> Dictionary:
+	if _scene_interactive_prop_registry == null:
+		return {}
+	var load_registry_paths: Array[String] = [SCENE_INTERACTIVE_PROP_REGISTRY_PATH]
+	_scene_interactive_prop_registry.configure(SCENE_INTERACTIVE_PROP_REGISTRY_PATH, load_registry_paths)
+	var entries: Dictionary = _scene_interactive_prop_registry.load_registry()
+	_sync_scene_interactive_prop_entries(entries)
+	return entries
+
 func _resolve_building_override_registry_config() -> Dictionary:
 	var primary_registry_path := _normalize_serviceability_resource_path(_building_serviceability_registry_override_path)
 	var load_registry_paths: Array[String] = []
@@ -4279,6 +4400,15 @@ func _sync_scene_landmark_entries(entries: Dictionary) -> void:
 		_map_pin_registry.replace_scene_landmark_pins(pins)
 	if _full_map_open and _map_screen != null and _map_screen.has_method("set_pins"):
 		_map_screen.set_pins(_get_map_pins("full_map"))
+
+func _sync_scene_interactive_prop_entries(entries: Dictionary) -> void:
+	if _scene_interactive_prop_runtime != null and _scene_interactive_prop_runtime.has_method("configure"):
+		_scene_interactive_prop_runtime.configure(entries.duplicate(true))
+	var runtime_entries: Dictionary = entries.duplicate(true)
+	if _scene_interactive_prop_runtime != null and _scene_interactive_prop_runtime.has_method("get_entries_snapshot"):
+		runtime_entries = _scene_interactive_prop_runtime.get_entries_snapshot()
+	if chunk_renderer != null and chunk_renderer.has_method("set_scene_interactive_prop_entries"):
+		chunk_renderer.set_scene_interactive_prop_entries(runtime_entries)
 
 func _update_music_road_runtime(_delta: float) -> void:
 	_advance_music_road_runtime(_delta)

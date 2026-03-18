@@ -2004,6 +2004,20 @@ func get_soccer_venue_runtime_state() -> Dictionary:
 		return {}
 	return _soccer_venue_runtime.get_state()
 
+func get_soccer_match_hud_state() -> Dictionary:
+	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("get_match_hud_state"):
+		return {
+			"visible": false,
+			"match_state": "idle",
+			"home_score": 0,
+			"away_score": 0,
+			"home_team_color_id": "red",
+			"away_team_color_id": "blue",
+			"clock_text": "05:00",
+			"winner_side": "",
+		}
+	return _soccer_venue_runtime.get_match_hud_state()
+
 func is_ambient_simulation_frozen() -> bool:
 	if chunk_renderer != null and chunk_renderer.has_method("is_ambient_simulation_frozen"):
 		return bool(chunk_renderer.is_ambient_simulation_frozen())
@@ -2026,6 +2040,22 @@ func debug_force_soccer_ball_reset() -> Dictionary:
 			"error": "runtime_unavailable",
 		}
 	return _soccer_venue_runtime.debug_force_reset_ball(chunk_renderer)
+
+func debug_set_soccer_match_clock_remaining_sec(seconds: float) -> Dictionary:
+	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("debug_set_match_clock_remaining_sec"):
+		return {
+			"success": false,
+			"error": "runtime_unavailable",
+		}
+	return _soccer_venue_runtime.debug_set_match_clock_remaining_sec(seconds)
+
+func debug_advance_soccer_match_time(delta_sec: float) -> Dictionary:
+	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("debug_advance_match_time"):
+		return {
+			"success": false,
+			"error": "runtime_unavailable",
+		}
+	return _soccer_venue_runtime.debug_advance_match_time(delta_sec)
 
 func get_music_road_runtime_state() -> Dictionary:
 	if _music_road_runtime == null or not _music_road_runtime.has_method("get_state"):
@@ -4480,10 +4510,23 @@ func _update_soccer_venue_runtime(delta: float) -> void:
 	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("update"):
 		if chunk_renderer != null and chunk_renderer.has_method("set_ambient_simulation_frozen"):
 			chunk_renderer.set_ambient_simulation_frozen(false)
+		if hud != null and hud.has_method("set_soccer_match_hud_state"):
+			hud.set_soccer_match_hud_state({
+				"visible": false,
+				"match_state": "idle",
+				"home_score": 0,
+				"away_score": 0,
+				"home_team_color_id": "red",
+				"away_team_color_id": "blue",
+				"clock_text": "05:00",
+				"winner_side": "",
+			})
 		return
 	var runtime_state: Dictionary = _soccer_venue_runtime.update(chunk_renderer, player, delta)
 	if chunk_renderer != null and chunk_renderer.has_method("set_ambient_simulation_frozen"):
 		chunk_renderer.set_ambient_simulation_frozen(bool(runtime_state.get("ambient_simulation_frozen", false)))
+	if hud != null and hud.has_method("set_soccer_match_hud_state"):
+		hud.set_soccer_match_hud_state((runtime_state.get("match_hud_state", {}) as Dictionary).duplicate(true))
 
 func _update_music_road_runtime(_delta: float) -> void:
 	_advance_music_road_runtime(_delta)

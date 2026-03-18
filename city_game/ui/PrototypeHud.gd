@@ -79,11 +79,22 @@ var _controls_help_state: Dictionary = {
 	"close_hint": "按 F1 关闭",
 	"sections": [],
 }
+var _soccer_match_hud_state: Dictionary = {
+	"visible": false,
+	"match_state": "idle",
+	"home_score": 0,
+	"away_score": 0,
+	"home_team_color_id": "red",
+	"away_team_color_id": "blue",
+	"clock_text": "05:00",
+	"winner_side": "",
+}
 
 func _ready() -> void:
 	_ensure_mouse_passthrough()
 	_ensure_crosshair_view()
 	_ensure_fps_label()
+	_ensure_soccer_match_hud_view()
 	_ensure_focus_message_view()
 	_ensure_interaction_prompt_view()
 	_ensure_dialogue_panel_view()
@@ -252,6 +263,22 @@ func set_controls_help_state(state: Dictionary) -> void:
 func get_controls_help_state() -> Dictionary:
 	return _controls_help_state.duplicate(true)
 
+func set_soccer_match_hud_state(state: Dictionary) -> void:
+	_soccer_match_hud_state = {
+		"visible": bool(state.get("visible", false)),
+		"match_state": str(state.get("match_state", "idle")),
+		"home_score": int(state.get("home_score", 0)),
+		"away_score": int(state.get("away_score", 0)),
+		"home_team_color_id": str(state.get("home_team_color_id", "red")),
+		"away_team_color_id": str(state.get("away_team_color_id", "blue")),
+		"clock_text": str(state.get("clock_text", "05:00")),
+		"winner_side": str(state.get("winner_side", "")),
+	}
+	_apply_soccer_match_hud_state()
+
+func get_soccer_match_hud_state() -> Dictionary:
+	return _soccer_match_hud_state.duplicate(true)
+
 func toggle_debug_expanded() -> void:
 	_debug_expanded = not _debug_expanded
 	_apply_panel_state()
@@ -275,6 +302,7 @@ func _apply_state() -> void:
 	_apply_vehicle_radio_browser_state()
 	_apply_vehicle_radio_quick_overlay_state()
 	_apply_controls_help_state()
+	_apply_soccer_match_hud_state()
 
 func _apply_panel_state() -> void:
 	var panel := get_node_or_null("Root/Panel") as PanelContainer
@@ -353,6 +381,27 @@ func _apply_controls_help_state() -> void:
 	if overlay != null and overlay.has_method("set_state"):
 		overlay.set_state(_controls_help_state)
 
+func _apply_soccer_match_hud_state() -> void:
+	var panel := get_node_or_null("Root/SoccerMatchHud") as PanelContainer
+	var clock_label := get_node_or_null("Root/SoccerMatchHud/Margin/VBox/Clock") as Label
+	var score_label := get_node_or_null("Root/SoccerMatchHud/Margin/VBox/Score") as Label
+	var state_label := get_node_or_null("Root/SoccerMatchHud/Margin/VBox/State") as Label
+	if panel != null:
+		panel.visible = bool(_soccer_match_hud_state.get("visible", false))
+	if clock_label != null:
+		clock_label.text = str(_soccer_match_hud_state.get("clock_text", "05:00"))
+	if score_label != null:
+		score_label.text = "RED %d  :  %d BLUE" % [
+			int(_soccer_match_hud_state.get("home_score", 0)),
+			int(_soccer_match_hud_state.get("away_score", 0))
+		]
+	if state_label != null:
+		var state_text := str(_soccer_match_hud_state.get("match_state", "idle")).to_upper()
+		var winner_side := str(_soccer_match_hud_state.get("winner_side", ""))
+		if winner_side != "":
+			state_text = "%s WINS" % winner_side.to_upper()
+		state_label.text = state_text
+
 func _ensure_mouse_passthrough() -> void:
 	var root := get_node_or_null("Root") as Control
 	if root != null:
@@ -375,6 +424,9 @@ func _ensure_mouse_passthrough() -> void:
 	var radio_overlay := get_node_or_null("Root/VehicleRadioQuickOverlay") as Control
 	if radio_overlay != null:
 		radio_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var soccer_match_hud := get_node_or_null("Root/SoccerMatchHud") as Control
+	if soccer_match_hud != null:
+		soccer_match_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 func _ensure_crosshair_view() -> void:
 	var root := get_node_or_null("Root") as Control
@@ -405,6 +457,68 @@ func _ensure_fps_label() -> void:
 	fps_label.visible = false
 	fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(fps_label)
+
+func _ensure_soccer_match_hud_view() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("SoccerMatchHud") != null:
+		return
+	var panel := PanelContainer.new()
+	panel.name = "SoccerMatchHud"
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.0
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.0
+	panel.offset_left = -150.0
+	panel.offset_top = 18.0
+	panel.offset_right = 150.0
+	panel.offset_bottom = 108.0
+	panel.visible = false
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var stylebox := StyleBoxFlat.new()
+	stylebox.bg_color = Color(0.03, 0.05, 0.06, 0.88)
+	stylebox.corner_radius_top_left = 12
+	stylebox.corner_radius_top_right = 12
+	stylebox.corner_radius_bottom_left = 12
+	stylebox.corner_radius_bottom_right = 12
+	stylebox.border_width_left = 1
+	stylebox.border_width_top = 1
+	stylebox.border_width_right = 1
+	stylebox.border_width_bottom = 1
+	stylebox.border_color = Color(0.86, 0.9, 0.94, 0.16)
+	panel.add_theme_stylebox_override("panel", stylebox)
+	var margin := MarginContainer.new()
+	margin.name = "Margin"
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 14)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	panel.add_child(margin)
+	var vbox := VBoxContainer.new()
+	vbox.name = "VBox"
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	margin.add_child(vbox)
+	var clock_label := Label.new()
+	clock_label.name = "Clock"
+	clock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	clock_label.add_theme_font_size_override("font_size", 28)
+	clock_label.add_theme_color_override("font_color", Color(1.0, 0.98, 0.92, 1.0))
+	vbox.add_child(clock_label)
+	var score_label := Label.new()
+	score_label.name = "Score"
+	score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	score_label.add_theme_font_size_override("font_size", 18)
+	score_label.add_theme_color_override("font_color", Color(0.96, 0.97, 0.99, 1.0))
+	vbox.add_child(score_label)
+	var state_label := Label.new()
+	state_label.name = "State"
+	state_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	state_label.add_theme_font_size_override("font_size", 13)
+	state_label.add_theme_color_override("font_color", Color(0.74, 0.84, 0.92, 1.0))
+	vbox.add_child(state_label)
+	root.add_child(panel)
 
 func _ensure_focus_message_view() -> void:
 	var root := get_node_or_null("Root") as Control

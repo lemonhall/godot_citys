@@ -1,5 +1,8 @@
 extends Node3D
 
+const CityWorldRingMarker := preload("res://city_game/world/navigation/CityWorldRingMarker.gd")
+const SoccerMatchPlayer := preload("res://city_game/serviceability/minigame_venues/generated/venue_v26_soccer_pitch_chunk_129_139/SoccerMatchPlayer.gd")
+
 const PLAY_SURFACE_SIZE := Vector3(74.0, 0.36, 118.0)
 const PLAY_SURFACE_COLOR := Color(0.227451, 0.521569, 0.215686, 1.0)
 const PODIUM_COLOR := Color(0.47451, 0.454902, 0.427451, 1.0)
@@ -33,6 +36,12 @@ const SCOREBOARD_POST_SIZE := Vector3(0.26, 5.4, 0.26)
 const SCOREBOARD_PANEL_COLOR := Color(0.08, 0.1, 0.12, 1.0)
 const SCOREBOARD_TEXT_COLOR := Color(0.96, 0.98, 0.9, 1.0)
 const PLAY_SURFACE_COLLISION_LAYER_VALUE := 1 << 8
+const MATCH_START_RING_RADIUS_M := 3.25
+const MATCH_START_RING_LOCAL_POSITION := Vector3(PLAY_SURFACE_SIZE.x * 0.5 + 7.6, 0.05, 8.0)
+const MATCH_HOME_TEAM_COLOR_ID := "red"
+const MATCH_AWAY_TEAM_COLOR_ID := "blue"
+const MATCH_WINNER_HIGHLIGHT_COLOR := Color(0.92, 0.14, 0.12, 1.0)
+const MATCH_WINNER_HIGHLIGHT_PANEL_Z := SCOREBOARD_PANEL_SIZE.z * 0.9
 
 static var _shared_box_mesh_cache: Dictionary = {}
 static var _shared_box_shape_cache: Dictionary = {}
@@ -42,6 +51,12 @@ var _entry: Dictionary = {}
 var _play_surface_contract: Dictionary = {}
 var _pitch_markings_contract: Dictionary = {}
 var _goal_contracts: Dictionary = {}
+var _match_start_contract: Dictionary = {}
+var _match_roster_state: Dictionary = {}
+var _match_player_contracts: Array = []
+var _match_player_runtime_states: Dictionary = {}
+var _match_player_nodes: Dictionary = {}
+var _match_start_ring: Node3D = null
 var _layout_initialized := false
 var _scoreboard_state := {
 	"home_score": 0,
@@ -49,15 +64,23 @@ var _scoreboard_state := {
 	"game_state": "idle",
 	"game_state_label": "READY",
 	"last_scored_side": "",
+	"winner_highlight_visible": false,
+	"winner_highlight_side": "",
 }
 
 func _ready() -> void:
 	_ensure_venue_layout_built()
 
+func _process(delta: float) -> void:
+	if _match_start_ring != null and is_instance_valid(_match_start_ring) and _match_start_ring.has_method("tick"):
+		_match_start_ring.tick(delta)
+
 func configure_minigame_venue(entry: Dictionary) -> void:
 	_entry = entry.duplicate(true)
 	_refresh_play_surface_contract()
 	_rebuild_goal_contracts()
+	_match_player_runtime_states.clear()
+	_match_player_nodes.clear()
 	_layout_initialized = false
 	if is_inside_tree():
 		_ensure_venue_layout_built()
@@ -76,6 +99,18 @@ func get_pitch_markings_contract() -> Dictionary:
 func get_goal_contracts() -> Dictionary:
 	_ensure_venue_layout_built()
 	return _goal_contracts.duplicate(true)
+
+func get_match_start_contract() -> Dictionary:
+	_ensure_venue_layout_built()
+	return _match_start_contract.duplicate(true)
+
+func get_match_roster_state() -> Dictionary:
+	_ensure_venue_layout_built()
+	return _match_roster_state.duplicate(true)
+
+func get_match_player_contracts() -> Array:
+	_ensure_venue_layout_built()
+	return _match_player_contracts.duplicate(true)
 
 func get_scoreboard_contract() -> Dictionary:
 	_ensure_venue_layout_built()
@@ -101,8 +136,34 @@ func set_scoreboard_state(scoreboard_state: Dictionary) -> void:
 		"game_state": str(scoreboard_state.get("game_state", "idle")),
 		"game_state_label": str(scoreboard_state.get("game_state_label", "READY")),
 		"last_scored_side": str(scoreboard_state.get("last_scored_side", "")),
+		"winner_highlight_visible": bool(scoreboard_state.get("winner_highlight_visible", false)),
+		"winner_highlight_side": str(scoreboard_state.get("winner_highlight_side", "")),
 	}
 	_apply_scoreboard_state()
+
+func sync_match_state(match_state: Dictionary) -> void:
+	_ensure_venue_layout_built()
+	_match_player_runtime_states = (match_state.get("player_states", {}) as Dictionary).duplicate(true)
+	var start_ring_visible := bool(match_state.get("start_ring_visible", _match_start_contract.get("visible", true)))
+	_match_start_contract["visible"] = start_ring_visible
+	if _match_start_ring != null and is_instance_valid(_match_start_ring):
+		_match_start_ring.set_marker_visible(start_ring_visible)
+		_match_start_ring.set_marker_world_position(_match_start_contract.get("world_position", global_position))
+	for player_contract_variant in _match_player_contracts:
+		var player_contract: Dictionary = player_contract_variant
+		var player_id := str(player_contract.get("player_id", ""))
+		var player_node: Node3D = _match_player_nodes.get(player_id, null) as Node3D
+		if player_node == null or not is_instance_valid(player_node):
+			continue
+		var player_state: Dictionary = (_match_player_runtime_states.get(player_id, _build_default_player_runtime_state(player_contract)) as Dictionary).duplicate(true)
+		if player_node.has_method("apply_runtime_state"):
+			player_node.apply_runtime_state(player_state)
+	_refresh_match_roster_state(str(match_state.get("match_state", "idle")))
+
+func is_world_point_in_match_start_ring(world_position: Vector3) -> bool:
+	_ensure_venue_layout_built()
+	var start_world_position: Vector3 = _match_start_contract.get("world_position", global_position)
+	return world_position.distance_squared_to(start_world_position) <= pow(float(_match_start_contract.get("trigger_radius_m", MATCH_START_RING_RADIUS_M)), 2.0)
 
 func is_world_point_in_play_bounds(world_position: Vector3) -> bool:
 	_ensure_venue_layout_built()
@@ -139,6 +200,8 @@ func _ensure_venue_layout_built() -> void:
 	_refresh_play_surface_contract()
 	_refresh_pitch_markings_contract()
 	_rebuild_goal_contracts()
+	_refresh_match_start_contract()
+	_rebuild_match_player_contracts()
 	_ensure_pitch_podium()
 	_ensure_pitch_apron()
 	_ensure_playable_floor()
@@ -146,7 +209,10 @@ func _ensure_venue_layout_built() -> void:
 	_ensure_pitch_markings()
 	_ensure_goals()
 	_ensure_scoreboard()
+	_ensure_match_start_ring()
+	_ensure_match_players()
 	_layout_initialized = true
+	_refresh_match_roster_state("idle")
 	_apply_scoreboard_state()
 
 func _refresh_play_surface_contract() -> void:
@@ -178,6 +244,94 @@ func _refresh_pitch_markings_contract() -> void:
 		"goal_box_depth_m": GOAL_BOX_DEPTH_M,
 		"goal_box_width_m": GOAL_BOX_WIDTH_M,
 		"penalty_spot_distance_m": PENALTY_SPOT_DISTANCE_M,
+	}
+
+func _refresh_match_start_contract() -> void:
+	var local_position := MATCH_START_RING_LOCAL_POSITION
+	_match_start_contract = {
+		"theme_id": "task_available_start",
+		"family_id": "city_world_ring_marker",
+		"trigger_radius_m": MATCH_START_RING_RADIUS_M,
+		"local_position": local_position,
+		"world_position": to_global(local_position) if is_inside_tree() else _resolve_kickoff_anchor() + local_position,
+		"visible": true,
+	}
+
+func _rebuild_match_player_contracts() -> void:
+	var half_length := PLAY_SURFACE_SIZE.z * 0.5
+	_match_player_contracts = [
+		_build_match_player_contract("home_goalkeeper_1", "home", MATCH_HOME_TEAM_COLOR_ID, "goalkeeper", Vector3(0.0, 0.0, half_length - 8.0), Vector3(0.0, 0.0, -1.0), 0),
+		_build_match_player_contract("home_field_1", "home", MATCH_HOME_TEAM_COLOR_ID, "field_player", Vector3(-17.0, 0.0, 28.0), Vector3(0.0, 0.0, -1.0), 1),
+		_build_match_player_contract("home_field_2", "home", MATCH_HOME_TEAM_COLOR_ID, "field_player", Vector3(17.0, 0.0, 28.0), Vector3(0.0, 0.0, -1.0), 2),
+		_build_match_player_contract("home_field_3", "home", MATCH_HOME_TEAM_COLOR_ID, "field_player", Vector3(-9.5, 0.0, 8.0), Vector3(0.0, 0.0, -1.0), 3),
+		_build_match_player_contract("home_field_4", "home", MATCH_HOME_TEAM_COLOR_ID, "field_player", Vector3(9.5, 0.0, -10.0), Vector3(0.0, 0.0, -1.0), 4),
+		_build_match_player_contract("away_goalkeeper_1", "away", MATCH_AWAY_TEAM_COLOR_ID, "goalkeeper", Vector3(0.0, 0.0, -half_length + 8.0), Vector3(0.0, 0.0, 1.0), 0),
+		_build_match_player_contract("away_field_1", "away", MATCH_AWAY_TEAM_COLOR_ID, "field_player", Vector3(-17.0, 0.0, -28.0), Vector3(0.0, 0.0, 1.0), 1),
+		_build_match_player_contract("away_field_2", "away", MATCH_AWAY_TEAM_COLOR_ID, "field_player", Vector3(17.0, 0.0, -28.0), Vector3(0.0, 0.0, 1.0), 2),
+		_build_match_player_contract("away_field_3", "away", MATCH_AWAY_TEAM_COLOR_ID, "field_player", Vector3(-9.5, 0.0, -8.0), Vector3(0.0, 0.0, 1.0), 3),
+		_build_match_player_contract("away_field_4", "away", MATCH_AWAY_TEAM_COLOR_ID, "field_player", Vector3(9.5, 0.0, 10.0), Vector3(0.0, 0.0, 1.0), 4),
+	]
+
+func _build_match_player_contract(player_id: String, team_id: String, team_color_id: String, role_id: String, local_anchor_position: Vector3, idle_facing_direction: Vector3, lane_index: int) -> Dictionary:
+	return {
+		"player_id": player_id,
+		"team_id": team_id,
+		"team_color_id": team_color_id,
+		"role_id": role_id,
+		"lane_index": lane_index,
+		"local_anchor_position": local_anchor_position,
+		"world_anchor_position": to_global(local_anchor_position) if is_inside_tree() else _resolve_kickoff_anchor() + local_anchor_position,
+		"idle_facing_direction": idle_facing_direction,
+	}
+
+func _build_default_player_runtime_state(player_contract: Dictionary) -> Dictionary:
+	return {
+		"local_position": player_contract.get("local_anchor_position", Vector3.ZERO),
+		"facing_direction": player_contract.get("idle_facing_direction", Vector3.FORWARD),
+		"animation_state": "idle",
+	}
+
+func _refresh_match_roster_state(match_state: String = "idle") -> void:
+	var team_counts := {
+		"home": 0,
+		"away": 0,
+	}
+	var goalkeeper_counts := {
+		"home": 0,
+		"away": 0,
+	}
+	var idle_player_count := 0
+	var player_entries: Array = []
+	var team_color_ids: Array = []
+	for player_contract_variant in _match_player_contracts:
+		var player_contract: Dictionary = player_contract_variant
+		var player_id := str(player_contract.get("player_id", ""))
+		var team_id := str(player_contract.get("team_id", ""))
+		var role_id := str(player_contract.get("role_id", "field_player"))
+		var team_color_id := str(player_contract.get("team_color_id", ""))
+		if not team_color_ids.has(team_color_id):
+			team_color_ids.append(team_color_id)
+		team_counts[team_id] = int(team_counts.get(team_id, 0)) + 1
+		if role_id == "goalkeeper":
+			goalkeeper_counts[team_id] = int(goalkeeper_counts.get(team_id, 0)) + 1
+		var player_state: Dictionary = (_match_player_runtime_states.get(player_id, _build_default_player_runtime_state(player_contract)) as Dictionary).duplicate(true)
+		if str(player_state.get("animation_state", "idle")) == "idle":
+			idle_player_count += 1
+		player_entries.append({
+			"player_id": player_id,
+			"team_id": team_id,
+			"team_color_id": team_color_id,
+			"role_id": role_id,
+			"state": player_state,
+		})
+	_match_roster_state = {
+		"match_state": match_state,
+		"player_count": _match_player_contracts.size(),
+		"team_counts": team_counts,
+		"goalkeeper_counts": goalkeeper_counts,
+		"team_color_ids": team_color_ids,
+		"idle_player_count": idle_player_count,
+		"players": player_entries,
 	}
 
 func _rebuild_goal_contracts() -> void:
@@ -418,6 +572,42 @@ func _ensure_goal_frame(goal_root: Node3D) -> void:
 	_ensure_visual_box(frame_root, "LeftRearPost", Vector3(-half_width + GOAL_FRAME_THICKNESS_M * 0.5, 0.0, half_depth - GOAL_FRAME_THICKNESS_M * 0.5), Vector3(GOAL_FRAME_THICKNESS_M, GOAL_HEIGHT_M, GOAL_FRAME_THICKNESS_M))
 	_ensure_visual_box(frame_root, "RightRearPost", Vector3(half_width - GOAL_FRAME_THICKNESS_M * 0.5, 0.0, half_depth - GOAL_FRAME_THICKNESS_M * 0.5), Vector3(GOAL_FRAME_THICKNESS_M, GOAL_HEIGHT_M, GOAL_FRAME_THICKNESS_M))
 
+func _ensure_match_start_ring() -> void:
+	if _match_start_ring == null or not is_instance_valid(_match_start_ring):
+		_match_start_ring = CityWorldRingMarker.new()
+		_match_start_ring.name = "MatchStartRing"
+		add_child(_match_start_ring)
+	_match_start_ring.set_marker_theme(str(_match_start_contract.get("theme_id", "task_available_start")))
+	_match_start_ring.set_marker_radius(float(_match_start_contract.get("trigger_radius_m", MATCH_START_RING_RADIUS_M)))
+	_match_start_ring.set_marker_world_position(_match_start_contract.get("world_position", global_position))
+	_match_start_ring.set_marker_visible(bool(_match_start_contract.get("visible", true)))
+
+func _ensure_match_players() -> void:
+	var player_root := get_node_or_null("MatchPlayers") as Node3D
+	if player_root == null:
+		player_root = Node3D.new()
+		player_root.name = "MatchPlayers"
+		add_child(player_root)
+	var seen_ids: Dictionary = {}
+	_match_player_nodes.clear()
+	for player_contract_variant in _match_player_contracts:
+		var player_contract: Dictionary = player_contract_variant
+		var player_id := str(player_contract.get("player_id", ""))
+		seen_ids[player_id] = true
+		var player_node := player_root.get_node_or_null(player_id) as Node3D
+		if player_node == null:
+			player_node = SoccerMatchPlayer.new()
+			player_node.name = player_id
+			player_root.add_child(player_node)
+		_match_player_nodes[player_id] = player_node
+		if player_node.has_method("configure_player"):
+			player_node.configure_player(player_contract)
+		if player_node.has_method("apply_runtime_state"):
+			player_node.apply_runtime_state((_match_player_runtime_states.get(player_id, _build_default_player_runtime_state(player_contract)) as Dictionary).duplicate(true))
+	for child in player_root.get_children():
+		if not seen_ids.has(child.name):
+			child.queue_free()
+
 func _ensure_scoreboard() -> void:
 	var scoreboard_root := get_node_or_null("Scoreboard") as Node3D
 	if scoreboard_root == null:
@@ -433,6 +623,8 @@ func _ensure_scoreboard() -> void:
 	_ensure_scoreboard_label(scoreboard_root, "HomeScoreLabel", Vector3(-1.45, 0.52, SCOREBOARD_PANEL_SIZE.z * 0.55), 92)
 	_ensure_scoreboard_label(scoreboard_root, "AwayScoreLabel", Vector3(1.45, 0.52, SCOREBOARD_PANEL_SIZE.z * 0.55), 92)
 	_ensure_scoreboard_label(scoreboard_root, "StateLabel", Vector3(0.0, -0.78, SCOREBOARD_PANEL_SIZE.z * 0.55), 42)
+	_ensure_scoreboard_winner_highlight(scoreboard_root, "HomeWinnerHighlight", Vector3(-1.45, 0.52, MATCH_WINNER_HIGHLIGHT_PANEL_Z))
+	_ensure_scoreboard_winner_highlight(scoreboard_root, "AwayWinnerHighlight", Vector3(1.45, 0.52, MATCH_WINNER_HIGHLIGHT_PANEL_Z))
 
 func _apply_scoreboard_state() -> void:
 	var scoreboard_root := get_node_or_null("Scoreboard") as Node3D
@@ -447,6 +639,14 @@ func _apply_scoreboard_state() -> void:
 	var state_label := scoreboard_root.get_node_or_null("StateLabel") as Label3D
 	if state_label != null:
 		state_label.text = str(_scoreboard_state.get("game_state_label", "READY"))
+	var winner_highlight_side := str(_scoreboard_state.get("winner_highlight_side", ""))
+	var winner_highlight_visible := bool(_scoreboard_state.get("winner_highlight_visible", false))
+	var home_highlight := scoreboard_root.get_node_or_null("HomeWinnerHighlight") as MeshInstance3D
+	if home_highlight != null:
+		home_highlight.visible = winner_highlight_visible and winner_highlight_side == "home"
+	var away_highlight := scoreboard_root.get_node_or_null("AwayWinnerHighlight") as MeshInstance3D
+	if away_highlight != null:
+		away_highlight.visible = winner_highlight_visible and winner_highlight_side == "away"
 
 func _ensure_boundary_line(root: Node3D, node_name: String, local_position: Vector3, size: Vector3) -> void:
 	_ensure_visual_box(root, node_name, local_position, size, BOUNDARY_LINE_COLOR)
@@ -558,6 +758,25 @@ func _ensure_scoreboard_label(scoreboard_root: Node3D, node_name: String, local_
 	label.modulate = SCOREBOARD_TEXT_COLOR
 	label.font_size = font_size
 	label.pixel_size = 0.02
+
+func _ensure_scoreboard_winner_highlight(scoreboard_root: Node3D, node_name: String, local_position: Vector3) -> void:
+	var highlight := scoreboard_root.get_node_or_null(node_name) as MeshInstance3D
+	if highlight == null:
+		highlight = MeshInstance3D.new()
+		highlight.name = node_name
+		scoreboard_root.add_child(highlight)
+	var torus := highlight.mesh as TorusMesh
+	if torus == null:
+		torus = TorusMesh.new()
+		highlight.mesh = torus
+	torus.inner_radius = 0.46
+	torus.outer_radius = 0.58
+	torus.ring_segments = 14
+	torus.rings = 36
+	highlight.position = local_position
+	highlight.rotation.x = PI * 0.5
+	highlight.visible = false
+	highlight.material_override = _get_shared_box_material(MATCH_WINNER_HIGHLIGHT_COLOR, 0.28)
 
 func _is_local_point_inside_goal(local_ball_position: Vector3, goal_contract: Dictionary) -> bool:
 	var local_center: Vector3 = goal_contract.get("local_center", Vector3.ZERO)

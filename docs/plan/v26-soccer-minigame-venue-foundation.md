@@ -48,6 +48,7 @@
 - playable floor 必须是场馆自带的 raised 局部平整承载层，不依赖 terrain runtime 改造。
 - pitch 外圈 apron ring 必须和比赛面同标高可步行，不能只做视觉条带然后让玩家从边缘走入时掉回 terrain。
 - podium 外侧那一圈有厚度的侧壁必须也是正式碰撞体，玩家不得从侧面钻进 raised pitch 下方空腔。
+- 当前冻结口径下，球场顶面高度不得再上调；如需继续消除 terrain 缝隙，只允许把 podium/foundation 向下加厚嵌入地面。
 - 首版足球场标线至少包含 halfway line、center circle、center spot、两侧 penalty area、两侧 goal box 与 penalty spot。
 - 最小比分 contract 冻结为：
   - `home_score`
@@ -77,6 +78,7 @@
 - 在 chunk renderer / chunk scene 增加 venue mount 入口
 - author 足球 minigame venue manifest / scene / script
 - 在场馆 scene 内实现 raised playable floor、walkable apron ring、blocking podium side faces、标准标线、两侧球门、goal volume 与大型场边计分板
+- 如用户继续反馈 terrain seam，可通过增加 foundation 向下埋深处理，但不得再改动已冻结的场地顶面高度
 - 新增 venue runtime，负责 ball binding、score state、goal / out-of-bounds detection、scoreboard sync 与 reset
 - 新增场馆激活时的 `ambient_simulation_freeze`
 - 在 HUD 或等价 UI 中暴露最小比分/状态

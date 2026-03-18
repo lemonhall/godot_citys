@@ -10,6 +10,8 @@ const MIN_SURFACE_WIDTH_M := 72.0
 const MIN_SURFACE_LENGTH_M := 112.0
 const MIN_PODIUM_MARGIN_M := 24.0
 const EXPECTED_RELEASE_BUFFER_M := 24.0
+const EXPECTED_PODIUM_HEIGHT_M := 3.0
+const EXPECTED_PODIUM_DEPTH_M := 7.4
 
 func _init() -> void:
 	call_deferred("_run")
@@ -83,7 +85,11 @@ func _run() -> void:
 		return
 	if not T.require_true(self, absf(kickoff_anchor.y - surface_top_y) <= 0.001, "Play surface contract kickoff anchor must sit on the raised pitch top surface"):
 		return
+	if not T.require_true(self, absf(podium_height_m - EXPECTED_PODIUM_HEIGHT_M) <= 0.001, "Play surface contract must keep the frozen raised pitch top height instead of moving the court upward again"):
+		return
 	if not T.require_true(self, podium_height_m >= MIN_RAISED_SURFACE_DELTA_M, "Play surface contract must expose a meaningful podium_height_m instead of pretending the terrain itself is the court foundation"):
+		return
+	if not T.require_true(self, absf(podium_footprint_size.y - EXPECTED_PODIUM_DEPTH_M) <= 0.001, "Play surface contract must extend the podium thickness downward to 7.4m so the field body embeds into terrain instead of leaving an undercut gap"):
 		return
 	if not T.require_true(self, podium_footprint_size.x >= surface_size.x + MIN_PODIUM_MARGIN_M, "Play surface contract must keep a broad X-direction podium footprint so terrain cannot immediately clip the field corners"):
 		return

@@ -10,6 +10,7 @@ const PLAYER_GROUNDING_OFFSET := Vector3(-6.0, 3.0, 0.0)
 const PODIUM_SIDE_PROBE_OUTSIDE_M := 2.0
 const PODIUM_SIDE_PROBE_MOTION_M := 4.0
 const PODIUM_SIDE_PROBE_HEADROOM_M := 0.8
+const PODIUM_DEEP_SIDE_PROBE_DEPTH_M := 5.0
 
 func _init() -> void:
 	call_deferred("_run")
@@ -91,6 +92,7 @@ func _run() -> void:
 		east_probe_origin + Vector3(-PODIUM_SIDE_PROBE_MOTION_M, 0.0, 0.0)
 	)
 	east_probe_query.collide_with_areas = false
+	east_probe_query.collision_mask = mounted_venue.get_play_surface_collision_layer_value() | 1
 	east_probe_query.exclude = [player.get_rid()]
 	var east_wall_hit: Dictionary = space_state.intersect_ray(east_probe_query)
 	if not T.require_true(
@@ -110,12 +112,53 @@ func _run() -> void:
 		south_probe_origin + Vector3(0.0, 0.0, -PODIUM_SIDE_PROBE_MOTION_M)
 	)
 	south_probe_query.collide_with_areas = false
+	south_probe_query.collision_mask = mounted_venue.get_play_surface_collision_layer_value() | 1
 	south_probe_query.exclude = [player.get_rid()]
 	var south_wall_hit: Dictionary = space_state.intersect_ray(south_probe_query)
 	if not T.require_true(
 		self,
 		not south_wall_hit.is_empty(),
 		"Soccer player surface grounding contract requires the south podium side face to block lateral entry instead of leaving the pitch thickness hollow"
+	):
+		return
+
+	var deep_east_probe_origin := Vector3(
+		kickoff_anchor.x + podium_footprint_size.x * 0.5 + PODIUM_SIDE_PROBE_OUTSIDE_M,
+		surface_top_y - PODIUM_DEEP_SIDE_PROBE_DEPTH_M,
+		kickoff_anchor.z
+	)
+	var deep_east_probe_query := PhysicsRayQueryParameters3D.create(
+		deep_east_probe_origin,
+		deep_east_probe_origin + Vector3(-PODIUM_SIDE_PROBE_MOTION_M, 0.0, 0.0)
+	)
+	deep_east_probe_query.collide_with_areas = false
+	deep_east_probe_query.collision_mask = mounted_venue.get_play_surface_collision_layer_value() | 1
+	deep_east_probe_query.exclude = [player.get_rid()]
+	var deep_east_wall_hit: Dictionary = space_state.intersect_ray(deep_east_probe_query)
+	if not T.require_true(
+		self,
+		not deep_east_wall_hit.is_empty(),
+		"Soccer player surface grounding contract requires the east podium side face to keep blocking even 5m below pitch top so the player cannot slip through the terrain gap under the field body"
+	):
+		return
+
+	var deep_south_probe_origin := Vector3(
+		kickoff_anchor.x,
+		surface_top_y - PODIUM_DEEP_SIDE_PROBE_DEPTH_M,
+		kickoff_anchor.z + podium_footprint_size.z * 0.5 + PODIUM_SIDE_PROBE_OUTSIDE_M
+	)
+	var deep_south_probe_query := PhysicsRayQueryParameters3D.create(
+		deep_south_probe_origin,
+		deep_south_probe_origin + Vector3(0.0, 0.0, -PODIUM_SIDE_PROBE_MOTION_M)
+	)
+	deep_south_probe_query.collide_with_areas = false
+	deep_south_probe_query.collision_mask = mounted_venue.get_play_surface_collision_layer_value() | 1
+	deep_south_probe_query.exclude = [player.get_rid()]
+	var deep_south_wall_hit: Dictionary = space_state.intersect_ray(deep_south_probe_query)
+	if not T.require_true(
+		self,
+		not deep_south_wall_hit.is_empty(),
+		"Soccer player surface grounding contract requires the south podium side face to keep blocking well below apron level so the player cannot crawl into the undercut seam"
 	):
 		return
 

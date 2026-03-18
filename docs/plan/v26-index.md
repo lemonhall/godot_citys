@@ -15,7 +15,7 @@ PRD 入口：[PRD-0016 Soccer Minigame Venue Foundation](../prd/PRD-0016-soccer-
 
 `v26` 的目标是把 `v25` 的“一个能踢动的足球”扩成第一套正式可玩的足球 minigame 场馆。推荐路线不是把足球继续做胖，也不是把球场塞进 `scene_landmark`，而是新增一个 sibling family：`scene_minigame_venue`。它复用 `registry -> manifest -> near chunk mount -> scene` 的 authored 世界接入模式，但语义明确是“可玩场馆”。[已由 ECN-0025 变更](../ecn/ECN-0025-v26-scoreboard-and-ambient-freeze.md) `v26` 首版现在明确承诺：平整比赛承载层、两侧球门、进球检测、大型场边计分板、比分、出界/进球重置，以及进入场馆有效玩法态后冻结全城 crowd / ambient traffic 模拟，但保持收音机持续运行。`11v11`、门将/队友/对手 AI、完整规则系统不属于本版 DoD。
 
-当前状态：`M1-M4` 已实现；`2026-03-18` 同日 follow-up 已把 raised pitch 标线、walkable apron ring、podium side-wall collision 与 player grounding 问题补齐，证据见 [v26-m4-verification-2026-03-18.md](./v26-m4-verification-2026-03-18.md)。
+当前状态：`M1-M4` 已实现；`2026-03-18` 同日 follow-up 已把 raised pitch 标线、walkable apron ring、podium side-wall collision、player grounding，以及“顶面不动、foundation 向下再埋深 4m”的 undercut seam 修正补齐，证据见 [v26-m4-verification-2026-03-18.md](./v26-m4-verification-2026-03-18.md)。
 
 ## 决策冻结
 

@@ -8,6 +8,7 @@
 
 - `scene_minigame_venue` registry/runtime 与 `chunk_129_139` mount chain
 - 足球场馆 manifest / scene / playable floor / goal volumes / scoreboard
+- 足球场馆 raised pitch / walkable apron ring / podium side-wall collision / standard markings / player grounding
 - `goal_scored / out_of_bounds / resetting` 回合状态与同球 reset loop
 - `ambient_simulation_freeze` 对 crowd / ambient traffic 的冻结与 release hysteresis
 - 受影响旧链回归：`v25` 足球交互、`v24` radio quick overlay / quick switch、`v21` landmark mount
@@ -28,6 +29,8 @@ $tests=@(
   'res://tests/world/test_city_scene_minigame_venue_registry_runtime.gd',
   'res://tests/world/test_city_soccer_minigame_venue_manifest_contract.gd',
   'res://tests/world/test_city_soccer_pitch_play_surface_contract.gd',
+  'res://tests/world/test_city_soccer_pitch_markings_contract.gd',
+  'res://tests/world/test_city_soccer_player_surface_grounding_contract.gd',
   'res://tests/world/test_city_soccer_goal_detection_contract.gd',
   'res://tests/world/test_city_soccer_scoreboard_contract.gd',
   'res://tests/world/test_city_soccer_scoreboard_visual_contract.gd',
@@ -67,6 +70,8 @@ foreach($test in $tests){
 ### M2 pitch / goals / scoring
 
 - `PASS` `test_city_soccer_pitch_play_surface_contract.gd`
+- `PASS` `test_city_soccer_pitch_markings_contract.gd`
+- `PASS` `test_city_soccer_player_surface_grounding_contract.gd`
 - `PASS` `test_city_soccer_goal_detection_contract.gd`
 - `PASS` `test_city_soccer_scoreboard_contract.gd`
 - `PASS` `test_city_soccer_scoreboard_visual_contract.gd`
@@ -74,6 +79,9 @@ foreach($test in $tests){
 结论：
 
 - 球场使用 venue-owned `PlayableFloor`，不是把 terrain 假装成比赛地面
+- raised pitch 已带标准中圈/禁区/小禁区标线，不再只是 mini patch
+- pitch 外圈 apron ring 现在与比赛面同标高且可步行，玩家从边缘走入时不会掉回 terrain 缝里
+- podium 外侧厚度现在也是正式碰撞体，玩家不能再从球场侧面钻进 raised pitch 下方
 - 两侧球门、goal volume、score state 与大型场边计分板全部正式存在
 - 合法入门方向计分、背后穿门不计分、同一 goal hit 不会重复累加
 
@@ -138,6 +146,23 @@ foreach($test in $tests){
 - `streaming_mount_setup_avg_usec = 2991`
 - `update_streaming_avg_usec = 6251`
 - `wall_frame_avg_usec = 9664`
+
+## Follow-up Note
+
+- `2026-03-18` 同日用户实机反馈又补了一轮场馆几何修正：raised pitch 标高、walkable apron ring、podium side-wall collision 与 player grounding。
+- 本轮 follow-up 的 fresh 功能验证已覆盖：
+  - `test_city_scene_minigame_venue_registry_runtime.gd`
+  - `test_city_soccer_minigame_venue_manifest_contract.gd`
+  - `test_city_soccer_pitch_play_surface_contract.gd`
+  - `test_city_soccer_pitch_markings_contract.gd`
+  - `test_city_soccer_player_surface_grounding_contract.gd`
+  - `test_city_soccer_goal_detection_contract.gd`
+  - `test_city_soccer_scoreboard_contract.gd`
+  - `test_city_soccer_ball_reset_contract.gd`
+  - `test_city_soccer_ball_kick_contract.gd`
+  - `test_city_soccer_minigame_goal_flow.gd`
+- 另做了一次 profiling 抽样：`chunk setup PASS`、`first visit PASS`，但 `warm runtime` 采样出现 `wall_frame_avg_usec = 12510`。
+- 按用户同日显式指令“`不用不用，这怎么可能打穿性能。。。赶紧回写文档，然后push`”，本次 follow-up 不再以 profiling rerun 作为阻塞项，优先以功能修正和文档回写收口；上面的 `M4` profiling 基线仍对应首次 closeout 通过证据。
 
 ## Implementation Notes
 

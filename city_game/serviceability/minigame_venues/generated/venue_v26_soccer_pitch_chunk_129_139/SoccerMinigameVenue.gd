@@ -198,11 +198,9 @@ func _build_goal_contract(goal_id: String, local_center: Vector3, scoring_side: 
 	}
 
 func _ensure_pitch_podium() -> void:
-	var podium_root := get_node_or_null("PitchPodium") as Node3D
-	if podium_root == null:
-		podium_root = Node3D.new()
-		podium_root.name = "PitchPodium"
-		add_child(podium_root)
+	var podium_root := _ensure_static_body_root("PitchPodium")
+	podium_root.collision_layer = PLAY_SURFACE_COLLISION_LAYER_VALUE | 1
+	podium_root.collision_mask = PLAY_SURFACE_COLLISION_LAYER_VALUE | 1
 	var podium_size := _get_podium_size()
 	var foundation_center_y := -PODIUM_DEPTH_M * 0.5 - PODIUM_TOP_REVEAL_M
 	_ensure_visual_box(
@@ -212,6 +210,13 @@ func _ensure_pitch_podium() -> void:
 		Vector3(podium_size.x, PODIUM_DEPTH_M, podium_size.z),
 		PODIUM_COLOR
 	)
+	var collision_shape := podium_root.get_node_or_null("FoundationCollision") as CollisionShape3D
+	if collision_shape == null:
+		collision_shape = CollisionShape3D.new()
+		collision_shape.name = "FoundationCollision"
+		podium_root.add_child(collision_shape)
+	collision_shape.position = Vector3(0.0, -PODIUM_DEPTH_M * 0.5, 0.0)
+	collision_shape.shape = _get_shared_box_shape(Vector3(podium_size.x, PODIUM_DEPTH_M, podium_size.z))
 
 func _ensure_playable_floor() -> void:
 	var floor_node := get_node_or_null("PlayableFloor") as StaticBody3D
@@ -237,37 +242,39 @@ func _ensure_playable_floor() -> void:
 	mesh_instance.material_override = _get_shared_box_material(PLAY_SURFACE_COLOR, 1.0)
 
 func _ensure_pitch_apron() -> void:
-	var apron_root := get_node_or_null("PitchApron") as Node3D
+	var apron_root := get_node_or_null("PitchApron") as StaticBody3D
 	if apron_root == null:
-		apron_root = Node3D.new()
+		apron_root = StaticBody3D.new()
 		apron_root.name = "PitchApron"
 		add_child(apron_root)
+	apron_root.collision_layer = PLAY_SURFACE_COLLISION_LAYER_VALUE | 1
+	apron_root.collision_mask = PLAY_SURFACE_COLLISION_LAYER_VALUE | 1
 	var podium_size := _get_podium_size()
 	var half_field_width := PLAY_SURFACE_SIZE.x * 0.5
 	var half_field_length := PLAY_SURFACE_SIZE.z * 0.5
 	var apron_y := -APRON_THICKNESS_M * 0.5
-	_ensure_visual_box(
+	_ensure_apron_segment(
 		apron_root,
 		"NorthApron",
 		Vector3(0.0, apron_y, -half_field_length - PODIUM_MARGIN_Z_M * 0.5),
 		Vector3(podium_size.x, APRON_THICKNESS_M, PODIUM_MARGIN_Z_M),
 		APRON_COLOR
 	)
-	_ensure_visual_box(
+	_ensure_apron_segment(
 		apron_root,
 		"SouthApron",
 		Vector3(0.0, apron_y, half_field_length + PODIUM_MARGIN_Z_M * 0.5),
 		Vector3(podium_size.x, APRON_THICKNESS_M, PODIUM_MARGIN_Z_M),
 		APRON_COLOR
 	)
-	_ensure_visual_box(
+	_ensure_apron_segment(
 		apron_root,
 		"WestApron",
 		Vector3(-half_field_width - PODIUM_MARGIN_X_M * 0.5, apron_y, 0.0),
 		Vector3(PODIUM_MARGIN_X_M, APRON_THICKNESS_M, PLAY_SURFACE_SIZE.z),
 		APRON_COLOR
 	)
-	_ensure_visual_box(
+	_ensure_apron_segment(
 		apron_root,
 		"EastApron",
 		Vector3(half_field_width + PODIUM_MARGIN_X_M * 0.5, apron_y, 0.0),
@@ -442,6 +449,17 @@ func _apply_scoreboard_state() -> void:
 func _ensure_boundary_line(root: Node3D, node_name: String, local_position: Vector3, size: Vector3) -> void:
 	_ensure_visual_box(root, node_name, local_position, size, BOUNDARY_LINE_COLOR)
 
+func _ensure_apron_segment(root: StaticBody3D, node_name: String, local_position: Vector3, size: Vector3, color: Color) -> void:
+	_ensure_visual_box(root, node_name, local_position, size, color)
+	var collision_shape_name := "%sCollision" % node_name
+	var collision_shape := root.get_node_or_null(collision_shape_name) as CollisionShape3D
+	if collision_shape == null:
+		collision_shape = CollisionShape3D.new()
+		collision_shape.name = collision_shape_name
+		root.add_child(collision_shape)
+	collision_shape.position = local_position
+	collision_shape.shape = _get_shared_box_shape(size)
+
 func _ensure_center_circle(root: Node3D, line_y: float) -> void:
 	var node := root.get_node_or_null("CenterCircle") as MeshInstance3D
 	if node == null:
@@ -514,6 +532,18 @@ func _ensure_visual_box(root: Node3D, node_name: String, local_position: Vector3
 	node.mesh = _get_shared_box_mesh(size)
 	node.position = local_position
 	node.material_override = _get_shared_box_material(color, 0.92)
+
+func _ensure_static_body_root(node_name: String) -> StaticBody3D:
+	var existing_node := get_node_or_null(node_name)
+	if existing_node is StaticBody3D:
+		return existing_node as StaticBody3D
+	if existing_node != null:
+		remove_child(existing_node)
+		existing_node.queue_free()
+	var static_body := StaticBody3D.new()
+	static_body.name = node_name
+	add_child(static_body)
+	return static_body
 
 func _ensure_scoreboard_label(scoreboard_root: Node3D, node_name: String, local_position: Vector3, font_size: int) -> void:
 	var label := scoreboard_root.get_node_or_null(node_name) as Label3D

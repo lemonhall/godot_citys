@@ -2,7 +2,7 @@
 
 ## Goal
 
-交付一条正式的 `scene_minigame_venue` 实现计划：把 `v25` 的足球所在位置扩成一个真正可玩的足球场馆。该场馆必须通过 `registry -> manifest -> near chunk mount -> scene` 挂进 `chunk_129_139`，提供局部平整 playable floor、两侧球门、goal detection、大型场边计分板、比分与 reset loop，并与现有 `prop:v25:soccer_ball:chunk_129_139` 正式协作。同时，场馆激活时必须支持只冻结全城 crowd / ambient traffic 的 `ambient_simulation_freeze`，而不是粗暴走全局 pause，更不能把现有收音机链路一起停掉。
+交付一条正式的 `scene_minigame_venue` 实现计划：把 `v25` 的足球所在位置扩成一个真正可玩的足球场馆。该场馆必须通过 `registry -> manifest -> near chunk mount -> scene` 挂进 `chunk_129_139`，提供 raised playable floor、walkable apron ring、标准中圈/禁区/小禁区标线、两侧球门、goal detection、大型场边计分板、比分与 reset loop，并与现有 `prop:v25:soccer_ball:chunk_129_139` 正式协作。同时，场馆激活时必须支持只冻结全城 crowd / ambient traffic 的 `ambient_simulation_freeze`，而不是粗暴走全局 pause，更不能把现有收音机链路一起停掉。
 
 ## PRD Trace
 
@@ -45,7 +45,10 @@
 - 首个场馆正式 `venue_id` 冻结为 `venue:v26:soccer_pitch:chunk_129_139`。
 - `primary_ball_prop_id` 冻结为 `prop:v25:soccer_ball:chunk_129_139`。
 - `world_position = (-1877.94, 2.52, 618.57)` 的语义在 `v26` 冻结为 kickoff / 场馆中心锚点。
-- playable floor 必须是场馆自带的局部平整承载层，不依赖 terrain runtime 改造。
+- playable floor 必须是场馆自带的 raised 局部平整承载层，不依赖 terrain runtime 改造。
+- pitch 外圈 apron ring 必须和比赛面同标高可步行，不能只做视觉条带然后让玩家从边缘走入时掉回 terrain。
+- podium 外侧那一圈有厚度的侧壁必须也是正式碰撞体，玩家不得从侧面钻进 raised pitch 下方空腔。
+- 首版足球场标线至少包含 halfway line、center circle、center spot、两侧 penalty area、两侧 goal box 与 penalty spot。
 - 最小比分 contract 冻结为：
   - `home_score`
   - `away_score`
@@ -73,7 +76,7 @@
 - 新增 minigame venue registry/runtime
 - 在 chunk renderer / chunk scene 增加 venue mount 入口
 - author 足球 minigame venue manifest / scene / script
-- 在场馆 scene 内实现 playable floor、边界线、两侧球门、goal volume 与大型场边计分板
+- 在场馆 scene 内实现 raised playable floor、walkable apron ring、blocking podium side faces、标准标线、两侧球门、goal volume 与大型场边计分板
 - 新增 venue runtime，负责 ball binding、score state、goal / out-of-bounds detection、scoreboard sync 与 reset
 - 新增场馆激活时的 `ambient_simulation_freeze`
 - 在 HUD 或等价 UI 中暴露最小比分/状态
@@ -92,7 +95,7 @@
 
 1. 自动化测试必须证明：`scene_minigame_venue` registry/runtime 能正式读取足球场馆 entry，并按 `chunk_129_139` 索引。
 2. 自动化测试必须证明：足球场馆 manifest 保存了 kickoff anchor、chunk 信息与 `primary_ball_prop_id`，且 registry / manifest / scene path 三者口径一致。
-3. 自动化测试必须证明：场馆 mounted 后存在稳定 playable floor 与可判定 `in_play` 边界，而不是只画一张草地贴图。
+3. 自动化测试必须证明：场馆 mounted 后存在稳定 raised playable floor、walkable apron ring、blocking podium side faces 与可判定 `in_play` 边界，而不是只画一张草地贴图。
 4. 自动化测试必须证明：两侧球门与 goal volume 都存在，足球进入合法 goal volume 时比分只增加一次。
 5. 自动化测试必须证明：大型场边计分板存在，且会跟随 `home_score / away_score / game_state_label` 正式更新。
 6. 自动化测试必须证明：激活足球场馆后，`ambient_simulation_freeze` 会冻结 crowd / ambient traffic，但不会把 `is_world_simulation_paused()` 置为 `true`。
@@ -129,6 +132,8 @@
 - Create: `tests/world/test_city_scene_minigame_venue_registry_runtime.gd`
 - Create: `tests/world/test_city_soccer_minigame_venue_manifest_contract.gd`
 - Create: `tests/world/test_city_soccer_pitch_play_surface_contract.gd`
+- Create: `tests/world/test_city_soccer_pitch_markings_contract.gd`
+- Create: `tests/world/test_city_soccer_player_surface_grounding_contract.gd`
 - Create: `tests/world/test_city_soccer_goal_detection_contract.gd`
 - Create: `tests/world/test_city_soccer_scoreboard_contract.gd`
 - Create: `tests/world/test_city_soccer_scoreboard_visual_contract.gd`

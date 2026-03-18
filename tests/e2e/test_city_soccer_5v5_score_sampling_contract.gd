@@ -12,11 +12,13 @@ const SAMPLE_MATCH_COUNT := 10
 const MAX_MATCH_OBSERVATION_FRAMES := 22000
 const MAX_SINGLE_TEAM_SCORE := 9
 const MAX_GOAL_DIFFERENCE := 6
+const SIMULATION_TIME_SCALE := 8.0
 
 func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	Engine.time_scale = SIMULATION_TIME_SCALE
 	var scene := load("res://city_game/scenes/CityPrototype.tscn")
 	if scene == null or not (scene is PackedScene):
 		T.fail_and_quit(self, "Missing CityPrototype.tscn for soccer score sampling contract")
@@ -32,6 +34,7 @@ func _run() -> void:
 	var distinct_scorelines := {}
 	for scoreline in scorelines:
 		distinct_scorelines[scoreline] = true
+	print("SAMPLED_SCORELINES ", scorelines)
 	if not T.require_true(self, distinct_scorelines.size() >= 2, "Ten sampled autonomous matches must not all finish with the exact same scoreline"):
 		return
 

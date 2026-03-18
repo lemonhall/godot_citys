@@ -2,25 +2,17 @@ extends SceneTree
 
 const T := preload("res://tests/_test_util.gd")
 
-# Slow acceptance test:
-# Runs a full 5:00 autonomous match at normal runtime speed.
-
 const SOCCER_CHUNK_ID := "chunk_129_139"
 const SOCCER_VENUE_ID := "venue:v26:soccer_pitch:chunk_129_139"
 const SOCCER_WORLD_POSITION := Vector3(-1877.94, 2.52, 618.57)
-const MAX_MATCH_OBSERVATION_FRAMES := 22000
-const MAX_SINGLE_TEAM_SCORE := 9
-const MAX_GOAL_DIFFERENCE := 6
-const SIMULATION_TIME_SCALE := 8.0
 
 func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	Engine.time_scale = SIMULATION_TIME_SCALE
 	var scene := load("res://city_game/scenes/CityPrototype.tscn")
 	if scene == null or not (scene is PackedScene):
-		T.fail_and_quit(self, "Missing CityPrototype.tscn for full-match soccer score contract")
+		T.fail_and_quit(self, "Missing CityPrototype.tscn for soccer goalkeeper live-claim contract")
 		return
 
 	var world := (scene as PackedScene).instantiate()
@@ -28,24 +20,31 @@ func _run() -> void:
 	await process_frame
 
 	var player := world.get_node_or_null("Player")
-	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "Full-match soccer score contract requires Player teleport API"):
+	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "Soccer goalkeeper live-claim contract requires Player teleport API"):
+		return
+	if not T.require_true(self, world.has_method("debug_set_soccer_ball_state"), "Soccer goalkeeper live-claim contract requires deterministic ball placement"):
 		return
 
 	player.teleport_to_world_position(SOCCER_WORLD_POSITION + Vector3(0.0, 2.0, 10.0))
 	var mounted_venue: Node3D = await _wait_for_mounted_venue(world)
-	if not T.require_true(self, mounted_venue != null and mounted_venue.has_method("get_match_start_contract"), "Full-match soccer score contract requires the mounted venue start ring contract"):
+	if not T.require_true(self, mounted_venue != null and mounted_venue.has_method("get_match_start_contract"), "Soccer goalkeeper live-claim contract requires the mounted venue start ring contract"):
+		return
+	if not T.require_true(self, mounted_venue.has_method("get_play_surface_contract"), "Soccer goalkeeper live-claim contract requires play surface metadata"):
 		return
 
 	await _start_match(world, mounted_venue, player)
-	var final_runtime_state := await _wait_for_match_state(world, "final", MAX_MATCH_OBSERVATION_FRAMES)
-	var home_score := int(final_runtime_state.get("home_score", 0))
-	var away_score := int(final_runtime_state.get("away_score", 0))
-	var total_goals := int(final_runtime_state.get("home_score", 0)) + int(final_runtime_state.get("away_score", 0))
-	if not T.require_true(self, total_goals >= 1, "A full 5:00 autonomous soccer match must not finish 0:0"):
+	var play_surface: Dictionary = mounted_venue.get_play_surface_contract()
+	var kickoff_anchor: Vector3 = play_surface.get("kickoff_anchor", SOCCER_WORLD_POSITION)
+	var rolling_claim_ball := kickoff_anchor + Vector3(0.0, 0.6, 35.0)
+	var ball_result: Dictionary = world.debug_set_soccer_ball_state(rolling_claim_ball, Vector3(0.0, 0.0, 8.8))
+	if not T.require_true(self, bool(ball_result.get("success", false)), "Soccer goalkeeper live-claim contract must allow deterministic rolling-ball setup into the home box"):
 		return
-	if not T.require_true(self, home_score <= MAX_SINGLE_TEAM_SCORE and away_score <= MAX_SINGLE_TEAM_SCORE, "A full 5:00 autonomous soccer match must not produce a two-digit single-team score"):
+
+	var claim_runtime_state: Dictionary = await _wait_for_goalkeeper_live_claim(world)
+	var ai_debug: Dictionary = claim_runtime_state.get("ai_debug_state", {})
+	if not T.require_true(self, int(ai_debug.get("goalkeeper_distribution_count", 0)) >= 1, "A live rolling ball into the home box must produce a real goalkeeper claim and distribution event before the attack simply walks in"):
 		return
-	if not T.require_true(self, abs(home_score - away_score) <= MAX_GOAL_DIFFERENCE, "A full 5:00 autonomous soccer match must not produce an excessively lopsided scoreline"):
+	if not T.require_true(self, int(claim_runtime_state.get("home_score", 0)) == 0 and int(claim_runtime_state.get("away_score", 0)) == 0, "A saveable rolling attack into the home box must not immediately turn into a conceded goal"):
 		return
 
 	world.queue_free()
@@ -56,7 +55,19 @@ func _start_match(world, mounted_venue: Node3D, player) -> void:
 	var start_anchor: Vector3 = start_contract.get("world_position", Vector3.ZERO)
 	var standing_height := _estimate_standing_height(player)
 	player.teleport_to_world_position(start_anchor + Vector3.UP * standing_height)
-	await _wait_for_match_state(world, "in_progress", 180)
+	await _wait_for_match_state(world, "in_progress")
+
+func _wait_for_goalkeeper_live_claim(world) -> Dictionary:
+	for _frame in range(240):
+		await physics_frame
+		await process_frame
+		var runtime_state: Dictionary = world.get_soccer_venue_runtime_state()
+		var ai_debug: Dictionary = runtime_state.get("ai_debug_state", {})
+		if int(ai_debug.get("goalkeeper_distribution_count", 0)) >= 1:
+			return runtime_state
+		if int(runtime_state.get("away_score", 0)) >= 1:
+			return runtime_state
+	return world.get_soccer_venue_runtime_state()
 
 func _wait_for_mounted_venue(world) -> Variant:
 	var chunk_renderer: Variant = world.get_chunk_renderer() if world.has_method("get_chunk_renderer") else null
@@ -72,8 +83,8 @@ func _wait_for_mounted_venue(world) -> Variant:
 			return mounted_venue
 	return null
 
-func _wait_for_match_state(world, expected_state: String, frame_budget: int) -> Dictionary:
-	for _frame in range(frame_budget):
+func _wait_for_match_state(world, expected_state: String) -> Dictionary:
+	for _frame in range(120):
 		await physics_frame
 		await process_frame
 		var runtime_state: Dictionary = world.get_soccer_venue_runtime_state()

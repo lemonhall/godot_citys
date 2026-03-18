@@ -9,7 +9,7 @@ const T := preload("res://tests/_test_util.gd")
 const SOCCER_CHUNK_ID := "chunk_129_139"
 const SOCCER_VENUE_ID := "venue:v26:soccer_pitch:chunk_129_139"
 const SOCCER_WORLD_POSITION := Vector3(-1877.94, 2.52, 618.57)
-const AUTONOMOUS_GOAL_TIMEOUT_FRAMES := 720
+const AUTONOMOUS_GOAL_TIMEOUT_FRAMES := 1800
 
 func _init() -> void:
 	call_deferred("_run")

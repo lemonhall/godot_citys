@@ -99,6 +99,10 @@
 14. `M4` 金标准 2：同一实现做 `10` 场采样时，最终比分结果不得 `10/10` 完全一致；如果 `10` 场比分全同，则视为球员参数、环境或策略仍然过于镜像，`M4` 不通过。
 15. 为满足金标准 2，允许引入真实物理链路内的球员差异化参数，例如体力条、冲刺能力、触球半径、射门偏好或其他可复核的能力扰动；但这些扰动必须进入正式 runtime contract，不能以 hidden score buff / goal assist / 暗改球轨迹 的形式作弊。
 16. `M4` 金标准 3：完整 `5:00` 比赛与 `10` 场采样里，任一队单场得分不得达到两位数（`>= 10`），且任一场分差不得超过 `6` 球；一旦出现超高比分或过于悬殊比分，视为节奏、环境或物理参数已失真，`M4` 不通过。
+17. `M4` live-play 设计约束 1：关键对抗行为不得做成刚性脚本。守门员抱球、持球方被断球、分球方向与球员 aggressiveness 必须允许进入受限随机区间，但随机性必须由正式 runtime 参数和 match-seeded 扰动驱动，而不是直接改比分、暗改球速或隐藏吸附。
+18. `M4` live-play 设计约束 2：体力不能只影响移动速度。高频跑动球员的体力衰减必须同步影响其持续压迫能力、护球稳定性、被抢断概率和后续决策积极度；体力恢复时，这些能力才允许逐步回升。
+19. `M4` live-play 设计约束 3：AI 必须表现出“何时继续猛冲、何时放缓回气”的真实取舍。任何单个前锋或守门员都不得被设计成无限体力、全时满强度、没有代价的统治角色，否则即便偶然能进球，也仍视为假比赛。
+20. `M4` live-play 设计约束 4：守门员正式行为链必须以 `goalkeeper_intercept -> goalkeeper_secure_ball -> goalkeeper_distribute_ball` 为目标语义，但抱球成功率不能被做成 `100%` 固定成功；它必须受球速、来球线路、球门中央性、接触距离、门将体力与 match-seeded 行为扰动共同约束。
 
 ## Files
 
@@ -123,6 +127,8 @@
 - Create: `tests/world/test_city_soccer_match_final_scoreboard_contract.gd`
 - Create: `tests/world/test_city_soccer_match_reset_on_exit_contract.gd`
 - Create: `tests/e2e/test_city_soccer_5v5_match_flow.gd`
+- Create: `tests/e2e/test_city_soccer_5v5_full_match_score_contract.gd`
+- Create: `tests/e2e/test_city_soccer_5v5_score_sampling_contract.gd`
 
 ## Steps
 
@@ -174,4 +180,6 @@
 - 如果 AI 没有正式 kick contract，只是围着球跑，用户会立刻感知为“假比赛”。
 - 如果 `10` 名球员完全镜像、能力参数完全相同，比赛极易退化成中场拉扯与固定比分，无法通过 `M4` 的采样金标准。
 - 如果为了通过短窗 smoke 而把射门速度、触球节奏或控球优势调得过猛，就会出现 `0:十几`、`0:几十` 这类失真比分，同样不能通过 `M4`。
+- 如果守门员抱球、抢断或分球全做成刚性 `100%/0%` 开关，比赛会呈现“这次永远能抱住 / 那次永远抢不到”的木偶感，用户手测会立刻识别出假对抗。
+- 如果体力只影响跑速、不影响护球质量与被抢断概率，那么高活跃前锋会变成“速度稍降但依然无敌护球”的脚本怪物，比赛很容易继续一边倒。
 - 如果出圈 reset 只清数字不清场上状态，球与球员会很快积累脏状态。

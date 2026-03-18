@@ -69,6 +69,9 @@ func _run() -> void:
 		return
 	if not _require_team_intent(self, goalkeeper_roster_state, "home", "collapse_defense", "Soccer match AI contract must send at least one home outfield player into collapse_defense while the goalkeeper steps out"):
 		return
+	var goalkeeper_secure_state: Dictionary = await _wait_for_team_intent(mounted_venue, "home", "goalkeeper_secure_ball")
+	if not _require_team_intent(self, goalkeeper_secure_state, "home", "goalkeeper_secure_ball", "Soccer match AI contract must let the home goalkeeper convert a slow ball inside the home box into an explicit secure-ball state instead of only shadowing it"):
+		return
 
 	world.queue_free()
 	T.pass_and_quit(self)

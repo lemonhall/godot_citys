@@ -15,13 +15,16 @@ PRD 入口：[PRD-0017 Soccer 5v5 Match](../prd/PRD-0017-soccer-5v5-match.md)
 
 `v27` 的目标是把 `v26` 的自由足球场馆推进成真正能开赛的 `5v5` 小场比赛。推荐路线不是把素体模型塞进 ambient pedestrians，也不是新造一套 task runtime 来冒充比赛，而是继续沿 `v26` 的同一座 `scene_minigame_venue` 场馆扩展：把用户提供的 `Animated Human.glb` 归置到足球专用资产域，在球场上 author 红蓝两队各 `5` 名球员和记分牌旁的开赛圈，比赛启动后 HUD 显示 `5:00` 倒计时，AI 围绕同一颗正式足球对抗，时间归零即结算胜负；若玩家离开冻结/释放圈，则整场比赛归位并清零。
 
-当前状态：`M0-M3` 的文档、资产、开赛、HUD、终场与 reset 主链已经落地，也有对应 fresh rerun 证据见 [v27-m3-verification-2026-03-18.md](./v27-m3-verification-2026-03-18.md)；但用户追加了更高且更真实的 `M4` 金标准，因此当前 closeout 口径不能只看“AI 会追球/会碰球/会结算”。`M4` 现在明确要求：
+当前状态：`M0-M3` 的文档、资产、开赛、HUD、终场与 reset 主链已经落地，也有对应 fresh rerun 证据见 [v27-m3-verification-2026-03-18.md](./v27-m3-verification-2026-03-18.md)。`M4` 曾出现过一轮功能通过快照，证据记录在 [v27-m4-verification-2026-03-18.md](./v27-m4-verification-2026-03-18.md)；但用户随后手工实测继续观察到 `03:15 -> 0:7` 这类一边倒比分、keeper live-play 行为失真、以及“过度收球后又退化成 0:0”这类反向失真，所以 `M4` 现已 reopen，当前不能再把早前 verification 当作 closeout。后续实现需要围绕“受限随机性 + 体力驱动的真实决策 + keeper 正式抱球/分球链”继续收口，然后再做新的 fresh verification 与 profiling guard。`M4` 当前明确要求：
 
 - 金标准 1：正式 `5:00` 自主比赛里，红蓝 AI 必须靠真实物理活球与正式 goal detection 自己踢出至少 `1` 个进球；不得靠 debug 注球、直接改比分或隐藏球作弊。
 - 金标准 2：同一套环境、策略、物理和球员参数下做 `10` 场采样，最终比分结果不能 `10/10` 完全一致；若 `10` 场比分全同，则视为策略、环境或参数设计仍然过于镜像/僵死，不能验收。
 - 金标准 3：完整 `5:00` 比赛与 `10` 场采样里，任一队单场得分不得达到两位数（`>= 10`），且任一场分差不得超过 `6` 球；若出现超高比分或过于悬殊比分，则视为节奏、物理或参数已被调到失真，不能验收。
+- 设计约束 1：关键对抗行为必须允许进入受限随机区间，包括 keeper 抱球、对抗抢断、分球方向与 aggressiveness，而不是全程刚性脚本；但这些随机性必须进入正式 runtime 参数与 match seed，不得通过 hidden buff / 暗改比分作弊。
+- 设计约束 2：体力必须同时作用于跑速、持续压迫意愿、护球稳定性与被抢断概率；跑得最多的人后续也必须承担更高的失误与被断风险。
+- 设计约束 3：keeper 目标行为链是 `intercept -> secure -> distribute`，但成功率不能做成绝对开关，必须受来球速度、线路、门前中央性、门将体力与 match-seeded 行为扰动共同决定。
 
-因此当前 `M4` 不是只 blocked 在 profiling guard，也 blocked 在这两条 live-play gold standard 尚未通过。
+因此当前 `M4` 的功能金标准已绿，但最终 closeout 仍 blocked 在 profiling guard fresh rerun。
 
 ## 决策冻结
 
@@ -42,7 +45,7 @@ PRD 入口：[PRD-0017 Soccer 5v5 Match](../prd/PRD-0017-soccer-5v5-match.md)
 | M1 asset + roster mount | 素体资产归置、球员 wrapper、`10` 人阵容节点、角色 contract | 素体不进入 `civilians`；场馆 mounted 后有红蓝两队各 `5` 名球员与稳定角色语义 | `tests/world/test_city_soccer_match_asset_contract.gd`、`tests/world/test_city_soccer_match_roster_contract.gd` | done |
 | M2 match start + HUD timer | start ring、比赛启动、HUD `05:00`、倒计时推进 | Player 进入 start ring 后比赛启动；HUD 显示 `05:00` 并递减 | `tests/world/test_city_soccer_match_start_contract.gd`、`tests/world/test_city_soccer_match_countdown_contract.gd` | done |
 | M3 AI + final/reset loop | 简单 AI、守门员角色、终场胜负、出圈归零 | AI 会追球并影响同一颗正式足球；时间归零能结算；出圈会整场清零复位 | `tests/world/test_city_soccer_match_ai_kick_contract.gd`、`tests/world/test_city_soccer_match_final_scoreboard_contract.gd`、`tests/world/test_city_soccer_match_reset_on_exit_contract.gd` | done |
-| M4 live-play gold standard + guard verification | 自主比赛真实性、采样分布、现实比分护栏、回归与 profiling | 必须同时满足三条金标准：1）正式 `5:00` 自主比赛里，红蓝 AI 会围绕真实物理球自行推进并至少打进 `1` 球；2）同一实现做 `10` 场采样时，最终比分不能 `10/10` 完全一致；3）完整比赛与采样里不得出现任一队 `>= 10` 球或单场分差 `> 6` 的失真比分。随后再补齐完整流程回归与 profiling guard | 新增完整 `5:00` 自主比赛 / `10` 场采样 / 现实比分护栏测试（进行中） + `tests/e2e/test_city_soccer_5v5_match_flow.gd` + 受影响 `v25/v26` tests + profiling 三件套（如触及 mount/tick/HUD） | blocked |
+| M4 live-play gold standard + guard verification | 自主比赛真实性、采样分布、现实比分护栏、回归与 profiling | 必须同时满足三条金标准，并额外满足受限随机性、体力驱动决策、keeper 正式抱球/分球链这三条设计约束；当前因用户手测仍出现 `0:7` 与 `0:0` 两类失真局面而 reopen | `tests/e2e/test_city_soccer_5v5_full_match_score_contract.gd`、`tests/e2e/test_city_soccer_5v5_score_sampling_contract.gd`、`tests/e2e/test_city_soccer_5v5_match_flow.gd` + 新的 keeper / live-claim / balance probes + profiling 三件套（如触及 mount/tick/HUD） | in_progress |
 
 ## 计划索引
 
@@ -55,9 +58,9 @@ PRD 入口：[PRD-0017 Soccer 5v5 Match](../prd/PRD-0017-soccer-5v5-match.md)
 | REQ-0017-001 | `v27-soccer-5v5-match.md` | `tests/world/test_city_soccer_match_asset_contract.gd` | `--script res://tests/world/test_city_soccer_match_asset_contract.gd` | [v27-m3-verification-2026-03-18.md](./v27-m3-verification-2026-03-18.md) | done |
 | REQ-0017-002 | `v27-soccer-5v5-match.md` | `tests/world/test_city_soccer_match_start_contract.gd`、`tests/world/test_city_soccer_match_countdown_contract.gd` | `--script res://tests/e2e/test_city_soccer_5v5_match_flow.gd` | [v27-m3-verification-2026-03-18.md](./v27-m3-verification-2026-03-18.md) | done |
 | REQ-0017-003 | `v27-soccer-5v5-match.md` | `tests/world/test_city_soccer_match_roster_contract.gd` | `--script res://tests/world/test_city_soccer_match_roster_contract.gd` | [v27-m3-verification-2026-03-18.md](./v27-m3-verification-2026-03-18.md) | done |
-| REQ-0017-004 | `v27-soccer-5v5-match.md` | `tests/world/test_city_soccer_match_ai_kick_contract.gd` | `--script res://tests/e2e/test_city_soccer_5v5_match_flow.gd` | [v27-m3-verification-2026-03-18.md](./v27-m3-verification-2026-03-18.md) | done |
-| REQ-0017-005 | `v27-soccer-5v5-match.md` | `tests/world/test_city_soccer_match_final_scoreboard_contract.gd`、`tests/world/test_city_soccer_match_reset_on_exit_contract.gd` | `--script res://tests/e2e/test_city_soccer_5v5_match_flow.gd` | [v27-m3-verification-2026-03-18.md](./v27-m3-verification-2026-03-18.md) | done |
-| REQ-0017-006 | `v27-soccer-5v5-match.md` | 受影响 `v25/v26` 足球与场馆 tests | `--script res://tests/e2e/test_city_soccer_5v5_match_flow.gd` + 受影响回归 + profiling 三件套（如适用） | [v27-m3-verification-2026-03-18.md](./v27-m3-verification-2026-03-18.md) | blocked |
+| REQ-0017-004 | `v27-soccer-5v5-match.md` | `tests/world/test_city_soccer_match_ai_kick_contract.gd`、`tests/e2e/test_city_soccer_5v5_full_match_score_contract.gd` | `--script res://tests/e2e/test_city_soccer_5v5_match_flow.gd` | [v27-m4-verification-2026-03-18.md](./v27-m4-verification-2026-03-18.md) | done |
+| REQ-0017-005 | `v27-soccer-5v5-match.md` | `tests/world/test_city_soccer_match_final_scoreboard_contract.gd`、`tests/world/test_city_soccer_match_reset_on_exit_contract.gd` | `--script res://tests/e2e/test_city_soccer_5v5_match_flow.gd` | [v27-m4-verification-2026-03-18.md](./v27-m4-verification-2026-03-18.md) | done |
+| REQ-0017-006 | `v27-soccer-5v5-match.md` | `tests/e2e/test_city_soccer_5v5_score_sampling_contract.gd` + 受影响 `v25/v26` 足球与场馆 tests | `--script res://tests/e2e/test_city_soccer_5v5_score_sampling_contract.gd` + profiling 三件套（如适用） | [v27-m4-verification-2026-03-18.md](./v27-m4-verification-2026-03-18.md) | blocked |
 
 ## ECN 索引
 

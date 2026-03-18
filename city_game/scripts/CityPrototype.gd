@@ -3266,6 +3266,9 @@ func _handle_interactive_prop_primary_interaction() -> Dictionary:
 	var interaction_result: Dictionary = _interactive_prop_runtime.trigger_active_interaction(player)
 	if not interaction_result.has("owner_kind"):
 		interaction_result["owner_kind"] = "interactive_prop"
+	if bool(interaction_result.get("success", false)) and str(interaction_result.get("interaction_kind", "")) == "kick":
+		if _soccer_venue_runtime != null and _soccer_venue_runtime.has_method("notify_manual_ball_interaction"):
+			_soccer_venue_runtime.notify_manual_ball_interaction()
 	_update_npc_interaction_system()
 	return interaction_result
 

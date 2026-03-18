@@ -5,10 +5,10 @@ const DEFAULT_DISPLAY_NAME := "足球"
 const DEFAULT_INTERACTION_KIND := "kick"
 const DEFAULT_PROMPT_TEXT := "按 E 踢球"
 const DEFAULT_TARGET_DIAMETER_M := 1.20
-const DEFAULT_INTERACTION_RADIUS_M := 1.8
+const DEFAULT_INTERACTION_RADIUS_M := 2.15
 const DEFAULT_MASS_KG := 0.43
-const DEFAULT_KICK_IMPULSE := 1.7
-const DEFAULT_KICK_LIFT_IMPULSE := 0.38
+const DEFAULT_KICK_IMPULSE := 4.6
+const DEFAULT_KICK_LIFT_IMPULSE := 0.52
 
 @onready var _collision_shape := $CollisionShape3D as CollisionShape3D
 @onready var _visual_root := $VisualRoot as Node3D
@@ -47,8 +47,13 @@ func apply_player_interaction(player_node: Node3D, interaction_contract: Diction
 	if direction.length_squared() <= 0.0001:
 		direction = Vector3.FORWARD
 	direction = direction.normalized()
+	var run_up_boost := 0.0
+	var player_velocity_variant: Variant = player_node.get("velocity")
+	if player_velocity_variant is Vector3:
+		var player_velocity: Vector3 = player_velocity_variant
+		run_up_boost = clampf(Vector2(player_velocity.x, player_velocity.z).length() * 0.18, 0.0, 1.8)
 	sleeping = false
-	apply_central_impulse(direction * _kick_impulse + Vector3.UP * _kick_lift_impulse)
+	apply_central_impulse(direction * (_kick_impulse + run_up_boost) + Vector3.UP * (_kick_lift_impulse + run_up_boost * 0.08))
 	return _build_interaction_result(true, "", interaction_contract)
 
 func _apply_entry_settings() -> void:

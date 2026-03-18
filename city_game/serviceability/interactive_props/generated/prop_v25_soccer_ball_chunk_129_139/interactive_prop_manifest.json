@@ -28,11 +28,11 @@
 	},
 	"scene_path": "res://city_game/serviceability/interactive_props/generated/prop_v25_soccer_ball_chunk_129_139/soccer_ball_prop.tscn",
 	"interaction_kind": "kick",
-	"interaction_radius_m": 1.8,
+	"interaction_radius_m": 2.15,
 	"prompt_text": "按 E 踢球",
 	"target_diameter_m": 1.20,
 	"physics_mass_kg": 0.43,
-	"kick_impulse": 1.7,
-	"kick_lift_impulse": 0.38,
+	"kick_impulse": 4.6,
+	"kick_lift_impulse": 0.52,
 	"yaw_rad": 0.0
 }

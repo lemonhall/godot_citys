@@ -29,10 +29,24 @@ func _run() -> void:
 	var mounted_venue: Node3D = await _wait_for_mounted_venue(world)
 	if not T.require_true(self, mounted_venue != null and mounted_venue.has_method("get_match_start_contract"), "Soccer match AI kick contract requires the mounted venue start ring contract"):
 		return
+	if not T.require_true(self, mounted_venue.has_method("get_match_roster_state"), "Soccer match AI kick contract requires roster introspection on the mounted venue"):
+		return
+	if not T.require_true(self, mounted_venue.has_method("get_play_surface_contract"), "Soccer match AI kick contract requires play surface metadata for goalkeeper defense checks"):
+		return
 	await _start_match(world, mounted_venue, player)
 
 	var reset_ball_result: Dictionary = world.debug_set_soccer_ball_state(SOCCER_WORLD_POSITION + Vector3(0.0, 0.6, 0.0), Vector3.ZERO)
 	if not T.require_true(self, bool(reset_ball_result.get("success", false)), "Soccer match AI kick contract must allow deterministic center-ball setup before the AI runs"):
+		return
+
+	var contest_roster_state: Dictionary = await _wait_for_team_contest_shape(mounted_venue)
+	if not _require_team_intent(self, contest_roster_state, "home", "press_ball", "Soccer match AI contract must expose a live home ball-pressing runner when the ball is in open play"):
+		return
+	if not _require_team_intent(self, contest_roster_state, "away", "press_ball", "Soccer match AI contract must expose a live away ball-pressing runner when the ball is in open play"):
+		return
+	if not _require_team_intent(self, contest_roster_state, "home", "support_run", "Soccer match AI contract must keep at least one home teammate in a support run instead of sending the whole side to swarm the ball"):
+		return
+	if not _require_team_intent(self, contest_roster_state, "away", "support_run", "Soccer match AI contract must keep at least one away teammate in a support run instead of sending the whole side to swarm the ball"):
 		return
 
 	var runtime_state: Dictionary = await _wait_for_ai_kick(world)
@@ -42,6 +56,18 @@ func _run() -> void:
 	if not T.require_true(self, str(ai_debug.get("last_touch_team_id", "")) != "", "Soccer match AI kick contract must identify which team last touched the ball through AI"):
 		return
 	if not T.require_true(self, str(ai_debug.get("last_touch_role_id", "")) != "", "Soccer match AI kick contract must identify whether the last AI touch came from a goalkeeper or field player"):
+		return
+
+	var play_surface: Dictionary = mounted_venue.get_play_surface_contract()
+	var kickoff_anchor: Vector3 = play_surface.get("kickoff_anchor", SOCCER_WORLD_POSITION)
+	var home_goal_box_ball := kickoff_anchor + Vector3(0.0, 0.6, 42.0)
+	var goal_box_result: Dictionary = world.debug_set_soccer_ball_state(home_goal_box_ball, Vector3.ZERO)
+	if not T.require_true(self, bool(goal_box_result.get("success", false)), "Soccer match AI kick contract must allow deterministic goalkeeper-defense setup near the home goal"):
+		return
+	var goalkeeper_roster_state: Dictionary = await _wait_for_team_intent(mounted_venue, "home", "goalkeeper_intercept")
+	if not _require_team_intent(self, goalkeeper_roster_state, "home", "goalkeeper_intercept", "Soccer match AI contract must switch the home goalkeeper into an intercept state when the ball enters the home box"):
+		return
+	if not _require_team_intent(self, goalkeeper_roster_state, "home", "collapse_defense", "Soccer match AI contract must send at least one home outfield player into collapse_defense while the goalkeeper steps out"):
 		return
 
 	world.queue_free()
@@ -86,6 +112,38 @@ func _wait_for_ai_kick(world) -> Dictionary:
 		if int(ai_debug.get("kick_count", 0)) >= 1:
 			return runtime_state
 	return world.get_soccer_venue_runtime_state()
+
+func _wait_for_team_contest_shape(mounted_venue: Node3D) -> Dictionary:
+	for _frame in range(180):
+		await physics_frame
+		await process_frame
+		var roster_state: Dictionary = mounted_venue.get_match_roster_state()
+		if _team_has_intent(roster_state, "home", "press_ball") and _team_has_intent(roster_state, "away", "press_ball") \
+			and _team_has_intent(roster_state, "home", "support_run") and _team_has_intent(roster_state, "away", "support_run"):
+			return roster_state
+	return mounted_venue.get_match_roster_state()
+
+func _wait_for_team_intent(mounted_venue: Node3D, team_id: String, intent_kind: String) -> Dictionary:
+	for _frame in range(180):
+		await physics_frame
+		await process_frame
+		var roster_state: Dictionary = mounted_venue.get_match_roster_state()
+		if _team_has_intent(roster_state, team_id, intent_kind):
+			return roster_state
+	return mounted_venue.get_match_roster_state()
+
+func _require_team_intent(test_tree: SceneTree, roster_state: Dictionary, team_id: String, intent_kind: String, message: String) -> bool:
+	return T.require_true(test_tree, _team_has_intent(roster_state, team_id, intent_kind), message)
+
+func _team_has_intent(roster_state: Dictionary, team_id: String, intent_kind: String) -> bool:
+	for player_entry_variant in roster_state.get("players", []):
+		var player_entry: Dictionary = player_entry_variant
+		if str(player_entry.get("team_id", "")) != team_id:
+			continue
+		var state: Dictionary = player_entry.get("state", {})
+		if str(state.get("intent_kind", "")) == intent_kind:
+			return true
+	return false
 
 func _estimate_standing_height(player) -> float:
 	var collision_shape := player.get_node_or_null("CollisionShape3D") as CollisionShape3D

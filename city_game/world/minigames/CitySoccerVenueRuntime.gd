@@ -19,6 +19,7 @@ const MATCH_AI_TOUCH_COOLDOWN_SEC := 0.48
 const MATCH_AI_FIELD_PLAYER_KICK_SPEED_MPS := 16.5
 const MATCH_AI_GOALKEEPER_KICK_SPEED_MPS := 18.5
 const MATCH_AI_TOUCH_LIFT_MPS := 1.25
+const MATCH_AI_NEUTRAL_ZONE_BUFFER_M := 8.0
 const MATCH_STATE_IDLE := "idle"
 const MATCH_STATE_IN_PROGRESS := "in_progress"
 const MATCH_STATE_FINAL := "final"
@@ -608,14 +609,19 @@ func _reset_match_player_states() -> void:
 		_match_player_states[str(player_contract.get("player_id", ""))] = _build_default_match_player_state(player_contract)
 
 func _build_default_match_player_state(player_contract: Dictionary) -> Dictionary:
+	var anchor_position: Vector3 = player_contract.get("local_anchor_position", Vector3.ZERO)
 	return {
 		"player_id": str(player_contract.get("player_id", "")),
 		"team_id": str(player_contract.get("team_id", "")),
 		"role_id": str(player_contract.get("role_id", "field_player")),
 		"team_color_id": str(player_contract.get("team_color_id", "")),
-		"local_position": player_contract.get("local_anchor_position", Vector3.ZERO),
+		"local_position": anchor_position,
+		"move_target": anchor_position,
+		"world_position": anchor_position,
+		"intent_kind": "hold_shape",
 		"facing_direction": player_contract.get("idle_facing_direction", Vector3.FORWARD),
 		"animation_state": "idle",
+		"kick_requested": false,
 	}
 
 func _update_idle_match_player_states() -> void:
@@ -630,7 +636,11 @@ func _update_final_match_player_states() -> void:
 		var player_id := str(player_contract.get("player_id", ""))
 		var player_state: Dictionary = (_match_player_states.get(player_id, _build_default_match_player_state(player_contract)) as Dictionary).duplicate(true)
 		var team_id := str(player_contract.get("team_id", ""))
+		player_state["move_target"] = player_state.get("local_position", player_contract.get("local_anchor_position", Vector3.ZERO))
+		player_state["world_position"] = player_state.get("local_position", player_contract.get("local_anchor_position", Vector3.ZERO))
+		player_state["intent_kind"] = "final_idle"
 		player_state["animation_state"] = "work" if _winner_side != "" and team_id == _winner_side else "idle"
+		player_state["kick_requested"] = false
 		_match_player_states[player_id] = player_state
 
 func _advance_match_ai(ball_node: Node3D, mounted_venue: Node3D, delta: float) -> void:
@@ -642,12 +652,16 @@ func _advance_match_ai(ball_node: Node3D, mounted_venue: Node3D, delta: float) -
 		return
 	var ball_local_position := mounted_venue.to_local(_get_ball_world_position(ball_node))
 	var surface_size := _resolve_match_surface_size(mounted_venue)
+	var team_role_plans := _resolve_team_role_plans(ball_local_position, surface_size)
 	for player_contract_variant in _match_player_contracts:
 		var player_contract: Dictionary = player_contract_variant
 		var player_id := str(player_contract.get("player_id", ""))
+		var team_id := str(player_contract.get("team_id", ""))
+		var team_role_plan: Dictionary = team_role_plans.get(team_id, {})
+		var intent_kind := _resolve_match_player_intent_kind(player_contract, team_role_plan)
 		var player_state: Dictionary = (_match_player_states.get(player_id, _build_default_match_player_state(player_contract)) as Dictionary).duplicate(true)
 		var current_local_position: Vector3 = player_state.get("local_position", player_contract.get("local_anchor_position", Vector3.ZERO))
-		var desired_local_position := _resolve_match_player_desired_local_position(player_contract, ball_local_position, surface_size)
+		var desired_local_position := _resolve_match_player_desired_local_position(player_contract, ball_local_position, surface_size, intent_kind)
 		var speed_mps := MATCH_GOALKEEPER_SPEED_MPS if str(player_contract.get("role_id", "")) == "goalkeeper" else MATCH_FIELD_PLAYER_SPEED_MPS
 		var next_local_position := current_local_position.move_toward(desired_local_position, speed_mps * maxf(delta, 0.0))
 		var facing_direction := desired_local_position - current_local_position
@@ -657,8 +671,12 @@ func _advance_match_ai(ball_node: Node3D, mounted_venue: Node3D, delta: float) -
 		if facing_direction.length_squared() <= 0.0001:
 			facing_direction = player_contract.get("idle_facing_direction", Vector3.FORWARD)
 		player_state["local_position"] = next_local_position
+		player_state["move_target"] = desired_local_position
+		player_state["world_position"] = mounted_venue.to_global(next_local_position)
+		player_state["intent_kind"] = intent_kind
 		player_state["facing_direction"] = facing_direction.normalized()
 		player_state["animation_state"] = "run" if next_local_position.distance_to(current_local_position) > 0.03 else "idle"
+		player_state["kick_requested"] = false
 		_match_player_states[player_id] = player_state
 	_maybe_apply_ai_touch(ball_node, mounted_venue, ball_local_position)
 
@@ -667,16 +685,23 @@ func _hold_match_players_idle() -> void:
 		var player_contract: Dictionary = player_contract_variant
 		var player_id := str(player_contract.get("player_id", ""))
 		var player_state: Dictionary = (_match_player_states.get(player_id, _build_default_match_player_state(player_contract)) as Dictionary).duplicate(true)
+		player_state["move_target"] = player_state.get("local_position", player_contract.get("local_anchor_position", Vector3.ZERO))
+		player_state["world_position"] = player_state.get("local_position", player_contract.get("local_anchor_position", Vector3.ZERO))
+		player_state["intent_kind"] = "hold_shape"
 		player_state["animation_state"] = "idle"
+		player_state["kick_requested"] = false
 		_match_player_states[player_id] = player_state
 
-func _resolve_match_player_desired_local_position(player_contract: Dictionary, ball_local_position: Vector3, surface_size: Vector3) -> Vector3:
+func _resolve_match_player_desired_local_position(player_contract: Dictionary, ball_local_position: Vector3, surface_size: Vector3, intent_kind: String) -> Vector3:
 	var anchor_position: Vector3 = player_contract.get("local_anchor_position", Vector3.ZERO)
 	var team_id := str(player_contract.get("team_id", "home"))
 	var role_id := str(player_contract.get("role_id", "field_player"))
 	var half_width := surface_size.x * 0.5 - MATCH_PLAYER_FIELD_MARGIN_M
 	var half_length := surface_size.z * 0.5 - MATCH_PLAYER_FIELD_MARGIN_M
 	if role_id == "goalkeeper":
+		if intent_kind == "goalkeeper_intercept":
+			var chase_target := ball_local_position + Vector3(0.0, 0.0, -_get_attack_direction_z(team_id) * 0.75)
+			return _clamp_match_local_position(chase_target, half_width, half_length)
 		var defend_z := half_length if team_id == "home" else -half_length
 		var desired_goalkeeper_position := Vector3(
 			clampf(ball_local_position.x * 0.42, -MATCH_GOAL_WIDTH_FALLBACK_M * 0.6, MATCH_GOAL_WIDTH_FALLBACK_M * 0.6),
@@ -684,14 +709,28 @@ func _resolve_match_player_desired_local_position(player_contract: Dictionary, b
 			defend_z + clampf(ball_local_position.z - defend_z, -3.6, 3.6)
 		)
 		return _clamp_match_local_position(desired_goalkeeper_position, half_width, half_length)
+	if intent_kind == "press_ball":
+		var chase_target := ball_local_position + Vector3(0.0, 0.0, -_get_attack_direction_z(team_id) * 0.85)
+		return _clamp_match_local_position(chase_target, half_width, half_length)
+	if intent_kind == "collapse_defense":
+		var fallback_z := half_length - 10.0 if team_id == "home" else -half_length + 10.0
+		var collapse_target := Vector3(
+			clampf(ball_local_position.x * 0.72, -half_width * 0.78, half_width * 0.78),
+			0.0,
+			lerpf(ball_local_position.z, fallback_z, 0.58)
+		)
+		return _clamp_match_local_position(collapse_target, half_width, half_length)
 	var lane_index := int(player_contract.get("lane_index", 0))
 	var attack_direction_z := _get_attack_direction_z(team_id)
-	var support_target := ball_local_position + Vector3((float(lane_index) - 2.0) * 2.4, 0.0, -attack_direction_z * 5.0)
-	var press_factor := 0.46
-	if anchor_position.distance_to(ball_local_position) <= 24.0:
-		press_factor = 0.66
-	elif _is_ball_on_team_defensive_half(team_id, ball_local_position):
-		press_factor = 0.58
+	var support_depth_m := 9.0 if intent_kind == "support_run" else 5.0
+	var support_target := ball_local_position + Vector3((float(lane_index) - 2.0) * 3.0, 0.0, -attack_direction_z * support_depth_m)
+	var press_factor := 0.34
+	if intent_kind == "support_run":
+		press_factor = 0.62
+	elif anchor_position.distance_to(ball_local_position) <= 24.0:
+		press_factor = 0.52
+	elif _resolve_team_ball_zone(team_id, ball_local_position) == "defensive":
+		press_factor = 0.44
 	var desired_position := anchor_position.lerp(support_target, press_factor)
 	return _clamp_match_local_position(desired_position, half_width, half_length)
 
@@ -709,6 +748,82 @@ func _is_ball_on_team_defensive_half(team_id: String, ball_local_position: Vecto
 
 func _get_attack_direction_z(team_id: String) -> float:
 	return -1.0 if team_id == "home" else 1.0
+
+func _resolve_team_role_plans(ball_local_position: Vector3, surface_size: Vector3) -> Dictionary:
+	return {
+		"home": _build_team_role_plan("home", ball_local_position, surface_size),
+		"away": _build_team_role_plan("away", ball_local_position, surface_size),
+	}
+
+func _build_team_role_plan(team_id: String, ball_local_position: Vector3, surface_size: Vector3) -> Dictionary:
+	var goalkeeper_id := ""
+	var closest_field_id := ""
+	var second_field_id := ""
+	var closest_field_distance_m := INF
+	var second_field_distance_m := INF
+	for player_contract_variant in _match_player_contracts:
+		var player_contract: Dictionary = player_contract_variant
+		if str(player_contract.get("team_id", "")) != team_id:
+			continue
+		var player_id := str(player_contract.get("player_id", ""))
+		var role_id := str(player_contract.get("role_id", "field_player"))
+		if role_id == "goalkeeper":
+			goalkeeper_id = player_id
+			continue
+		var player_state: Dictionary = _match_player_states.get(player_id, {})
+		var player_local_position: Vector3 = player_state.get("local_position", player_contract.get("local_anchor_position", Vector3.ZERO))
+		var lateral_distance_m := Vector2(
+			player_local_position.x - ball_local_position.x,
+			player_local_position.z - ball_local_position.z
+		).length()
+		if lateral_distance_m < closest_field_distance_m:
+			second_field_distance_m = closest_field_distance_m
+			second_field_id = closest_field_id
+			closest_field_distance_m = lateral_distance_m
+			closest_field_id = player_id
+		elif lateral_distance_m < second_field_distance_m:
+			second_field_distance_m = lateral_distance_m
+			second_field_id = player_id
+	var team_ball_zone := _resolve_team_ball_zone(team_id, ball_local_position)
+	var goalkeeper_intercept := goalkeeper_id != "" and _should_goalkeeper_chase_ball(team_id, ball_local_position, surface_size)
+	var primary_press_id := closest_field_id
+	var support_runner_id := second_field_id if team_ball_zone != "defensive" else ""
+	var collapse_defense_id := second_field_id if team_ball_zone == "defensive" else ""
+	if goalkeeper_intercept:
+		primary_press_id = goalkeeper_id
+		if collapse_defense_id == "":
+			collapse_defense_id = closest_field_id
+	return {
+		"goalkeeper_id": goalkeeper_id,
+		"goalkeeper_intercept": goalkeeper_intercept,
+		"primary_press_id": primary_press_id,
+		"support_runner_id": support_runner_id,
+		"collapse_defense_id": collapse_defense_id,
+		"ball_zone": team_ball_zone,
+	}
+
+func _resolve_match_player_intent_kind(player_contract: Dictionary, team_role_plan: Dictionary) -> String:
+	var player_id := str(player_contract.get("player_id", ""))
+	var role_id := str(player_contract.get("role_id", "field_player"))
+	if role_id == "goalkeeper":
+		if bool(team_role_plan.get("goalkeeper_intercept", false)) and str(team_role_plan.get("goalkeeper_id", "")) == player_id:
+			return "goalkeeper_intercept"
+		return "goal_guard"
+	if str(team_role_plan.get("primary_press_id", "")) == player_id:
+		return "press_ball"
+	if str(team_role_plan.get("collapse_defense_id", "")) == player_id:
+		return "collapse_defense"
+	if str(team_role_plan.get("support_runner_id", "")) == player_id:
+		return "support_run"
+	return "hold_shape"
+
+func _should_goalkeeper_chase_ball(team_id: String, ball_local_position: Vector3, surface_size: Vector3) -> bool:
+	var half_length := surface_size.z * 0.5
+	var defensive_gate_z := half_length - 18.0
+	var lateral_gate_x := MATCH_GOAL_WIDTH_FALLBACK_M * 1.4
+	if team_id == "home":
+		return ball_local_position.z >= defensive_gate_z and absf(ball_local_position.x) <= lateral_gate_x
+	return ball_local_position.z <= -defensive_gate_z and absf(ball_local_position.x) <= lateral_gate_x
 
 func _maybe_apply_ai_touch(ball_node: Node3D, mounted_venue: Node3D, ball_local_position: Vector3) -> void:
 	if _last_ai_touch_cooldown_sec > 0.0:
@@ -738,15 +853,9 @@ func _apply_ai_touch(ball_node: Node3D, mounted_venue: Node3D, player_contract: 
 		return
 	var team_id := str(player_contract.get("team_id", "home"))
 	var role_id := str(player_contract.get("role_id", "field_player"))
-	var target_goal_center := _resolve_opponent_goal_local_center(mounted_venue, team_id)
-	var kick_direction := target_goal_center - ball_local_position
-	kick_direction.y = 0.0
-	if kick_direction.length_squared() <= 0.0001:
-		kick_direction = Vector3(0.0, 0.0, _get_attack_direction_z(team_id))
-	var lane_bias := (float(int(player_contract.get("lane_index", 0))) - 2.0) * 0.08
-	kick_direction.x += lane_bias
-	kick_direction = kick_direction.normalized()
-	var kick_speed_mps := MATCH_AI_GOALKEEPER_KICK_SPEED_MPS if role_id == "goalkeeper" else MATCH_AI_FIELD_PLAYER_KICK_SPEED_MPS
+	var intent_kind := str(player_state.get("intent_kind", "press_ball"))
+	var kick_direction := _resolve_ai_kick_direction(mounted_venue, player_contract, ball_local_position, intent_kind)
+	var kick_speed_mps := _resolve_ai_kick_speed_mps(role_id, team_id, ball_local_position, intent_kind)
 	var rigid_ball := ball_node as RigidBody3D
 	rigid_ball.linear_velocity = kick_direction * kick_speed_mps + Vector3.UP * MATCH_AI_TOUCH_LIFT_MPS
 	rigid_ball.angular_velocity = Vector3.ZERO
@@ -755,12 +864,42 @@ func _apply_ai_touch(ball_node: Node3D, mounted_venue: Node3D, player_contract: 
 	var player_id := str(player_contract.get("player_id", ""))
 	player_state["animation_state"] = "run"
 	player_state["facing_direction"] = kick_direction
+	player_state["intent_kind"] = "kick_ball"
+	player_state["kick_requested"] = true
 	_match_player_states[player_id] = player_state.duplicate(true)
 	_last_ai_touch_cooldown_sec = MATCH_AI_TOUCH_COOLDOWN_SEC
 	_ai_debug_state["kick_count"] = int(_ai_debug_state.get("kick_count", 0)) + 1
 	_ai_debug_state["last_touch_player_id"] = player_id
 	_ai_debug_state["last_touch_team_id"] = team_id
 	_ai_debug_state["last_touch_role_id"] = role_id
+
+func _resolve_ai_kick_direction(mounted_venue: Node3D, player_contract: Dictionary, ball_local_position: Vector3, intent_kind: String) -> Vector3:
+	var team_id := str(player_contract.get("team_id", "home"))
+	var lane_bias := (float(int(player_contract.get("lane_index", 0))) - 2.0) * 0.12
+	if intent_kind == "goalkeeper_intercept" or intent_kind == "collapse_defense":
+		var clear_direction := Vector3(
+			lane_bias + signf(ball_local_position.x) * 0.18,
+			0.0,
+			_get_attack_direction_z(team_id)
+		)
+		if clear_direction.length_squared() > 0.0001:
+			return clear_direction.normalized()
+	var target_goal_center := _resolve_opponent_goal_local_center(mounted_venue, team_id)
+	var kick_direction := target_goal_center - ball_local_position
+	kick_direction.y = 0.0
+	if kick_direction.length_squared() <= 0.0001:
+		kick_direction = Vector3(0.0, 0.0, _get_attack_direction_z(team_id))
+	kick_direction.x += lane_bias
+	return kick_direction.normalized()
+
+func _resolve_ai_kick_speed_mps(role_id: String, team_id: String, ball_local_position: Vector3, intent_kind: String) -> float:
+	if role_id == "goalkeeper" or intent_kind == "goalkeeper_intercept":
+		return MATCH_AI_GOALKEEPER_KICK_SPEED_MPS + 2.0
+	if intent_kind == "collapse_defense":
+		return MATCH_AI_FIELD_PLAYER_KICK_SPEED_MPS + 1.2
+	if _resolve_team_ball_zone(team_id, ball_local_position) == "attacking":
+		return MATCH_AI_FIELD_PLAYER_KICK_SPEED_MPS + 0.8
+	return MATCH_AI_FIELD_PLAYER_KICK_SPEED_MPS
 
 func _resolve_opponent_goal_local_center(mounted_venue: Node3D, team_id: String) -> Vector3:
 	if mounted_venue != null and mounted_venue.has_method("get_goal_contracts"):
@@ -780,6 +919,19 @@ func _resolve_match_surface_size(mounted_venue: Node3D) -> Vector3:
 		if surface_size_variant is Vector3:
 			return surface_size_variant as Vector3
 	return MATCH_SURFACE_SIZE_FALLBACK
+
+func _resolve_team_ball_zone(team_id: String, ball_local_position: Vector3) -> String:
+	if team_id == "home":
+		if ball_local_position.z >= MATCH_AI_NEUTRAL_ZONE_BUFFER_M:
+			return "defensive"
+		if ball_local_position.z <= -MATCH_AI_NEUTRAL_ZONE_BUFFER_M:
+			return "attacking"
+		return "neutral"
+	if ball_local_position.z <= -MATCH_AI_NEUTRAL_ZONE_BUFFER_M:
+		return "defensive"
+	if ball_local_position.z >= MATCH_AI_NEUTRAL_ZONE_BUFFER_M:
+		return "attacking"
+	return "neutral"
 
 func _sync_match_visual_state(mounted_venue: Node3D) -> void:
 	if mounted_venue == null or not mounted_venue.has_method("sync_match_state"):

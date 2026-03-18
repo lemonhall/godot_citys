@@ -71,6 +71,18 @@ func _run() -> void:
 		return
 	if not T.require_true(self, bool(overlay_state.get("browser_action_available", false)), "Quick overlay must surface a dedicated browser action instead of consuming a quick slot"):
 		return
+	var prev_button := world.get_node_or_null("Hud/Root/VehicleRadioQuickOverlay/Panel/Chrome/ControlRow/PrevButton") as Button
+	if not T.require_true(self, prev_button != null, "Quick overlay must expose a dedicated Prev button in the car-radio control row"):
+		return
+	var next_button := world.get_node_or_null("Hud/Root/VehicleRadioQuickOverlay/Panel/Chrome/ControlRow/NextButton") as Button
+	if not T.require_true(self, next_button != null, "Quick overlay must expose a dedicated Next button in the car-radio control row"):
+		return
+	var confirm_button := world.get_node_or_null("Hud/Root/VehicleRadioQuickOverlay/Panel/Chrome/ControlRow/ConfirmButton") as Button
+	if not T.require_true(self, confirm_button != null, "Quick overlay must expose a dedicated Confirm button in the car-radio control row"):
+		return
+	var preset_grid := world.get_node_or_null("Hud/Root/VehicleRadioQuickOverlay/Panel/Chrome/PresetGrid") as GridContainer
+	if not T.require_true(self, preset_grid != null, "Quick overlay must expose a preset grid instead of a plain text dump"):
+		return
 
 	_press_action(world, "vehicle_radio_cancel")
 	await process_frame

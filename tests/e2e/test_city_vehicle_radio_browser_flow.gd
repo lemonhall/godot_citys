@@ -33,6 +33,12 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("select_vehicle_radio_browser_station"), "Vehicle radio browser flow requires select_vehicle_radio_browser_station()"):
 		return
+	if not T.require_true(self, world.has_method("play_vehicle_radio_browser_selected_station"), "Vehicle radio browser flow requires play_vehicle_radio_browser_selected_station()"):
+		return
+	if not T.require_true(self, world.has_method("stop_vehicle_radio_browser_playback"), "Vehicle radio browser flow requires stop_vehicle_radio_browser_playback()"):
+		return
+	if not T.require_true(self, world.has_method("set_vehicle_radio_browser_volume_linear"), "Vehicle radio browser flow requires set_vehicle_radio_browser_volume_linear()"):
+		return
 	if not T.require_true(self, world.has_method("get_vehicle_radio_runtime_state"), "Vehicle radio browser flow requires get_vehicle_radio_runtime_state()"):
 		return
 	if not T.require_true(self, world.has_method("open_vehicle_radio_quick_overlay"), "Vehicle radio browser flow requires open_vehicle_radio_quick_overlay()"):
@@ -40,18 +46,30 @@ func _run() -> void:
 	if not T.require_true(self, world.has_method("get_vehicle_radio_quick_overlay_state"), "Vehicle radio browser flow requires get_vehicle_radio_quick_overlay_state()"):
 		return
 
-	var player := world.get_node_or_null("Player")
-	if not T.require_true(self, player != null and player.has_method("enter_vehicle_drive_mode"), "Vehicle radio browser flow requires synthetic drive-mode setup support"):
-		return
-	player.enter_vehicle_drive_mode(_build_synthetic_vehicle_state(player))
-
 	var open_result: Dictionary = world.open_vehicle_radio_browser()
-	if not T.require_true(self, bool(open_result.get("success", false)), "Vehicle radio browser must open in driving mode"):
+	if not T.require_true(self, bool(open_result.get("success", false)), "Vehicle radio browser must open even while the player is on foot"):
+		return
+	var browser_state: Dictionary = world.get_vehicle_radio_browser_state()
+	var tab_ids := PackedStringArray()
+	for tab_variant in browser_state.get("tabs", []):
+		var tab: Dictionary = tab_variant as Dictionary
+		tab_ids.append(str(tab.get("tab_id", "")))
+	if not T.require_true(self, tab_ids == PackedStringArray(["presets", "favorites", "recents", "browse"]), "Vehicle radio browser flow must expose the reduced tab family without a current-playing tab"):
+		return
+
+	var play_button := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/RightPanel/RightVBox/TransportRow/PlayButton") as Button
+	if not T.require_true(self, play_button != null, "Vehicle radio browser flow requires a Play button in the browser detail panel"):
+		return
+	var stop_button := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/RightPanel/RightVBox/TransportRow/StopButton") as Button
+	if not T.require_true(self, stop_button != null, "Vehicle radio browser flow requires a Stop button in the browser detail panel"):
+		return
+	var volume_slider := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/RightPanel/RightVBox/TransportRow/VolumeSlider") as Range
+	if not T.require_true(self, volume_slider != null, "Vehicle radio browser flow requires a volume slider in the browser detail panel"):
 		return
 
 	world.select_vehicle_radio_browser_country("CN")
 	world.set_vehicle_radio_browser_filter_text("Traffic")
-	var browser_state: Dictionary = world.get_vehicle_radio_browser_state()
+	browser_state = world.get_vehicle_radio_browser_state()
 	var browse_state: Dictionary = browser_state.get("browse", {}) as Dictionary
 	var station_rows := browse_state.get("stations", []) as Array
 	if not T.require_true(self, str(browse_state.get("root_kind", "")) == "stations", "Selecting a country in browser flow must switch Browse root to stations"):
@@ -72,7 +90,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(runtime_state.get("power_state", "")) == "on", "Clicking a station in browser flow must auto-power the radio on"):
 		return
-	if not T.require_true(self, str(runtime_state.get("playback_state", "")) == "playing", "Clicking a station in browser flow must transition the backend into playing state while driving"):
+	if not T.require_true(self, str(runtime_state.get("playback_state", "")) == "playing", "Clicking a station in browser flow must transition the backend into playing state even while on foot"):
 		return
 	if not T.require_true(self, str(runtime_state.get("resolved_url", "")) == "https://radio.example/xian_traffic.mp3", "Browser flow runtime state must surface the active resolved_url from the playback backend"):
 		return
@@ -82,6 +100,26 @@ func _run() -> void:
 	if not T.require_true(self, runtime_state.has("latency_ms"), "Browser flow runtime state must expose backend latency_ms"):
 		return
 	if not T.require_true(self, runtime_state.has("underflow_count"), "Browser flow runtime state must expose backend underflow_count"):
+		return
+	if not T.require_true(self, runtime_state.has("volume_linear"), "Browser flow runtime state must expose backend volume_linear"):
+		return
+
+	stop_button.emit_signal("pressed")
+	await process_frame
+	runtime_state = world.get_vehicle_radio_runtime_state()
+	if not T.require_true(self, str(runtime_state.get("playback_state", "")) == "stopped", "Clicking Stop in browser flow must stop live playback immediately"):
+		return
+
+	play_button.emit_signal("pressed")
+	await process_frame
+	runtime_state = world.get_vehicle_radio_runtime_state()
+	if not T.require_true(self, str(runtime_state.get("playback_state", "")) == "playing", "Clicking Play in browser flow must resume the selected station"):
+		return
+
+	volume_slider.value = 35.0
+	await process_frame
+	runtime_state = world.get_vehicle_radio_runtime_state()
+	if not T.require_true(self, absf(float(runtime_state.get("volume_linear", -1.0)) - 0.35) < 0.02, "Changing the browser volume slider must update the runtime volume_linear"):
 		return
 
 	var favorite_result: Dictionary = world.toggle_vehicle_radio_browser_favorite("station:cn:traffic")
@@ -102,6 +140,14 @@ func _run() -> void:
 	var close_browser_result: Dictionary = world.close_vehicle_radio_browser()
 	if not T.require_true(self, bool(close_browser_result.get("success", false)), "Browser flow must close the full-screen browser cleanly"):
 		return
+	runtime_state = world.get_vehicle_radio_runtime_state()
+	if not T.require_true(self, str(runtime_state.get("playback_state", "")) == "playing", "Closing the browser after Play must keep the selected station playing instead of stopping the audio chain"):
+		return
+	var player := world.get_node_or_null("Player")
+	if not T.require_true(self, player != null and player.has_method("enter_vehicle_drive_mode"), "Vehicle radio browser flow requires synthetic drive-mode setup support before reopening quick overlay"):
+		return
+	player.enter_vehicle_drive_mode(_build_synthetic_vehicle_state(player))
+	await process_frame
 	var open_overlay_result: Dictionary = world.open_vehicle_radio_quick_overlay()
 	if not T.require_true(self, bool(open_overlay_result.get("success", false)), "Browser flow must leave quick overlay usable after closing the browser"):
 		return

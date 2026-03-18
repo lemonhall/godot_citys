@@ -18,9 +18,13 @@ func _run() -> void:
 		return
 	if not T.require_true(self, store.has_method("load_countries_index"), "Vehicle radio catalog cache contract requires load_countries_index()"):
 		return
+	if not T.require_true(self, store.has_method("delete_countries_index"), "Vehicle radio catalog cache contract requires delete_countries_index()"):
+		return
 	if not T.require_true(self, store.has_method("save_country_station_page"), "Vehicle radio catalog cache contract requires save_country_station_page()"):
 		return
 	if not T.require_true(self, store.has_method("load_country_station_page"), "Vehicle radio catalog cache contract requires load_country_station_page()"):
+		return
+	if not T.require_true(self, store.has_method("delete_country_station_page"), "Vehicle radio catalog cache contract requires delete_country_station_page()"):
 		return
 	if not T.require_true(self, store.has_method("save_stream_resolve_cache"), "Vehicle radio catalog cache contract requires save_stream_resolve_cache()"):
 		return
@@ -68,6 +72,16 @@ func _run() -> void:
 		return
 	if not T.require_true(self, bool(stale_countries.get("stale", false)), "Expired countries index must surface stale=true"):
 		return
+	var delete_countries_result: Dictionary = store.delete_countries_index()
+	if not T.require_true(self, bool(delete_countries_result.get("success", false)), "Deleting countries index must succeed for fixture-cache hygiene"):
+		return
+	if not T.require_true(self, not FileAccess.file_exists(countries_index_path), "Deleting countries index must remove countries.index.json from disk"):
+		return
+	if not T.require_true(self, not FileAccess.file_exists(countries_meta_path), "Deleting countries index must remove countries.meta.json from disk"):
+		return
+	save_countries_result = store.save_countries_index(countries, 100, 72 * 3600)
+	if not T.require_true(self, bool(save_countries_result.get("success", false)), "Countries index must still be writable after delete/recreate"):
+		return
 
 	var stations := [
 		{
@@ -90,6 +104,16 @@ func _run() -> void:
 	if not T.require_true(self, bool(station_page.get("hit", false)), "Country station page must load as a cache hit after save"):
 		return
 	if not T.require_true(self, int((station_page.get("stations", []) as Array).size()) == 1, "Country station page load must preserve station count"):
+		return
+	var delete_station_result: Dictionary = store.delete_country_station_page("CN")
+	if not T.require_true(self, bool(delete_station_result.get("success", false)), "Deleting country station page must succeed for fixture-cache hygiene"):
+		return
+	if not T.require_true(self, not FileAccess.file_exists(station_index_path), "Deleting country station page must remove stations.index.json from disk"):
+		return
+	if not T.require_true(self, not FileAccess.file_exists(station_meta_path), "Deleting country station page must remove stations.meta.json from disk"):
+		return
+	save_station_result = store.save_country_station_page("CN", stations, 220, 72 * 3600)
+	if not T.require_true(self, bool(save_station_result.get("success", false)), "Country station page must still be writable after delete/recreate"):
 		return
 
 	var resolve_entries := {

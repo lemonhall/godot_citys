@@ -37,6 +37,7 @@ func get_build_summary() -> String:
 func attach_audio_host(host: Node) -> void:
 	_audio_host = host
 	_ensure_audio_output()
+	_apply_audio_player_volume()
 
 func update_audio_output() -> void:
 	_ensure_boot()
@@ -104,6 +105,11 @@ func stop_playback(_reason: String = "stopped") -> Dictionary:
 		_state["playback_state"] = "stopped"
 	if str(_state.get("buffer_state", "")) != "idle":
 		_state["buffer_state"] = "idle"
+	return get_state()
+
+func set_volume_linear(volume_linear: float) -> Dictionary:
+	_state["volume_linear"] = clampf(volume_linear, 0.0, 1.0)
+	_apply_audio_player_volume()
 	return get_state()
 
 func get_state() -> Dictionary:
@@ -184,6 +190,7 @@ func _ensure_audio_output() -> void:
 		_audio_stream.buffer_length = AUDIO_BUFFER_LENGTH_SEC
 	if _audio_player.stream != _audio_stream:
 		_audio_player.stream = _audio_stream
+	_apply_audio_player_volume()
 
 func _ensure_audio_playback() -> AudioStreamGeneratorPlayback:
 	_ensure_audio_output()
@@ -204,3 +211,9 @@ func _reset_audio_output() -> void:
 	if _audio_player != null and is_instance_valid(_audio_player):
 		_audio_player.stop()
 		_audio_player.stream = null
+
+func _apply_audio_player_volume() -> void:
+	if _audio_player == null or not is_instance_valid(_audio_player):
+		return
+	var volume_linear := clampf(float(_state.get("volume_linear", 1.0)), 0.0, 1.0)
+	_audio_player.volume_db = linear_to_db(volume_linear) if volume_linear > 0.0 else -80.0

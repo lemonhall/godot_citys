@@ -75,6 +75,18 @@ func load_countries_index(now_unix_sec: int = -1) -> Dictionary:
 		"error": "",
 	}
 
+func delete_countries_index() -> Dictionary:
+	var index_result := _delete_file_if_exists(build_countries_index_path())
+	if not bool(index_result.get("success", false)):
+		return index_result
+	var meta_result := _delete_file_if_exists(build_countries_meta_path())
+	if not bool(meta_result.get("success", false)):
+		return meta_result
+	return {
+		"success": true,
+		"error": "",
+	}
+
 func save_country_station_page(country_code: String, stations: Array, fetched_at_unix_sec: int = -1, ttl_sec: int = DEFAULT_CATALOG_TTL_SEC) -> Dictionary:
 	var normalized_country_code := _normalize_country_code(country_code)
 	var index_path := build_country_station_index_path(normalized_country_code)
@@ -138,6 +150,19 @@ func load_country_station_page(country_code: String, now_unix_sec: int = -1) -> 
 		"stale": _is_stale(meta_payload, now_unix_sec),
 		"stations": _duplicate_array(index_payload.get("stations", [])),
 		"meta": meta_payload.duplicate(true),
+		"error": "",
+	}
+
+func delete_country_station_page(country_code: String) -> Dictionary:
+	var normalized_country_code := _normalize_country_code(country_code)
+	var index_result := _delete_file_if_exists(build_country_station_index_path(normalized_country_code))
+	if not bool(index_result.get("success", false)):
+		return index_result
+	var meta_result := _delete_file_if_exists(build_country_station_meta_path(normalized_country_code))
+	if not bool(meta_result.get("success", false)):
+		return meta_result
+	return {
+		"success": true,
 		"error": "",
 	}
 
@@ -222,6 +247,26 @@ func _read_json_file(path: String) -> Dictionary:
 		"success": true,
 		"path": path,
 		"payload": (parsed as Dictionary).duplicate(true),
+		"error": "",
+	}
+
+func _delete_file_if_exists(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {
+			"success": true,
+			"path": path,
+			"error": "",
+		}
+	var remove_error := DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	if remove_error != OK:
+		return {
+			"success": false,
+			"path": path,
+			"error": "remove_failed",
+		}
+	return {
+		"success": true,
+		"path": path,
 		"error": "",
 	}
 

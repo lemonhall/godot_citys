@@ -5,12 +5,16 @@ var _backend: RefCounted = null
 var _driving := false
 var _vehicle_state: Dictionary = {}
 var _power_on := false
+var _browser_preview_enabled := false
+var _volume_linear := 1.0
 var _selected_station_snapshot: Dictionary = {}
 var _resolved_stream: Dictionary = {}
 var _requested_playback_key := ""
 
 func configure(backend: RefCounted) -> void:
 	_backend = backend
+	if _backend != null and _backend.has_method("set_volume_linear"):
+		_backend.set_volume_linear(_volume_linear)
 	_sync_backend_playback()
 
 func set_driving_context(is_driving: bool, vehicle_state: Dictionary = {}) -> void:
@@ -21,6 +25,15 @@ func set_driving_context(is_driving: bool, vehicle_state: Dictionary = {}) -> vo
 func set_power_state(power_on: bool) -> void:
 	_power_on = power_on
 	_sync_backend_playback()
+
+func set_browser_preview_enabled(enabled: bool) -> void:
+	_browser_preview_enabled = enabled
+	_sync_backend_playback()
+
+func set_volume_linear(volume_linear: float) -> void:
+	_volume_linear = clampf(volume_linear, 0.0, 1.0)
+	if _backend != null and _backend.has_method("set_volume_linear"):
+		_backend.set_volume_linear(_volume_linear)
 
 func select_station(station_snapshot: Dictionary, resolved_stream: Dictionary) -> void:
 	_selected_station_snapshot = station_snapshot.duplicate(true)
@@ -48,6 +61,7 @@ func get_runtime_state() -> Dictionary:
 		"metadata": (backend_state.get("metadata", {}) as Dictionary).duplicate(true),
 		"latency_ms": int(backend_state.get("latency_ms", 0)),
 		"underflow_count": int(backend_state.get("underflow_count", 0)),
+		"volume_linear": float(backend_state.get("volume_linear", _volume_linear)),
 		"error_code": str(backend_state.get("error_code", "")),
 		"error_message": str(backend_state.get("error_message", "")),
 		"backend_id": str(backend_state.get("backend_id", "")),
@@ -71,7 +85,9 @@ func _sync_backend_playback() -> void:
 	_requested_playback_key = ""
 
 func _build_desired_playback_key() -> String:
-	if not _driving or not _power_on:
+	if not _power_on:
+		return ""
+	if not _driving and not _browser_preview_enabled:
 		return ""
 	if _selected_station_snapshot.is_empty():
 		return ""

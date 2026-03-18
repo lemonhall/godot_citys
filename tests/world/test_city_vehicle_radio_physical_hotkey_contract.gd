@@ -42,6 +42,20 @@ func _run() -> void:
 		return
 	if not T.require_true(self, bool(world.is_world_simulation_paused()), "Opening the radio quick overlay through the physical key path must pause world simulation"):
 		return
+	var quick_overlay_control := world.get_node_or_null("Hud/Root/VehicleRadioQuickOverlay") as Control
+	if not T.require_true(self, quick_overlay_control != null, "Physical hotkey contract requires a dedicated VehicleRadioQuickOverlay control under the HUD"):
+		return
+	var next_index_before := int(quick_overlay_state.get("selected_slot_index", -1))
+	_press_key(world, KEY_BRACKETRIGHT)
+	await process_frame
+	quick_overlay_state = hud.get_vehicle_radio_quick_overlay_state()
+	if not T.require_true(self, int(quick_overlay_state.get("selected_slot_index", -1)) == next_index_before + 1, "Pressing ] while quick overlay is open must advance to the next preset slot through the physical key path"):
+		return
+	_press_key(world, KEY_BRACKETLEFT)
+	await process_frame
+	quick_overlay_state = hud.get_vehicle_radio_quick_overlay_state()
+	if not T.require_true(self, int(quick_overlay_state.get("selected_slot_index", -1)) == next_index_before, "Pressing [ while quick overlay is open must return to the previous preset slot through the physical key path"):
+		return
 
 	_press_key(world, KEY_O)
 	await process_frame
@@ -109,6 +123,12 @@ func _build_station_entries() -> Array:
 			"station_name": "Hotkey Test 1",
 			"country": "CN",
 			"stream_url": "https://radio.example/hotkey_1.mp3",
+		},
+		{
+			"station_id": "station:hotkey:2",
+			"station_name": "Hotkey Test 2",
+			"country": "CN",
+			"stream_url": "https://radio.example/hotkey_2.mp3",
 		},
 	]
 

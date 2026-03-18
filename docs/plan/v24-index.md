@@ -28,7 +28,7 @@ PRD 入口：[PRD-0014 Vehicle Radio System](../prd/PRD-0014-vehicle-radio-syste
 - `radio power off` 走独立 action，不占 quick bank 站位。
 - quick-select 打开时允许进入单机可测的 `radio selection pause`，不强求 GTA 式慢动作。
 - 输入 contract 先冻结 `InputMap action` 名称，不先写死物理按键。
-- browser 最小分区冻结为：`当前播放 / Presets / Favorites / Recents / Browse`。
+- browser 最小分区冻结为：`Presets / Favorites / Recents / Browse`，右侧固定 `Play / Stop / 音量` 详情控制区。
 - `Browse` 首层正式入口冻结为 `国家/地区目录`；目录内默认展示按热度排序的 `top 200` station page。
 - catalog cache 与 user state 必须分层：
   - `user://cache/radio/`：countries index、station pages、resolve cache
@@ -49,7 +49,7 @@ PRD 入口：[PRD-0014 Vehicle Radio System](../prd/PRD-0014-vehicle-radio-syste
 | M1 backend feasibility + transport contract | live stream backend interface、resolver contract、Windows 样本可播性基线 | direct / playlist / HLS 三类样本都有正式验证路径；backend interface 冻结；UI 不直接触网 | `tests/world/test_city_vehicle_radio_stream_resolution_contract.gd`、`tests/world/test_city_vehicle_radio_backend_interface_contract.gd`、手动/自动 backend sample verification | in_progress |
 | M2 catalog cache + persistence | countries index、station pages、favorites、recents、presets、session_state、resolve cache | `user://cache/radio/` 与 `user://radio/` 正式写入；TTL 与 stale fallback 成立 | `tests/world/test_city_vehicle_radio_catalog_cache_contract.gd`、`tests/world/test_city_vehicle_radio_preset_persistence.gd` | done |
 | M3 quick-select overlay + input contract | 8-slot quick bank、pause semantics、keyboard/controller action family | driving 中可快速切台、开关电台、next/prev，不实例化大列表 | `tests/world/test_city_vehicle_radio_quick_overlay_contract.gd`、`tests/e2e/test_city_vehicle_radio_quick_switch_flow.gd` | done |
-| M4 radio browser UX | `当前播放 / Presets / Favorites / Recents / Browse`、国家目录、局部过滤、虚拟化/分页 | 海量目录浏览成立，不污染 quick overlay，不一次性构造几千 rows | `tests/world/test_city_vehicle_radio_browser_state_contract.gd`、`tests/e2e/test_city_vehicle_radio_browser_flow.gd` | in_progress |
+| M4 radio browser UX | `Presets / Favorites / Recents / Browse`、右侧 `Play / Stop / 音量`、国家目录、局部过滤、虚拟化/分页 | 海量目录浏览成立，Browser 内可直接听到选中电台，不污染 quick overlay，不一次性构造几千 rows | `tests/world/test_city_vehicle_radio_browser_state_contract.gd`、`tests/e2e/test_city_vehicle_radio_browser_flow.gd` | in_progress |
 | M5 vehicle lifecycle integration | driving enter/exit、power/session recovery、selected station snapshot、HUD/state sync | 上车/下车/关机/恢复链成立，radio lifecycle 正式绑定 driving mode | `tests/world/test_city_vehicle_radio_drive_mode_contract.gd`、`tests/e2e/test_city_vehicle_radio_quick_switch_flow.gd` | in_progress |
 | M6 native backend | `GDExtension` 工程、FFmpeg 选型、真播 backend、后台线程解码、Godot 音频出口、错误/重连/metadata | direct / playlist / HLS 真播链路在游戏内成立；`B` 关闭后继续播放；不依赖外部 helper；主线程不做阻塞拉流/解码 | [2026-03-18-v24-m6-native-backend-plan.md](../plans/2026-03-18-v24-m6-native-backend-plan.md)、[v24-m6-native-backend-verification-2026-03-18.md](./v24-m6-native-backend-verification-2026-03-18.md)、`tests/world/test_city_vehicle_radio_backend_interface_contract.gd`、Windows sample verification | in_progress |
 | M7 native playback closeout | browser -> detail -> playback 真链路、session recovery、favorites/recents/presets/native backend 收口、真实错误面 | catalog/browser/lifecycle/native backend 不再分叉；mock path 不再伪装完成态；真播状态进入 HUD/browser | `tests/e2e/test_city_vehicle_radio_browser_flow.gd`、`tests/e2e/test_city_vehicle_radio_quick_switch_flow.gd`、Windows manual/end-to-end verification | todo |
@@ -83,6 +83,7 @@ PRD 入口：[PRD-0014 Vehicle Radio System](../prd/PRD-0014-vehicle-radio-syste
 - `M2` 已完成首批 cache/persistence contract：`CityRadioCatalogStore` 与 `CityRadioUserStateStore` 已冻结路径、schema、pretty JSON 与 TTL/stale fallback 的最小实现。
 - `M3` 已完成 fresh functional verification：`project.godot` radio action 家族、`CityRadioQuickBank`、HUD quick overlay、shared pause contract 与 quick-switch e2e 已串起来，证据见 [v24-m3-verification-2026-03-17.md](./v24-m3-verification-2026-03-17.md)。
 - `M4` 已不再只是 browser 壳：`CityPrototype.gd`、`CityVehicleRadioBrowser.gd`、`CityRadioCatalogRepository.gd` 已接上 repository 驱动的 countries/stations lazy sync，并显式清洗非 headless 运行时误读到的 fixture 国家目录/电台页；但 browser 仍未 closeout。
+- Browser 冻结语义已收口为“左侧集合/目录 + 右侧 transport detail”：不再保留单独的 `当前播放` 页签，选台后直接通过右侧 `Play / Stop / 音量` 控制同一条 native backend；步行时允许 browser preview，关闭 browser 后不再维持 on-foot preview 播放。
 - `M5` 已补到 `B` 全局开关 browser、`O` quick overlay、`Esc`/再次按 `B` 可关闭，以及 `session_state / presets / favorites / recents` 的 fixture hygiene；当前主线已默认优先走 native backend，mock 只保留为 capability fallback。
 - `M6` 现已落下 `GDExtension + FFmpeg` 真播主链：后台线程解码、Godot 音频出口、runtime metadata/error/buffer contract、direct / playlist / HLS 样本验证都已有 fresh 证据，详见 [v24-m6-native-backend-verification-2026-03-18.md](./v24-m6-native-backend-verification-2026-03-18.md)。
 - `v24` 当前不包含虚构 DJ 电台、广告、录音、转录、翻译、同传、站点推荐或跨设备同步。

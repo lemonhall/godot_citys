@@ -286,6 +286,7 @@ func _ready() -> void:
 		_inspection_resolver.setup(_world_config, _world_data)
 	_setup_map_ui()
 	_connect_vehicle_radio_browser_ui()
+	_connect_vehicle_radio_quick_overlay_ui()
 	_ensure_interaction_runtimes()
 	_ensure_destination_world_marker()
 	_ensure_task_system_runtimes()
@@ -511,7 +512,8 @@ func open_vehicle_radio_browser() -> Dictionary:
 	_vehicle_radio_browser_selected_tab_id = "browse"
 	_vehicle_radio_browser_selected_country_code = ""
 	_vehicle_radio_browser_filter_text = ""
-	_ensure_vehicle_radio_browser_countries_ready()
+	if _vehicle_radio_browser_cached_countries.is_empty():
+		_ensure_vehicle_radio_browser_countries_ready()
 	_apply_world_simulation_pause(true)
 	if DisplayServer.get_name() != "headless":
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -652,20 +654,58 @@ func select_vehicle_radio_browser_station(station_id: String) -> Dictionary:
 			"success": false,
 			"error": "stream_unavailable",
 		}
-	_vehicle_radio_power_on = true
-	_sync_vehicle_radio_runtime_driving_context()
-	if _vehicle_radio_controller != null and _vehicle_radio_controller.has_method("set_power_state"):
-		_vehicle_radio_controller.set_power_state(true)
-	if _vehicle_radio_controller != null and _vehicle_radio_controller.has_method("select_station"):
-		_vehicle_radio_controller.select_station(station_snapshot, resolved_stream)
-	_record_vehicle_radio_recent_station(station_snapshot)
+	return _activate_vehicle_radio_station_playback(station_snapshot, resolved_stream, true)
+
+func play_vehicle_radio_browser_selected_station() -> Dictionary:
+	var runtime_state: Dictionary = get_vehicle_radio_runtime_state()
+	var station_snapshot := _sanitize_vehicle_radio_station_snapshot((runtime_state.get("selected_station_snapshot", {}) as Dictionary).duplicate(true))
+	if station_snapshot.is_empty():
+		return {
+			"success": false,
+			"error": "station_not_selected",
+		}
+	var resolved_stream := _build_vehicle_radio_resolved_stream(station_snapshot)
+	if resolved_stream.is_empty():
+		return {
+			"success": false,
+			"error": "stream_unavailable",
+		}
+	return _activate_vehicle_radio_station_playback(station_snapshot, resolved_stream, true)
+
+func stop_vehicle_radio_browser_playback() -> Dictionary:
+	if _vehicle_radio_controller == null:
+		return {
+			"success": false,
+			"error": "controller_unavailable",
+		}
+	_vehicle_radio_power_on = false
+	if _vehicle_radio_controller.has_method("set_browser_preview_enabled"):
+		_vehicle_radio_controller.set_browser_preview_enabled(false)
+	if _vehicle_radio_controller.has_method("set_power_state"):
+		_vehicle_radio_controller.set_power_state(false)
+	if _vehicle_radio_controller.has_method("stop"):
+		_vehicle_radio_controller.stop("browser_stop")
 	_persist_vehicle_radio_session_state()
-	_vehicle_radio_browser_selected_tab_id = "now_playing"
 	_sync_vehicle_radio_browser()
 	_sync_vehicle_radio_quick_overlay()
 	return {
 		"success": true,
-		"selected_station_id": str(station_snapshot.get("station_id", "")),
+		"power_state": "off",
+	}
+
+func set_vehicle_radio_browser_volume_linear(volume_linear: float) -> Dictionary:
+	if _vehicle_radio_controller == null or not _vehicle_radio_controller.has_method("set_volume_linear"):
+		return {
+			"success": false,
+			"error": "controller_unavailable",
+		}
+	var clamped_volume := clampf(volume_linear, 0.0, 1.0)
+	_vehicle_radio_controller.set_volume_linear(clamped_volume)
+	_persist_vehicle_radio_session_state()
+	_sync_vehicle_radio_browser()
+	return {
+		"success": true,
+		"volume_linear": clamped_volume,
 	}
 
 func set_vehicle_radio_selection_sources(presets: Array, favorites: Array, recents: Array) -> void:
@@ -2647,6 +2687,58 @@ func _connect_vehicle_radio_browser_ui() -> void:
 		browser.connect("current_station_favorite_toggled", Callable(self, "toggle_vehicle_radio_browser_favorite"))
 	if browser.has_signal("preset_assign_requested") and not browser.is_connected("preset_assign_requested", Callable(self, "assign_vehicle_radio_browser_preset")):
 		browser.connect("preset_assign_requested", Callable(self, "assign_vehicle_radio_browser_preset"))
+	if browser.has_signal("play_requested") and not browser.is_connected("play_requested", Callable(self, "play_vehicle_radio_browser_selected_station")):
+		browser.connect("play_requested", Callable(self, "play_vehicle_radio_browser_selected_station"))
+	if browser.has_signal("stop_requested") and not browser.is_connected("stop_requested", Callable(self, "stop_vehicle_radio_browser_playback")):
+		browser.connect("stop_requested", Callable(self, "stop_vehicle_radio_browser_playback"))
+	if browser.has_signal("volume_linear_changed") and not browser.is_connected("volume_linear_changed", Callable(self, "set_vehicle_radio_browser_volume_linear")):
+		browser.connect("volume_linear_changed", Callable(self, "set_vehicle_radio_browser_volume_linear"))
+
+func _connect_vehicle_radio_quick_overlay_ui() -> void:
+	if hud == null:
+		return
+	var overlay := hud.get_node_or_null("Root/VehicleRadioQuickOverlay")
+	if overlay == null:
+		return
+	if overlay.has_signal("prev_requested") and not overlay.is_connected("prev_requested", Callable(self, "_on_vehicle_radio_quick_overlay_prev_requested")):
+		overlay.connect("prev_requested", Callable(self, "_on_vehicle_radio_quick_overlay_prev_requested"))
+	if overlay.has_signal("next_requested") and not overlay.is_connected("next_requested", Callable(self, "_on_vehicle_radio_quick_overlay_next_requested")):
+		overlay.connect("next_requested", Callable(self, "_on_vehicle_radio_quick_overlay_next_requested"))
+	if overlay.has_signal("confirm_requested") and not overlay.is_connected("confirm_requested", Callable(self, "_on_vehicle_radio_quick_overlay_confirm_requested")):
+		overlay.connect("confirm_requested", Callable(self, "_on_vehicle_radio_quick_overlay_confirm_requested"))
+	if overlay.has_signal("power_toggle_requested") and not overlay.is_connected("power_toggle_requested", Callable(self, "_on_vehicle_radio_quick_overlay_power_toggle_requested")):
+		overlay.connect("power_toggle_requested", Callable(self, "_on_vehicle_radio_quick_overlay_power_toggle_requested"))
+	if overlay.has_signal("browser_requested") and not overlay.is_connected("browser_requested", Callable(self, "_on_vehicle_radio_quick_overlay_browser_requested")):
+		overlay.connect("browser_requested", Callable(self, "_on_vehicle_radio_quick_overlay_browser_requested"))
+	if overlay.has_signal("close_requested") and not overlay.is_connected("close_requested", Callable(self, "close_vehicle_radio_quick_overlay")):
+		overlay.connect("close_requested", Callable(self, "close_vehicle_radio_quick_overlay"))
+	if overlay.has_signal("slot_pressed") and not overlay.is_connected("slot_pressed", Callable(self, "_on_vehicle_radio_quick_overlay_slot_pressed")):
+		overlay.connect("slot_pressed", Callable(self, "_on_vehicle_radio_quick_overlay_slot_pressed"))
+
+func _on_vehicle_radio_quick_overlay_prev_requested() -> void:
+	_step_vehicle_radio_quick_selection(-1)
+
+func _on_vehicle_radio_quick_overlay_next_requested() -> void:
+	_step_vehicle_radio_quick_selection(1)
+
+func _on_vehicle_radio_quick_overlay_confirm_requested() -> void:
+	_commit_vehicle_radio_quick_selection()
+	_sync_vehicle_radio_browser()
+	_sync_vehicle_radio_quick_overlay()
+
+func _on_vehicle_radio_quick_overlay_power_toggle_requested() -> void:
+	_handle_vehicle_radio_action("vehicle_radio_power_toggle")
+
+func _on_vehicle_radio_quick_overlay_browser_requested() -> void:
+	_handle_vehicle_radio_action("vehicle_radio_browser_open")
+
+func _on_vehicle_radio_quick_overlay_slot_pressed(slot_index: int) -> void:
+	if slot_index < 0 or slot_index >= _vehicle_radio_quick_slots.size():
+		return
+	_vehicle_radio_quick_selected_index = slot_index
+	_commit_vehicle_radio_quick_selection()
+	_sync_vehicle_radio_browser()
+	_sync_vehicle_radio_quick_overlay()
 
 func _sync_navigation_consumers(force_minimap_refresh: bool = false) -> void:
 	_sync_task_presentation_state()
@@ -2979,6 +3071,11 @@ func _step_vehicle_radio_quick_selection(step: int) -> void:
 	_sync_vehicle_radio_quick_overlay()
 
 func _build_vehicle_radio_quick_overlay_state() -> Dictionary:
+	var runtime_state: Dictionary = get_vehicle_radio_runtime_state()
+	var current_station_snapshot := (runtime_state.get("selected_station_snapshot", {}) as Dictionary).duplicate(true)
+	var selected_slot_snapshot: Dictionary = {}
+	if _vehicle_radio_quick_selected_index >= 0 and _vehicle_radio_quick_selected_index < _vehicle_radio_quick_slots.size():
+		selected_slot_snapshot = (_vehicle_radio_quick_slots[_vehicle_radio_quick_selected_index] as Dictionary).duplicate(true)
 	return {
 		"visible": _vehicle_radio_quick_overlay_open,
 		"slots": _vehicle_radio_quick_slots.duplicate(true),
@@ -2987,6 +3084,11 @@ func _build_vehicle_radio_quick_overlay_state() -> Dictionary:
 		"browser_action_available": true,
 		"power_state": "on" if _vehicle_radio_power_on else "off",
 		"browser_request_count": _vehicle_radio_browser_request_count,
+		"playback_state": str(runtime_state.get("playback_state", "stopped")),
+		"current_station_name": str(current_station_snapshot.get("station_name", "")),
+		"current_station_id": str(current_station_snapshot.get("station_id", "")),
+		"selected_station_name": str(selected_slot_snapshot.get("station_name", "")),
+		"selected_station_id": str(selected_slot_snapshot.get("station_id", "")),
 	}
 
 func _sync_vehicle_radio_quick_overlay() -> void:
@@ -2998,7 +3100,6 @@ func _build_vehicle_radio_browser_state() -> Dictionary:
 		"visible": _vehicle_radio_browser_open,
 		"selected_tab_id": _vehicle_radio_browser_selected_tab_id,
 		"tabs": [
-			{"tab_id": "now_playing", "label": "当前播放"},
 			{"tab_id": "presets", "label": "Presets"},
 			{"tab_id": "favorites", "label": "Favorites"},
 			{"tab_id": "recents", "label": "Recents"},
@@ -3046,9 +3147,34 @@ func _commit_vehicle_radio_quick_selection() -> void:
 	if resolved_stream.is_empty():
 		return
 	_vehicle_radio_controller.select_station(slot, resolved_stream)
+	if _vehicle_radio_controller.has_method("set_browser_preview_enabled"):
+		_vehicle_radio_controller.set_browser_preview_enabled(false)
 	_record_vehicle_radio_recent_station(slot)
 	_persist_vehicle_radio_session_state()
 	close_vehicle_radio_quick_overlay()
+
+func _activate_vehicle_radio_station_playback(station_snapshot: Dictionary, resolved_stream: Dictionary, enable_browser_preview: bool) -> Dictionary:
+	if _vehicle_radio_controller == null:
+		return {
+			"success": false,
+			"error": "controller_unavailable",
+		}
+	_vehicle_radio_power_on = true
+	_sync_vehicle_radio_runtime_driving_context()
+	if _vehicle_radio_controller.has_method("set_power_state"):
+		_vehicle_radio_controller.set_power_state(true)
+	if _vehicle_radio_controller.has_method("select_station"):
+		_vehicle_radio_controller.select_station(station_snapshot, resolved_stream)
+	if _vehicle_radio_controller.has_method("set_browser_preview_enabled"):
+		_vehicle_radio_controller.set_browser_preview_enabled(enable_browser_preview)
+	_record_vehicle_radio_recent_station(station_snapshot)
+	_persist_vehicle_radio_session_state()
+	_sync_vehicle_radio_browser()
+	_sync_vehicle_radio_quick_overlay()
+	return {
+		"success": true,
+		"selected_station_id": str(station_snapshot.get("station_id", "")),
+	}
 
 func _build_vehicle_radio_resolved_stream(station_snapshot: Dictionary) -> Dictionary:
 	var final_url := str(station_snapshot.get("stream_url", station_snapshot.get("final_url", ""))).strip_edges()
@@ -3073,8 +3199,6 @@ func _load_vehicle_radio_browser_countries() -> Array:
 func _ensure_vehicle_radio_browser_countries_ready(force: bool = false) -> void:
 	if _vehicle_radio_catalog_repository == null or not _vehicle_radio_catalog_repository.has_method("ensure_countries_ready"):
 		return
-	_vehicle_radio_browser_cached_country_code = ""
-	_vehicle_radio_browser_cached_station_rows = []
 	_vehicle_radio_browser_stations_loading = false
 	_vehicle_radio_browser_station_loading_country_code = ""
 	_vehicle_radio_browser_stations_error = ""
@@ -3085,6 +3209,8 @@ func _ensure_vehicle_radio_browser_countries_ready(force: bool = false) -> void:
 	}
 	var cached_countries := (load_result.get("countries", []) as Array).duplicate(true)
 	var fixture_countries := _looks_like_vehicle_radio_fixture_country_directory(cached_countries)
+	if fixture_countries:
+		_purge_vehicle_radio_fixture_countries_cache()
 	var has_fresh_cached_countries := bool(load_result.get("hit", false)) and not bool(load_result.get("stale", true)) and not cached_countries.is_empty() and not fixture_countries
 	var resolved_force := force or fixture_countries
 	_vehicle_radio_browser_cached_countries = [] if fixture_countries else cached_countries
@@ -3152,6 +3278,8 @@ func _ensure_vehicle_radio_browser_station_rows_loaded(country_code: String) -> 
 	}
 	var cached_stations := (load_result.get("stations", []) as Array).duplicate(true)
 	var fixture_station_page := _looks_like_vehicle_radio_fixture_station_page(cached_stations)
+	if fixture_station_page:
+		_purge_vehicle_radio_fixture_station_page_cache(normalized_country_code)
 	var has_fresh_cached_stations := bool(load_result.get("hit", false)) and not bool(load_result.get("stale", true)) and not cached_stations.is_empty() and not fixture_station_page
 	var resolved_force := fixture_station_page
 	_vehicle_radio_browser_cached_country_code = normalized_country_code
@@ -3324,7 +3452,7 @@ func _filter_vehicle_radio_browser_station_rows(rows: Array) -> Array:
 	return filtered
 
 func _is_vehicle_radio_browser_tab_id_valid(tab_id: String) -> bool:
-	return tab_id in ["now_playing", "presets", "favorites", "recents", "browse"]
+	return tab_id in ["presets", "favorites", "recents", "browse"]
 
 func _reload_vehicle_radio_selection_sources_from_store() -> void:
 	if _vehicle_radio_user_state_store == null:
@@ -3348,6 +3476,9 @@ func _restore_vehicle_radio_session_state_from_store() -> void:
 		return
 	var session_state: Dictionary = _vehicle_radio_user_state_store.load_session_state()
 	var selected_station_snapshot := _sanitize_vehicle_radio_station_snapshot((session_state.get("selected_station_snapshot", {}) as Dictionary).duplicate(true))
+	var volume_linear := clampf(float(session_state.get("volume_linear", 1.0)), 0.0, 1.0)
+	if _vehicle_radio_controller.has_method("set_volume_linear"):
+		_vehicle_radio_controller.set_volume_linear(volume_linear)
 	_vehicle_radio_power_on = str(session_state.get("power_state", "off")) == "on" and not selected_station_snapshot.is_empty()
 	if _vehicle_radio_controller.has_method("set_power_state"):
 		_vehicle_radio_controller.set_power_state(_vehicle_radio_power_on)
@@ -3357,6 +3488,7 @@ func _restore_vehicle_radio_session_state_from_store() -> void:
 				"power_state": "off",
 				"selected_station_id": "",
 				"selected_station_snapshot": {},
+				"volume_linear": volume_linear,
 			}, int(Time.get_unix_time_from_system()))
 		return
 	var resolved_stream := _build_vehicle_radio_resolved_stream(selected_station_snapshot)
@@ -3374,6 +3506,7 @@ func _persist_vehicle_radio_session_state() -> void:
 		"power_state": "on" if _vehicle_radio_power_on else "off",
 		"selected_station_id": str(runtime_state.get("selected_station_id", "")),
 		"selected_station_snapshot": selected_station_snapshot,
+		"volume_linear": float(runtime_state.get("volume_linear", 1.0)),
 	}, int(Time.get_unix_time_from_system()))
 
 func _save_vehicle_radio_presets(presets: Array) -> Dictionary:
@@ -3446,6 +3579,16 @@ func _should_reject_vehicle_radio_fixture_data() -> bool:
 
 func _looks_like_vehicle_radio_fixture_country_directory(countries: Array) -> bool:
 	return _should_reject_vehicle_radio_fixture_data() and not countries.is_empty() and countries.size() < VEHICLE_RADIO_MIN_REAL_COUNTRY_COUNT
+
+func _purge_vehicle_radio_fixture_countries_cache() -> void:
+	if _vehicle_radio_catalog_store == null or not _vehicle_radio_catalog_store.has_method("delete_countries_index"):
+		return
+	_vehicle_radio_catalog_store.delete_countries_index()
+
+func _purge_vehicle_radio_fixture_station_page_cache(country_code: String) -> void:
+	if _vehicle_radio_catalog_store == null or not _vehicle_radio_catalog_store.has_method("delete_country_station_page"):
+		return
+	_vehicle_radio_catalog_store.delete_country_station_page(country_code)
 
 func _looks_like_vehicle_radio_fixture_station_page(stations: Array) -> bool:
 	if not _should_reject_vehicle_radio_fixture_data():

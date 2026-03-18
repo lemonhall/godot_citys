@@ -27,6 +27,12 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("is_world_simulation_paused"), "Vehicle radio browser state contract requires is_world_simulation_paused()"):
 		return
+	if not T.require_true(self, world.has_method("play_vehicle_radio_browser_selected_station"), "Vehicle radio browser state contract requires play_vehicle_radio_browser_selected_station()"):
+		return
+	if not T.require_true(self, world.has_method("stop_vehicle_radio_browser_playback"), "Vehicle radio browser state contract requires stop_vehicle_radio_browser_playback()"):
+		return
+	if not T.require_true(self, world.has_method("set_vehicle_radio_browser_volume_linear"), "Vehicle radio browser state contract requires set_vehicle_radio_browser_volume_linear()"):
+		return
 
 	var open_on_foot_result: Dictionary = world.open_vehicle_radio_browser()
 	if not T.require_true(self, bool(open_on_foot_result.get("success", false)), "Vehicle radio browser must now be openable even while the player is not driving"):
@@ -60,7 +66,7 @@ func _run() -> void:
 	for tab_variant in tabs:
 		var tab: Dictionary = tab_variant as Dictionary
 		tab_ids.append(str(tab.get("tab_id", "")))
-	if not T.require_true(self, tab_ids == PackedStringArray(["now_playing", "presets", "favorites", "recents", "browse"]), "Vehicle radio browser must expose the frozen tab family in order"):
+	if not T.require_true(self, tab_ids == PackedStringArray(["presets", "favorites", "recents", "browse"]), "Vehicle radio browser must drop the current-playing tab and keep only collection plus browse tabs"):
 		return
 
 	var browse_state: Dictionary = browser_state.get("browse", {}) as Dictionary
@@ -70,6 +76,16 @@ func _run() -> void:
 	if not T.require_true(self, countries.size() == 2, "Vehicle radio browser Browse root must surface cached country directory entries"):
 		return
 	if not T.require_true(self, int((browse_state.get("stations", []) as Array).size()) == 0, "Vehicle radio browser countries root must not eagerly materialize station rows"):
+		return
+
+	var play_button := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/RightPanel/RightVBox/TransportRow/PlayButton") as Button
+	if not T.require_true(self, play_button != null, "Vehicle radio browser state contract requires a visible Play button in the right-side detail panel"):
+		return
+	var stop_button := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/RightPanel/RightVBox/TransportRow/StopButton") as Button
+	if not T.require_true(self, stop_button != null, "Vehicle radio browser state contract requires a visible Stop button in the right-side detail panel"):
+		return
+	var volume_slider := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/RightPanel/RightVBox/TransportRow/VolumeSlider") as Range
+	if not T.require_true(self, volume_slider != null, "Vehicle radio browser state contract requires a volume slider in the right-side detail panel"):
 		return
 
 	var close_result: Dictionary = world.close_vehicle_radio_browser()

@@ -9,6 +9,9 @@ signal filter_text_changed(filter_text: String)
 signal station_selected(station_id: String)
 signal current_station_favorite_toggled(station_id: String)
 signal preset_assign_requested(slot_index: int, station_id: String)
+signal play_requested
+signal stop_requested
+signal volume_linear_changed(volume_linear: float)
 
 var _state := {
 	"visible": false,
@@ -25,6 +28,7 @@ var _state := {
 	},
 }
 var _suppress_filter_signal := false
+var _suppress_volume_signal := false
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -198,8 +202,37 @@ func _ensure_layout() -> void:
 
 	var detail_title := Label.new()
 	detail_title.name = "DetailTitle"
-	detail_title.text = "当前播放"
+	detail_title.text = "播放控制"
 	right_vbox.add_child(detail_title)
+
+	var transport_row := HBoxContainer.new()
+	transport_row.name = "TransportRow"
+	var play_button := Button.new()
+	play_button.name = "PlayButton"
+	play_button.text = "Play"
+	if not play_button.pressed.is_connected(_on_play_button_pressed):
+		play_button.pressed.connect(_on_play_button_pressed)
+	var stop_button := Button.new()
+	stop_button.name = "StopButton"
+	stop_button.text = "Stop"
+	if not stop_button.pressed.is_connected(_on_stop_button_pressed):
+		stop_button.pressed.connect(_on_stop_button_pressed)
+	var volume_label := Label.new()
+	volume_label.name = "VolumeLabel"
+	volume_label.text = "音量"
+	var volume_slider := HSlider.new()
+	volume_slider.name = "VolumeSlider"
+	volume_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	volume_slider.min_value = 0.0
+	volume_slider.max_value = 100.0
+	volume_slider.step = 1.0
+	if not volume_slider.value_changed.is_connected(_on_volume_slider_changed):
+		volume_slider.value_changed.connect(_on_volume_slider_changed)
+	transport_row.add_child(play_button)
+	transport_row.add_child(stop_button)
+	transport_row.add_child(volume_label)
+	transport_row.add_child(volume_slider)
+	right_vbox.add_child(transport_row)
 
 	var detail_text := RichTextLabel.new()
 	detail_text.name = "DetailText"
@@ -319,7 +352,7 @@ func _rebuild_list_content() -> void:
 		"recents":
 			_rebuild_station_collection(list_vbox, _state.get("recents", []) as Array, "当前还没有 recents")
 		_:
-			_add_placeholder_label(list_vbox, "当前播放信息与操作在右侧面板。")
+			_add_placeholder_label(list_vbox, "电台详情与播放控制在右侧面板。")
 
 func _rebuild_browse_content(list_vbox: VBoxContainer) -> void:
 	var browse_state: Dictionary = _state.get("browse", {}) as Dictionary
@@ -380,15 +413,30 @@ func _rebuild_station_collection(list_vbox: VBoxContainer, stations: Array, empt
 
 func _apply_detail_panel() -> void:
 	var detail_title := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/DetailTitle") as Label
+	var play_button := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/TransportRow/PlayButton") as Button
+	var stop_button := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/TransportRow/StopButton") as Button
+	var volume_slider := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/TransportRow/VolumeSlider") as HSlider
 	var detail_text := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/DetailText") as RichTextLabel
 	var favorite_button := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/FavoriteButton") as Button
 	var preset_label := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/PresetLabel") as Label
 	var preset_grid := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/PresetGrid") as GridContainer
-	var current_station := _normalize_station_snapshot((_state.get("current_playing", {}) as Dictionary).get("selected_station_snapshot", {}))
+	var runtime_state := _state.get("current_playing", {}) as Dictionary
+	var current_station := _normalize_station_snapshot(runtime_state.get("selected_station_snapshot", {}))
 	var current_station_id := str(current_station.get("station_id", ""))
 	var has_station := current_station_id != ""
+	var playback_state := str(runtime_state.get("playback_state", "stopped"))
+	var volume_linear := clampf(float(runtime_state.get("volume_linear", 1.0)), 0.0, 1.0)
 	if detail_title != null:
-		detail_title.text = "当前播放" if has_station else "未选择电台"
+		detail_title.text = "播放控制" if has_station else "未选择电台"
+	if play_button != null:
+		play_button.disabled = not has_station or playback_state == "playing"
+	if stop_button != null:
+		stop_button.disabled = not has_station or playback_state == "stopped"
+	if volume_slider != null:
+		volume_slider.editable = has_station
+		_suppress_volume_signal = true
+		volume_slider.value = round(volume_linear * 100.0)
+		_suppress_volume_signal = false
 	if detail_text != null:
 		detail_text.text = _build_detail_text(current_station)
 	if favorite_button != null:
@@ -409,7 +457,7 @@ func _apply_detail_panel() -> void:
 
 func _build_detail_text(current_station: Dictionary) -> String:
 	if current_station.is_empty():
-		return "[color=#B9D8D2]从左侧列表选择电台后，这里会显示当前播放详情，并可直接收藏或写入 preset。[/color]"
+		return "[color=#B9D8D2]从左侧列表选择电台后，这里会显示播放详情，并可直接 Play / Stop、调节音量、收藏或写入 preset。[/color]"
 	var runtime_state := _state.get("current_playing", {}) as Dictionary
 	var metadata: Dictionary = runtime_state.get("metadata", {}) as Dictionary
 	var lines := PackedStringArray([
@@ -535,3 +583,14 @@ func _on_preset_button_pressed(slot_index: int) -> void:
 	if station_id == "":
 		return
 	preset_assign_requested.emit(slot_index, station_id)
+
+func _on_play_button_pressed() -> void:
+	play_requested.emit()
+
+func _on_stop_button_pressed() -> void:
+	stop_requested.emit()
+
+func _on_volume_slider_changed(value: float) -> void:
+	if _suppress_volume_signal:
+		return
+	volume_linear_changed.emit(clampf(value / 100.0, 0.0, 1.0))

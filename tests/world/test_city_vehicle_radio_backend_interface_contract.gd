@@ -26,6 +26,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, backend.has_method("get_state"), "Vehicle radio backend interface contract requires get_state()"):
 		return
+	if not T.require_true(self, backend.has_method("set_volume_linear"), "Vehicle radio backend interface contract requires set_volume_linear()"):
+		return
 
 	var native_backend = native_backend_script.new()
 	if not T.require_true(self, native_backend != null and native_backend.has_method("play_resolved_stream"), "Vehicle radio native backend contract requires play_resolved_stream()"):
@@ -33,6 +35,8 @@ func _run() -> void:
 	if not T.require_true(self, native_backend.has_method("stop_playback"), "Vehicle radio native backend contract requires stop_playback()"):
 		return
 	if not T.require_true(self, native_backend.has_method("get_state"), "Vehicle radio native backend contract requires get_state()"):
+		return
+	if not T.require_true(self, native_backend.has_method("set_volume_linear"), "Vehicle radio native backend contract requires set_volume_linear()"):
 		return
 	if not T.require_true(self, native_backend.has_method("is_available"), "Vehicle radio native backend contract requires is_available()"):
 		return
@@ -74,8 +78,13 @@ func _run() -> void:
 	var metadata: Dictionary = playing_state.get("metadata", {}) as Dictionary
 	if not T.require_true(self, str(metadata.get("station_id", "")) == "station:test:mock", "Backend metadata must preserve the selected station identity"):
 		return
+	backend.set_volume_linear(0.35)
+	var adjusted_mock_state: Dictionary = backend.get_state()
+	if not T.require_true(self, absf(float(adjusted_mock_state.get("volume_linear", -1.0)) - 0.35) < 0.001, "Mock backend set_volume_linear() must persist volume_linear into runtime state"):
+		return
 
 	native_backend.play_resolved_stream(station_snapshot, resolved_stream)
+	native_backend.set_volume_linear(0.42)
 	native_backend.update_audio_output()
 	var native_playing_state: Dictionary = native_backend.get_state()
 	if not _require_backend_state(native_playing_state):
@@ -85,6 +94,8 @@ func _run() -> void:
 	if not T.require_true(self, str(native_playing_state.get("playback_state", "")) == "playing", "Native backend play_resolved_stream() must transition to playback_state=playing"):
 		return
 	if not T.require_true(self, str(native_playing_state.get("resolved_url", "")) == "https://radio.example/live.mp3", "Native backend runtime state must expose the active resolved_url"):
+		return
+	if not T.require_true(self, absf(float(native_playing_state.get("volume_linear", -1.0)) - 0.42) < 0.001, "Native backend set_volume_linear() must surface the active volume_linear"):
 		return
 
 	backend.stop_playback("stopped")
@@ -115,6 +126,7 @@ func _require_backend_state(state: Dictionary) -> bool:
 		"metadata",
 		"latency_ms",
 		"underflow_count",
+		"volume_linear",
 		"error_code",
 		"error_message",
 	]:

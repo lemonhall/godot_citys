@@ -9,6 +9,7 @@ var _state := {
 	"metadata": {},
 	"latency_ms": 0,
 	"underflow_count": 0,
+	"volume_linear": 1.0,
 	"error_code": "",
 	"error_message": "",
 }
@@ -31,6 +32,10 @@ func stop_playback(_reason: String = "stopped") -> Dictionary:
 	_state["buffer_state"] = "idle"
 	_state["error_code"] = ""
 	_state["error_message"] = ""
+	return get_state()
+
+func set_volume_linear(volume_linear: float) -> Dictionary:
+	_state["volume_linear"] = clampf(volume_linear, 0.0, 1.0)
 	return get_state()
 
 func get_state() -> Dictionary:

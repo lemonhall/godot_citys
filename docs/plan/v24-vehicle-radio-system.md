@@ -22,7 +22,7 @@
 
 ## Contract Freeze
 
-- `vehicle radio` 生命周期从属于 `player.is_driving_vehicle()`，不是全局独立音乐播放器。
+- `quick overlay / quick bank / driving session recovery` 生命周期从属于 `player.is_driving_vehicle()`，不是全局独立音乐播放器；但 `Browser` 允许 on-foot preview 已选电台，且必须继续走同一条 backend/runtime 主链。
 - quick-select surface 冻结为 `8-slot quick bank`。
 - `radio power off` 走独立 action，不占 quick bank 站位。
 - 输入先冻结 action 名称：
@@ -34,7 +34,7 @@
   - `vehicle_radio_confirm`
   - `vehicle_radio_cancel`
 - quick-select 打开时允许进入 `radio selection pause`，以保证 keyboard/controller 都能稳定选台。
-- browser 最小分区冻结为：`当前播放 / Presets / Favorites / Recents / Browse`。
+- browser 最小分区冻结为：`Presets / Favorites / Recents / Browse`，右侧固定 `Play / Stop / 音量` 详情控制区。
 - `Browse` 首层入口冻结为 `国家/地区目录`，国家目录内默认使用按热度排序的 `top 200` station page。
 - cache / state 路径分层冻结为：
   - `user://cache/radio/`：可重建网络缓存
@@ -56,6 +56,7 @@
   - Windows 主线默认已优先走 `CityRadioNativeBackend.gd + GDExtension + FFmpeg`，mock backend 仅在 native capability 不可用时兜底
   - `CityVehicleRadioController.gd` 已补上差分播放 contract，不再因为 driving context 每帧 sync 而重复 reopen 同一条流
   - browser detail 已能显示真实 `backend_id / buffer_state / latency_ms / underflow_count / stream_title / resolved_url / error_message`
+  - Browser 已去掉单独的 `当前播放` 页签，改为右侧固定 `Play / Stop / 音量` 传输控制区；步行时也可在 Browser 内直接 preview 选中电台
   - `REQ-0014-005` 的 direct / playlist / HLS Windows sample verification 已成立，证据见 [v24-m6-native-backend-verification-2026-03-18.md](./v24-m6-native-backend-verification-2026-03-18.md)
 - 当前仍未完成且必须正视的部分：
   - 本次 evidence 仍以 headless/native sample verification 为主，尚未留下非 headless 的 human-ear closeout 记录
@@ -99,16 +100,16 @@
 
 ## Acceptance
 
-1. 自动化测试必须证明：vehicle radio runtime 只在 driving mode 中进入正式工作态。
+1. 自动化测试必须证明：quick-select / driving session runtime 只在 driving mode 中进入正式工作态，而 Browser on-foot preview 不会分叉成第二套 backend。
 2. 自动化测试必须证明：quick-select overlay 只承载 8 个 quick bank 站位，并通过 `InputMap action` 接受 keyboard/controller 输入。
-3. 自动化测试必须证明：browser 正式区分 `当前播放 / Presets / Favorites / Recents / Browse`，而不是单一长列表。
+3. 自动化测试必须证明：browser 正式区分 `Presets / Favorites / Recents / Browse`，并在右侧固定提供 `Play / Stop / 音量` 控制区，而不是单一长列表或额外的 `当前播放` 页签。
 4. 自动化测试必须证明：`Browse` 首层是国家/地区目录，station list 不会一次性平铺全球所有电台。
 5. 自动化测试必须证明：countries index、station page、presets、favorites、recents、session_state、resolve cache 都有正式 schema 与 pretty JSON 输出。
 6. 自动化测试必须证明：catalog cache 未过期时会复用，过期时会尝试刷新，失败时可回退到旧缓存。
 7. 自动化测试必须证明：resolver 能稳定产出 `classification / final_url / candidates / resolution_trace`。
 8. 自动化验证必须证明：Windows 主线环境至少有一条 direct stream、一条 playlist-wrapped stream、一条 HLS stream 能走通正式 backend。
 9. 自动化测试必须证明：quick-select idle 与 browser hidden 时，不会触发 catalog 全量扫描或大列表重建。
-10. 自动化测试必须证明：radio lifecycle 与 `v9` 的 enter/exit vehicle 主链一致，不会下车后继续误播。
+10. 自动化测试必须证明：radio lifecycle 与 `v9` 的 enter/exit vehicle 主链一致，不会下车后继续误播；Browser on-foot preview 关闭后也不会偷偷继续播放。
 11. `M8` profiling 三件套必须继续串行给出 fresh 结果。
 12. 反作弊条款：不得通过本地 MP3 假播、8 条静态演示台、全局内存临时字典、或测试时关闭 radio runtime 来宣称完成。
 

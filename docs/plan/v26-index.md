@@ -13,7 +13,7 @@ PRD 入口：[PRD-0016 Soccer Minigame Venue Foundation](../prd/PRD-0016-soccer-
 - [v21-index.md](./v21-index.md)
 - [v25-index.md](./v25-index.md)
 
-`v26` 的目标是把 `v25` 的“一个能踢动的足球”扩成第一套正式可玩的足球 minigame 场馆。推荐路线不是把足球继续做胖，也不是把球场塞进 `scene_landmark`，而是新增一个 sibling family：`scene_minigame_venue`。它复用 `registry -> manifest -> near chunk mount -> scene` 的 authored 世界接入模式，但语义明确是“可玩场馆”。`v26` 首版只承诺场馆基础版：平整比赛承载层、两侧球门、进球检测、比分、出界/进球重置，以及与现有 `v25` 足球 prop 的正式联动。`11v11`、门将/队友/对手 AI、完整规则系统不属于本版 DoD。
+`v26` 的目标是把 `v25` 的“一个能踢动的足球”扩成第一套正式可玩的足球 minigame 场馆。推荐路线不是把足球继续做胖，也不是把球场塞进 `scene_landmark`，而是新增一个 sibling family：`scene_minigame_venue`。它复用 `registry -> manifest -> near chunk mount -> scene` 的 authored 世界接入模式，但语义明确是“可玩场馆”。[已由 ECN-0025 变更](../ecn/ECN-0025-v26-scoreboard-and-ambient-freeze.md) `v26` 首版现在明确承诺：平整比赛承载层、两侧球门、进球检测、大型场边计分板、比分、出界/进球重置，以及进入场馆有效玩法态后冻结全城 crowd / ambient traffic 模拟，但保持收音机持续运行。`11v11`、门将/队友/对手 AI、完整规则系统不属于本版 DoD。
 
 当前状态：docs freeze 中。`PRD-0016`、design、`v26-index` 与 `v26` 计划已落地；实现与测试尚未开始。
 
@@ -25,7 +25,11 @@ PRD 入口：[PRD-0016 Soccer Minigame Venue Foundation](../prd/PRD-0016-soccer-
 - 场馆与足球的正式绑定字段冻结为 `primary_ball_prop_id`，不生成第二个隐藏比赛球。
 - 当前足球 authored anchor `(-1877.94, 2.52, 618.57)` 冻结为场馆 kickoff / 中心锚点。
 - `v26` 首版不改 terrain 系统；场馆自带局部平整 playable floor。
-- `v26` 首版必须包含两侧球门、goal detection、比分与 reset loop。
+- [已由 ECN-0025 变更](../ecn/ECN-0025-v26-scoreboard-and-ambient-freeze.md) `v26` 首版必须包含两侧球门、goal detection、大型场边计分板、比分与 reset loop。
+- [已由 ECN-0025 变更](../ecn/ECN-0025-v26-scoreboard-and-ambient-freeze.md) `v26` 首版引入 `ambient_simulation_freeze`，冻结全城行人与 ambient 车辆 simulation，但不得复用 `world_simulation_pause`，也不得把收音机停掉。
+- `ambient_simulation_freeze` 的出入场语义冻结为双圈层迟滞：
+  - 进入比赛场地有效范围立即冻结
+  - 只有离开赛场边界后再退出额外 `24.0m` 的 release buffer 才允许解冻
 - `v26` 首版不承诺 `11v11`、完整规则裁判系统、门将/队友/对手 AI。
 
 ## 里程碑
@@ -34,9 +38,9 @@ PRD 入口：[PRD-0016 Soccer Minigame Venue Foundation](../prd/PRD-0016-soccer-
 |---|---|---|---|---|
 | M0 docs freeze | `PRD-0016`、design、`v26-index`、`v26` plan、traceability | 4 份文档全部落地且 `REQ-0016-*` 可追溯 | `rg -n "REQ-0016" docs/prd/PRD-0016-soccer-minigame-venue-foundation.md docs/plan/v26-index.md docs/plan/v26-soccer-minigame-venue-foundation.md` | done |
 | M1 minigame venue mount chain | 新 family registry/runtime、soccer venue manifest/scene、near chunk mount | 足球场馆可在 `chunk_129_139` 被正式 mounted，并带稳定 `venue_id` 元数据 | `tests/world/test_city_scene_minigame_venue_registry_runtime.gd`、`tests/world/test_city_soccer_minigame_venue_manifest_contract.gd` | todo |
-| M2 pitch / goals / scoring | playable floor、in-play bounds、goal volumes、score state | 场馆内存在稳定 playable floor；两侧球门可被检测；进球只计一次 | `tests/world/test_city_soccer_pitch_play_surface_contract.gd`、`tests/world/test_city_soccer_goal_detection_contract.gd`、`tests/world/test_city_soccer_scoreboard_contract.gd` | todo |
-| M3 reset loop / e2e | ball binding、goal/out reset、HUD、完整玩法流程 | 玩家可完成“进场 -> 踢球 -> 进球/出界 -> 记分/重置 -> 再开球”完整链路 | `tests/world/test_city_soccer_ball_reset_contract.gd`、`tests/e2e/test_city_soccer_minigame_goal_flow.gd` | todo |
-| M4 guard verification | `v25` 足球交互、landmark、streaming、profiling guard | 受影响旧测试继续通过；如触及 mount/tick/HUD，profiling 三件套 fresh rerun 过线 | 受影响 world/e2e tests + profiling 三件套 | todo |
+| M2 pitch / goals / scoring | playable floor、in-play bounds、goal volumes、score state、大型计分板 | 场馆内存在稳定 playable floor；两侧球门可被检测；进球只计一次；计分板同步更新 | `tests/world/test_city_soccer_pitch_play_surface_contract.gd`、`tests/world/test_city_soccer_goal_detection_contract.gd`、`tests/world/test_city_soccer_scoreboard_contract.gd`、`tests/world/test_city_soccer_scoreboard_visual_contract.gd` | todo |
+| M3 reset / ambient freeze / e2e | ball binding、goal/out reset、HUD、ambient freeze、完整玩法流程 | 玩家可完成“进场 -> 踢球 -> 进球/出界 -> 记分/重置 -> 再开球”完整链路；crowd/traffic 冻结但 radio 保持运行；边界出入不会抖动解冻 | `tests/world/test_city_soccer_ball_reset_contract.gd`、`tests/world/test_city_soccer_venue_ambient_freeze_contract.gd`、`tests/world/test_city_soccer_venue_ambient_freeze_hysteresis_contract.gd`、`tests/world/test_city_soccer_venue_radio_survives_ambient_freeze.gd`、`tests/e2e/test_city_soccer_minigame_goal_flow.gd` | todo |
+| M4 guard verification | `v25` 足球交互、`v24` radio、landmark、streaming、profiling guard | 受影响旧测试继续通过；如触及 mount/tick/HUD，profiling 三件套 fresh rerun 过线 | 受影响 world/e2e tests + profiling 三件套 | todo |
 
 ## 计划索引
 
@@ -48,13 +52,14 @@ PRD 入口：[PRD-0016 Soccer Minigame Venue Foundation](../prd/PRD-0016-soccer-
 |---|---|---|---|---|---|
 | REQ-0016-001 | `v26-soccer-minigame-venue-foundation.md` | `tests/world/test_city_scene_minigame_venue_registry_runtime.gd` | `--script res://tests/world/test_city_scene_minigame_venue_registry_runtime.gd` | 待实现 | todo |
 | REQ-0016-002 | `v26-soccer-minigame-venue-foundation.md` | `tests/world/test_city_soccer_minigame_venue_manifest_contract.gd`、`tests/world/test_city_soccer_pitch_play_surface_contract.gd` | `--script res://tests/world/test_city_soccer_pitch_play_surface_contract.gd` | 待实现 | todo |
-| REQ-0016-003 | `v26-soccer-minigame-venue-foundation.md` | `tests/world/test_city_soccer_goal_detection_contract.gd`、`tests/world/test_city_soccer_scoreboard_contract.gd` | `--script res://tests/e2e/test_city_soccer_minigame_goal_flow.gd` | 待实现 | todo |
+| REQ-0016-003 | `v26-soccer-minigame-venue-foundation.md` | `tests/world/test_city_soccer_goal_detection_contract.gd`、`tests/world/test_city_soccer_scoreboard_contract.gd`、`tests/world/test_city_soccer_scoreboard_visual_contract.gd` | `--script res://tests/e2e/test_city_soccer_minigame_goal_flow.gd` | 待实现 | todo |
 | REQ-0016-004 | `v26-soccer-minigame-venue-foundation.md` | `tests/world/test_city_soccer_ball_reset_contract.gd` | `--script res://tests/e2e/test_city_soccer_minigame_goal_flow.gd` | 待实现 | todo |
 | REQ-0016-005 | `v26-soccer-minigame-venue-foundation.md` | 受影响 `v25` 足球交互与 mount tests | `--script res://tests/e2e/test_city_soccer_minigame_goal_flow.gd` + 受影响回归 | 待实现 | todo |
+| REQ-0016-006 | `v26-soccer-minigame-venue-foundation.md` | `tests/world/test_city_soccer_venue_ambient_freeze_contract.gd`、`tests/world/test_city_soccer_venue_ambient_freeze_hysteresis_contract.gd`、`tests/world/test_city_soccer_venue_radio_survives_ambient_freeze.gd` | `--script res://tests/e2e/test_city_soccer_minigame_goal_flow.gd` | 待实现 | todo |
 
 ## ECN 索引
 
-- 当前无。
+- [ECN-0025 V26 Scoreboard And Ambient Freeze](../ecn/ECN-0025-v26-scoreboard-and-ambient-freeze.md)
 
 ## 差异列表
 

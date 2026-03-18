@@ -2,7 +2,7 @@
 
 ## Goal
 
-交付一条正式的 `scene_minigame_venue` 实现计划：把 `v25` 的足球所在位置扩成一个真正可玩的足球场馆。该场馆必须通过 `registry -> manifest -> near chunk mount -> scene` 挂进 `chunk_129_139`，提供局部平整 playable floor、两侧球门、goal detection、比分与 reset loop，并与现有 `prop:v25:soccer_ball:chunk_129_139` 正式协作，而不是复制第二个隐藏球或把所有逻辑塞回足球 prop scene。
+交付一条正式的 `scene_minigame_venue` 实现计划：把 `v25` 的足球所在位置扩成一个真正可玩的足球场馆。该场馆必须通过 `registry -> manifest -> near chunk mount -> scene` 挂进 `chunk_129_139`，提供局部平整 playable floor、两侧球门、goal detection、大型场边计分板、比分与 reset loop，并与现有 `prop:v25:soccer_ball:chunk_129_139` 正式协作。同时，场馆激活时必须支持只冻结全城 crowd / ambient traffic 的 `ambient_simulation_freeze`，而不是粗暴走全局 pause，更不能把现有收音机链路一起停掉。
 
 ## PRD Trace
 
@@ -11,6 +11,7 @@
 - Direct consumer: REQ-0016-003
 - Direct consumer: REQ-0016-004
 - Guard / Performance: REQ-0016-005
+- Guard / Performance: REQ-0016-006
 
 ## Dependencies
 
@@ -49,6 +50,8 @@
   - `home_score`
   - `away_score`
   - `last_scored_side`
+- [已由 ECN-0025 变更](../ecn/ECN-0025-v26-scoreboard-and-ambient-freeze.md) 大型场边计分板是首版主比分 surface，最小显示 contract 额外冻结为：
+  - `game_state_label`
 - 最小回合状态冻结为：
   - `idle`
   - `in_play`
@@ -56,6 +59,12 @@
   - `out_of_bounds`
   - `resetting`
 - 球门检测首版冻结为 goal volume contract，不做复杂球门线技术。
+- [已由 ECN-0025 变更](../ecn/ECN-0025-v26-scoreboard-and-ambient-freeze.md) `ambient_simulation_freeze` 冻结为专用玩法性能模式：
+  - 冻结对象仅限 `pedestrians + ambient vehicles`
+  - 不得复用 `world_simulation_pause`
+  - 必须保留 `player + soccer prop + venue runtime + HUD + radio`
+  - 进入比赛场地有效范围立即激活
+  - 只有离开赛场边界后再退出额外 `24.0m` 的 release buffer 才允许解冻
 
 ## Scope
 
@@ -64,10 +73,11 @@
 - 新增 minigame venue registry/runtime
 - 在 chunk renderer / chunk scene 增加 venue mount 入口
 - author 足球 minigame venue manifest / scene / script
-- 在场馆 scene 内实现 playable floor、边界线、两侧球门与 goal volume
-- 新增 venue runtime，负责 ball binding、score state、goal / out-of-bounds detection 与 reset
+- 在场馆 scene 内实现 playable floor、边界线、两侧球门、goal volume 与大型场边计分板
+- 新增 venue runtime，负责 ball binding、score state、goal / out-of-bounds detection、scoreboard sync 与 reset
+- 新增场馆激活时的 `ambient_simulation_freeze`
 - 在 HUD 或等价 UI 中暴露最小比分/状态
-- 补 registry / manifest / pitch / goal / reset / e2e 测试
+- 补 registry / manifest / pitch / goal / scoreboard / ambient freeze / reset / e2e 测试
 
 不做什么：
 
@@ -76,6 +86,7 @@
 - 不做 map pin、任务接入、联网或存档
 - 不做 terrain 系统级 flattening
 - 不做第二个比赛专用足球
+- 不做全局 `SceneTree.paused` / `Engine.time_scale = 0` 式粗暴停机
 
 ## Acceptance
 
@@ -83,12 +94,17 @@
 2. 自动化测试必须证明：足球场馆 manifest 保存了 kickoff anchor、chunk 信息与 `primary_ball_prop_id`，且 registry / manifest / scene path 三者口径一致。
 3. 自动化测试必须证明：场馆 mounted 后存在稳定 playable floor 与可判定 `in_play` 边界，而不是只画一张草地贴图。
 4. 自动化测试必须证明：两侧球门与 goal volume 都存在，足球进入合法 goal volume 时比分只增加一次。
-5. 自动化测试必须证明：足球从背后穿入或仅碰门框附近时，不会误判成有效进球。
-6. 自动化测试必须证明：venue runtime 绑定的是 `v25` 正式足球 prop，而不是偷偷生成第二个球。
-7. 自动化测试必须证明：进球或出界后，球会被重置到 kickoff 点，并清零线速度与角速度。
-8. 至少一条 e2e 测试必须证明：玩家可完成“进场 -> 踢球 -> 进球 -> 记分 -> 重置 -> 再开球”完整流程。
-9. 受影响的 `v25` 足球交互、`v21` landmark mount 与 streaming 相关测试必须继续通过。
-10. 反作弊条款：不得把场馆挂成 landmark；不得把 reset 做成重载整个 world；不得复制隐藏球；不得只靠手测或脚本直改比分宣称完成。
+5. 自动化测试必须证明：大型场边计分板存在，且会跟随 `home_score / away_score / game_state_label` 正式更新。
+6. 自动化测试必须证明：激活足球场馆后，`ambient_simulation_freeze` 会冻结 crowd / ambient traffic，但不会把 `is_world_simulation_paused()` 置为 `true`。
+7. 自动化测试必须证明：ambient freeze 期间，venue runtime 绑定的是 `v25` 正式足球 prop，而不是偷偷生成第二个球。
+8. 自动化测试必须证明：ambient freeze 期间，收音机若原本处于播放态，则仍保持播放。
+9. 自动化测试必须证明：玩家刚离开赛场边界但仍处于 `24.0m release buffer` 内时，ambient freeze 仍保持激活，不会立刻解冻。
+10. 自动化测试必须证明：玩家在边界附近反复进出时，freeze state 不会每几帧来回翻转。
+11. 自动化测试必须证明：进球或出界后，球会被重置到 kickoff 点，并清零线速度与角速度。
+12. 至少一条 e2e 测试必须证明：玩家可完成“进场 -> 踢球 -> 进球 -> 记分 -> 重置 -> 再开球”完整流程。
+13. 受影响的 `v25` 足球交互、`v21` landmark mount、`v24` radio 与 streaming 相关测试必须继续通过。
+14. 自动化测试必须证明：足球从背后穿入或仅碰门框附近时，不会误判成有效进球。
+15. 反作弊条款：不得把场馆挂成 landmark；不得把 reset 做成重载整个 world；不得复制隐藏球；不得只靠手测或脚本直改比分宣称完成；不得用 `_apply_world_simulation_pause(true)` 或停掉 audio backend 冒充 ambient freeze。
 
 ## Files
 
@@ -104,6 +120,9 @@
 - Create: `city_game/serviceability/minigame_venues/generated/venue_v26_soccer_pitch_chunk_129_139/soccer_minigame_venue.tscn`
 - Create: `city_game/serviceability/minigame_venues/generated/venue_v26_soccer_pitch_chunk_129_139/SoccerMinigameVenue.gd`
 - Modify: `city_game/scripts/CityPrototype.gd`
+- Modify: `city_game/world/pedestrians/simulation/CityPedestrianTierController.gd`
+- Modify: `city_game/world/vehicles/simulation/CityVehicleTierController.gd`
+- Modify: `city_game/world/radio/CityVehicleRadioController.gd` only if ambient freeze continuity contract requires explicit guard
 - Modify: `city_game/world/rendering/CityChunkRenderer.gd`
 - Modify: `city_game/world/rendering/CityChunkScene.gd`
 - Modify: `city_game/ui/PrototypeHud.gd` only if比分/状态 contract 无法复用现有 HUD 链
@@ -112,6 +131,10 @@
 - Create: `tests/world/test_city_soccer_pitch_play_surface_contract.gd`
 - Create: `tests/world/test_city_soccer_goal_detection_contract.gd`
 - Create: `tests/world/test_city_soccer_scoreboard_contract.gd`
+- Create: `tests/world/test_city_soccer_scoreboard_visual_contract.gd`
+- Create: `tests/world/test_city_soccer_venue_ambient_freeze_contract.gd`
+- Create: `tests/world/test_city_soccer_venue_ambient_freeze_hysteresis_contract.gd`
+- Create: `tests/world/test_city_soccer_venue_radio_survives_ambient_freeze.gd`
 - Create: `tests/world/test_city_soccer_ball_reset_contract.gd`
 - Create: `tests/e2e/test_city_soccer_minigame_goal_flow.gd`
 
@@ -120,7 +143,9 @@
 1. Analysis
    - 固定 `venue_id`、registry path、manifest path、scene path、kickoff anchor 与 `primary_ball_prop_id`。
    - 审计 `v25` 足球 prop 的可绑定 contract，确认 reset 所需接口缺什么。
-   - 固定场馆首版尺寸、goal volume 语义与 out-of-bounds contract。
+   - 固定场馆首版尺寸、goal volume 语义、scoreboard 可读尺寸与 out-of-bounds contract。
+   - 固定 `ambient_simulation_freeze` 的触发/恢复语义，并明确不走 `world_simulation_pause`。
+   - 冻结 release hysteresis：进入场地立即冻结，退出则必须离开赛场边界后再额外退出 `24.0m`。
 2. Design
    - 写 `PRD-0016`
    - 写 `v26-index.md`
@@ -129,6 +154,7 @@
 3. TDD Red
    - 先写 venue registry/runtime contract test
    - 再写 manifest / playable floor / goal detection / scoreboard tests
+   - 再写 ambient freeze / hysteresis / radio continuity tests
    - 再写 reset contract
    - 最后写 goal flow e2e
 4. Run Red
@@ -138,14 +164,16 @@
    - author soccer venue manifest / scene / script
    - 接入 chunk mount
    - 实现 playable floor / bounds / goals / goal detection
+   - 实现 scoreboard sync
+   - 实现 crowd / ambient traffic 的 `ambient_simulation_freeze`
    - 实现 ball binding、score state 与 reset
    - 接入最小 HUD 状态
 6. Refactor
-   - 收口 venue runtime 与 prop binding 接口，避免 `CityPrototype.gd` 继续堆满比赛状态特判
+   - 收口 venue runtime 与 prop binding / ambient freeze 接口，避免 `CityPrototype.gd` 继续堆满比赛状态特判
    - 冷路径保留完整 venue snapshot，热路径只保留当前 active venue summary
 7. E2E
    - 跑足球 minigame goal flow
-   - 补跑受影响 `v25` 足球交互、landmark 与 streaming tests
+   - 补跑受影响 `v25` 足球交互、`v24` radio、landmark 与 streaming tests
    - 如触及 mount/tick/HUD，串行跑 profiling 三件套
 8. Review
    - 更新 `v26-index` traceability
@@ -160,5 +188,8 @@
 - 如果继续把球场塞进 `scene_interactive_prop`，后面所有场馆玩法都会退化成“一个越来越胖的球”。
 - 如果试图让足球玩法直接贴自然 terrain，goal detection 与 reset 会持续被地形起伏污染。
 - 如果场馆偷偷复制第二个球，`v25` 的 prop contract 会被破坏，后续排查也会非常混乱。
+- 如果 ambient freeze 误走了 `world_simulation_pause`，很可能会把场馆 runtime 或收音机一起停掉，直接违反用户口径。
+- 如果 freeze / unfreeze 没有迟滞，玩家只要在场边附近活动就会频繁抖动切换，体验会非常差。
 - 如果比分/重置逻辑直接写进 `CityPrototype.gd`，很快会变成第二个玩法总控巨石。
+- 如果大计分板只做成装饰节点、不接正式 runtime state，最后又会退化回“只有 HUD 才知道比分”。
 - 如果 `v26` 首版偷偷膨胀进 AI 球员或完整规则系统，计划会失控，测试与 closeout 也会失真。

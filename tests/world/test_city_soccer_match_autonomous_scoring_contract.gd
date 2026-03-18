@@ -2,6 +2,10 @@ extends SceneTree
 
 const T := preload("res://tests/_test_util.gd")
 
+# Internal fast smoke only:
+# This script is not the official M4 gold-standard acceptance.
+# Official M4 must validate a full 5:00 autonomous match plus 10-match score sampling.
+
 const SOCCER_CHUNK_ID := "chunk_129_139"
 const SOCCER_VENUE_ID := "venue:v26:soccer_pitch:chunk_129_139"
 const SOCCER_WORLD_POSITION := Vector3(-1877.94, 2.52, 618.57)
@@ -46,18 +50,18 @@ func _run() -> void:
 
 	var scoring_runtime_state: Dictionary = await _wait_for_autonomous_goal(world)
 	var total_goals := int(scoring_runtime_state.get("home_score", 0)) + int(scoring_runtime_state.get("away_score", 0))
-	if not T.require_true(self, total_goals >= 1, "Soccer match autonomous scoring contract requires the red/blue AI to produce at least one real goal without injected scoring"):
+	if not T.require_true(self, total_goals >= 1, "Soccer match autonomous scoring smoke requires at least one real goal in a short live-play window so debugging does not regress back to midfield deadlock"):
 		return
 
 	var shorten_clock_result: Dictionary = world.debug_set_soccer_match_clock_remaining_sec(1.0)
-	if not T.require_true(self, bool(shorten_clock_result.get("success", false)), "Soccer match autonomous scoring contract must allow fast-forwarding the remaining clock after the first real goal"):
+	if not T.require_true(self, bool(shorten_clock_result.get("success", false)), "Soccer match autonomous scoring smoke must allow fast-forwarding the remaining clock after the first real goal"):
 		return
 	var advance_clock_result: Dictionary = world.debug_advance_soccer_match_time(2.0)
-	if not T.require_true(self, bool(advance_clock_result.get("success", false)), "Soccer match autonomous scoring contract must allow deterministic advance into full time after autonomous scoring has occurred"):
+	if not T.require_true(self, bool(advance_clock_result.get("success", false)), "Soccer match autonomous scoring smoke must allow deterministic advance into full time after autonomous scoring has occurred"):
 		return
 	var final_runtime_state := await _wait_for_match_state(world, "final")
 	var final_total_goals := int(final_runtime_state.get("home_score", 0)) + int(final_runtime_state.get("away_score", 0))
-	if not T.require_true(self, final_total_goals >= 1, "Soccer match autonomous scoring contract must not finish a 5-minute AI-vs-AI match at 0:0 once real autonomous scoring has been established"):
+	if not T.require_true(self, final_total_goals >= 1, "Soccer match autonomous scoring smoke must not erase the first real goal while fast-forwarding to full time"):
 		return
 
 	world.queue_free()

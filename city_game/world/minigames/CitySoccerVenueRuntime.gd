@@ -22,8 +22,9 @@ const MATCH_AI_TOUCH_LIFT_MPS := 1.25
 const MATCH_AI_NEUTRAL_ZONE_BUFFER_M := 8.0
 const MATCH_AI_POSSESSION_WINDOW_SEC := 1.1
 const MATCH_AI_POSSESSION_BREAK_ADVANTAGE_M := 0.72
-const MATCH_AI_SHOT_DISTANCE_WINDOW_M := 17.5
-const MATCH_AI_PROGRESS_DISTANCE_WINDOW_M := 31.0
+const MATCH_AI_SHOT_DISTANCE_WINDOW_M := 26.0
+const MATCH_AI_PROGRESS_DISTANCE_WINDOW_M := 36.0
+const MATCH_AI_SHOT_TOUCH_COOLDOWN_SEC := 0.82
 const MATCH_STATE_IDLE := "idle"
 const MATCH_STATE_IN_PROGRESS := "in_progress"
 const MATCH_STATE_FINAL := "final"
@@ -984,7 +985,7 @@ func _maybe_apply_ai_touch(ball_node: Node3D, mounted_venue: Node3D, ball_local_
 				"distance_m": lateral_distance_m,
 				"touch_radius_m": float(player_profile.get("touch_radius_m", MATCH_AI_TOUCH_RADIUS_M)),
 			}
-	var selected_candidate := _resolve_best_ai_touch_candidate(best_candidates_by_team)
+	var selected_candidate := _resolve_best_ai_touch_candidate(best_candidates_by_team, ball_local_position)
 	if selected_candidate.is_empty():
 		return
 	_apply_ai_touch(
@@ -996,14 +997,14 @@ func _maybe_apply_ai_touch(ball_node: Node3D, mounted_venue: Node3D, ball_local_
 		ball_local_position
 	)
 
-func _resolve_best_ai_touch_candidate(best_candidates_by_team: Dictionary) -> Dictionary:
+func _resolve_best_ai_touch_candidate(best_candidates_by_team: Dictionary, ball_local_position: Vector3) -> Dictionary:
 	var home_candidate: Dictionary = best_candidates_by_team.get("home", {})
 	var away_candidate: Dictionary = best_candidates_by_team.get("away", {})
 	if _ai_possession_team_id != "" and _ai_possession_timer_sec > 0.0:
 		var possession_candidate: Dictionary = best_candidates_by_team.get(_ai_possession_team_id, {})
 		var challenger_team_id := "away" if _ai_possession_team_id == "home" else "home"
 		var challenger_candidate: Dictionary = best_candidates_by_team.get(challenger_team_id, {})
-		if _candidate_can_touch(challenger_candidate) and _candidate_should_break_possession(challenger_candidate, possession_candidate):
+		if _candidate_can_touch(challenger_candidate) and _candidate_should_break_possession(challenger_candidate, possession_candidate, ball_local_position):
 			return challenger_candidate
 		if _candidate_can_touch(possession_candidate):
 			return possession_candidate
@@ -1019,15 +1020,19 @@ func _candidate_can_touch(candidate: Dictionary) -> bool:
 		return false
 	return float(candidate.get("distance_m", INF)) <= float(candidate.get("touch_radius_m", MATCH_AI_TOUCH_RADIUS_M))
 
-func _candidate_should_break_possession(challenger_candidate: Dictionary, possession_candidate: Dictionary) -> bool:
+func _candidate_should_break_possession(challenger_candidate: Dictionary, possession_candidate: Dictionary, ball_local_position: Vector3) -> bool:
 	if possession_candidate.is_empty() or not _candidate_can_touch(possession_candidate):
 		return true
 	var challenger_contract: Dictionary = challenger_candidate.get("player_contract", {})
 	var challenger_state: Dictionary = challenger_candidate.get("player_state", {})
 	var challenger_role_id := str(challenger_contract.get("role_id", "field_player"))
 	var challenger_intent_kind := str(challenger_state.get("intent_kind", "hold_shape"))
+	var possession_goal_center := _resolve_opponent_goal_local_center(null, _ai_possession_team_id)
+	var possession_is_in_shot_window := _is_ai_shot_window(_ai_possession_team_id, ball_local_position, possession_goal_center)
 	if challenger_role_id == "goalkeeper" and challenger_intent_kind == "goalkeeper_intercept":
 		return true
+	if possession_is_in_shot_window:
+		return false
 	return float(challenger_candidate.get("distance_m", INF)) + MATCH_AI_POSSESSION_BREAK_ADVANTAGE_M < float(possession_candidate.get("distance_m", INF))
 
 func _apply_ai_touch(ball_node: Node3D, mounted_venue: Node3D, player_contract: Dictionary, player_state: Dictionary, player_profile: Dictionary, ball_local_position: Vector3) -> void:
@@ -1036,6 +1041,8 @@ func _apply_ai_touch(ball_node: Node3D, mounted_venue: Node3D, player_contract: 
 	var team_id := str(player_contract.get("team_id", "home"))
 	var role_id := str(player_contract.get("role_id", "field_player"))
 	var intent_kind := str(player_state.get("intent_kind", "press_ball"))
+	var opponent_goal_center := _resolve_opponent_goal_local_center(mounted_venue, team_id)
+	var is_shot_attempt := _is_ai_shot_window(team_id, ball_local_position, opponent_goal_center)
 	var kick_direction := _resolve_ai_kick_direction(mounted_venue, player_contract, player_profile, ball_local_position, intent_kind)
 	var kick_speed_mps := _resolve_ai_kick_speed_mps(mounted_venue, player_contract, player_profile, role_id, team_id, ball_local_position, intent_kind)
 	var rigid_ball := ball_node as RigidBody3D
@@ -1050,7 +1057,7 @@ func _apply_ai_touch(ball_node: Node3D, mounted_venue: Node3D, player_contract: 
 	player_state["kick_requested"] = true
 	player_state["stamina_norm"] = maxf(float(player_state.get("stamina_norm", 1.0)) - 0.05, 0.18)
 	_match_player_states[player_id] = player_state.duplicate(true)
-	_last_ai_touch_cooldown_sec = MATCH_AI_TOUCH_COOLDOWN_SEC
+	_last_ai_touch_cooldown_sec = MATCH_AI_SHOT_TOUCH_COOLDOWN_SEC if is_shot_attempt else MATCH_AI_TOUCH_COOLDOWN_SEC
 	_ai_possession_team_id = team_id
 	_ai_possession_player_id = player_id
 	_ai_possession_timer_sec = MATCH_AI_POSSESSION_WINDOW_SEC
@@ -1110,7 +1117,7 @@ func _resolve_ai_kick_speed_mps(mounted_venue: Node3D, player_contract: Dictiona
 		opponent_goal_center.z - ball_local_position.z
 	).length()
 	if _is_ai_shot_window(team_id, ball_local_position, opponent_goal_center):
-		return 7.8 * kick_speed_scale
+		return 14.0 * kick_speed_scale
 	if goal_distance_m <= MATCH_AI_PROGRESS_DISTANCE_WINDOW_M:
 		return 8.4 * kick_speed_scale
 	return 9.2 * kick_speed_scale

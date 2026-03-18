@@ -19,6 +19,7 @@ PRD 入口：[PRD-0017 Soccer 5v5 Match](../prd/PRD-0017-soccer-5v5-match.md)
 
 - 金标准 1：正式 `5:00` 自主比赛里，红蓝 AI 必须靠真实物理活球与正式 goal detection 自己踢出至少 `1` 个进球；不得靠 debug 注球、直接改比分或隐藏球作弊。
 - 金标准 2：同一套环境、策略、物理和球员参数下做 `10` 场采样，最终比分结果不能 `10/10` 完全一致；若 `10` 场比分全同，则视为策略、环境或参数设计仍然过于镜像/僵死，不能验收。
+- 金标准 3：完整 `5:00` 比赛与 `10` 场采样里，任一队单场得分不得达到两位数（`>= 10`），且任一场分差不得超过 `6` 球；若出现超高比分或过于悬殊比分，则视为节奏、物理或参数已被调到失真，不能验收。
 
 因此当前 `M4` 不是只 blocked 在 profiling guard，也 blocked 在这两条 live-play gold standard 尚未通过。
 
@@ -41,7 +42,7 @@ PRD 入口：[PRD-0017 Soccer 5v5 Match](../prd/PRD-0017-soccer-5v5-match.md)
 | M1 asset + roster mount | 素体资产归置、球员 wrapper、`10` 人阵容节点、角色 contract | 素体不进入 `civilians`；场馆 mounted 后有红蓝两队各 `5` 名球员与稳定角色语义 | `tests/world/test_city_soccer_match_asset_contract.gd`、`tests/world/test_city_soccer_match_roster_contract.gd` | done |
 | M2 match start + HUD timer | start ring、比赛启动、HUD `05:00`、倒计时推进 | Player 进入 start ring 后比赛启动；HUD 显示 `05:00` 并递减 | `tests/world/test_city_soccer_match_start_contract.gd`、`tests/world/test_city_soccer_match_countdown_contract.gd` | done |
 | M3 AI + final/reset loop | 简单 AI、守门员角色、终场胜负、出圈归零 | AI 会追球并影响同一颗正式足球；时间归零能结算；出圈会整场清零复位 | `tests/world/test_city_soccer_match_ai_kick_contract.gd`、`tests/world/test_city_soccer_match_final_scoreboard_contract.gd`、`tests/world/test_city_soccer_match_reset_on_exit_contract.gd` | done |
-| M4 live-play gold standard + guard verification | 自主比赛真实性、采样分布、回归与 profiling | 必须同时满足两条金标准：1）正式 `5:00` 自主比赛里，红蓝 AI 会围绕真实物理球自行推进并至少打进 `1` 球；2）同一实现做 `10` 场采样时，最终比分不能 `10/10` 完全一致。随后再补齐完整流程回归与 profiling guard | 新增自主进球 / 10 场采样统计测试（待实现） + `tests/e2e/test_city_soccer_5v5_match_flow.gd` + 受影响 `v25/v26` tests + profiling 三件套（如触及 mount/tick/HUD） | blocked |
+| M4 live-play gold standard + guard verification | 自主比赛真实性、采样分布、现实比分护栏、回归与 profiling | 必须同时满足三条金标准：1）正式 `5:00` 自主比赛里，红蓝 AI 会围绕真实物理球自行推进并至少打进 `1` 球；2）同一实现做 `10` 场采样时，最终比分不能 `10/10` 完全一致；3）完整比赛与采样里不得出现任一队 `>= 10` 球或单场分差 `> 6` 的失真比分。随后再补齐完整流程回归与 profiling guard | 新增完整 `5:00` 自主比赛 / `10` 场采样 / 现实比分护栏测试（进行中） + `tests/e2e/test_city_soccer_5v5_match_flow.gd` + 受影响 `v25/v26` tests + profiling 三件套（如触及 mount/tick/HUD） | blocked |
 
 ## 计划索引
 

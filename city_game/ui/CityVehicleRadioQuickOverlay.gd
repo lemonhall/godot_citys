@@ -59,13 +59,13 @@ func _ensure_layout() -> void:
 	var panel := PanelContainer.new()
 	panel.name = "Panel"
 	panel.anchor_left = 0.5
-	panel.anchor_top = 1.0
+	panel.anchor_top = 0.5
 	panel.anchor_right = 0.5
-	panel.anchor_bottom = 1.0
-	panel.offset_left = -360.0
-	panel.offset_top = -252.0
-	panel.offset_right = 360.0
-	panel.offset_bottom = -44.0
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -392.0
+	panel.offset_top = -184.0
+	panel.offset_right = 392.0
+	panel.offset_bottom = 184.0
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	var stylebox := StyleBoxFlat.new()
 	stylebox.bg_color = Color(0.04, 0.05, 0.06, 0.94)
@@ -101,7 +101,7 @@ func _ensure_layout() -> void:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var hint := Label.new()
 	hint.name = "Hint"
-	hint.text = "[ / ] 切台   L 确认   P 电源"
+	hint.text = "[ / ] Preset   鼠标可点   Play 即播"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	header.add_child(title)
 	header.add_child(hint)
@@ -210,11 +210,11 @@ func _apply_state() -> void:
 	if display_label != null:
 		display_label.text = _build_display_text()
 	if prev_button != null:
-		prev_button.disabled = (_state.get("slots", []) as Array).is_empty()
+		prev_button.disabled = _count_filled_slots() <= 0
 	if next_button != null:
-		next_button.disabled = (_state.get("slots", []) as Array).is_empty()
+		next_button.disabled = _count_filled_slots() <= 0
 	if confirm_button != null:
-		confirm_button.disabled = int(_state.get("selected_slot_index", -1)) < 0
+		confirm_button.disabled = int(_state.get("selected_slot_index", -1)) < 0 or str(_state.get("selected_station_id", "")).strip_edges() == ""
 	if power_button != null:
 		power_button.text = "Power %s" % str(_state.get("power_state", "off")).to_upper()
 	if browser_button != null:
@@ -240,21 +240,27 @@ func _apply_preset_buttons() -> void:
 		var station_name := str(slot.get("station_name", "")).strip_edges()
 		var slot_station_id := str(slot.get("station_id", ""))
 		var prefix := "P%d" % (slot_index + 1)
+		if slot_index == selected_slot_index:
+			prefix = "> %s" % prefix
 		var suffix := station_name if station_name != "" else "Empty"
 		if slot_station_id != "" and slot_station_id == current_station_id:
-			suffix = "%s  ON AIR" % suffix
+			suffix = "ON AIR  %s" % suffix
 		button.text = "%s\n%s" % [prefix, suffix]
 		button.disabled = slot_station_id == ""
 		button.modulate = Color(0.92, 0.98, 0.95, 1.0) if slot_index == selected_slot_index else Color(0.8, 0.87, 0.83, 1.0)
 
 func _build_display_text() -> String:
+	var selected_slot_index := int(_state.get("selected_slot_index", -1))
+	var selected_slot_label := "未选预设"
+	if selected_slot_index >= 0:
+		selected_slot_label = "P%d" % (selected_slot_index + 1)
 	var lines := PackedStringArray([
 		"[b]NOW[/b] %s" % _resolve_display_station_name(str(_state.get("current_station_name", ""))),
 		"状态：power=%s  playback=%s" % [
 			str(_state.get("power_state", "off")),
 			str(_state.get("playback_state", "stopped")),
 		],
-		"[b]SELECTED[/b] %s" % _resolve_display_station_name(str(_state.get("selected_station_name", ""))),
+		"[b]PRESET[/b] %s  %s" % [selected_slot_label, _resolve_display_station_name(str(_state.get("selected_station_name", "")))],
 	])
 	if bool(_state.get("browser_action_available", false)):
 		lines.append("按 Browser 可切到完整目录，按 Close 仅关闭面板。")
@@ -263,3 +269,12 @@ func _build_display_text() -> String:
 func _resolve_display_station_name(station_name: String) -> String:
 	var trimmed := station_name.strip_edges()
 	return trimmed if trimmed != "" else "未选台"
+
+func _count_filled_slots() -> int:
+	var filled_count := 0
+	for slot_variant in _state.get("slots", []):
+		if not (slot_variant is Dictionary):
+			continue
+		if str((slot_variant as Dictionary).get("station_id", "")).strip_edges() != "":
+			filled_count += 1
+	return filled_count

@@ -37,10 +37,34 @@ Expected result: `PASS`
 - `docs/plan/` milestone notes
 - `docs/plans/` implementation plans
 
+## FFmpeg Runtime Artifacts
+
+The radio native backend keeps the FFmpeg runtime in this repository, but GitHub blocks regular Git blobs larger than `100 MB`. The only oversized runtime binary is `avfilter-11.dll`, so it is stored as split `7z` blob volumes instead of a raw tracked DLL:
+
+- `city_game/native/radio_backend/thirdparty/ffmpeg/archives/avfilter-11.dll.7z.001`
+- `city_game/native/radio_backend/thirdparty/ffmpeg/archives/avfilter-11.dll.7z.002`
+- ...
+
+Before running or rebuilding the native radio backend on a fresh clone, restore that DLL with:
+
+```powershell
+pwsh -File .\scripts\restore-radio-ffmpeg-avfilter.ps1
+```
+
+That script extracts the split archive and restores:
+
+- `city_game/native/radio_backend/bin/win64/avfilter-11.dll`
+- `city_game/native/radio_backend/thirdparty/ffmpeg/windows-x64-shared/ffmpeg-8.1-full_build-shared/bin/avfilter-11.dll`
+
+If you already have local copies and want to overwrite them, add `-Force`:
+
+```powershell
+pwsh -File .\scripts\restore-radio-ffmpeg-avfilter.ps1 -Force
+```
+
 ## Next milestone
 
 - Replace box towers with modular building kits
 - Add roads with intersections, sidewalks, and traffic placeholders
 - Introduce interactable districts, mission hooks, and streaming chunks
 - Add pedestrians, vehicles, and save-game state
-

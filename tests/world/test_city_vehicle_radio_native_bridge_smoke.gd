@@ -8,6 +8,7 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	T.install_vehicle_radio_test_scope("vehicle_radio_native_bridge_smoke")
 	var extension_resource := load(GDEXTENSION_PATH)
 	if not T.require_true(self, extension_resource != null, "Vehicle radio native bridge smoke test requires radio_backend.gdextension"):
 		return

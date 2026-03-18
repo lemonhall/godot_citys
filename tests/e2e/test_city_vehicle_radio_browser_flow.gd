@@ -8,6 +8,7 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	T.install_vehicle_radio_test_scope("vehicle_radio_browser_flow")
 	_seed_browser_catalog()
 
 	var scene := load("res://city_game/scenes/CityPrototype.tscn")
@@ -54,7 +55,7 @@ func _run() -> void:
 	for tab_variant in browser_state.get("tabs", []):
 		var tab: Dictionary = tab_variant as Dictionary
 		tab_ids.append(str(tab.get("tab_id", "")))
-	if not T.require_true(self, tab_ids == PackedStringArray(["presets", "favorites", "recents", "browse"]), "Vehicle radio browser flow must expose the reduced tab family without a current-playing tab"):
+	if not T.require_true(self, tab_ids == PackedStringArray(["presets", "favorites", "recents", "browse", "proxy"]), "Vehicle radio browser flow must expose the reduced tab family plus the dedicated proxy tab without a current-playing tab"):
 		return
 
 	var play_button := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/RightPanel/RightVBox/TransportRow/PlayButton") as Button
@@ -152,10 +153,24 @@ func _run() -> void:
 	if not T.require_true(self, bool(open_overlay_result.get("success", false)), "Browser flow must leave quick overlay usable after closing the browser"):
 		return
 	var overlay_state: Dictionary = world.get_vehicle_radio_quick_overlay_state()
+	var hud := world.get_node_or_null("Hud")
+	if not T.require_true(self, hud != null and hud.has_method("get_vehicle_radio_quick_overlay_state"), "Browser flow requires HUD quick overlay state access so the real on-screen panel receives runtime playback state"):
+		return
+	var hud_overlay_state: Dictionary = hud.get_vehicle_radio_quick_overlay_state()
 	var slots := overlay_state.get("slots", []) as Array
-	if not T.require_true(self, slots.size() >= 1, "Quick overlay must rebuild with at least one slot after browser preset editing"):
+	if not T.require_true(self, slots.size() == 8, "Quick overlay must always expose the full 8-slot preset bank after browser preset editing"):
 		return
 	if not T.require_true(self, str((slots[0] as Dictionary).get("station_id", "")) == "station:cn:traffic", "Preset editing in browser flow must feed the quick bank first slot"):
+		return
+	if not T.require_true(self, str((slots[1] as Dictionary).get("station_id", "")) == "", "Quick overlay slot 1 must stay empty when no second preset has been assigned"):
+		return
+	if not T.require_true(self, int(overlay_state.get("selected_slot_index", -1)) == 0, "Opening quick overlay while preset 0 is on air must auto-focus the active preset slot"):
+		return
+	if not T.require_true(self, str(overlay_state.get("current_station_id", "")) == "station:cn:traffic", "Quick overlay world state must surface the current on-air station selected from Browser playback"):
+		return
+	if not T.require_true(self, str(hud_overlay_state.get("current_station_id", "")) == "station:cn:traffic", "HUD quick overlay state must preserve the current on-air station so the actual O panel does not show a blank NOW field"):
+		return
+	if not T.require_true(self, str(hud_overlay_state.get("current_station_name", "")) == "Xi'an Traffic FM", "HUD quick overlay state must preserve the current on-air station name for the O panel display"):
 		return
 
 	world.queue_free()

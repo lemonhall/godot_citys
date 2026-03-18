@@ -20,6 +20,7 @@ const CityMapPinRegistry := preload("res://city_game/world/map/CityMapPinRegistr
 const CityVehicleRadioController := preload("res://city_game/world/radio/CityVehicleRadioController.gd")
 const CityRadioCatalogStore := preload("res://city_game/world/radio/CityRadioCatalogStore.gd")
 const CityRadioCatalogRepository := preload("res://city_game/world/radio/CityRadioCatalogRepository.gd")
+const CityRadioBrowserApi := preload("res://city_game/world/radio/CityRadioBrowserApi.gd")
 const CityRadioNativeBackend := preload("res://city_game/world/radio/backend/CityRadioNativeBackend.gd")
 const CityRadioMockBackend := preload("res://city_game/world/radio/backend/CityRadioMockBackend.gd")
 const CityRadioQuickBank := preload("res://city_game/world/radio/CityRadioQuickBank.gd")
@@ -68,6 +69,22 @@ const ROUTE_STYLE_DESTINATION := "destination"
 const ROUTE_STYLE_TASK_AVAILABLE := "task_available"
 const ROUTE_STYLE_TASK_ACTIVE := "task_active"
 const VEHICLE_RADIO_MIN_REAL_COUNTRY_COUNT := 50
+const VEHICLE_RADIO_DEFAULT_PROXY_MODE := "local_proxy"
+const VEHICLE_RADIO_DIRECT_PROXY_MODE := "direct"
+const VEHICLE_RADIO_SYSTEM_PROXY_MODE := "system_proxy"
+const VEHICLE_RADIO_LOCAL_PROXY_MODE := "local_proxy"
+const VEHICLE_RADIO_PINNED_COUNTRY_ORDER := [
+	"CN",
+	"US",
+	"GB",
+	"FR",
+	"RU",
+	"JP",
+	"BR",
+	"ES",
+	"CU",
+	"AR",
+]
 const VEHICLE_RADIO_INPUT_ACTIONS := [
 	"vehicle_radio_quick_open",
 	"vehicle_radio_next",
@@ -158,6 +175,7 @@ var _vehicle_radio_quick_overlay_open := false
 var _vehicle_radio_quick_selected_index := -1
 var _vehicle_radio_power_on := false
 var _vehicle_radio_browser_request_count := 0
+var _vehicle_radio_catalog_proxy_mode := VEHICLE_RADIO_DIRECT_PROXY_MODE
 var _minimap_snapshot_cache: Dictionary = {}
 var _minimap_cache_key := ""
 var _minimap_cache_hits := 0
@@ -464,8 +482,10 @@ func open_vehicle_radio_quick_overlay() -> Dictionary:
 			"error": "empty_slots",
 		}
 	_vehicle_radio_quick_overlay_open = true
-	_vehicle_radio_quick_selected_index = clampi(maxi(_vehicle_radio_quick_selected_index, 0), 0, _vehicle_radio_quick_slots.size() - 1)
+	_sync_vehicle_radio_quick_selected_index_to_runtime_state()
 	_apply_world_simulation_pause(true)
+	if DisplayServer.get_name() != "headless":
+		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	_sync_vehicle_radio_quick_overlay()
 	return {
 		"success": true,
@@ -483,6 +503,8 @@ func close_vehicle_radio_quick_overlay() -> Dictionary:
 	_vehicle_radio_quick_selected_index = -1
 	if not _full_map_open:
 		_apply_world_simulation_pause(false)
+		if DisplayServer.get_name() != "headless" and not _vehicle_radio_browser_open and not _controls_help_open:
+			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	_sync_vehicle_radio_quick_overlay()
 	return {
 		"success": true,
@@ -509,9 +531,8 @@ func open_vehicle_radio_browser() -> Dictionary:
 	if _vehicle_radio_quick_overlay_open:
 		close_vehicle_radio_quick_overlay()
 	_vehicle_radio_browser_open = true
-	_vehicle_radio_browser_selected_tab_id = "browse"
-	_vehicle_radio_browser_selected_country_code = ""
-	_vehicle_radio_browser_filter_text = ""
+	if not _is_vehicle_radio_browser_tab_id_valid(_vehicle_radio_browser_selected_tab_id):
+		_vehicle_radio_browser_selected_tab_id = "browse"
 	if _vehicle_radio_browser_cached_countries.is_empty():
 		_ensure_vehicle_radio_browser_countries_ready()
 	_apply_world_simulation_pause(true)
@@ -550,6 +571,7 @@ func set_vehicle_radio_browser_tab(tab_id: String) -> Dictionary:
 			"error": "invalid_tab",
 		}
 	_vehicle_radio_browser_selected_tab_id = tab_id
+	_persist_vehicle_radio_session_state()
 	_sync_vehicle_radio_browser()
 	return {
 		"success": true,
@@ -571,6 +593,7 @@ func select_vehicle_radio_browser_country(country_code: String) -> Dictionary:
 	_vehicle_radio_browser_selected_country_code = normalized_country_code
 	_vehicle_radio_browser_filter_text = ""
 	_ensure_vehicle_radio_browser_station_rows_loaded(normalized_country_code)
+	_persist_vehicle_radio_session_state()
 	_sync_vehicle_radio_browser()
 	return {
 		"success": true,
@@ -579,6 +602,7 @@ func select_vehicle_radio_browser_country(country_code: String) -> Dictionary:
 
 func set_vehicle_radio_browser_filter_text(filter_text: String) -> void:
 	_vehicle_radio_browser_filter_text = filter_text.strip_edges()
+	_persist_vehicle_radio_session_state()
 	_sync_vehicle_radio_browser()
 
 func show_vehicle_radio_browser_country_root() -> void:
@@ -586,7 +610,42 @@ func show_vehicle_radio_browser_country_root() -> void:
 	_vehicle_radio_browser_selected_country_code = ""
 	_vehicle_radio_browser_filter_text = ""
 	_ensure_vehicle_radio_browser_countries_ready()
+	_persist_vehicle_radio_session_state()
 	_sync_vehicle_radio_browser()
+
+func refresh_vehicle_radio_browser_catalog() -> Dictionary:
+	if _vehicle_radio_browser_selected_country_code == "":
+		_vehicle_radio_browser_cached_countries = []
+		_ensure_vehicle_radio_browser_countries_ready(true)
+		_sync_vehicle_radio_browser()
+		return {
+			"success": true,
+			"refreshed_kind": "countries",
+		}
+	_vehicle_radio_browser_cached_station_rows = []
+	_ensure_vehicle_radio_browser_station_rows_loaded(_vehicle_radio_browser_selected_country_code, true)
+	_sync_vehicle_radio_browser()
+	return {
+		"success": true,
+		"refreshed_kind": "stations",
+		"country_code": _vehicle_radio_browser_selected_country_code,
+	}
+
+func set_vehicle_radio_browser_proxy_mode(proxy_mode: String) -> Dictionary:
+	var normalized_proxy_mode := _normalize_vehicle_radio_browser_proxy_mode(proxy_mode)
+	if normalized_proxy_mode == "":
+		return {
+			"success": false,
+			"error": "invalid_proxy_mode",
+		}
+	_vehicle_radio_catalog_proxy_mode = normalized_proxy_mode
+	_apply_vehicle_radio_catalog_proxy_settings()
+	_persist_vehicle_radio_session_state()
+	_sync_vehicle_radio_browser()
+	return {
+		"success": true,
+		"proxy_mode": _vehicle_radio_catalog_proxy_mode,
+	}
 
 func toggle_vehicle_radio_browser_favorite(station_id: String) -> Dictionary:
 	var station_snapshot := _find_vehicle_radio_station_snapshot_by_id(station_id)
@@ -2679,8 +2738,12 @@ func _connect_vehicle_radio_browser_ui() -> void:
 		browser.connect("browse_country_selected", Callable(self, "select_vehicle_radio_browser_country"))
 	if browser.has_signal("browse_root_requested") and not browser.is_connected("browse_root_requested", Callable(self, "show_vehicle_radio_browser_country_root")):
 		browser.connect("browse_root_requested", Callable(self, "show_vehicle_radio_browser_country_root"))
+	if browser.has_signal("catalog_refresh_requested") and not browser.is_connected("catalog_refresh_requested", Callable(self, "refresh_vehicle_radio_browser_catalog")):
+		browser.connect("catalog_refresh_requested", Callable(self, "refresh_vehicle_radio_browser_catalog"))
 	if browser.has_signal("filter_text_changed") and not browser.is_connected("filter_text_changed", Callable(self, "set_vehicle_radio_browser_filter_text")):
 		browser.connect("filter_text_changed", Callable(self, "set_vehicle_radio_browser_filter_text"))
+	if browser.has_signal("proxy_mode_selected") and not browser.is_connected("proxy_mode_selected", Callable(self, "set_vehicle_radio_browser_proxy_mode")):
+		browser.connect("proxy_mode_selected", Callable(self, "set_vehicle_radio_browser_proxy_mode"))
 	if browser.has_signal("station_selected") and not browser.is_connected("station_selected", Callable(self, "select_vehicle_radio_browser_station")):
 		browser.connect("station_selected", Callable(self, "select_vehicle_radio_browser_station"))
 	if browser.has_signal("current_station_favorite_toggled") and not browser.is_connected("current_station_favorite_toggled", Callable(self, "toggle_vehicle_radio_browser_favorite")):
@@ -3048,26 +3111,24 @@ func _apply_world_simulation_pause(should_pause: bool) -> void:
 func _rebuild_vehicle_radio_quick_slots() -> void:
 	if _vehicle_radio_quick_bank == null or not _vehicle_radio_quick_bank.has_method("build_slots"):
 		_vehicle_radio_quick_slots = []
+		_vehicle_radio_quick_selected_index = -1
 		return
 	_vehicle_radio_quick_slots = _vehicle_radio_quick_bank.build_slots(
 		_vehicle_radio_selection_sources.get("presets", []),
 		_vehicle_radio_selection_sources.get("favorites", []),
 		_vehicle_radio_selection_sources.get("recents", [])
 	)
-	if _vehicle_radio_quick_slots.is_empty():
-		_vehicle_radio_quick_selected_index = -1
-	else:
-		_vehicle_radio_quick_selected_index = clampi(maxi(_vehicle_radio_quick_selected_index, 0), 0, _vehicle_radio_quick_slots.size() - 1)
+	_sync_vehicle_radio_quick_selected_index_to_runtime_state()
 
 func _step_vehicle_radio_quick_selection(step: int) -> void:
 	if _vehicle_radio_quick_slots.is_empty():
 		_vehicle_radio_quick_selected_index = -1
+	elif _count_selectable_vehicle_radio_quick_slots() <= 0:
+		_vehicle_radio_quick_selected_index = -1
+	elif _vehicle_radio_quick_selected_index < 0:
+		_vehicle_radio_quick_selected_index = _find_first_selectable_vehicle_radio_quick_slot_index()
 	else:
-		var slot_count := _vehicle_radio_quick_slots.size()
-		if _vehicle_radio_quick_selected_index < 0:
-			_vehicle_radio_quick_selected_index = 0
-		else:
-			_vehicle_radio_quick_selected_index = posmod(_vehicle_radio_quick_selected_index + step, slot_count)
+		_vehicle_radio_quick_selected_index = _find_next_selectable_vehicle_radio_quick_slot_index(_vehicle_radio_quick_selected_index + step, step)
 	_sync_vehicle_radio_quick_overlay()
 
 func _build_vehicle_radio_quick_overlay_state() -> Dictionary:
@@ -3104,12 +3165,14 @@ func _build_vehicle_radio_browser_state() -> Dictionary:
 			{"tab_id": "favorites", "label": "Favorites"},
 			{"tab_id": "recents", "label": "Recents"},
 			{"tab_id": "browse", "label": "Browse"},
+			{"tab_id": "proxy", "label": "Proxy"},
 		],
 		"current_playing": get_vehicle_radio_runtime_state(),
 		"presets": _load_vehicle_radio_browser_presets(),
 		"favorites": _load_vehicle_radio_browser_favorites(),
 		"recents": _load_vehicle_radio_browser_recents(),
 		"browse": _build_vehicle_radio_browser_browse_state(),
+		"network": _build_vehicle_radio_browser_network_state(),
 	}
 
 func _sync_vehicle_radio_browser() -> void:
@@ -3137,7 +3200,7 @@ func _commit_vehicle_radio_quick_selection() -> void:
 	if _vehicle_radio_quick_selected_index < 0 or _vehicle_radio_quick_selected_index >= _vehicle_radio_quick_slots.size():
 		return
 	var slot: Dictionary = (_vehicle_radio_quick_slots[_vehicle_radio_quick_selected_index] as Dictionary).duplicate(true)
-	if slot.is_empty():
+	if slot.is_empty() or str(slot.get("station_id", "")).strip_edges() == "":
 		return
 	_vehicle_radio_power_on = true
 	_sync_vehicle_radio_runtime_driving_context()
@@ -3152,6 +3215,59 @@ func _commit_vehicle_radio_quick_selection() -> void:
 	_record_vehicle_radio_recent_station(slot)
 	_persist_vehicle_radio_session_state()
 	close_vehicle_radio_quick_overlay()
+
+func _sync_vehicle_radio_quick_selected_index_to_runtime_state() -> void:
+	if _vehicle_radio_quick_slots.is_empty():
+		_vehicle_radio_quick_selected_index = -1
+		return
+	var current_station_id := str(get_vehicle_radio_runtime_state().get("selected_station_id", "")).strip_edges()
+	var current_slot_index := _find_vehicle_radio_quick_slot_index_by_station_id(current_station_id)
+	if current_slot_index >= 0:
+		_vehicle_radio_quick_selected_index = current_slot_index
+		return
+	if _is_vehicle_radio_quick_slot_selectable(_vehicle_radio_quick_selected_index):
+		return
+	_vehicle_radio_quick_selected_index = _find_first_selectable_vehicle_radio_quick_slot_index()
+
+func _count_selectable_vehicle_radio_quick_slots() -> int:
+	var selectable_count := 0
+	for slot_index in range(_vehicle_radio_quick_slots.size()):
+		if _is_vehicle_radio_quick_slot_selectable(slot_index):
+			selectable_count += 1
+	return selectable_count
+
+func _find_first_selectable_vehicle_radio_quick_slot_index() -> int:
+	for slot_index in range(_vehicle_radio_quick_slots.size()):
+		if _is_vehicle_radio_quick_slot_selectable(slot_index):
+			return slot_index
+	return -1
+
+func _find_next_selectable_vehicle_radio_quick_slot_index(start_index: int, step: int) -> int:
+	if _vehicle_radio_quick_slots.is_empty():
+		return -1
+	var resolved_step := 1 if step >= 0 else -1
+	var slot_count := _vehicle_radio_quick_slots.size()
+	for offset in range(slot_count):
+		var candidate_index := posmod(start_index + resolved_step * offset, slot_count)
+		if _is_vehicle_radio_quick_slot_selectable(candidate_index):
+			return candidate_index
+	return -1
+
+func _find_vehicle_radio_quick_slot_index_by_station_id(station_id: String) -> int:
+	var normalized_station_id := station_id.strip_edges()
+	if normalized_station_id == "":
+		return -1
+	for slot_index in range(_vehicle_radio_quick_slots.size()):
+		var slot := _vehicle_radio_quick_slots[slot_index] as Dictionary
+		if str(slot.get("station_id", "")).strip_edges() == normalized_station_id:
+			return slot_index
+	return -1
+
+func _is_vehicle_radio_quick_slot_selectable(slot_index: int) -> bool:
+	if slot_index < 0 or slot_index >= _vehicle_radio_quick_slots.size():
+		return false
+	var slot := _vehicle_radio_quick_slots[slot_index] as Dictionary
+	return str(slot.get("station_id", "")).strip_edges() != ""
 
 func _activate_vehicle_radio_station_playback(station_snapshot: Dictionary, resolved_stream: Dictionary, enable_browser_preview: bool) -> Dictionary:
 	if _vehicle_radio_controller == null:
@@ -3213,7 +3329,7 @@ func _ensure_vehicle_radio_browser_countries_ready(force: bool = false) -> void:
 		_purge_vehicle_radio_fixture_countries_cache()
 	var has_fresh_cached_countries := bool(load_result.get("hit", false)) and not bool(load_result.get("stale", true)) and not cached_countries.is_empty() and not fixture_countries
 	var resolved_force := force or fixture_countries
-	_vehicle_radio_browser_cached_countries = [] if fixture_countries else cached_countries
+	_vehicle_radio_browser_cached_countries = _resolve_vehicle_radio_browser_country_directory(cached_countries)
 	if has_fresh_cached_countries and not resolved_force:
 		_vehicle_radio_browser_countries_loading = false
 		_vehicle_radio_browser_countries_error = ""
@@ -3260,7 +3376,28 @@ func _build_vehicle_radio_browser_browse_state() -> Dictionary:
 		"load_error": _vehicle_radio_browser_stations_error if _vehicle_radio_browser_station_loading_country_code == _vehicle_radio_browser_selected_country_code else "",
 	}
 
-func _ensure_vehicle_radio_browser_station_rows_loaded(country_code: String) -> void:
+func _build_vehicle_radio_browser_network_state() -> Dictionary:
+	var proxy_settings := CityRadioBrowserApi.resolve_proxy_settings({
+		"proxy_mode": _vehicle_radio_catalog_proxy_mode,
+	})
+	return {
+		"proxy_mode": str(proxy_settings.get("proxy_mode", VEHICLE_RADIO_DIRECT_PROXY_MODE)),
+		"proxy_mode_label": str(proxy_settings.get("effective_label", "直连")),
+		"proxy_enabled": bool(proxy_settings.get("enabled", false)),
+		"proxy_host": str(proxy_settings.get("host", "")),
+		"proxy_port": int(proxy_settings.get("port", 0)),
+		"proxy_error": str(proxy_settings.get("effective_error", "")),
+		"env_http_proxy": str(proxy_settings.get("env_http_proxy", "")),
+		"env_https_proxy": str(proxy_settings.get("env_https_proxy", "")),
+		"env_all_proxy": str(proxy_settings.get("env_all_proxy", "")),
+		"countries_loading": _vehicle_radio_browser_countries_loading,
+		"countries_error": _vehicle_radio_browser_countries_error,
+		"stations_loading": _vehicle_radio_browser_stations_loading,
+		"stations_error": _vehicle_radio_browser_stations_error,
+		"selected_country_code": _vehicle_radio_browser_selected_country_code,
+	}
+
+func _ensure_vehicle_radio_browser_station_rows_loaded(country_code: String, force: bool = false) -> void:
 	var normalized_country_code := country_code.strip_edges().to_upper()
 	if normalized_country_code == "":
 		_vehicle_radio_browser_cached_country_code = ""
@@ -3269,7 +3406,7 @@ func _ensure_vehicle_radio_browser_station_rows_loaded(country_code: String) -> 
 		_vehicle_radio_browser_station_loading_country_code = ""
 		_vehicle_radio_browser_stations_error = ""
 		return
-	if _vehicle_radio_browser_cached_country_code == normalized_country_code and not _vehicle_radio_browser_cached_station_rows.is_empty():
+	if not force and _vehicle_radio_browser_cached_country_code == normalized_country_code and not _vehicle_radio_browser_cached_station_rows.is_empty():
 		return
 	var load_result: Dictionary = _vehicle_radio_catalog_store.load_country_station_page(normalized_country_code) if _vehicle_radio_catalog_store != null and _vehicle_radio_catalog_store.has_method("load_country_station_page") else {
 		"hit": false,
@@ -3280,8 +3417,8 @@ func _ensure_vehicle_radio_browser_station_rows_loaded(country_code: String) -> 
 	var fixture_station_page := _looks_like_vehicle_radio_fixture_station_page(cached_stations)
 	if fixture_station_page:
 		_purge_vehicle_radio_fixture_station_page_cache(normalized_country_code)
-	var has_fresh_cached_stations := bool(load_result.get("hit", false)) and not bool(load_result.get("stale", true)) and not cached_stations.is_empty() and not fixture_station_page
-	var resolved_force := fixture_station_page
+	var has_fresh_cached_stations := bool(load_result.get("hit", false)) and not bool(load_result.get("stale", true)) and not fixture_station_page
+	var resolved_force := force or fixture_station_page
 	_vehicle_radio_browser_cached_country_code = normalized_country_code
 	_vehicle_radio_browser_cached_station_rows = [] if fixture_station_page else (_load_vehicle_radio_browser_station_rows_from_store(normalized_country_code, bool(load_result.get("hit", false))) if bool(load_result.get("hit", false)) else _build_vehicle_radio_browser_station_rows(cached_stations))
 	if has_fresh_cached_stations:
@@ -3308,7 +3445,7 @@ func _load_vehicle_radio_browser_countries_from_store(count_as_browser_load: boo
 	if count_as_browser_load:
 		_vehicle_radio_debug_state["browser_country_load_count"] = int(_vehicle_radio_debug_state.get("browser_country_load_count", 0)) + 1
 	var countries := (load_result.get("countries", []) as Array).duplicate(true)
-	return [] if _looks_like_vehicle_radio_fixture_country_directory(countries) else countries
+	return _resolve_vehicle_radio_browser_country_directory(countries)
 
 func _load_vehicle_radio_browser_station_rows_from_store(country_code: String, count_as_browser_load: bool) -> Array:
 	if _vehicle_radio_catalog_store == null or not _vehicle_radio_catalog_store.has_method("load_country_station_page"):
@@ -3403,7 +3540,7 @@ func _apply_vehicle_radio_catalog_sync_result(sync_result_payload: Dictionary) -
 			_vehicle_radio_browser_cached_countries = _load_vehicle_radio_browser_countries_from_store(false)
 			if bool(result.get("success", false)):
 				var synced_countries := (result.get("countries", []) as Array).duplicate(true)
-				_vehicle_radio_browser_cached_countries = [] if _looks_like_vehicle_radio_fixture_country_directory(synced_countries) else synced_countries
+				_vehicle_radio_browser_cached_countries = _resolve_vehicle_radio_browser_country_directory(synced_countries)
 			_sync_vehicle_radio_browser()
 		"stations":
 			_vehicle_radio_browser_stations_loading = false
@@ -3432,6 +3569,46 @@ func _build_vehicle_radio_browser_station_row(station_snapshot: Dictionary) -> D
 	row["availability_hint"] = "cached"
 	return row
 
+func _resolve_vehicle_radio_browser_country_directory(countries: Array) -> Array:
+	return [] if _looks_like_vehicle_radio_fixture_country_directory(countries) else _decorate_vehicle_radio_browser_countries(countries)
+
+func _decorate_vehicle_radio_browser_countries(countries: Array) -> Array:
+	var decorated: Array = []
+	for country_variant in countries:
+		if not (country_variant is Dictionary):
+			continue
+		var entry := (country_variant as Dictionary).duplicate(true)
+		var country_code := str(entry.get("country_code", "")).strip_edges().to_upper()
+		var display_name := str(entry.get("display_name", country_code)).strip_edges()
+		var sort_priority := _resolve_vehicle_radio_pinned_country_priority(country_code)
+		entry["country_code"] = country_code
+		entry["display_name"] = display_name
+		entry["display_label"] = "%s  (%d 台)" % [display_name, int(entry.get("station_count", 0))]
+		entry["list_section"] = "pinned" if sort_priority < VEHICLE_RADIO_PINNED_COUNTRY_ORDER.size() else "general"
+		entry["sort_priority"] = sort_priority
+		entry["sort_name"] = display_name.to_lower()
+		decorated.append(entry)
+	decorated.sort_custom(Callable(self, "_compare_vehicle_radio_browser_country_entries"))
+	return decorated
+
+func _compare_vehicle_radio_browser_country_entries(left_variant: Variant, right_variant: Variant) -> bool:
+	var left := left_variant as Dictionary
+	var right := right_variant as Dictionary
+	var left_priority := int(left.get("sort_priority", 999999))
+	var right_priority := int(right.get("sort_priority", 999999))
+	if left_priority != right_priority:
+		return left_priority < right_priority
+	var left_name := str(left.get("sort_name", ""))
+	var right_name := str(right.get("sort_name", ""))
+	if left_name != right_name:
+		return left_name.naturalnocasecmp_to(right_name) < 0
+	return str(left.get("country_code", "")).naturalnocasecmp_to(str(right.get("country_code", ""))) < 0
+
+func _resolve_vehicle_radio_pinned_country_priority(country_code: String) -> int:
+	var normalized_country_code := country_code.strip_edges().to_upper()
+	var pinned_index := VEHICLE_RADIO_PINNED_COUNTRY_ORDER.find(normalized_country_code)
+	return pinned_index if pinned_index >= 0 else VEHICLE_RADIO_PINNED_COUNTRY_ORDER.size() + 1000
+
 func _filter_vehicle_radio_browser_station_rows(rows: Array) -> Array:
 	var filter_text := _vehicle_radio_browser_filter_text.strip_edges().to_lower()
 	if filter_text == "":
@@ -3452,7 +3629,7 @@ func _filter_vehicle_radio_browser_station_rows(rows: Array) -> Array:
 	return filtered
 
 func _is_vehicle_radio_browser_tab_id_valid(tab_id: String) -> bool:
-	return tab_id in ["presets", "favorites", "recents", "browse"]
+	return tab_id in ["presets", "favorites", "recents", "browse", "proxy"]
 
 func _reload_vehicle_radio_selection_sources_from_store() -> void:
 	if _vehicle_radio_user_state_store == null:
@@ -3475,6 +3652,11 @@ func _restore_vehicle_radio_session_state_from_store() -> void:
 	if _vehicle_radio_user_state_store == null or _vehicle_radio_controller == null:
 		return
 	var session_state: Dictionary = _vehicle_radio_user_state_store.load_session_state()
+	_vehicle_radio_browser_selected_tab_id = _restore_vehicle_radio_browser_tab_id(str(session_state.get("browser_selected_tab_id", "browse")))
+	_vehicle_radio_browser_selected_country_code = str(session_state.get("browser_selected_country_code", "")).strip_edges().to_upper()
+	_vehicle_radio_browser_filter_text = str(session_state.get("browser_filter_text", "")).strip_edges()
+	_vehicle_radio_catalog_proxy_mode = _normalize_vehicle_radio_browser_proxy_mode(str(session_state.get("catalog_proxy_mode", _resolve_vehicle_radio_default_proxy_mode())))
+	_apply_vehicle_radio_catalog_proxy_settings()
 	var selected_station_snapshot := _sanitize_vehicle_radio_station_snapshot((session_state.get("selected_station_snapshot", {}) as Dictionary).duplicate(true))
 	var volume_linear := clampf(float(session_state.get("volume_linear", 1.0)), 0.0, 1.0)
 	if _vehicle_radio_controller.has_method("set_volume_linear"):
@@ -3489,6 +3671,10 @@ func _restore_vehicle_radio_session_state_from_store() -> void:
 				"selected_station_id": "",
 				"selected_station_snapshot": {},
 				"volume_linear": volume_linear,
+				"browser_selected_tab_id": _vehicle_radio_browser_selected_tab_id,
+				"browser_selected_country_code": _vehicle_radio_browser_selected_country_code,
+				"browser_filter_text": _vehicle_radio_browser_filter_text,
+				"catalog_proxy_mode": _vehicle_radio_catalog_proxy_mode,
 			}, int(Time.get_unix_time_from_system()))
 		return
 	var resolved_stream := _build_vehicle_radio_resolved_stream(selected_station_snapshot)
@@ -3507,7 +3693,28 @@ func _persist_vehicle_radio_session_state() -> void:
 		"selected_station_id": str(runtime_state.get("selected_station_id", "")),
 		"selected_station_snapshot": selected_station_snapshot,
 		"volume_linear": float(runtime_state.get("volume_linear", 1.0)),
+		"browser_selected_tab_id": _vehicle_radio_browser_selected_tab_id,
+		"browser_selected_country_code": _vehicle_radio_browser_selected_country_code,
+		"browser_filter_text": _vehicle_radio_browser_filter_text,
+		"catalog_proxy_mode": _vehicle_radio_catalog_proxy_mode,
 	}, int(Time.get_unix_time_from_system()))
+
+func _restore_vehicle_radio_browser_tab_id(tab_id: String) -> String:
+	return tab_id if _is_vehicle_radio_browser_tab_id_valid(tab_id) else "browse"
+
+func _normalize_vehicle_radio_browser_proxy_mode(proxy_mode: String) -> String:
+	var normalized_proxy_mode := proxy_mode.strip_edges()
+	if normalized_proxy_mode not in [VEHICLE_RADIO_DIRECT_PROXY_MODE, VEHICLE_RADIO_SYSTEM_PROXY_MODE, VEHICLE_RADIO_LOCAL_PROXY_MODE]:
+		return _resolve_vehicle_radio_default_proxy_mode()
+	return normalized_proxy_mode
+
+func _resolve_vehicle_radio_default_proxy_mode() -> String:
+	return VEHICLE_RADIO_DIRECT_PROXY_MODE if DisplayServer.get_name() == "headless" else VEHICLE_RADIO_DEFAULT_PROXY_MODE
+
+func _apply_vehicle_radio_catalog_proxy_settings() -> void:
+	CityRadioBrowserApi.configure_proxy_settings({
+		"proxy_mode": _vehicle_radio_catalog_proxy_mode,
+	})
 
 func _save_vehicle_radio_presets(presets: Array) -> Dictionary:
 	if _vehicle_radio_user_state_store == null or not _vehicle_radio_user_state_store.has_method("save_presets"):

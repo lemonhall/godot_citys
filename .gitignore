@@ -8,3 +8,10 @@ __juebieshu*
 __midishow*
 *_aigei_com.mid
 reports/v23/music_road/source_private/
+city_game/native/radio_backend/.sconsign.dblite
+city_game/native/radio_backend/src/build/
+city_game/native/radio_backend/bin/win64/~*
+tmp_native_trace.log
+city_game/native/radio_backend/bin/win64/avfilter-11.dll
+city_game/native/radio_backend/thirdparty/ffmpeg/windows-x64-shared/ffmpeg-8.1-full_build-shared/bin/avfilter-11.dll
+city_game/native/radio_backend/thirdparty/ffmpeg/archives/_extract_avfilter_tmp/

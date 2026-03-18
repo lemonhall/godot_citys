@@ -61,7 +61,7 @@ func ensure_country_station_page_ready(country_code: String, force: bool = false
 		"error": "store_unavailable",
 	}
 	var cached_stations := (cached_result.get("stations", []) as Array).duplicate(true)
-	if not force and bool(cached_result.get("hit", false)) and not bool(cached_result.get("stale", true)) and not cached_stations.is_empty():
+	if not force and bool(cached_result.get("hit", false)) and not bool(cached_result.get("stale", true)):
 		return _build_station_result(true, cached_stations, true, false, "fresh_cache", "")
 	var countries_result := ensure_countries_ready(false, now_unix_sec)
 	var countries := countries_result.get("countries", []) as Array

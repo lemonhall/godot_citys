@@ -6,21 +6,30 @@ const CACHE_DIRECTORY := "user://cache/radio"
 const COUNTRIES_DIRECTORY := "user://cache/radio/countries"
 const DEFAULT_CATALOG_TTL_SEC := 72 * 3600
 const DEFAULT_RESOLVE_CACHE_TTL_SEC := 6 * 3600
+const TEST_SCOPE_DIRECTORY := "test_scopes"
+
+static var _test_scope := ""
+
+static func install_test_scope(scope_name: String) -> void:
+	_test_scope = _sanitize_test_scope(scope_name)
+
+static func clear_test_scope() -> void:
+	_test_scope = ""
 
 func build_countries_index_path() -> String:
-	return "%s/countries.index.json" % CACHE_DIRECTORY
+	return "%s/countries.index.json" % _resolve_cache_directory()
 
 func build_countries_meta_path() -> String:
-	return "%s/countries.meta.json" % CACHE_DIRECTORY
+	return "%s/countries.meta.json" % _resolve_cache_directory()
 
 func build_country_station_index_path(country_code: String) -> String:
-	return "%s/%s/stations.index.json" % [COUNTRIES_DIRECTORY, _normalize_country_code(country_code)]
+	return "%s/%s/stations.index.json" % [_resolve_countries_directory(), _normalize_country_code(country_code)]
 
 func build_country_station_meta_path(country_code: String) -> String:
-	return "%s/%s/stations.meta.json" % [COUNTRIES_DIRECTORY, _normalize_country_code(country_code)]
+	return "%s/%s/stations.meta.json" % [_resolve_countries_directory(), _normalize_country_code(country_code)]
 
 func build_stream_resolve_cache_path() -> String:
-	return "%s/stream_resolve_cache.json" % CACHE_DIRECTORY
+	return "%s/stream_resolve_cache.json" % _resolve_cache_directory()
 
 func save_countries_index(countries: Array, fetched_at_unix_sec: int = -1, ttl_sec: int = DEFAULT_CATALOG_TTL_SEC) -> Dictionary:
 	var index_path := build_countries_index_path()
@@ -295,3 +304,35 @@ func _normalize_country_code(country_code: String) -> String:
 
 func _duplicate_array(values: Variant) -> Array:
 	return (values as Array).duplicate(true) if values is Array else []
+
+static func _resolve_cache_directory() -> String:
+	if _test_scope == "":
+		return CACHE_DIRECTORY
+	return "%s/%s/%s" % [CACHE_DIRECTORY, TEST_SCOPE_DIRECTORY, _test_scope]
+
+static func _resolve_countries_directory() -> String:
+	return "%s/countries" % _resolve_cache_directory()
+
+static func _sanitize_test_scope(scope_name: String) -> String:
+	var raw_scope := scope_name.strip_edges().to_lower()
+	if raw_scope == "":
+		return ""
+	var resolved_scope := ""
+	var previous_was_separator := false
+	for index in raw_scope.length():
+		var codepoint := raw_scope.unicode_at(index)
+		var is_ascii_letter := codepoint >= 97 and codepoint <= 122
+		var is_ascii_digit := codepoint >= 48 and codepoint <= 57
+		if is_ascii_letter or is_ascii_digit:
+			resolved_scope += char(codepoint)
+			previous_was_separator = false
+			continue
+		if previous_was_separator:
+			continue
+		resolved_scope += "_"
+		previous_was_separator = true
+	while resolved_scope.begins_with("_"):
+		resolved_scope = resolved_scope.trim_prefix("_")
+	while resolved_scope.ends_with("_"):
+		resolved_scope = resolved_scope.trim_suffix("_")
+	return resolved_scope

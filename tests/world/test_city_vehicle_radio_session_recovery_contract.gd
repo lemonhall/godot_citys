@@ -7,6 +7,7 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	T.install_vehicle_radio_test_scope("vehicle_radio_session_recovery_contract")
 	_seed_session_state()
 
 	var scene := load("res://city_game/scenes/CityPrototype.tscn")

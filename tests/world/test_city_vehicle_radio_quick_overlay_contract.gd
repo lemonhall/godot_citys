@@ -6,6 +6,7 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	T.install_vehicle_radio_test_scope("vehicle_radio_quick_overlay_contract")
 	var scene := load("res://city_game/scenes/CityPrototype.tscn")
 	if scene == null or not (scene is PackedScene):
 		T.fail_and_quit(self, "Missing CityPrototype.tscn for vehicle radio quick overlay contract")
@@ -67,6 +68,12 @@ func _run() -> void:
 		return
 	if not T.require_true(self, slot_entries.size() == 8, "Quick overlay must clamp the quick bank to exactly 8 visible slots even when source lists are larger"):
 		return
+	if not T.require_true(self, str((slot_entries[0] as Dictionary).get("station_id", "")) == "station:preset:0", "Quick overlay slot 0 must stay bound to preset slot 0 instead of mixing in other browser collections"):
+		return
+	if not T.require_true(self, str((slot_entries[5] as Dictionary).get("station_id", "")) == "station:preset:5", "Quick overlay slot 5 must stay bound to preset slot 5 instead of mixing in other browser collections"):
+		return
+	if not T.require_true(self, str((slot_entries[6] as Dictionary).get("station_id", "")) == "", "Quick overlay slot 6 must stay empty when only 6 presets are assigned instead of leaking favorites/recents into preset navigation"):
+		return
 	if not T.require_true(self, bool(overlay_state.get("power_action_available", false)), "Quick overlay must surface a dedicated power action instead of consuming a quick slot"):
 		return
 	if not T.require_true(self, bool(overlay_state.get("browser_action_available", false)), "Quick overlay must surface a dedicated browser action instead of consuming a quick slot"):
@@ -82,6 +89,11 @@ func _run() -> void:
 		return
 	var preset_grid := world.get_node_or_null("Hud/Root/VehicleRadioQuickOverlay/Panel/Chrome/PresetGrid") as GridContainer
 	if not T.require_true(self, preset_grid != null, "Quick overlay must expose a preset grid instead of a plain text dump"):
+		return
+	var panel := world.get_node_or_null("Hud/Root/VehicleRadioQuickOverlay/Panel") as PanelContainer
+	if not T.require_true(self, panel != null, "Quick overlay contract requires a panel container root for the car-radio chrome"):
+		return
+	if not T.require_true(self, is_equal_approx(panel.anchor_top, 0.5) and is_equal_approx(panel.anchor_bottom, 0.5), "Quick overlay panel must be centered vertically instead of hugging the bottom edge of the screen"):
 		return
 
 	_press_action(world, "vehicle_radio_cancel")

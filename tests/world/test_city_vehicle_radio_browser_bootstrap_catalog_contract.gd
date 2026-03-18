@@ -34,6 +34,7 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	T.install_vehicle_radio_test_scope("vehicle_radio_browser_bootstrap_catalog_contract")
 	CatalogRepository.clear_test_api()
 	_seed_empty_catalog()
 
@@ -89,6 +90,33 @@ func _run() -> void:
 		CatalogRepository.clear_test_api()
 		return
 	if not T.require_true(self, str(first_country.get("display_name", "")) == "Testland", "Fresh runtime must surface the repository-synced display_name rather than a hardcoded demo country"):
+		CatalogRepository.clear_test_api()
+		return
+	var refresh_button := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/LeftPanel/LeftVBox/Toolbar/RefreshButton") as Button
+	if not T.require_true(self, refresh_button != null, "Radio browser bootstrap catalog contract requires a manual Refresh button so the user can force directory sync after changing proxy mode"):
+		CatalogRepository.clear_test_api()
+		return
+	fake_api.countries.append({
+		"name": "Yieldland",
+		"stationcount": 1,
+		"iso_3166_1": "YL",
+	})
+	refresh_button.emit_signal("pressed")
+	await process_frame
+	browser_state = world.get_vehicle_radio_browser_state()
+	browse_state = browser_state.get("browse", {}) as Dictionary
+	countries = browse_state.get("countries", []) as Array
+	if not T.require_true(self, countries.size() == 2, "Pressing the manual Refresh button must force a fresh countries sync instead of reusing the old in-memory directory"):
+		CatalogRepository.clear_test_api()
+		return
+	var country_list := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/LeftPanel/LeftVBox/ListScroll/List") as VBoxContainer
+	if not T.require_true(self, country_list != null, "Radio browser bootstrap catalog contract requires a visible country list after refresh"):
+		CatalogRepository.clear_test_api()
+		return
+	var refreshed_first_country_button := country_list.get_child(0) as Button
+	if not T.require_true(self, refreshed_first_country_button != null and refreshed_first_country_button.icon != null, "Fresh sync country rows must still go through the flag icon decoration path instead of bypassing UI decoration"):
+		return
+	if not T.require_true(self, refreshed_first_country_button != null and refreshed_first_country_button.text.find("Testland") >= 0, "Fresh sync country rows must keep the country label visible next to the flag icon"):
 		CatalogRepository.clear_test_api()
 		return
 

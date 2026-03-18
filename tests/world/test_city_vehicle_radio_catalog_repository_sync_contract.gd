@@ -52,12 +52,13 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	T.install_vehicle_radio_test_scope("vehicle_radio_catalog_repository_sync_contract")
 	var store := CatalogStore.new()
 	if not bool(store.save_countries_index([], 100, 72 * 3600).get("success", false)):
 		T.fail_and_quit(self, "Repository sync contract failed to reset countries index")
 		return
-	if not bool(store.save_country_station_page("XZ", [], 100, 72 * 3600).get("success", false)):
-		T.fail_and_quit(self, "Repository sync contract failed to reset XZ station page")
+	if not bool(store.delete_country_station_page("XZ").get("success", false)):
+		T.fail_and_quit(self, "Repository sync contract failed to clear any pre-existing XZ station page")
 		return
 	var fake_api := FakeRadioBrowserApi.new()
 	fake_api.countries = [

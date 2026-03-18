@@ -45,6 +45,7 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	T.install_vehicle_radio_test_scope("vehicle_radio_drive_mode_contract")
 	var controller_script := load(CONTROLLER_PATH)
 	if not T.require_true(self, controller_script != null, "Vehicle radio drive mode contract requires CityVehicleRadioController.gd"):
 		return

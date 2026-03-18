@@ -8,6 +8,7 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	T.install_vehicle_radio_test_scope("vehicle_radio_browser_state_contract")
 	_seed_radio_browser_sources()
 
 	var scene := load("res://city_game/scenes/CityPrototype.tscn")
@@ -66,16 +67,41 @@ func _run() -> void:
 	for tab_variant in tabs:
 		var tab: Dictionary = tab_variant as Dictionary
 		tab_ids.append(str(tab.get("tab_id", "")))
-	if not T.require_true(self, tab_ids == PackedStringArray(["presets", "favorites", "recents", "browse"]), "Vehicle radio browser must drop the current-playing tab and keep only collection plus browse tabs"):
+	if not T.require_true(self, tab_ids == PackedStringArray(["presets", "favorites", "recents", "browse", "proxy"]), "Vehicle radio browser must drop the current-playing tab, keep collection plus browse tabs, and add a dedicated proxy tab"):
 		return
 
 	var browse_state: Dictionary = browser_state.get("browse", {}) as Dictionary
 	if not T.require_true(self, str(browse_state.get("root_kind", "")) == "countries", "Vehicle radio browser Browse root must stay at countries index instead of flattening stations globally"):
 		return
 	var countries := browse_state.get("countries", []) as Array
-	if not T.require_true(self, countries.size() == 2, "Vehicle radio browser Browse root must surface cached country directory entries"):
+	if not T.require_true(self, countries.size() == 6, "Vehicle radio browser Browse root must surface cached country directory entries"):
+		return
+	if not T.require_true(self, str((countries[0] as Dictionary).get("country_code", "")) == "CN", "Vehicle radio browser must pin China to the top of the country directory"):
+		return
+	if not T.require_true(self, str((countries[1] as Dictionary).get("country_code", "")) == "US", "Vehicle radio browser must keep strategic priority countries above the general catalog list"):
+		return
+	if not T.require_true(self, str((countries[2] as Dictionary).get("country_code", "")) == "JP", "Vehicle radio browser must pin Japan ahead of non-priority countries for easier selection"):
+		return
+	if not T.require_true(self, str((countries[3] as Dictionary).get("country_code", "")) == "BR", "Vehicle radio browser must pin Brazil ahead of the general country directory"):
+		return
+	if not T.require_true(self, str((countries[5] as Dictionary).get("country_code", "")) == "DE", "Vehicle radio browser must leave non-priority countries below the pinned block"):
 		return
 	if not T.require_true(self, int((browse_state.get("stations", []) as Array).size()) == 0, "Vehicle radio browser countries root must not eagerly materialize station rows"):
+		return
+	var country_list := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/LeftPanel/LeftVBox/ListScroll/List") as VBoxContainer
+	if not T.require_true(self, country_list != null, "Vehicle radio browser state contract requires a country directory list container"):
+		return
+	var first_country_button := country_list.get_child(0) as Button
+	if not T.require_true(self, first_country_button != null and first_country_button.icon != null, "Vehicle radio browser country buttons must surface a real flag icon instead of relying on platform emoji rendering"):
+		return
+	if not T.require_true(self, first_country_button != null and first_country_button.text.find("China") >= 0, "Vehicle radio browser country buttons must still show the country label alongside the flag icon"):
+		return
+	var separator_found := false
+	for child in country_list.get_children():
+		if child is HSeparator:
+			separator_found = true
+			break
+	if not T.require_true(self, separator_found, "Vehicle radio browser must visually separate pinned countries from the rest of the catalog with a divider"):
 		return
 
 	var play_button := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/RightPanel/RightVBox/TransportRow/PlayButton") as Button
@@ -87,11 +113,38 @@ func _run() -> void:
 	var volume_slider := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/RightPanel/RightVBox/TransportRow/VolumeSlider") as Range
 	if not T.require_true(self, volume_slider != null, "Vehicle radio browser state contract requires a volume slider in the right-side detail panel"):
 		return
+	var refresh_button := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/LeftPanel/LeftVBox/Toolbar/RefreshButton") as Button
+	if not T.require_true(self, refresh_button != null, "Vehicle radio browser state contract requires a manual Refresh button in the browse toolbar"):
+		return
+	if not T.require_true(self, bool(world.set_vehicle_radio_browser_tab("proxy").get("success", false)), "Vehicle radio browser state contract requires selecting the proxy tab through the shared tab-selection API"):
+		return
+	browser_state = world.get_vehicle_radio_browser_state()
+	var network_state: Dictionary = browser_state.get("network", {}) as Dictionary
+	if not T.require_true(self, str(browser_state.get("selected_tab_id", "")) == "proxy", "Vehicle radio browser state must surface selected_tab_id=proxy after switching tabs"):
+		return
+	if not T.require_true(self, str(network_state.get("proxy_mode", "")) != "", "Vehicle radio browser state contract requires the proxy tab to expose the current proxy_mode"):
+		return
+	var use_local_proxy_button := world.get_node_or_null("Hud/Root/VehicleRadioBrowser/Panel/Shell/Body/RightPanel/RightVBox/ProxyModeRow/UseLocalProxyButton") as Button
+	if not T.require_true(self, use_local_proxy_button != null, "Vehicle radio browser state contract requires a dedicated button for the built-in local proxy mode"):
+		return
+	if not T.require_true(self, bool(world.set_vehicle_radio_browser_tab("browse").get("success", false)), "Vehicle radio browser state contract requires switching back to Browse after inspecting the proxy tab"):
+		return
+	var reopen_country_result: Dictionary = world.select_vehicle_radio_browser_country("JP")
+	if not T.require_true(self, bool(reopen_country_result.get("success", false)), "Vehicle radio browser state contract requires country drill-down support before reopen persistence can be verified"):
+		return
 
 	var close_result: Dictionary = world.close_vehicle_radio_browser()
 	if not T.require_true(self, bool(close_result.get("success", false)), "Vehicle radio browser must close cleanly"):
 		return
 	if not T.require_true(self, not bool(world.is_world_simulation_paused()), "Closing vehicle radio browser must restore world simulation pause state"):
+		return
+	if not T.require_true(self, bool(world.open_vehicle_radio_browser().get("success", false)), "Vehicle radio browser state contract requires reopen support to verify country persistence"):
+		return
+	browser_state = world.get_vehicle_radio_browser_state()
+	browse_state = browser_state.get("browse", {}) as Dictionary
+	if not T.require_true(self, str(browse_state.get("root_kind", "")) == "stations", "Reopening vehicle radio browser must keep the user inside the last selected country instead of bouncing back to the countries root"):
+		return
+	if not T.require_true(self, str(browse_state.get("selected_country_code", "")) == "JP", "Reopening vehicle radio browser must preserve the last selected country code"):
 		return
 
 	world.queue_free()
@@ -103,7 +156,11 @@ func _seed_radio_browser_sources() -> void:
 	var seeded_at := int(Time.get_unix_time_from_system())
 	var countries := [
 		{"country_code": "CN", "display_name": "China", "station_count": 200},
+		{"country_code": "DE", "display_name": "Germany", "station_count": 120},
+		{"country_code": "BR", "display_name": "Brazil", "station_count": 160},
 		{"country_code": "JP", "display_name": "Japan", "station_count": 180},
+		{"country_code": "US", "display_name": "United States", "station_count": 260},
+		{"country_code": "AR", "display_name": "Argentina", "station_count": 90},
 	]
 	var presets := [
 		{
@@ -131,6 +188,9 @@ func _seed_radio_browser_sources() -> void:
 	]
 	if not bool(catalog_store.save_countries_index(countries, seeded_at, 72 * 3600).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio browser state contract failed to seed countries index")
+		return
+	if not bool(catalog_store.save_country_station_page("JP", [], seeded_at, 72 * 3600).get("success", false)):
+		T.fail_and_quit(self, "Vehicle radio browser state contract failed to seed JP station page")
 		return
 	if not bool(user_state_store.save_presets(presets, seeded_at).get("success", false)):
 		T.fail_and_quit(self, "Vehicle radio browser state contract failed to seed presets")

@@ -6,6 +6,7 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	T.install_vehicle_radio_test_scope("vehicle_radio_physical_hotkey_contract")
 	var scene := load("res://city_game/scenes/CityPrototype.tscn")
 	if scene == null or not (scene is PackedScene):
 		T.fail_and_quit(self, "Missing CityPrototype.tscn for vehicle radio physical hotkey contract")
@@ -29,7 +30,7 @@ func _run() -> void:
 	if not T.require_true(self, player != null and player.has_method("enter_vehicle_drive_mode"), "Physical hotkey contract requires synthetic drive-mode setup support"):
 		return
 
-	world.set_vehicle_radio_selection_sources(_build_station_entries(), [], [])
+	world.set_vehicle_radio_selection_sources(_build_station_entries(), _build_aux_station_entries("favorite", 2), _build_aux_station_entries("recent", 2))
 	player.enter_vehicle_drive_mode(_build_synthetic_vehicle_state(player))
 	var browser_control := world.get_node_or_null("Hud/Root/VehicleRadioBrowser") as Control
 	if not T.require_true(self, browser_control != null, "Physical hotkey contract requires a dedicated VehicleRadioBrowser control under the HUD"):
@@ -41,6 +42,11 @@ func _run() -> void:
 	if not T.require_true(self, bool(quick_overlay_state.get("visible", false)), "Pressing O while driving must open the radio quick overlay through the physical key path"):
 		return
 	if not T.require_true(self, bool(world.is_world_simulation_paused()), "Opening the radio quick overlay through the physical key path must pause world simulation"):
+		return
+	var slot_entries := quick_overlay_state.get("slots", []) as Array
+	if not T.require_true(self, slot_entries.size() == 8, "Physical hotkey contract requires the O panel to expose a fixed 8-slot preset bank"):
+		return
+	if not T.require_true(self, str((slot_entries[3] as Dictionary).get("station_id", "")) == "", "Physical hotkey contract requires preset navigation to ignore favorites/recents instead of leaking them into later preset slots"):
 		return
 	var quick_overlay_control := world.get_node_or_null("Hud/Root/VehicleRadioQuickOverlay") as Control
 	if not T.require_true(self, quick_overlay_control != null, "Physical hotkey contract requires a dedicated VehicleRadioQuickOverlay control under the HUD"):
@@ -131,6 +137,17 @@ func _build_station_entries() -> Array:
 			"stream_url": "https://radio.example/hotkey_2.mp3",
 		},
 	]
+
+func _build_aux_station_entries(prefix: String, count: int) -> Array:
+	var entries: Array = []
+	for index in range(count):
+		entries.append({
+			"station_id": "station:%s:%d" % [prefix, index],
+			"station_name": "%s_%d" % [prefix, index],
+			"country": "CN",
+			"stream_url": "https://radio.example/%s_%d.mp3" % [prefix, index],
+		})
+	return entries
 
 func _build_synthetic_vehicle_state(player) -> Dictionary:
 	var standing_height := _estimate_standing_height(player)

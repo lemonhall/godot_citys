@@ -7,6 +7,7 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	T.install_vehicle_radio_test_scope("vehicle_radio_stream_resolution_contract")
 	var resolver_script := load(RESOLVER_PATH)
 	if not T.require_true(self, resolver_script != null, "Vehicle radio stream resolution contract requires CityRadioStreamResolver.gd"):
 		return

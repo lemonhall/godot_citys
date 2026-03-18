@@ -50,6 +50,11 @@ var _vehicle_radio_quick_overlay_state: Dictionary = {
 	"power_action_available": false,
 	"browser_action_available": false,
 	"power_state": "off",
+	"playback_state": "stopped",
+	"current_station_name": "",
+	"current_station_id": "",
+	"selected_station_name": "",
+	"selected_station_id": "",
 }
 var _vehicle_radio_browser_state: Dictionary = {
 	"visible": false,
@@ -219,6 +224,11 @@ func set_vehicle_radio_quick_overlay_state(state: Dictionary) -> void:
 		"power_action_available": bool(state.get("power_action_available", false)),
 		"browser_action_available": bool(state.get("browser_action_available", false)),
 		"power_state": str(state.get("power_state", "off")),
+		"playback_state": str(state.get("playback_state", "stopped")),
+		"current_station_name": str(state.get("current_station_name", "")),
+		"current_station_id": str(state.get("current_station_id", "")),
+		"selected_station_name": str(state.get("selected_station_name", "")),
+		"selected_station_id": str(state.get("selected_station_id", "")),
 	}
 	_apply_vehicle_radio_quick_overlay_state()
 

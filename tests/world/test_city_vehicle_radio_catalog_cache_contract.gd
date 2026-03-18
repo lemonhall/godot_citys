@@ -20,6 +20,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, store.has_method("delete_countries_index"), "Vehicle radio catalog cache contract requires delete_countries_index()"):
 		return
+	if not T.require_true(self, store_script.has_method("install_test_scope"), "Vehicle radio catalog cache contract requires install_test_scope() so headless tests do not pollute the real runtime cache"):
+		return
+	if not T.require_true(self, store_script.has_method("clear_test_scope"), "Vehicle radio catalog cache contract requires clear_test_scope() so radio tests can restore the default cache root"):
+		return
 	if not T.require_true(self, store.has_method("save_country_station_page"), "Vehicle radio catalog cache contract requires save_country_station_page()"):
 		return
 	if not T.require_true(self, store.has_method("load_country_station_page"), "Vehicle radio catalog cache contract requires load_country_station_page()"):
@@ -46,6 +50,18 @@ func _run() -> void:
 		return
 	if not T.require_true(self, resolve_cache_path == "user://cache/radio/stream_resolve_cache.json", "Resolve cache path must freeze to user://cache/radio/stream_resolve_cache.json"):
 		return
+	store_script.install_test_scope("catalog_cache_contract")
+	var scoped_store = store_script.new()
+	if not T.require_true(self, str(scoped_store.build_countries_index_path()) == "user://cache/radio/test_scopes/catalog_cache_contract/countries.index.json", "Catalog test scope must redirect countries index writes away from the real runtime cache root"):
+		return
+	if not T.require_true(self, str(scoped_store.build_country_station_index_path("CN")) == "user://cache/radio/test_scopes/catalog_cache_contract/countries/CN/stations.index.json", "Catalog test scope must redirect station-page writes away from the real runtime cache root"):
+		return
+	store = scoped_store
+	countries_index_path = str(store.build_countries_index_path())
+	countries_meta_path = str(store.build_countries_meta_path())
+	station_index_path = str(store.build_country_station_index_path("CN"))
+	station_meta_path = str(store.build_country_station_meta_path("CN"))
+	resolve_cache_path = str(store.build_stream_resolve_cache_path())
 
 	var countries := [
 		{"country_code": "CN", "display_name": "China", "station_count": 200},

@@ -5,13 +5,20 @@ signal close_requested
 signal tab_selected(tab_id: String)
 signal browse_country_selected(country_code: String)
 signal browse_root_requested
+signal catalog_refresh_requested
 signal filter_text_changed(filter_text: String)
+signal proxy_mode_selected(proxy_mode: String)
 signal station_selected(station_id: String)
 signal current_station_favorite_toggled(station_id: String)
 signal preset_assign_requested(slot_index: int, station_id: String)
 signal play_requested
 signal stop_requested
 signal volume_linear_changed(volume_linear: float)
+
+const COUNTRY_FLAG_ICON_DIRECTORY := "res://city_game/assets/ui/flags/4x3"
+const COUNTRY_FLAG_ICON_FALLBACK_PATH := COUNTRY_FLAG_ICON_DIRECTORY + "/_unknown.svg"
+const COUNTRY_FLAG_ICON_WIDTH := 30
+const COUNTRY_FLAG_ICON_HEIGHT := 22
 
 var _state := {
 	"visible": false,
@@ -26,9 +33,13 @@ var _state := {
 		"countries": [],
 		"stations": [],
 	},
+	"network": {
+		"proxy_mode": "direct",
+	},
 }
 var _suppress_filter_signal := false
 var _suppress_volume_signal := false
+var _country_flag_texture_cache := {}
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -45,6 +56,7 @@ func set_state(state: Dictionary) -> void:
 		"favorites": (state.get("favorites", []) as Array).duplicate(true),
 		"recents": (state.get("recents", []) as Array).duplicate(true),
 		"browse": (state.get("browse", {}) as Dictionary).duplicate(true),
+		"network": (state.get("network", {}) as Dictionary).duplicate(true),
 	}
 	_ensure_layout()
 	_apply_state()
@@ -172,9 +184,15 @@ func _ensure_layout() -> void:
 	filter_edit.custom_minimum_size = Vector2(260.0, 0.0)
 	if not filter_edit.text_changed.is_connected(_on_filter_text_changed):
 		filter_edit.text_changed.connect(_on_filter_text_changed)
+	var refresh_button := Button.new()
+	refresh_button.name = "RefreshButton"
+	refresh_button.text = "Refresh"
+	if not refresh_button.pressed.is_connected(_on_refresh_button_pressed):
+		refresh_button.pressed.connect(_on_refresh_button_pressed)
 	toolbar.add_child(back_button)
 	toolbar.add_child(country_label)
 	toolbar.add_child(filter_edit)
+	toolbar.add_child(refresh_button)
 	left_vbox.add_child(toolbar)
 
 	var list_scroll := ScrollContainer.new()
@@ -233,6 +251,42 @@ func _ensure_layout() -> void:
 	transport_row.add_child(volume_label)
 	transport_row.add_child(volume_slider)
 	right_vbox.add_child(transport_row)
+
+	var proxy_mode_row := HBoxContainer.new()
+	proxy_mode_row.name = "ProxyModeRow"
+	var use_direct_proxy_button := Button.new()
+	use_direct_proxy_button.name = "UseDirectProxyButton"
+	use_direct_proxy_button.text = "直连"
+	use_direct_proxy_button.toggle_mode = true
+	if not use_direct_proxy_button.pressed.is_connected(_on_use_direct_proxy_button_pressed):
+		use_direct_proxy_button.pressed.connect(_on_use_direct_proxy_button_pressed)
+	var use_system_proxy_button := Button.new()
+	use_system_proxy_button.name = "UseSystemProxyButton"
+	use_system_proxy_button.text = "系统代理"
+	use_system_proxy_button.toggle_mode = true
+	if not use_system_proxy_button.pressed.is_connected(_on_use_system_proxy_button_pressed):
+		use_system_proxy_button.pressed.connect(_on_use_system_proxy_button_pressed)
+	var use_local_proxy_button := Button.new()
+	use_local_proxy_button.name = "UseLocalProxyButton"
+	use_local_proxy_button.text = "本机 127.0.0.1:7897"
+	use_local_proxy_button.toggle_mode = true
+	use_local_proxy_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if not use_local_proxy_button.pressed.is_connected(_on_use_local_proxy_button_pressed):
+		use_local_proxy_button.pressed.connect(_on_use_local_proxy_button_pressed)
+	proxy_mode_row.add_child(use_direct_proxy_button)
+	proxy_mode_row.add_child(use_system_proxy_button)
+	proxy_mode_row.add_child(use_local_proxy_button)
+	right_vbox.add_child(proxy_mode_row)
+
+	var proxy_action_row := HBoxContainer.new()
+	proxy_action_row.name = "ProxyActionRow"
+	var proxy_refresh_button := Button.new()
+	proxy_refresh_button.name = "ProxyRefreshButton"
+	proxy_refresh_button.text = "刷新目录"
+	if not proxy_refresh_button.pressed.is_connected(_on_proxy_refresh_button_pressed):
+		proxy_refresh_button.pressed.connect(_on_proxy_refresh_button_pressed)
+	proxy_action_row.add_child(proxy_refresh_button)
+	right_vbox.add_child(proxy_action_row)
 
 	var detail_text := RichTextLabel.new()
 	detail_text.name = "DetailText"
@@ -322,6 +376,7 @@ func _apply_toolbar_state() -> void:
 	var back_button := get_node_or_null("Panel/Shell/Body/LeftPanel/LeftVBox/Toolbar/BackButton") as Button
 	var country_label := get_node_or_null("Panel/Shell/Body/LeftPanel/LeftVBox/Toolbar/CountryLabel") as Label
 	var filter_edit := get_node_or_null("Panel/Shell/Body/LeftPanel/LeftVBox/Toolbar/FilterEdit") as LineEdit
+	var refresh_button := get_node_or_null("Panel/Shell/Body/LeftPanel/LeftVBox/Toolbar/RefreshButton") as Button
 	if toolbar != null:
 		toolbar.visible = is_browse
 	if back_button != null:
@@ -334,6 +389,8 @@ func _apply_toolbar_state() -> void:
 		_suppress_filter_signal = true
 		filter_edit.text = str(browse_state.get("filter_text", ""))
 		_suppress_filter_signal = false
+	if refresh_button != null:
+		refresh_button.visible = is_browse
 
 func _rebuild_list_content() -> void:
 	var list_vbox := get_node_or_null("Panel/Shell/Body/LeftPanel/LeftVBox/ListScroll/List") as VBoxContainer
@@ -345,6 +402,8 @@ func _rebuild_list_content() -> void:
 	match selected_tab_id:
 		"browse":
 			_rebuild_browse_content(list_vbox)
+		"proxy":
+			_add_placeholder_label(list_vbox, "网络访问与代理设置在右侧面板。切换代理模式后，可直接点击刷新目录重新同步国家列表。")
 		"presets":
 			_rebuild_station_collection(list_vbox, _state.get("presets", []) as Array, "当前还没有 preset")
 		"favorites":
@@ -369,16 +428,23 @@ func _rebuild_browse_content(list_vbox: VBoxContainer) -> void:
 			else:
 				_add_placeholder_label(list_vbox, "没有可浏览的国家索引。")
 			return
+		var last_section := ""
 		for country_variant in countries:
 			var country: Dictionary = country_variant as Dictionary
+			var section := str(country.get("list_section", "general"))
+			if last_section != "" and section != last_section:
+				list_vbox.add_child(HSeparator.new())
+			last_section = section
+			var country_code := str(country.get("country_code", ""))
 			var button := Button.new()
 			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			button.custom_minimum_size = Vector2(0.0, 34.0)
 			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-			button.text = "%s  (%d 台)" % [
+			button.text = str(country.get("display_label", "%s  (%d 台)" % [
 				str(country.get("display_name", country.get("country_code", ""))),
 				int(country.get("station_count", 0)),
-			]
-			var country_code := str(country.get("country_code", ""))
+			]))
+			_apply_country_flag_icon(button, country_code)
 			button.pressed.connect(func() -> void:
 				browse_country_selected.emit(country_code)
 			)
@@ -412,14 +478,23 @@ func _rebuild_station_collection(list_vbox: VBoxContainer, stations: Array, empt
 		list_vbox.add_child(button)
 
 func _apply_detail_panel() -> void:
+	var selected_tab_id := str(_state.get("selected_tab_id", "browse"))
 	var detail_title := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/DetailTitle") as Label
+	var transport_row := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/TransportRow") as HBoxContainer
 	var play_button := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/TransportRow/PlayButton") as Button
 	var stop_button := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/TransportRow/StopButton") as Button
 	var volume_slider := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/TransportRow/VolumeSlider") as HSlider
+	var proxy_mode_row := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/ProxyModeRow") as HBoxContainer
+	var use_direct_proxy_button := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/ProxyModeRow/UseDirectProxyButton") as Button
+	var use_system_proxy_button := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/ProxyModeRow/UseSystemProxyButton") as Button
+	var use_local_proxy_button := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/ProxyModeRow/UseLocalProxyButton") as Button
+	var proxy_action_row := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/ProxyActionRow") as HBoxContainer
 	var detail_text := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/DetailText") as RichTextLabel
 	var favorite_button := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/FavoriteButton") as Button
 	var preset_label := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/PresetLabel") as Label
 	var preset_grid := get_node_or_null("Panel/Shell/Body/RightPanel/RightVBox/PresetGrid") as GridContainer
+	var network_state := _state.get("network", {}) as Dictionary
+	var is_proxy_tab := selected_tab_id == "proxy"
 	var runtime_state := _state.get("current_playing", {}) as Dictionary
 	var current_station := _normalize_station_snapshot(runtime_state.get("selected_station_snapshot", {}))
 	var current_station_id := str(current_station.get("station_id", ""))
@@ -427,7 +502,19 @@ func _apply_detail_panel() -> void:
 	var playback_state := str(runtime_state.get("playback_state", "stopped"))
 	var volume_linear := clampf(float(runtime_state.get("volume_linear", 1.0)), 0.0, 1.0)
 	if detail_title != null:
-		detail_title.text = "播放控制" if has_station else "未选择电台"
+		detail_title.text = "Proxy / Network" if is_proxy_tab else ("播放控制" if has_station else "未选择电台")
+	if transport_row != null:
+		transport_row.visible = not is_proxy_tab
+	if proxy_mode_row != null:
+		proxy_mode_row.visible = is_proxy_tab
+	if use_direct_proxy_button != null:
+		use_direct_proxy_button.button_pressed = str(network_state.get("proxy_mode", "direct")) == "direct"
+	if use_system_proxy_button != null:
+		use_system_proxy_button.button_pressed = str(network_state.get("proxy_mode", "")) == "system_proxy"
+	if use_local_proxy_button != null:
+		use_local_proxy_button.button_pressed = str(network_state.get("proxy_mode", "")) == "local_proxy"
+	if proxy_action_row != null:
+		proxy_action_row.visible = is_proxy_tab
 	if play_button != null:
 		play_button.disabled = not has_station or playback_state == "playing"
 	if stop_button != null:
@@ -438,15 +525,15 @@ func _apply_detail_panel() -> void:
 		volume_slider.value = round(volume_linear * 100.0)
 		_suppress_volume_signal = false
 	if detail_text != null:
-		detail_text.text = _build_detail_text(current_station)
+		detail_text.text = _build_proxy_detail_text(network_state) if is_proxy_tab else _build_detail_text(current_station)
 	if favorite_button != null:
-		favorite_button.visible = has_station
+		favorite_button.visible = has_station and not is_proxy_tab
 		favorite_button.disabled = not has_station
 		favorite_button.text = "取消收藏当前台" if _is_station_favorited(current_station_id) else "收藏当前台"
 	if preset_label != null:
-		preset_label.visible = has_station
+		preset_label.visible = has_station and not is_proxy_tab
 	if preset_grid != null:
-		preset_grid.visible = has_station
+		preset_grid.visible = has_station and not is_proxy_tab
 		for child in preset_grid.get_children():
 			var button := child as Button
 			if button == null:
@@ -488,6 +575,34 @@ func _build_detail_text(current_station: Dictionary) -> String:
 	var error_message := str(runtime_state.get("error_message", "")).strip_edges()
 	if error_message != "":
 		lines.append("错误：%s" % error_message)
+	return "\n".join(lines)
+
+func _build_proxy_detail_text(network_state: Dictionary) -> String:
+	var lines := PackedStringArray([
+		"[b]目录网络访问[/b]",
+		"当前模式：%s" % str(network_state.get("proxy_mode_label", network_state.get("proxy_mode", "direct"))),
+		"有效代理：%s" % (
+			"%s:%d" % [str(network_state.get("proxy_host", "")), int(network_state.get("proxy_port", 0))]
+			if bool(network_state.get("proxy_enabled", false))
+			else "未启用"
+		),
+	])
+	var proxy_error := str(network_state.get("proxy_error", "")).strip_edges()
+	if proxy_error != "":
+		lines.append("代理状态：%s" % proxy_error)
+	var env_https_proxy := str(network_state.get("env_https_proxy", "")).strip_edges()
+	var env_http_proxy := str(network_state.get("env_http_proxy", "")).strip_edges()
+	if env_https_proxy != "":
+		lines.append("HTTPS_PROXY：%s" % env_https_proxy)
+	if env_http_proxy != "":
+		lines.append("HTTP_PROXY：%s" % env_http_proxy)
+	var countries_error := str(network_state.get("countries_error", "")).strip_edges()
+	if countries_error != "":
+		lines.append("国家目录错误：%s" % countries_error)
+	var stations_error := str(network_state.get("stations_error", "")).strip_edges()
+	if stations_error != "":
+		lines.append("电台目录错误：%s" % stations_error)
+	lines.append("说明：Radio Browser 目录请求在当前网络环境下更适合走代理。切换代理模式后，点击“刷新目录”即可重新拉取国家列表或当前国家电台。")
 	return "\n".join(lines)
 
 func _build_station_button_text(station: Dictionary) -> String:
@@ -559,16 +674,67 @@ func _add_placeholder_label(list_vbox: VBoxContainer, text: String) -> void:
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	list_vbox.add_child(label)
 
+func _apply_country_flag_icon(button: Button, country_code: String) -> void:
+	if button == null:
+		return
+	button.icon = _resolve_country_flag_texture(country_code)
+
+func _resolve_country_flag_texture(country_code: String) -> Texture2D:
+	var cache_key := country_code.strip_edges().to_lower()
+	if cache_key == "":
+		cache_key = "_unknown"
+	if _country_flag_texture_cache.has(cache_key):
+		return _country_flag_texture_cache.get(cache_key) as Texture2D
+	var texture := _load_country_flag_texture_from_svg(_build_country_flag_icon_path(cache_key))
+	if texture == null:
+		texture = _load_country_flag_texture_from_svg(COUNTRY_FLAG_ICON_FALLBACK_PATH)
+	_country_flag_texture_cache[cache_key] = texture
+	return texture
+
+func _build_country_flag_icon_path(country_code: String) -> String:
+	var normalized_country_code := country_code.strip_edges().to_lower()
+	if normalized_country_code.length() != 2:
+		return COUNTRY_FLAG_ICON_FALLBACK_PATH
+	return "%s/%s.svg" % [COUNTRY_FLAG_ICON_DIRECTORY, normalized_country_code]
+
+func _load_country_flag_texture_from_svg(path: String) -> Texture2D:
+	if path == "" or not FileAccess.file_exists(path):
+		return null
+	var svg_bytes := FileAccess.get_file_as_bytes(path)
+	if svg_bytes.is_empty():
+		return null
+	var image := Image.new()
+	var load_error := image.load_svg_from_buffer(svg_bytes)
+	if load_error != OK:
+		return null
+	image.resize(COUNTRY_FLAG_ICON_WIDTH, COUNTRY_FLAG_ICON_HEIGHT, Image.INTERPOLATE_LANCZOS)
+	return ImageTexture.create_from_image(image)
+
 func _on_close_button_pressed() -> void:
 	close_requested.emit()
 
 func _on_back_button_pressed() -> void:
 	browse_root_requested.emit()
 
+func _on_refresh_button_pressed() -> void:
+	catalog_refresh_requested.emit()
+
 func _on_filter_text_changed(new_text: String) -> void:
 	if _suppress_filter_signal:
 		return
 	filter_text_changed.emit(new_text)
+
+func _on_use_direct_proxy_button_pressed() -> void:
+	proxy_mode_selected.emit("direct")
+
+func _on_use_system_proxy_button_pressed() -> void:
+	proxy_mode_selected.emit("system_proxy")
+
+func _on_use_local_proxy_button_pressed() -> void:
+	proxy_mode_selected.emit("local_proxy")
+
+func _on_proxy_refresh_button_pressed() -> void:
+	catalog_refresh_requested.emit()
 
 func _on_favorite_button_pressed() -> void:
 	var current_station := _normalize_station_snapshot((_state.get("current_playing", {}) as Dictionary).get("selected_station_snapshot", {}))

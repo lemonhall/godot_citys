@@ -9,6 +9,7 @@ func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	T.install_vehicle_radio_test_scope("vehicle_radio_backend_interface_contract")
 	var backend_script := load(BACKEND_PATH)
 	if not T.require_true(self, backend_script != null, "Vehicle radio backend interface contract requires CityRadioStreamBackend.gd"):
 		return

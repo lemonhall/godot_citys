@@ -5,8 +5,72 @@ const DEFAULT_BASE_URL := "https://de1.api.radio-browser.info"
 const DEFAULT_CONNECT_TIMEOUT_MSEC := 15000
 const DEFAULT_CALL_TIMEOUT_MSEC := 20000
 const DEFAULT_MAX_BODY_BYTES := 8 * 1024 * 1024
+const PROXY_MODE_DIRECT := "direct"
+const PROXY_MODE_SYSTEM := "system_proxy"
+const PROXY_MODE_LOCAL := "local_proxy"
+const DEFAULT_LOCAL_PROXY_HOST := "127.0.0.1"
+const DEFAULT_LOCAL_PROXY_PORT := 7897
 
 var _base_url := DEFAULT_BASE_URL
+
+static var _proxy_settings := {
+	"proxy_mode": PROXY_MODE_DIRECT,
+	"local_proxy_host": DEFAULT_LOCAL_PROXY_HOST,
+	"local_proxy_port": DEFAULT_LOCAL_PROXY_PORT,
+}
+
+static func configure_proxy_settings(settings: Dictionary) -> Dictionary:
+	_proxy_settings = _normalize_proxy_settings(settings)
+	return _proxy_settings.duplicate(true)
+
+static func get_proxy_settings() -> Dictionary:
+	return resolve_proxy_settings(_proxy_settings)
+
+static func resolve_proxy_settings(settings: Dictionary = {}) -> Dictionary:
+	var normalized_settings := _normalize_proxy_settings(settings if not settings.is_empty() else _proxy_settings)
+	var proxy_mode := str(normalized_settings.get("proxy_mode", PROXY_MODE_DIRECT))
+	var local_proxy_host := str(normalized_settings.get("local_proxy_host", DEFAULT_LOCAL_PROXY_HOST)).strip_edges()
+	var local_proxy_port := int(normalized_settings.get("local_proxy_port", DEFAULT_LOCAL_PROXY_PORT))
+	var env_http_proxy := OS.get_environment("HTTP_PROXY").strip_edges()
+	var env_https_proxy := OS.get_environment("HTTPS_PROXY").strip_edges()
+	var env_all_proxy := OS.get_environment("ALL_PROXY").strip_edges()
+	var effective_enabled := false
+	var effective_host := ""
+	var effective_port := 0
+	var effective_label := "直连"
+	var effective_error := ""
+	match proxy_mode:
+		PROXY_MODE_LOCAL:
+			effective_enabled = local_proxy_host != "" and local_proxy_port > 0
+			effective_host = local_proxy_host
+			effective_port = local_proxy_port
+			effective_label = "本机代理 %s:%d" % [effective_host, effective_port]
+			if not effective_enabled:
+				effective_error = "invalid_local_proxy"
+		PROXY_MODE_SYSTEM:
+			var parsed_system_proxy := _parse_proxy_url(
+				env_https_proxy if env_https_proxy != "" else (env_http_proxy if env_http_proxy != "" else env_all_proxy)
+			)
+			effective_enabled = bool(parsed_system_proxy.get("enabled", false))
+			effective_host = str(parsed_system_proxy.get("host", ""))
+			effective_port = int(parsed_system_proxy.get("port", 0))
+			effective_label = "系统代理"
+			effective_error = str(parsed_system_proxy.get("error", ""))
+		_:
+			proxy_mode = PROXY_MODE_DIRECT
+	return {
+		"proxy_mode": proxy_mode,
+		"local_proxy_host": local_proxy_host,
+		"local_proxy_port": local_proxy_port,
+		"enabled": effective_enabled,
+		"host": effective_host,
+		"port": effective_port,
+		"effective_label": effective_label,
+		"effective_error": effective_error,
+		"env_http_proxy": env_http_proxy,
+		"env_https_proxy": env_https_proxy,
+		"env_all_proxy": env_all_proxy,
+	}
 
 func _init(base_url: String = DEFAULT_BASE_URL) -> void:
 	_base_url = base_url.strip_edges()
@@ -62,6 +126,7 @@ func _request_json_array(request_path: String) -> Dictionary:
 		}
 	var request_target := _combine_request_target(str(endpoint.get("base_path", "")), request_path)
 	var client := HTTPClient.new()
+	_apply_proxy_settings(client)
 	var tls_options: TLSOptions = TLSOptions.client() if bool(endpoint.get("use_tls", true)) else null
 	var connect_error := client.connect_to_host(
 		str(endpoint.get("host", "")),
@@ -249,3 +314,72 @@ func _combine_request_target(base_path: String, request_path: String) -> String:
 	if normalized_base.ends_with("/"):
 		normalized_base = normalized_base.trim_suffix("/")
 	return normalized_base + normalized_request
+
+func _apply_proxy_settings(client: HTTPClient) -> void:
+	if client == null:
+		return
+	var proxy_settings := get_proxy_settings()
+	if not bool(proxy_settings.get("enabled", false)):
+		return
+	var proxy_host := str(proxy_settings.get("host", "")).strip_edges()
+	var proxy_port := int(proxy_settings.get("port", 0))
+	if proxy_host == "" or proxy_port <= 0:
+		return
+	client.set_http_proxy(proxy_host, proxy_port)
+	client.set_https_proxy(proxy_host, proxy_port)
+
+static func _normalize_proxy_settings(settings: Dictionary) -> Dictionary:
+	var proxy_mode := str(settings.get("proxy_mode", PROXY_MODE_DIRECT)).strip_edges()
+	if proxy_mode not in [PROXY_MODE_DIRECT, PROXY_MODE_SYSTEM, PROXY_MODE_LOCAL]:
+		proxy_mode = PROXY_MODE_DIRECT
+	var local_proxy_host := str(settings.get("local_proxy_host", DEFAULT_LOCAL_PROXY_HOST)).strip_edges()
+	if local_proxy_host == "":
+		local_proxy_host = DEFAULT_LOCAL_PROXY_HOST
+	var local_proxy_port := int(settings.get("local_proxy_port", DEFAULT_LOCAL_PROXY_PORT))
+	if local_proxy_port <= 0:
+		local_proxy_port = DEFAULT_LOCAL_PROXY_PORT
+	return {
+		"proxy_mode": proxy_mode,
+		"local_proxy_host": local_proxy_host,
+		"local_proxy_port": local_proxy_port,
+	}
+
+static func _parse_proxy_url(proxy_url: String) -> Dictionary:
+	var raw_proxy_url := proxy_url.strip_edges()
+	if raw_proxy_url == "":
+		return {
+			"enabled": false,
+			"host": "",
+			"port": 0,
+			"error": "missing_system_proxy",
+		}
+	if raw_proxy_url.begins_with("https://"):
+		raw_proxy_url = raw_proxy_url.trim_prefix("https://")
+	elif raw_proxy_url.begins_with("http://"):
+		raw_proxy_url = raw_proxy_url.trim_prefix("http://")
+	var slash_index := raw_proxy_url.find("/")
+	if slash_index >= 0:
+		raw_proxy_url = raw_proxy_url.substr(0, slash_index)
+	var at_index := raw_proxy_url.rfind("@")
+	if at_index >= 0 and at_index < raw_proxy_url.length() - 1:
+		raw_proxy_url = raw_proxy_url.substr(at_index + 1)
+	var host := raw_proxy_url
+	var port := 0
+	var colon_index := raw_proxy_url.rfind(":")
+	if colon_index > 0 and colon_index < raw_proxy_url.length() - 1:
+		host = raw_proxy_url.substr(0, colon_index)
+		port = raw_proxy_url.substr(colon_index + 1).to_int()
+	host = host.strip_edges()
+	if host == "" or port <= 0:
+		return {
+			"enabled": false,
+			"host": "",
+			"port": 0,
+			"error": "invalid_system_proxy",
+		}
+	return {
+		"enabled": true,
+		"host": host,
+		"port": port,
+		"error": "",
+	}

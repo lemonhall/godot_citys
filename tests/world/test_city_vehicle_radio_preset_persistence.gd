@@ -30,6 +30,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, store.has_method("load_session_state"), "Vehicle radio preset persistence contract requires load_session_state()"):
 		return
+	if not T.require_true(self, store_script.has_method("install_test_scope"), "Vehicle radio preset persistence contract requires install_test_scope() so headless tests do not pollute the real runtime user state"):
+		return
+	if not T.require_true(self, store_script.has_method("clear_test_scope"), "Vehicle radio preset persistence contract requires clear_test_scope() so user-state tests can restore the default root"):
+		return
 
 	var presets_path := str(store.build_presets_path())
 	var favorites_path := str(store.build_favorites_path())
@@ -43,6 +47,17 @@ func _run() -> void:
 		return
 	if not T.require_true(self, session_path == "user://radio/session_state.json", "Session state path must freeze to user://radio/session_state.json"):
 		return
+	store_script.install_test_scope("preset_persistence")
+	var scoped_store = store_script.new()
+	if not T.require_true(self, str(scoped_store.build_presets_path()) == "user://radio/test_scopes/preset_persistence/presets.json", "User-state test scope must redirect preset writes away from the real runtime root"):
+		return
+	if not T.require_true(self, str(scoped_store.build_session_state_path()) == "user://radio/test_scopes/preset_persistence/session_state.json", "User-state test scope must redirect session writes away from the real runtime root"):
+		return
+	store = scoped_store
+	presets_path = str(store.build_presets_path())
+	favorites_path = str(store.build_favorites_path())
+	recents_path = str(store.build_recents_path())
+	session_path = str(store.build_session_state_path())
 
 	var station_snapshot := {
 		"station_id": "station:cn:1",
@@ -60,6 +75,10 @@ func _run() -> void:
 		"power_state": "on",
 		"selected_station_snapshot": station_snapshot.duplicate(true),
 		"selected_station_id": "station:cn:1",
+		"browser_selected_country_code": "JP",
+		"browser_selected_tab_id": "proxy",
+		"browser_filter_text": "news",
+		"catalog_proxy_mode": "local_proxy",
 	}
 
 	if not T.require_true(self, bool(store.save_presets(presets, 100).get("success", false)), "Preset save must succeed"):
@@ -102,6 +121,14 @@ func _run() -> void:
 	var loaded_session: Dictionary = store.load_session_state()
 	var session_snapshot: Dictionary = loaded_session.get("selected_station_snapshot", {}) as Dictionary
 	if not T.require_true(self, str(session_snapshot.get("station_name", "")) == "Xi'an Traffic FM", "Session state persistence must preserve the original selected station snapshot"):
+		return
+	if not T.require_true(self, str(loaded_session.get("browser_selected_country_code", "")) == "JP", "Session state persistence must preserve the last selected browser country so reopening the radio browser stays in context"):
+		return
+	if not T.require_true(self, str(loaded_session.get("browser_selected_tab_id", "")) == "proxy", "Session state persistence must preserve the last selected browser tab so the proxy page can be revisited after restart"):
+		return
+	if not T.require_true(self, str(loaded_session.get("browser_filter_text", "")) == "news", "Session state persistence must preserve the last browser filter text"):
+		return
+	if not T.require_true(self, str(loaded_session.get("catalog_proxy_mode", "")) == "local_proxy", "Session state persistence must preserve the selected catalog proxy mode"):
 		return
 
 	if not _require_pretty_json(presets_path):

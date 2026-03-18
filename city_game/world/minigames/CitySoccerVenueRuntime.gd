@@ -22,12 +22,12 @@ const MATCH_AI_TOUCH_LIFT_MPS := 1.25
 const MATCH_AI_NEUTRAL_ZONE_BUFFER_M := 8.0
 const MATCH_AI_POSSESSION_WINDOW_SEC := 1.45
 const MATCH_AI_POSSESSION_BREAK_ADVANTAGE_M := 0.72
-const MATCH_AI_SHOT_DISTANCE_WINDOW_M := 26.0
+const MATCH_AI_SHOT_DISTANCE_WINDOW_M := 21.5
 const MATCH_AI_PROGRESS_DISTANCE_WINDOW_M := 36.0
 const MATCH_AI_SHOT_TOUCH_COOLDOWN_SEC := 0.82
 const MATCH_AI_KICKOFF_PROTECTION_SEC := 2.2
-const MATCH_GOALKEEPER_SECURE_BALL_SPEED_MAX_MPS := 10.5
-const MATCH_GOALKEEPER_SECURE_TOUCH_RADIUS_M := 2.95
+const MATCH_GOALKEEPER_SECURE_BALL_SPEED_MAX_MPS := 11.2
+const MATCH_GOALKEEPER_SECURE_TOUCH_RADIUS_M := 3.08
 const MATCH_GOALKEEPER_SECURE_HOLD_SEC := 0.72
 const MATCH_GOALKEEPER_DISTRIBUTION_WINDUP_SEC := 0.12
 const MATCH_GOALKEEPER_CONTROL_BALL_HEIGHT_M := 1.55
@@ -66,6 +66,12 @@ var _last_ai_touch_cooldown_sec := 0.0
 var _ai_possession_team_id := ""
 var _ai_possession_player_id := ""
 var _ai_possession_timer_sec := 0.0
+var _ai_touch_streak_team_id := ""
+var _ai_touch_streak_player_id := ""
+var _ai_touch_streak_count := 0
+var _ai_carry_streak_team_id := ""
+var _ai_carry_streak_player_id := ""
+var _ai_carry_streak_count := 0
 var _kickoff_team_id := "home"
 var _kickoff_protection_timer_sec := 0.0
 var _pending_restart_team_id := ""
@@ -79,6 +85,7 @@ var _goalkeeper_control_state := {
 }
 var _match_rng := RandomNumberGenerator.new()
 var _match_seed := 0
+var _forced_match_seed := 0
 var _ai_debug_state := {
 	"kick_count": 0,
 	"pass_count": 0,
@@ -235,6 +242,7 @@ func debug_set_ball_state(chunk_renderer: Node, world_position: Vector3, linear_
 		rigid_ball.sleeping = linear_velocity.length_squared() <= 0.0001 and angular_velocity.length_squared() <= 0.0001
 	_last_ai_touch_cooldown_sec = 0.0
 	_clear_ai_possession()
+	_clear_ai_touch_streaks()
 	_clear_goalkeeper_control()
 	_last_ball_world_position = world_position
 	if _game_state == "idle" and (linear_velocity.length() > 0.0 or world_position.distance_to(_resolve_kickoff_anchor(entry, _resolve_mounted_venue(chunk_renderer, entry)) + _kickoff_ball_offset) > 0.05):
@@ -256,6 +264,7 @@ func debug_force_reset_ball(chunk_renderer: Node) -> Dictionary:
 		return {"success": false, "error": "missing_ball"}
 	_last_ai_touch_cooldown_sec = 0.0
 	_clear_ai_possession()
+	_clear_ai_touch_streaks()
 	_clear_goalkeeper_control()
 	_perform_ball_reset(ball_node, _resolve_kickoff_anchor(entry, _resolve_mounted_venue(chunk_renderer, entry)))
 	_set_game_state("idle", 0.0)
@@ -267,12 +276,20 @@ func debug_force_reset_ball(chunk_renderer: Node) -> Dictionary:
 func notify_manual_ball_interaction() -> Dictionary:
 	_last_ai_touch_cooldown_sec = 0.32
 	_clear_ai_possession()
+	_clear_ai_touch_streaks()
 	_clear_goalkeeper_control()
 	_set_game_state("in_play", 0.0)
 	_sync_ai_control_debug_state()
 	return {
 		"success": true,
 		"game_state": _game_state,
+	}
+
+func debug_set_match_seed(seed: int) -> Dictionary:
+	_forced_match_seed = maxi(seed, 0)
+	return {
+		"success": true,
+		"match_seed": _forced_match_seed,
 	}
 
 func debug_set_match_clock_remaining_sec(seconds: float) -> Dictionary:
@@ -330,6 +347,7 @@ func _reset_runtime_state() -> void:
 	_winner_side = ""
 	_last_ai_touch_cooldown_sec = 0.0
 	_clear_ai_possession()
+	_clear_ai_touch_streaks()
 	_kickoff_team_id = "home"
 	_kickoff_protection_timer_sec = 0.0
 	_pending_restart_team_id = ""
@@ -337,6 +355,7 @@ func _reset_runtime_state() -> void:
 	_clear_goalkeeper_control()
 	_match_rng.seed = 0
 	_match_seed = 0
+	_forced_match_seed = 0
 	_ai_debug_state = {
 		"kick_count": 0,
 		"pass_count": 0,
@@ -631,6 +650,7 @@ func _start_match(ball_node: Node3D, kickoff_anchor: Vector3) -> void:
 	_match_clock_tick_accumulator_sec = 0.0
 	_last_ai_touch_cooldown_sec = 0.0
 	_clear_ai_possession()
+	_clear_ai_touch_streaks()
 	_match_session_serial += 1
 	_seed_match_rng()
 	_match_team_profiles = _build_match_team_profiles(_match_session_serial)
@@ -854,7 +874,7 @@ func _resolve_match_player_profile(player_contract: Dictionary) -> Dictionary:
 			"carry_bias_x": 0.0,
 			"ball_security_bias": 0.02,
 			"tackle_bias": 0.0,
-			"keeper_claim_bias": 0.18,
+			"keeper_claim_bias": 0.24,
 			"pass_bias": 0.0,
 			"pass_speed_scale": 1.0,
 			"stamina_recovery_per_sec": 0.22,
@@ -1314,6 +1334,7 @@ func _begin_goalkeeper_ball_control(ball_node: Node3D, mounted_venue: Node3D, ca
 	_ai_possession_team_id = team_id
 	_ai_possession_player_id = player_id
 	_ai_possession_timer_sec = MATCH_GOALKEEPER_SECURE_HOLD_SEC + 0.35
+	_record_ai_touch(team_id, player_id, "secure_ball")
 	_ai_debug_state["last_touch_player_id"] = player_id
 	_ai_debug_state["last_touch_team_id"] = team_id
 	_ai_debug_state["last_touch_role_id"] = "goalkeeper"
@@ -1364,6 +1385,7 @@ func _apply_goalkeeper_distribution(ball_node: Node3D, mounted_venue: Node3D, pl
 	_ai_possession_team_id = team_id
 	_ai_possession_player_id = player_id
 	_ai_possession_timer_sec = 0.42
+	_record_ai_touch(team_id, player_id, "distribute_ball")
 	_ai_debug_state["kick_count"] = int(_ai_debug_state.get("kick_count", 0)) + 1
 	_ai_debug_state["last_touch_player_id"] = player_id
 	_ai_debug_state["last_touch_team_id"] = team_id
@@ -1410,10 +1432,12 @@ func _resolve_best_ai_touch_candidate(best_candidates_by_team: Dictionary, ball_
 				var possession_stamina_norm := clampf(float(possession_state.get("stamina_norm", 1.0)), 0.18, 1.0)
 				var challenger_stamina_norm := clampf(float(challenger_state.get("stamina_norm", 1.0)), 0.18, 1.0)
 				var possession_lock_norm := clampf(_ai_possession_timer_sec / MATCH_AI_POSSESSION_WINDOW_SEC, 0.0, 1.0)
+				var possession_carry_penalty_norm := _resolve_player_carry_streak_norm(_ai_possession_team_id, _ai_possession_player_id)
 				var hold_margin_m := 1.1 \
 					+ maxf(float(possession_profile.get("ball_security_bias", 0.0)), 0.0) * 1.7 \
 					+ (possession_stamina_norm - challenger_stamina_norm) * 0.28 \
-					+ possession_lock_norm * 0.35
+					+ possession_lock_norm * 0.35 \
+					- possession_carry_penalty_norm * 0.22
 				if float(challenger_candidate.get("distance_m", INF)) + hold_margin_m >= float(possession_candidate.get("distance_m", INF)):
 					return possession_candidate
 				if _candidate_should_break_possession(challenger_candidate, possession_candidate, ball_local_position):
@@ -1452,10 +1476,12 @@ func _candidate_should_break_possession(challenger_candidate: Dictionary, posses
 	var challenger_stamina_norm := clampf(float(challenger_state.get("stamina_norm", 1.0)), 0.18, 1.0)
 	var possession_stamina_norm := clampf(float(possession_state.get("stamina_norm", 1.0)), 0.18, 1.0)
 	var possession_lock_norm := clampf(_ai_possession_timer_sec / MATCH_AI_POSSESSION_WINDOW_SEC, 0.0, 1.0)
+	var possession_carry_penalty_norm := _resolve_player_carry_streak_norm(_ai_possession_team_id, _ai_possession_player_id)
 	var possession_advantage_m := MATCH_AI_POSSESSION_BREAK_ADVANTAGE_M \
 		+ maxf(float(possession_profile.get("ball_security_bias", 0.0)), 0.0) * 1.35 \
 		+ (possession_stamina_norm - challenger_stamina_norm) * 0.34 \
-		+ possession_lock_norm * 0.42
+		+ possession_lock_norm * 0.42 \
+		- possession_carry_penalty_norm * 0.26
 	if challenger_distance_m + possession_advantage_m >= possession_distance_m:
 		return false
 	var press_bonus := 0.0
@@ -1476,7 +1502,8 @@ func _candidate_should_break_possession(challenger_candidate: Dictionary, posses
 		+ zone_bonus \
 		+ (possession_distance_m - challenger_distance_m) * 0.2 \
 		+ (challenger_stamina_norm - possession_stamina_norm) * 0.18 \
-		- possession_lock_norm * 0.12
+		- possession_lock_norm * 0.12 \
+		+ possession_carry_penalty_norm * 0.09
 	if possession_is_in_shot_window:
 		break_probability -= 0.22
 	return _roll_match_chance(clampf(break_probability, 0.02, 0.42 if not possession_is_in_shot_window else 0.18))
@@ -1509,10 +1536,13 @@ func _apply_ai_touch(ball_node: Node3D, mounted_venue: Node3D, player_contract: 
 	var touch_cooldown_sec := MATCH_AI_SHOT_TOUCH_COOLDOWN_SEC if is_shot_attempt else 0.42
 	if intent_kind == "collapse_defense":
 		touch_cooldown_sec = 0.36
+	elif action_kind == "pass_ball":
+		touch_cooldown_sec = 0.34
 	_last_ai_touch_cooldown_sec = touch_cooldown_sec
 	_ai_possession_team_id = team_id
 	_ai_possession_player_id = player_id
 	_ai_possession_timer_sec = MATCH_AI_POSSESSION_WINDOW_SEC
+	_record_ai_touch(team_id, player_id, action_kind)
 	_ai_debug_state["kick_count"] = int(_ai_debug_state.get("kick_count", 0)) + 1
 	if action_kind == "pass_ball":
 		_ai_debug_state["pass_count"] = int(_ai_debug_state.get("pass_count", 0)) + 1
@@ -1527,11 +1557,13 @@ func _resolve_ai_touch_plan(mounted_venue: Node3D, player_contract: Dictionary, 
 	var role_id := str(player_contract.get("role_id", "field_player"))
 	var opponent_goal_center := _resolve_opponent_goal_local_center(mounted_venue, team_id)
 	var is_shot_attempt := _is_ai_shot_window(team_id, ball_local_position, opponent_goal_center)
-	if role_id != "goalkeeper" and not is_shot_attempt:
-		var pass_plan := _maybe_resolve_ai_pass_plan(player_contract, player_state, player_profile, ball_local_position)
-		if not pass_plan.is_empty():
-			pass_plan["is_shot_attempt"] = false
-			return pass_plan
+	if role_id != "goalkeeper":
+		var carry_streak_count := _resolve_player_carry_streak(team_id, str(player_contract.get("player_id", "")))
+		if not is_shot_attempt or carry_streak_count >= 3:
+			var pass_plan := _maybe_resolve_ai_pass_plan(player_contract, player_state, player_profile, ball_local_position)
+			if not pass_plan.is_empty():
+				pass_plan["is_shot_attempt"] = false
+				return pass_plan
 	return {
 		"action_kind": "shot_ball" if is_shot_attempt else "carry_ball",
 		"direction": _resolve_ai_kick_direction(mounted_venue, player_contract, player_state, player_profile, ball_local_position, intent_kind),
@@ -1541,43 +1573,69 @@ func _resolve_ai_touch_plan(mounted_venue: Node3D, player_contract: Dictionary, 
 
 func _maybe_resolve_ai_pass_plan(player_contract: Dictionary, player_state: Dictionary, player_profile: Dictionary, ball_local_position: Vector3) -> Dictionary:
 	var team_id := str(player_contract.get("team_id", "home"))
+	var player_id := str(player_contract.get("player_id", ""))
 	if _ai_possession_team_id != team_id or _ai_possession_timer_sec <= 0.0:
 		return {}
-	var pass_target := _resolve_best_ai_pass_target(player_contract, ball_local_position)
+	var team_ball_zone := _resolve_team_ball_zone(team_id, ball_local_position)
+	var carry_streak_count := _resolve_player_carry_streak(team_id, player_id)
+	var carry_streak_norm := _resolve_player_carry_streak_norm(team_id, player_id)
+	var pass_target := _resolve_best_ai_pass_target(player_contract, ball_local_position, team_ball_zone, carry_streak_count)
 	if pass_target.is_empty():
 		return {}
 	var stamina_norm := clampf(float(player_state.get("stamina_norm", 1.0)), 0.18, 1.0)
 	var pass_probability := 0.08 \
 		+ float(player_profile.get("pass_bias", 0.0)) \
-		+ (0.7 - stamina_norm) * 0.12
-	var team_ball_zone := _resolve_team_ball_zone(team_id, ball_local_position)
+		+ (0.7 - stamina_norm) * 0.12 \
+		+ carry_streak_norm * 0.18
 	if team_ball_zone == "defensive":
 		pass_probability += 0.18
 	elif team_ball_zone == "neutral":
-		pass_probability += 0.1
-	pass_probability += clampf(float(pass_target.get("forward_progress_m", 0.0)) / 24.0, 0.0, 0.18)
+		pass_probability += 0.18
+	pass_probability += clampf(float(pass_target.get("forward_progress_m", 0.0)) / 24.0, 0.0, 0.2)
 	pass_probability += clampf((float(pass_target.get("openness_m", 0.0)) - 4.0) / 12.0, 0.0, 0.12)
-	if not _roll_match_chance(clampf(pass_probability, 0.05, 0.52)):
+	if float(pass_target.get("forward_progress_m", 0.0)) >= 5.0:
+		pass_probability += 0.08
+	if carry_streak_count >= 3:
+		pass_probability += 0.08
+	if not _roll_match_chance(clampf(pass_probability, 0.05, 0.7)):
 		return {}
 	var pass_target_position: Vector3 = pass_target.get("local_position", ball_local_position)
 	var attack_direction_z := _get_attack_direction_z(team_id)
-	var lead_distance_m := clampf(float(pass_target.get("distance_m", 0.0)) * 0.18, 1.4, 3.8)
+	var lead_scale := 0.18
+	if team_ball_zone == "neutral":
+		lead_scale = 0.22
+	elif team_ball_zone == "defensive":
+		lead_scale = 0.2
+	var lead_distance_m := clampf(float(pass_target.get("distance_m", 0.0)) * lead_scale, 1.4, 4.2)
 	var pass_direction := pass_target_position + Vector3(0.0, 0.0, attack_direction_z * lead_distance_m) - ball_local_position
 	pass_direction.y = 0.0
 	if pass_direction.length_squared() <= 0.0001:
 		return {}
+	var base_pass_speed_mps := 14.6
+	if team_ball_zone == "defensive":
+		base_pass_speed_mps = 15.0
+	elif team_ball_zone == "neutral":
+		base_pass_speed_mps = 15.5
+	base_pass_speed_mps += carry_streak_norm * 0.5
 	return {
 		"action_kind": "pass_ball",
 		"direction": pass_direction.normalized(),
-		"speed_mps": 13.8 * clampf(float(player_profile.get("pass_speed_scale", 1.0)), 0.94, 1.08),
+		"speed_mps": base_pass_speed_mps * clampf(float(player_profile.get("pass_speed_scale", 1.0)), 0.94, 1.08),
 	}
 
-func _resolve_best_ai_pass_target(player_contract: Dictionary, ball_local_position: Vector3) -> Dictionary:
+func _resolve_best_ai_pass_target(player_contract: Dictionary, ball_local_position: Vector3, team_ball_zone: String, carry_streak_count: int) -> Dictionary:
 	var team_id := str(player_contract.get("team_id", "home"))
 	var player_id := str(player_contract.get("player_id", ""))
 	var attack_direction_z := _get_attack_direction_z(team_id)
 	var best_target := {}
 	var best_score := -INF
+	var minimum_pass_distance_m := 7.0
+	var minimum_forward_progress_m := 1.5
+	if team_ball_zone == "defensive":
+		minimum_forward_progress_m = 0.8
+	if carry_streak_count >= 2:
+		minimum_pass_distance_m = 5.8
+		minimum_forward_progress_m = minf(minimum_forward_progress_m, 0.8)
 	for teammate_contract_variant in _match_player_contracts:
 		var teammate_contract: Dictionary = teammate_contract_variant
 		if str(teammate_contract.get("team_id", "")) != team_id:
@@ -1591,10 +1649,10 @@ func _resolve_best_ai_pass_target(player_contract: Dictionary, ball_local_positi
 		var teammate_local_position: Vector3 = teammate_state.get("local_position", teammate_contract.get("local_anchor_position", Vector3.ZERO))
 		var pass_vector := teammate_local_position - ball_local_position
 		var pass_distance_m := Vector2(pass_vector.x, pass_vector.z).length()
-		if pass_distance_m < 7.0 or pass_distance_m > 30.0:
+		if pass_distance_m < minimum_pass_distance_m or pass_distance_m > 30.0:
 			continue
 		var forward_progress_m := (teammate_local_position.z - ball_local_position.z) * attack_direction_z
-		if forward_progress_m < 1.5:
+		if forward_progress_m < minimum_forward_progress_m:
 			continue
 		var openness_m := INF
 		for opponent_contract_variant in _match_player_contracts:
@@ -1672,6 +1730,7 @@ func _resolve_ai_kick_speed_mps(mounted_venue: Node3D, player_contract: Dictiona
 	var kick_speed_scale := float(player_profile.get("kick_speed_scale", 1.0))
 	var stamina_norm := clampf(float(player_state.get("stamina_norm", 1.0)), 0.18, 1.0)
 	var progression_scale := lerpf(0.9, 1.08, clampf((stamina_norm - 0.18) / 0.82, 0.0, 1.0))
+	var carry_streak_norm := _resolve_player_carry_streak_norm(team_id, str(player_contract.get("player_id", "")))
 	if role_id == "goalkeeper" or intent_kind == "goalkeeper_intercept":
 		return 12.4 * kick_speed_scale
 	if intent_kind == "collapse_defense":
@@ -1682,9 +1741,9 @@ func _resolve_ai_kick_speed_mps(mounted_venue: Node3D, player_contract: Dictiona
 		opponent_goal_center.z - ball_local_position.z
 	).length()
 	if _is_ai_shot_window(team_id, ball_local_position, opponent_goal_center):
-		return 15.4 * kick_speed_scale * progression_scale
+		return 13.9 * kick_speed_scale * progression_scale * lerpf(1.0, 0.92, carry_streak_norm)
 	if goal_distance_m <= MATCH_AI_PROGRESS_DISTANCE_WINDOW_M:
-		return 12.4 * kick_speed_scale * progression_scale
+		return 12.4 * kick_speed_scale * progression_scale * lerpf(1.0, 0.96, carry_streak_norm)
 	return 13.6 * kick_speed_scale * progression_scale
 
 func _is_ai_shot_window(team_id: String, ball_local_position: Vector3, target_goal_center: Vector3) -> bool:
@@ -1694,15 +1753,57 @@ func _is_ai_shot_window(team_id: String, ball_local_position: Vector3, target_go
 		target_goal_center.x - ball_local_position.x,
 		target_goal_center.z - ball_local_position.z
 	).length()
-	return goal_distance_m <= MATCH_AI_SHOT_DISTANCE_WINDOW_M and absf(ball_local_position.x) <= MATCH_GOAL_WIDTH_FALLBACK_M * 1.55
+	return goal_distance_m <= MATCH_AI_SHOT_DISTANCE_WINDOW_M and absf(ball_local_position.x) <= MATCH_GOAL_WIDTH_FALLBACK_M * 1.22
 
 func _clear_ai_possession() -> void:
 	_ai_possession_team_id = ""
 	_ai_possession_player_id = ""
 	_ai_possession_timer_sec = 0.0
 
+func _clear_ai_touch_streaks() -> void:
+	_ai_touch_streak_team_id = ""
+	_ai_touch_streak_player_id = ""
+	_ai_touch_streak_count = 0
+	_ai_carry_streak_team_id = ""
+	_ai_carry_streak_player_id = ""
+	_ai_carry_streak_count = 0
+
+func _record_ai_touch(team_id: String, player_id: String, action_kind: String) -> void:
+	if team_id != "" and player_id != "" and team_id == _ai_touch_streak_team_id and player_id == _ai_touch_streak_player_id:
+		_ai_touch_streak_count += 1
+	elif team_id != "" and player_id != "":
+		_ai_touch_streak_count = 1
+	else:
+		_ai_touch_streak_count = 0
+	_ai_touch_streak_team_id = team_id
+	_ai_touch_streak_player_id = player_id
+	if action_kind == "carry_ball":
+		if team_id != "" and player_id != "" and team_id == _ai_carry_streak_team_id and player_id == _ai_carry_streak_player_id:
+			_ai_carry_streak_count += 1
+		elif team_id != "" and player_id != "":
+			_ai_carry_streak_count = 1
+		else:
+			_ai_carry_streak_count = 0
+		_ai_carry_streak_team_id = team_id
+		_ai_carry_streak_player_id = player_id
+		return
+	_ai_carry_streak_team_id = ""
+	_ai_carry_streak_player_id = ""
+	_ai_carry_streak_count = 0
+
+func _resolve_player_carry_streak(team_id: String, player_id: String) -> int:
+	if team_id == "" or player_id == "":
+		return 0
+	if team_id != _ai_carry_streak_team_id or player_id != _ai_carry_streak_player_id:
+		return 0
+	return _ai_carry_streak_count
+
+func _resolve_player_carry_streak_norm(team_id: String, player_id: String) -> float:
+	return clampf(float(maxi(_resolve_player_carry_streak(team_id, player_id) - 1, 0)) / 3.0, 0.0, 1.0)
+
 func _arm_match_restart(restart_team_id: String) -> void:
 	_clear_ai_possession()
+	_clear_ai_touch_streaks()
 	_clear_goalkeeper_control()
 	_last_ai_touch_cooldown_sec = 0.0
 	_kickoff_team_id = restart_team_id if restart_team_id != "" else _kickoff_team_id
@@ -1740,6 +1841,10 @@ func _build_match_team_profiles(match_session_serial: int) -> Dictionary:
 	}
 
 func _seed_match_rng() -> void:
+	if _forced_match_seed > 0:
+		_match_seed = _forced_match_seed
+		_match_rng.seed = _match_seed
+		return
 	var tick_seed := Time.get_ticks_usec()
 	var unix_seed := int(Time.get_unix_time_from_system() * 1000000.0)
 	var seed_source := "%s:%d:%d:%d" % [_active_venue_id, _match_session_serial, tick_seed, unix_seed]

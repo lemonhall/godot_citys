@@ -5,6 +5,7 @@ const T := preload("res://tests/_test_util.gd")
 const SOCCER_CHUNK_ID := "chunk_129_139"
 const SOCCER_VENUE_ID := "venue:v26:soccer_pitch:chunk_129_139"
 const SOCCER_WORLD_POSITION := Vector3(-1877.94, 2.52, 618.57)
+const MATCH_DEBUG_SEED := 424242
 const LIVE_OBSERVATION_FRAMES := 360
 const NEUTRAL_ZONE_Z_M := 8.0
 const MAX_NEUTRAL_IN_PLAY_FRAMES := 180
@@ -28,6 +29,11 @@ func _run() -> void:
 	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "Soccer match live progression contract requires Player teleport API"):
 		return
 	if not T.require_true(self, world.has_method("debug_set_soccer_ball_state"), "Soccer match live progression contract requires deterministic ball placement"):
+		return
+	if not T.require_true(self, world.has_method("debug_set_soccer_match_seed"), "Soccer match live progression contract requires deterministic match seed control"):
+		return
+	var seed_result: Dictionary = world.debug_set_soccer_match_seed(MATCH_DEBUG_SEED)
+	if not T.require_true(self, bool(seed_result.get("success", false)), "Soccer match live progression contract must allow locking a deterministic match seed before kickoff"):
 		return
 
 	player.teleport_to_world_position(SOCCER_WORLD_POSITION + Vector3(0.0, 2.0, 10.0))

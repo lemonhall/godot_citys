@@ -2041,6 +2041,14 @@ func debug_force_soccer_ball_reset() -> Dictionary:
 		}
 	return _soccer_venue_runtime.debug_force_reset_ball(chunk_renderer)
 
+func debug_set_soccer_match_seed(seed: int) -> Dictionary:
+	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("debug_set_match_seed"):
+		return {
+			"success": false,
+			"error": "runtime_unavailable",
+		}
+	return _soccer_venue_runtime.debug_set_match_seed(seed)
+
 func debug_set_soccer_match_clock_remaining_sec(seconds: float) -> Dictionary:
 	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("debug_set_match_clock_remaining_sec"):
 		return {

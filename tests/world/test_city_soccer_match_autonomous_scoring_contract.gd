@@ -9,6 +9,7 @@ const T := preload("res://tests/_test_util.gd")
 const SOCCER_CHUNK_ID := "chunk_129_139"
 const SOCCER_VENUE_ID := "venue:v26:soccer_pitch:chunk_129_139"
 const SOCCER_WORLD_POSITION := Vector3(-1877.94, 2.52, 618.57)
+const MATCH_DEBUG_SEED := 424242
 const AUTONOMOUS_GOAL_TIMEOUT_FRAMES := 1800
 
 func _init() -> void:
@@ -29,9 +30,14 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("debug_set_soccer_ball_state"), "Soccer match autonomous scoring contract requires deterministic center-ball setup"):
 		return
+	if not T.require_true(self, world.has_method("debug_set_soccer_match_seed"), "Soccer match autonomous scoring contract requires deterministic match seed control"):
+		return
 	if not T.require_true(self, world.has_method("debug_set_soccer_match_clock_remaining_sec"), "Soccer match autonomous scoring contract requires deterministic clock override"):
 		return
 	if not T.require_true(self, world.has_method("debug_advance_soccer_match_time"), "Soccer match autonomous scoring contract requires deterministic time advancement"):
+		return
+	var seed_result: Dictionary = world.debug_set_soccer_match_seed(MATCH_DEBUG_SEED)
+	if not T.require_true(self, bool(seed_result.get("success", false)), "Soccer match autonomous scoring contract must allow locking a deterministic match seed before kickoff"):
 		return
 
 	player.teleport_to_world_position(SOCCER_WORLD_POSITION + Vector3(0.0, 2.0, 10.0))

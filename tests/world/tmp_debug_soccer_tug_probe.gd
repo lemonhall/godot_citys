@@ -3,6 +3,7 @@ extends SceneTree
 const SOCCER_CHUNK_ID := "chunk_129_139"
 const SOCCER_VENUE_ID := "venue:v26:soccer_pitch:chunk_129_139"
 const SOCCER_WORLD_POSITION := Vector3(-1877.94, 2.52, 618.57)
+const MATCH_DEBUG_SEED := 424242
 
 func _init() -> void:
 	call_deferred("_run")
@@ -12,6 +13,7 @@ func _run() -> void:
 	var world := (scene as PackedScene).instantiate()
 	root.add_child(world)
 	await process_frame
+	world.debug_set_soccer_match_seed(MATCH_DEBUG_SEED)
 	var player := world.get_node("Player")
 	player.teleport_to_world_position(SOCCER_WORLD_POSITION + Vector3(0.0, 2.0, 10.0))
 	var mounted_venue: Node3D = await _wait_for_mounted_venue(world)
@@ -29,6 +31,8 @@ func _run() -> void:
 	var max_abs_z := 0.0
 	var last_team := ""
 	var team_switches := 0
+	var last_kick_count := -1
+	var last_pass_count := -1
 	for frame_idx in range(720):
 		await physics_frame
 		await process_frame
@@ -47,11 +51,28 @@ func _run() -> void:
 		if game_state == "in_play":
 			in_play_frames += 1
 		var ai_debug: Dictionary = runtime_state.get("ai_debug_state", {})
+		var kick_count := int(ai_debug.get("kick_count", 0))
+		var pass_count := int(ai_debug.get("pass_count", 0))
 		var touch_team := str(ai_debug.get("last_touch_team_id", ""))
 		if touch_team != "" and last_team != "" and touch_team != last_team:
 			team_switches += 1
 		if touch_team != "":
 			last_team = touch_team
+		if kick_count != last_kick_count or pass_count != last_pass_count:
+			print(
+				"EVENT frame=", frame_idx,
+				" state=", game_state,
+				" score=", home_score, ":", away_score,
+				" ball_local=", ball_local,
+				" kick=", kick_count,
+				" pass=", pass_count,
+				" action=", ai_debug.get("last_touch_action_kind", ""),
+				" team=", touch_team,
+				" player=", ai_debug.get("last_touch_player_id", ""),
+				" control=", ai_debug.get("control_team_id", ""), "/", ai_debug.get("control_player_id", "")
+			)
+			last_kick_count = kick_count
+			last_pass_count = pass_count
 		if frame_idx % 30 == 0:
 			print("FRAME ", frame_idx, " STATE ", game_state, " SCORE ", home_score, ":", away_score, " BALL_LOCAL ", ball_local, " MAX_Z ", max_abs_z, " TOUCH ", touch_team, " KICKS ", ai_debug.get("kick_count", 0), " SWITCHES ", team_switches)
 	print("SUMMARY neutral_frames=", neutral_frames, " neutral_in_play_frames=", neutral_in_play_frames, " in_play_frames=", in_play_frames, " max_abs_z=", max_abs_z, " team_switches=", team_switches, " score=", world.get_soccer_venue_runtime_state().get("home_score", 0), ":", world.get_soccer_venue_runtime_state().get("away_score", 0))

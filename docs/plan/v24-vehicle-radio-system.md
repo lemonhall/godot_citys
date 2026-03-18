@@ -53,10 +53,13 @@
   - browser 已改成 repository 驱动，不再允许内置 demo country list 冒充“全球目录”
   - 非 headless 运行时会拒绝 headless 测试残留的 `China / Japan / Quick2` fixture 数据
   - 当前物理键主链已经收口为：`B=browser`、`O=quick overlay`、`Esc=cancel`
+  - Windows 主线默认已优先走 `CityRadioNativeBackend.gd + GDExtension + FFmpeg`，mock backend 仅在 native capability 不可用时兜底
+  - `CityVehicleRadioController.gd` 已补上差分播放 contract，不再因为 driving context 每帧 sync 而重复 reopen 同一条流
+  - browser detail 已能显示真实 `backend_id / buffer_state / latency_ms / underflow_count / stream_title / resolved_url / error_message`
+  - `REQ-0014-005` 的 direct / playlist / HLS Windows sample verification 已成立，证据见 [v24-m6-native-backend-verification-2026-03-18.md](./v24-m6-native-backend-verification-2026-03-18.md)
 - 当前仍未完成且必须正视的部分：
-  - `CityRadioMockBackend.gd` 仍是当前真实 backend
-  - `playback_state=playing` 目前只代表 runtime state，不代表已经有真实 live audio decode/output
-  - `REQ-0014-005` 的 direct / playlist / HLS 真播验证仍未成立
+  - 本次 evidence 仍以 headless/native sample verification 为主，尚未留下非 headless 的 human-ear closeout 记录
+  - `M7` 的 browser/detail/playback 体验 closeout 与 `M8` profiling 三件套尚未完成
 
 ## M6 / M7 / M8 Split
 
@@ -138,6 +141,7 @@
 - Create in M6: `city_game/native/radio_backend/*`
 - Create in M6: `city_game/world/radio/backend/CityRadioNativeBackend.gd`
 - Create in M6: `city_game/world/radio/backend/CityRadioNativeBackend.gd.uid`
+- Create in M6: `tests/tools/verify_city_radio_native_bridge_real_samples.gd`
 - Create: `tests/world/test_city_vehicle_radio_drive_mode_contract.gd`
 - Create: `tests/world/test_city_vehicle_radio_quick_overlay_contract.gd`
 - Create: `tests/world/test_city_vehicle_radio_browser_state_contract.gd`

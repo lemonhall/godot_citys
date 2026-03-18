@@ -1,0 +1,13 @@
+[configuration]
+
+entry_symbol = "city_radio_native_backend_library_init"
+compatibility_minimum = "4.6.0"
+
+[libraries]
+
+windows.x86_64 = "res://city_game/native/radio_backend/bin/win64/radio_backend_m6.windows.template_debug.x86_64.dll"
+windows.editor.x86_64 = "res://city_game/native/radio_backend/bin/win64/radio_backend_m6.windows.template_debug.x86_64.dll"
+windows.template_debug.x86_64 = "res://city_game/native/radio_backend/bin/win64/radio_backend_m6.windows.template_debug.x86_64.dll"
+windows.template_release.x86_64 = "res://city_game/native/radio_backend/bin/win64/radio_backend_m6.windows.template_release.x86_64.dll"
+windows.debug.x86_64 = "res://city_game/native/radio_backend/bin/win64/radio_backend_m6.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://city_game/native/radio_backend/bin/win64/radio_backend_m6.windows.template_release.x86_64.dll"

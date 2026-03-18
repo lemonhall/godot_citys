@@ -7,6 +7,7 @@ var _vehicle_state: Dictionary = {}
 var _power_on := false
 var _selected_station_snapshot: Dictionary = {}
 var _resolved_stream: Dictionary = {}
+var _requested_playback_key := ""
 
 func configure(backend: RefCounted) -> void:
 	_backend = backend
@@ -29,6 +30,7 @@ func select_station(station_snapshot: Dictionary, resolved_stream: Dictionary) -
 func stop(reason: String = "stopped") -> void:
 	if _backend != null and _backend.has_method("stop_playback"):
 		_backend.stop_playback(reason)
+	_requested_playback_key = ""
 
 func get_runtime_state() -> Dictionary:
 	var backend_state: Dictionary = {}
@@ -42,6 +44,10 @@ func get_runtime_state() -> Dictionary:
 		"selected_station_snapshot": _selected_station_snapshot.duplicate(true),
 		"playback_state": str(backend_state.get("playback_state", "stopped")),
 		"buffer_state": str(backend_state.get("buffer_state", "idle")),
+		"resolved_url": str(backend_state.get("resolved_url", "")),
+		"metadata": (backend_state.get("metadata", {}) as Dictionary).duplicate(true),
+		"latency_ms": int(backend_state.get("latency_ms", 0)),
+		"underflow_count": int(backend_state.get("underflow_count", 0)),
 		"error_code": str(backend_state.get("error_code", "")),
 		"error_message": str(backend_state.get("error_message", "")),
 		"backend_id": str(backend_state.get("backend_id", "")),
@@ -50,9 +56,27 @@ func get_runtime_state() -> Dictionary:
 func _sync_backend_playback() -> void:
 	if _backend == null:
 		return
-	if _driving and _power_on and not _selected_station_snapshot.is_empty() and not str(_resolved_stream.get("final_url", "")).is_empty():
+	var desired_playback_key := _build_desired_playback_key()
+	if desired_playback_key != "":
+		if desired_playback_key == _requested_playback_key:
+			return
 		if _backend.has_method("play_resolved_stream"):
 			_backend.play_resolved_stream(_selected_station_snapshot, _resolved_stream)
+		_requested_playback_key = desired_playback_key
+		return
+	if _requested_playback_key == "":
 		return
 	if _backend.has_method("stop_playback"):
 		_backend.stop_playback("stopped")
+	_requested_playback_key = ""
+
+func _build_desired_playback_key() -> String:
+	if not _driving or not _power_on:
+		return ""
+	if _selected_station_snapshot.is_empty():
+		return ""
+	var station_id := str(_selected_station_snapshot.get("station_id", ""))
+	var resolved_url := str(_resolved_stream.get("final_url", ""))
+	if station_id == "" or resolved_url == "":
+		return ""
+	return "%s|%s" % [station_id, resolved_url]

@@ -20,6 +20,7 @@ const CityMapPinRegistry := preload("res://city_game/world/map/CityMapPinRegistr
 const CityVehicleRadioController := preload("res://city_game/world/radio/CityVehicleRadioController.gd")
 const CityRadioCatalogStore := preload("res://city_game/world/radio/CityRadioCatalogStore.gd")
 const CityRadioCatalogRepository := preload("res://city_game/world/radio/CityRadioCatalogRepository.gd")
+const CityRadioNativeBackend := preload("res://city_game/world/radio/backend/CityRadioNativeBackend.gd")
 const CityRadioMockBackend := preload("res://city_game/world/radio/backend/CityRadioMockBackend.gd")
 const CityRadioQuickBank := preload("res://city_game/world/radio/CityRadioQuickBank.gd")
 const CityRadioUserStateStore := preload("res://city_game/world/radio/CityRadioUserStateStore.gd")
@@ -264,10 +265,12 @@ func _ready() -> void:
 	_vehicle_radio_controller = CityVehicleRadioController.new()
 	_vehicle_radio_catalog_store = CityRadioCatalogStore.new()
 	_vehicle_radio_catalog_repository = CityRadioCatalogRepository.new(_vehicle_radio_catalog_store)
-	_vehicle_radio_backend = CityRadioMockBackend.new()
+	_vehicle_radio_backend = _create_vehicle_radio_backend()
 	_vehicle_radio_user_state_store = CityRadioUserStateStore.new()
 	if _vehicle_radio_controller != null and _vehicle_radio_controller.has_method("configure"):
 		_vehicle_radio_controller.configure(_vehicle_radio_backend)
+	if _vehicle_radio_backend != null and _vehicle_radio_backend.has_method("attach_audio_host"):
+		_vehicle_radio_backend.attach_audio_host(self)
 	_reload_vehicle_radio_selection_sources_from_store()
 	_restore_vehicle_radio_session_state_from_store()
 	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
@@ -315,6 +318,12 @@ func _ready() -> void:
 	_refresh_hud_status()
 	_update_npc_interaction_system()
 
+func _create_vehicle_radio_backend() -> RefCounted:
+	var native_backend: RefCounted = CityRadioNativeBackend.new()
+	if native_backend != null and native_backend.has_method("is_available") and bool(native_backend.is_available()):
+		return native_backend
+	return CityRadioMockBackend.new()
+
 func _exit_tree() -> void:
 	if _vehicle_radio_catalog_sync_thread != null and _vehicle_radio_catalog_sync_thread.is_started():
 		_vehicle_radio_catalog_sync_thread.wait_to_finish()
@@ -345,6 +354,7 @@ func _process(delta: float) -> void:
 	_expire_exportable_building_inspection_window()
 	_update_service_building_map_pins()
 	_sync_vehicle_radio_runtime_driving_context()
+	_update_vehicle_radio_audio_backend()
 	if _world_simulation_paused:
 		_update_npc_interaction_system()
 		return
@@ -3014,6 +3024,11 @@ func _sync_vehicle_radio_runtime_driving_context() -> void:
 	_vehicle_radio_controller.set_driving_context(false, {})
 	if _vehicle_radio_quick_overlay_open:
 		close_vehicle_radio_quick_overlay()
+
+func _update_vehicle_radio_audio_backend() -> void:
+	if _vehicle_radio_backend == null or not _vehicle_radio_backend.has_method("update_audio_output"):
+		return
+	_vehicle_radio_backend.update_audio_output()
 
 func _commit_vehicle_radio_quick_selection() -> void:
 	if _vehicle_radio_controller == null or not _vehicle_radio_controller.has_method("select_station"):

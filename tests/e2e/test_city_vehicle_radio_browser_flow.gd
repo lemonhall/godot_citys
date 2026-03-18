@@ -74,6 +74,15 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(runtime_state.get("playback_state", "")) == "playing", "Clicking a station in browser flow must transition the backend into playing state while driving"):
 		return
+	if not T.require_true(self, str(runtime_state.get("resolved_url", "")) == "https://radio.example/xian_traffic.mp3", "Browser flow runtime state must surface the active resolved_url from the playback backend"):
+		return
+	var runtime_metadata: Dictionary = runtime_state.get("metadata", {}) as Dictionary
+	if not T.require_true(self, str(runtime_metadata.get("station_id", "")) == "station:cn:traffic", "Browser flow runtime state must surface backend metadata for the selected station"):
+		return
+	if not T.require_true(self, runtime_state.has("latency_ms"), "Browser flow runtime state must expose backend latency_ms"):
+		return
+	if not T.require_true(self, runtime_state.has("underflow_count"), "Browser flow runtime state must expose backend underflow_count"):
+		return
 
 	var favorite_result: Dictionary = world.toggle_vehicle_radio_browser_favorite("station:cn:traffic")
 	if not T.require_true(self, bool(favorite_result.get("success", false)), "Browser flow must allow adding the filtered station to favorites"):

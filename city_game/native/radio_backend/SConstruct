@@ -1,0 +1,45 @@
+#!/usr/bin/env python
+
+import glob
+import os
+
+from SCons.Script import Copy
+
+env = SConscript("thirdparty/godot-cpp/SConstruct")
+env["ENV"] = os.environ
+
+VariantDir("build", "src", duplicate=0)
+env["OBJPREFIX"] = os.path.join("build", "")
+
+sources = Glob("src/*.cpp")
+runtime_targets = []
+library_basename = os.path.join("bin", "win64", "radio_backend_m6")
+
+if env["platform"] == "windows":
+	env.Append(LIBS=["Ws2_32", "Secur32", "Bcrypt", "User32"])
+
+ffmpeg_root = os.environ.get(
+	"CITY_RADIO_FFMPEG_ROOT",
+	os.path.join("thirdparty", "ffmpeg", "windows-x64-shared", "ffmpeg-8.1-full_build-shared"),
+)
+ffmpeg_include_dir = os.path.join(ffmpeg_root, "include")
+ffmpeg_lib_dir = os.path.join(ffmpeg_root, "lib")
+ffmpeg_bin_dir = os.path.join(ffmpeg_root, "bin")
+
+if os.path.isdir(ffmpeg_include_dir) and os.path.isdir(ffmpeg_lib_dir):
+	env.Append(CPPDEFINES=["CITY_RADIO_USE_FFMPEG"])
+	env.Append(CPPPATH=[ffmpeg_include_dir])
+	env.Append(LIBPATH=[ffmpeg_lib_dir])
+	env.Append(LIBS=["avformat", "avcodec", "swresample", "avutil"])
+
+	if os.path.isdir(ffmpeg_bin_dir):
+		for dll_path in glob.glob(os.path.join(ffmpeg_bin_dir, "*.dll")):
+			target_path = os.path.join("bin", "win64", os.path.basename(dll_path))
+			runtime_targets.append(env.Command(target_path, dll_path, Copy("$TARGET", "$SOURCE")))
+
+library = env.SharedLibrary(
+	"{}{}{}".format(library_basename, env["suffix"], env["SHLIBSUFFIX"]),
+	source=sources,
+)
+
+Default([library] + runtime_targets)

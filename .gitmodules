@@ -1,0 +1,4 @@
+[submodule "city_game/native/radio_backend/thirdparty/godot-cpp"]
+	path = city_game/native/radio_backend/thirdparty/godot-cpp
+	url = https://github.com/godotengine/godot-cpp.git
+	branch = master

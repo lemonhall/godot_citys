@@ -411,19 +411,35 @@ func _build_detail_text(current_station: Dictionary) -> String:
 	if current_station.is_empty():
 		return "[color=#B9D8D2]从左侧列表选择电台后，这里会显示当前播放详情，并可直接收藏或写入 preset。[/color]"
 	var runtime_state := _state.get("current_playing", {}) as Dictionary
+	var metadata: Dictionary = runtime_state.get("metadata", {}) as Dictionary
 	var lines := PackedStringArray([
 		"[b]%s[/b]" % str(current_station.get("station_name", "")),
-		"状态：power=%s  playback=%s" % [
+		"状态：power=%s  playback=%s  buffer=%s" % [
 			str(runtime_state.get("power_state", "off")),
 			str(runtime_state.get("playback_state", "stopped")),
+			str(runtime_state.get("buffer_state", "idle")),
+		],
+		"后端：%s  延迟：%d ms  欠载：%d" % [
+			str(runtime_state.get("backend_id", "")),
+			int(runtime_state.get("latency_ms", 0)),
+			int(runtime_state.get("underflow_count", 0)),
 		],
 		"国家：%s" % str(current_station.get("country", "")),
 		"语言：%s" % str(current_station.get("language", "")),
 		"编码：%s" % str(current_station.get("codec", "")),
 	])
+	var stream_title := str(metadata.get("stream_title", ""))
+	if stream_title != "":
+		lines.append("流标题：%s" % stream_title)
 	var preset_slot := _find_station_preset_slot(str(current_station.get("station_id", "")))
 	if preset_slot >= 0:
 		lines.append("当前 preset：P%d" % (preset_slot + 1))
+	var resolved_url := str(runtime_state.get("resolved_url", ""))
+	if resolved_url != "":
+		lines.append("流地址：%s" % resolved_url)
+	var error_message := str(runtime_state.get("error_message", "")).strip_edges()
+	if error_message != "":
+		lines.append("错误：%s" % error_message)
 	return "\n".join(lines)
 
 func _build_station_button_text(station: Dictionary) -> String:

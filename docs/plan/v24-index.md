@@ -17,7 +17,7 @@ PRD 入口：[PRD-0014 Vehicle Radio System](../prd/PRD-0014-vehicle-radio-syste
 
 `v24` 的目标是把“玩家开车时想听电台”从一句设想推进成正式系统：驾驶态拥有 GTA 风格的低摩擦快速切台 surface，但深度浏览、收藏、预设、最近收听和全球目录缓存必须与 quick surface 分层；车内体验不能因为“全球台很多”而退化成一个不可操作的大列表，也不能因为“先把声音放出来”就跳过真实 `http/https + playlist wrapper + live playback backend` 的工程硬度。当前推荐路线是“双界面模型 + 冷热分层数据 + backend 抽象接口”：quick overlay 专门负责车内切台，browser 专门负责海量目录，catalog 与 resolve cache 走 `user://cache/radio/`，用户状态走 `user://radio/`，而直播 backend 先冻结正式接口与验证样本，再通过 `M1` feasibility gate 决定最终实现形态。
 
-当前状态：`M0 docs freeze` 已完成；`M1 backend feasibility` 仍在进行中；`M2 catalog cache + persistence` 已完成；`M3 quick-select overlay + input contract` 已在 [v24-m3-verification-2026-03-17.md](./v24-m3-verification-2026-03-17.md) 中完成 fresh functional verification；`M4 radio browser UX` 已经补到 repository 驱动的 countries/stations lazy sync，并修掉 runtime 读取 headless fixture 假目录的问题，但尚未 closeout；`M5 vehicle lifecycle integration` 已补到 `B`/`O`/`Esc` 新交互、browser fixture 清洗与 session hygiene，但 native live playback 尚未接入；当前真实 backend 仍是 mock，**真播链尚未完成**；`M6` 正式冻结为 native backend 实施阶段，`M7` 预留给全链收口，原 `M6 verification` 后移为 `M8`。
+当前状态：`M0 docs freeze` 已完成；`M1 backend feasibility` 已进入 native true-playback 证据阶段；`M2 catalog cache + persistence` 已完成；`M3 quick-select overlay + input contract` 已在 [v24-m3-verification-2026-03-17.md](./v24-m3-verification-2026-03-17.md) 中完成 fresh functional verification；`M4 radio browser UX` 已经补到 repository 驱动的 countries/stations lazy sync，并修掉 runtime 读取 headless fixture 假目录的问题；`M5 vehicle lifecycle integration` 已补到 `B`/`O`/`Esc` 新交互、browser fixture 清洗与 session hygiene；当前 Windows 主线默认会优先走 `CityRadioNativeBackend.gd + GDExtension + FFmpeg`，mock 只保留为 fallback；direct / playlist / HLS 三类真实样本的 native decode 证据已落在 [v24-m6-native-backend-verification-2026-03-18.md](./v24-m6-native-backend-verification-2026-03-18.md)，`M7` 继续预留给全链 closeout，原 `M6 verification` 后移为 `M8`。
 
 ## 决策冻结
 
@@ -51,7 +51,7 @@ PRD 入口：[PRD-0014 Vehicle Radio System](../prd/PRD-0014-vehicle-radio-syste
 | M3 quick-select overlay + input contract | 8-slot quick bank、pause semantics、keyboard/controller action family | driving 中可快速切台、开关电台、next/prev，不实例化大列表 | `tests/world/test_city_vehicle_radio_quick_overlay_contract.gd`、`tests/e2e/test_city_vehicle_radio_quick_switch_flow.gd` | done |
 | M4 radio browser UX | `当前播放 / Presets / Favorites / Recents / Browse`、国家目录、局部过滤、虚拟化/分页 | 海量目录浏览成立，不污染 quick overlay，不一次性构造几千 rows | `tests/world/test_city_vehicle_radio_browser_state_contract.gd`、`tests/e2e/test_city_vehicle_radio_browser_flow.gd` | in_progress |
 | M5 vehicle lifecycle integration | driving enter/exit、power/session recovery、selected station snapshot、HUD/state sync | 上车/下车/关机/恢复链成立，radio lifecycle 正式绑定 driving mode | `tests/world/test_city_vehicle_radio_drive_mode_contract.gd`、`tests/e2e/test_city_vehicle_radio_quick_switch_flow.gd` | in_progress |
-| M6 native backend | `GDExtension` 工程、FFmpeg 选型、真播 backend、后台线程解码、Godot 音频出口、错误/重连/metadata | direct / playlist / HLS 真播链路在游戏内成立；`B` 关闭后继续播放；不依赖外部 helper；主线程不做阻塞拉流/解码 | [2026-03-18-v24-m6-native-backend-plan.md](../plans/2026-03-18-v24-m6-native-backend-plan.md)、`tests/world/test_city_vehicle_radio_backend_interface_contract.gd`、Windows sample verification | todo |
+| M6 native backend | `GDExtension` 工程、FFmpeg 选型、真播 backend、后台线程解码、Godot 音频出口、错误/重连/metadata | direct / playlist / HLS 真播链路在游戏内成立；`B` 关闭后继续播放；不依赖外部 helper；主线程不做阻塞拉流/解码 | [2026-03-18-v24-m6-native-backend-plan.md](../plans/2026-03-18-v24-m6-native-backend-plan.md)、[v24-m6-native-backend-verification-2026-03-18.md](./v24-m6-native-backend-verification-2026-03-18.md)、`tests/world/test_city_vehicle_radio_backend_interface_contract.gd`、Windows sample verification | in_progress |
 | M7 native playback closeout | browser -> detail -> playback 真链路、session recovery、favorites/recents/presets/native backend 收口、真实错误面 | catalog/browser/lifecycle/native backend 不再分叉；mock path 不再伪装完成态；真播状态进入 HUD/browser | `tests/e2e/test_city_vehicle_radio_browser_flow.gd`、`tests/e2e/test_city_vehicle_radio_quick_switch_flow.gd`、Windows manual/end-to-end verification | todo |
 | M8 verification | driving/HUD/runtime 回归与 profiling 三件套 | 受影响主链不回退，profiling 三件套 fresh 通过 | `tests/world/test_city_chunk_setup_profile_breakdown.gd`、`tests/e2e/test_city_runtime_performance_profile.gd`、`tests/e2e/test_city_first_visit_performance_profile.gd` | todo |
 
@@ -60,6 +60,7 @@ PRD 入口：[PRD-0014 Vehicle Radio System](../prd/PRD-0014-vehicle-radio-syste
 - [v24-vehicle-radio-system.md](./v24-vehicle-radio-system.md)
 - [v24-m3-verification-2026-03-17.md](./v24-m3-verification-2026-03-17.md)
 - [2026-03-18-v24-m6-native-backend-plan.md](../plans/2026-03-18-v24-m6-native-backend-plan.md)
+- [v24-m6-native-backend-verification-2026-03-18.md](./v24-m6-native-backend-verification-2026-03-18.md)
 
 ## 追溯矩阵
 
@@ -69,7 +70,7 @@ PRD 入口：[PRD-0014 Vehicle Radio System](../prd/PRD-0014-vehicle-radio-syste
 | REQ-0014-002 | `v24-vehicle-radio-system.md` | `tests/world/test_city_vehicle_radio_quick_overlay_contract.gd` | `--script res://tests/e2e/test_city_vehicle_radio_quick_switch_flow.gd` | [2026-03-17-v24-vehicle-radio-design.md](../plans/2026-03-17-v24-vehicle-radio-design.md)、[v24-m3-verification-2026-03-17.md](./v24-m3-verification-2026-03-17.md) | done |
 | REQ-0014-003 | `v24-vehicle-radio-system.md` | `tests/world/test_city_vehicle_radio_browser_state_contract.gd` | `--script res://tests/e2e/test_city_vehicle_radio_browser_flow.gd` | [2026-03-17-v24-vehicle-radio-design.md](../plans/2026-03-17-v24-vehicle-radio-design.md)、[2026-03-17-v24-m4-radio-browser-plan.md](../plans/2026-03-17-v24-m4-radio-browser-plan.md) | in_progress |
 | REQ-0014-004 | `v24-vehicle-radio-system.md` | `tests/world/test_city_vehicle_radio_catalog_cache_contract.gd`、`tests/world/test_city_vehicle_radio_preset_persistence.gd` | `--script res://tests/e2e/test_city_vehicle_radio_browser_flow.gd` | [2026-03-17-v24-vehicle-radio-design.md](../plans/2026-03-17-v24-vehicle-radio-design.md) | done |
-| REQ-0014-005 | `v24-vehicle-radio-system.md`、[2026-03-18-v24-m6-native-backend-plan.md](../plans/2026-03-18-v24-m6-native-backend-plan.md) | `tests/world/test_city_vehicle_radio_stream_resolution_contract.gd`、`tests/world/test_city_vehicle_radio_backend_interface_contract.gd` | Windows direct / playlist / HLS sample verification | [2026-03-17-v24-vehicle-radio-design.md](../plans/2026-03-17-v24-vehicle-radio-design.md)、[2026-03-18-v24-m6-native-backend-plan.md](../plans/2026-03-18-v24-m6-native-backend-plan.md) | in_progress |
+| REQ-0014-005 | `v24-vehicle-radio-system.md`、[2026-03-18-v24-m6-native-backend-plan.md](../plans/2026-03-18-v24-m6-native-backend-plan.md) | `tests/world/test_city_vehicle_radio_stream_resolution_contract.gd`、`tests/world/test_city_vehicle_radio_backend_interface_contract.gd`、`tests/world/test_city_vehicle_radio_native_bridge_playback_contract.gd` | Windows direct / playlist / HLS sample verification | [2026-03-17-v24-vehicle-radio-design.md](../plans/2026-03-17-v24-vehicle-radio-design.md)、[2026-03-18-v24-m6-native-backend-plan.md](../plans/2026-03-18-v24-m6-native-backend-plan.md)、[v24-m6-native-backend-verification-2026-03-18.md](./v24-m6-native-backend-verification-2026-03-18.md) | in_progress |
 | REQ-0014-006 | `v24-vehicle-radio-system.md`、[2026-03-18-v24-m6-native-backend-plan.md](../plans/2026-03-18-v24-m6-native-backend-plan.md) | `tests/world/test_city_vehicle_radio_hud_idle_contract.gd` | `--script res://tests/world/test_city_chunk_setup_profile_breakdown.gd`、`--script res://tests/e2e/test_city_runtime_performance_profile.gd`、`--script res://tests/e2e/test_city_first_visit_performance_profile.gd` | [2026-03-17-v24-vehicle-radio-design.md](../plans/2026-03-17-v24-vehicle-radio-design.md)、[2026-03-18-v24-m6-native-backend-plan.md](../plans/2026-03-18-v24-m6-native-backend-plan.md) | todo |
 
 ## ECN 索引
@@ -78,11 +79,11 @@ PRD 入口：[PRD-0014 Vehicle Radio System](../prd/PRD-0014-vehicle-radio-syste
 
 ## 差异列表
 
-- `M1` 已进入实现中：resolver contract、backend interface contract、最小 drive-mode controller contract 已有首批 world tests 与实现骨架，但真实直播 backend sample verification 仍未完成。
+- `M1` 已进入实现中：resolver contract、backend interface contract 与 native bridge playback contract 已补齐，真实直播 backend sample verification 已有首批 Windows evidence，但仍未正式 closeout。
 - `M2` 已完成首批 cache/persistence contract：`CityRadioCatalogStore` 与 `CityRadioUserStateStore` 已冻结路径、schema、pretty JSON 与 TTL/stale fallback 的最小实现。
 - `M3` 已完成 fresh functional verification：`project.godot` radio action 家族、`CityRadioQuickBank`、HUD quick overlay、shared pause contract 与 quick-switch e2e 已串起来，证据见 [v24-m3-verification-2026-03-17.md](./v24-m3-verification-2026-03-17.md)。
 - `M4` 已不再只是 browser 壳：`CityPrototype.gd`、`CityVehicleRadioBrowser.gd`、`CityRadioCatalogRepository.gd` 已接上 repository 驱动的 countries/stations lazy sync，并显式清洗非 headless 运行时误读到的 fixture 国家目录/电台页；但 browser 仍未 closeout。
-- `M5` 已补到 `B` 全局开关 browser、`O` quick overlay、`Esc`/再次按 `B` 可关闭，以及 `session_state / presets / favorites / recents` 的 fixture hygiene；但当前 backend 仍是 `CityRadioMockBackend.gd`，所以“状态变成 playing”不能视为真播完成。
-- `M6` 现已正式冻结为 native backend milestone：采用 `GDExtension + FFmpeg` 真播方案，不允许 helper/bridge，不再接受“状态像在播但其实没声音”的假完成口径。
+- `M5` 已补到 `B` 全局开关 browser、`O` quick overlay、`Esc`/再次按 `B` 可关闭，以及 `session_state / presets / favorites / recents` 的 fixture hygiene；当前主线已默认优先走 native backend，mock 只保留为 capability fallback。
+- `M6` 现已落下 `GDExtension + FFmpeg` 真播主链：后台线程解码、Godot 音频出口、runtime metadata/error/buffer contract、direct / playlist / HLS 样本验证都已有 fresh 证据，详见 [v24-m6-native-backend-verification-2026-03-18.md](./v24-m6-native-backend-verification-2026-03-18.md)。
 - `v24` 当前不包含虚构 DJ 电台、广告、录音、转录、翻译、同传、站点推荐或跨设备同步。
 - 默认物理按键映射已局部收口：当前实际主链为 `B=browser`、`O=quick overlay`、`Esc=cancel`；如后续再改，必须以不占用既有核心动作按键为前提。

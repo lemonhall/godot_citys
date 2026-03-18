@@ -4,6 +4,43 @@ const T := preload("res://tests/_test_util.gd")
 const CONTROLLER_PATH := "res://city_game/world/radio/CityVehicleRadioController.gd"
 const MOCK_BACKEND_PATH := "res://city_game/world/radio/backend/CityRadioMockBackend.gd"
 
+class ProbeBackend:
+	extends RefCounted
+
+	var play_call_count := 0
+	var stop_call_count := 0
+	var _state := {
+		"backend_id": "probe",
+		"playback_state": "stopped",
+		"buffer_state": "idle",
+		"resolved_url": "",
+		"metadata": {},
+		"latency_ms": 0,
+		"underflow_count": 0,
+		"error_code": "",
+		"error_message": "",
+	}
+
+	func play_resolved_stream(station_snapshot: Dictionary, resolved_stream: Dictionary) -> Dictionary:
+		play_call_count += 1
+		_state["playback_state"] = "playing"
+		_state["buffer_state"] = "ready"
+		_state["resolved_url"] = str(resolved_stream.get("final_url", ""))
+		_state["metadata"] = {
+			"station_id": str(station_snapshot.get("station_id", "")),
+			"station_name": str(station_snapshot.get("station_name", "")),
+		}
+		return get_state()
+
+	func stop_playback(_reason: String = "stopped") -> Dictionary:
+		stop_call_count += 1
+		_state["playback_state"] = "stopped"
+		_state["buffer_state"] = "idle"
+		return get_state()
+
+	func get_state() -> Dictionary:
+		return _state.duplicate(true)
+
 func _init() -> void:
 	call_deferred("_run")
 
@@ -78,6 +115,29 @@ func _run() -> void:
 	if not T.require_true(self, str(exited_state.get("playback_state", "")) == "stopped", "Exiting drive mode must stop radio playback"):
 		return
 	if not T.require_true(self, str(backend.get_state().get("playback_state", "")) == "stopped", "Backend must stop playback when drive mode exits"):
+		return
+
+	var probe_backend := ProbeBackend.new()
+	controller = controller_script.new()
+	controller.configure(probe_backend)
+	probe_backend.play_call_count = 0
+	probe_backend.stop_call_count = 0
+	controller.set_power_state(true)
+	controller.select_station(station_snapshot, resolved_stream)
+	probe_backend.play_call_count = 0
+	controller.set_driving_context(true, {
+		"vehicle_id": "veh:test:radio:reuse",
+		"model_id": "sports_car_a",
+	})
+	controller.set_driving_context(true, {
+		"vehicle_id": "veh:test:radio:reuse",
+		"model_id": "sports_car_a",
+	})
+	controller.set_driving_context(true, {
+		"vehicle_id": "veh:test:radio:reuse",
+		"model_id": "sports_car_a",
+	})
+	if not T.require_true(self, probe_backend.play_call_count == 1, "Vehicle radio controller must not reopen the same stream every frame while driving context stays unchanged"):
 		return
 
 	T.pass_and_quit(self)

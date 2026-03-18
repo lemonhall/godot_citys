@@ -1,0 +1,11 @@
+{
+	"schema_version": "v26-scene-minigame-venue-registry-1",
+	"entries": {
+		"venue:v26:soccer_pitch:chunk_129_139": {
+			"venue_id": "venue:v26:soccer_pitch:chunk_129_139",
+			"feature_kind": "scene_minigame_venue",
+			"scene_path": "res://city_game/serviceability/minigame_venues/generated/venue_v26_soccer_pitch_chunk_129_139/soccer_minigame_venue.tscn",
+			"manifest_path": "res://city_game/serviceability/minigame_venues/generated/venue_v26_soccer_pitch_chunk_129_139/minigame_venue_manifest.json"
+		}
+	}
+}

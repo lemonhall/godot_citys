@@ -31,6 +31,7 @@ static var _shared_box_material_cache: Dictionary = {}
 static var _shared_building_override_scene_cache: Dictionary = {}
 static var _shared_scene_landmark_scene_cache: Dictionary = {}
 static var _shared_scene_interactive_prop_scene_cache: Dictionary = {}
+static var _shared_scene_minigame_venue_scene_cache: Dictionary = {}
 static var _shared_ground_overlay_material_template: ShaderMaterial = null
 
 var _chunk_data: Dictionary = {}
@@ -274,6 +275,14 @@ func find_scene_interactive_prop_node(prop_id: String) -> Node:
 	if near_group == null:
 		return null
 	return _find_scene_interactive_prop_node_recursive(near_group, prop_id)
+
+func find_scene_minigame_venue_node(venue_id: String) -> Node:
+	if venue_id == "":
+		return null
+	var near_group := get_node_or_null("NearGroup") as Node
+	if near_group == null:
+		return null
+	return _find_scene_minigame_venue_node_recursive(near_group, venue_id)
 
 func get_road_collision_shape_count() -> int:
 	var road_overlay := get_node_or_null("NearGroup/RoadOverlay") as Node
@@ -651,6 +660,15 @@ func _build_near_group() -> Dictionary:
 		var landmark_node := _build_scene_landmark(landmark_entry_variant as Dictionary)
 		if landmark_node != null:
 			scene_landmarks.add_child(landmark_node)
+	var scene_minigame_venues := Node3D.new()
+	scene_minigame_venues.name = "SceneMinigameVenues"
+	near_group.add_child(scene_minigame_venues)
+	for venue_entry_variant in _chunk_data.get("scene_minigame_venue_entries", []):
+		if not (venue_entry_variant is Dictionary):
+			continue
+		var venue_node := _build_scene_minigame_venue(venue_entry_variant as Dictionary)
+		if venue_node != null:
+			scene_minigame_venues.add_child(venue_node)
 	var scene_interactive_props := Node3D.new()
 	scene_interactive_props.name = "SceneInteractiveProps"
 	near_group.add_child(scene_interactive_props)
@@ -778,6 +796,44 @@ func _build_scene_interactive_prop(entry: Dictionary) -> Node3D:
 	prop_root.set_meta("city_scene_interactive_prop_manifest_path", str(entry.get("manifest_path", "")))
 	return prop_root
 
+func _build_scene_minigame_venue(entry: Dictionary) -> Node3D:
+	var scene_path := str(entry.get("scene_path", "")).strip_edges()
+	if scene_path == "":
+		return null
+	var scene_resource := _load_cached_scene_minigame_venue_scene(scene_path)
+	if scene_resource == null:
+		return null
+	var instantiated_variant: Variant = scene_resource.instantiate()
+	var venue_root := instantiated_variant as Node3D
+	if venue_root == null:
+		if not (instantiated_variant is Node):
+			return null
+		venue_root = Node3D.new()
+		venue_root.name = "SceneMinigameVenueRoot"
+		venue_root.add_child(instantiated_variant as Node)
+	if venue_root.has_method("configure_minigame_venue"):
+		venue_root.configure_minigame_venue(entry.duplicate(true))
+	var world_position_variant: Variant = entry.get("world_position", Vector3.ZERO)
+	var world_position := Vector3.ZERO
+	if world_position_variant is Vector3:
+		world_position = world_position_variant as Vector3
+	var root_offset_variant: Variant = entry.get("scene_root_offset", Vector3.ZERO)
+	var root_offset := Vector3.ZERO
+	if root_offset_variant is Vector3:
+		root_offset = root_offset_variant as Vector3
+	var chunk_center: Vector3 = _chunk_data.get("chunk_center", Vector3.ZERO)
+	venue_root.position = world_position + root_offset - chunk_center
+	venue_root.rotation.y = float(entry.get("yaw_rad", 0.0))
+	var venue_id := str(entry.get("venue_id", "")).strip_edges()
+	if venue_id != "":
+		venue_root.set_meta("city_scene_minigame_venue_id", venue_id)
+	venue_root.set_meta("city_scene_minigame_venue", true)
+	venue_root.set_meta("city_scene_minigame_venue_scene_path", scene_path)
+	venue_root.set_meta("city_scene_minigame_venue_feature_kind", str(entry.get("feature_kind", "")))
+	venue_root.set_meta("city_scene_minigame_venue_manifest_path", str(entry.get("manifest_path", "")))
+	venue_root.set_meta("city_scene_minigame_venue_primary_ball_prop_id", str(entry.get("primary_ball_prop_id", "")))
+	return venue_root
+
 func _register_building_collision_shapes(root: Node) -> void:
 	var shapes: Array[CollisionShape3D] = CityBuildingSceneBuilder.collect_collision_shapes(root)
 	for collision_shape in shapes:
@@ -826,6 +882,20 @@ func _find_scene_interactive_prop_node_recursive(root: Node, prop_id: String) ->
 			return match_node
 	return null
 
+func _find_scene_minigame_venue_node_recursive(root: Node, venue_id: String) -> Node:
+	if root == null:
+		return null
+	if bool(root.get_meta("city_scene_minigame_venue", false)) and str(root.get_meta("city_scene_minigame_venue_id", "")) == venue_id:
+		return root
+	for child in root.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		var match_node := _find_scene_minigame_venue_node_recursive(child_node, venue_id)
+		if match_node != null:
+			return match_node
+	return null
+
 static func _load_cached_building_override_scene(scene_path: String) -> PackedScene:
 	if scene_path == "":
 		return null
@@ -863,6 +933,19 @@ static func _load_cached_scene_interactive_prop_scene(scene_path: String) -> Pac
 		return null
 	var packed_scene := scene_resource as PackedScene
 	_shared_scene_interactive_prop_scene_cache[scene_path] = packed_scene
+	return packed_scene
+
+static func _load_cached_scene_minigame_venue_scene(scene_path: String) -> PackedScene:
+	if scene_path == "":
+		return null
+	if _shared_scene_minigame_venue_scene_cache.has(scene_path):
+		return _shared_scene_minigame_venue_scene_cache.get(scene_path) as PackedScene
+	var scene_resource := load(scene_path)
+	if scene_resource == null or not (scene_resource is PackedScene):
+		_shared_scene_minigame_venue_scene_cache[scene_path] = null
+		return null
+	var packed_scene := scene_resource as PackedScene
+	_shared_scene_minigame_venue_scene_cache[scene_path] = packed_scene
 	return packed_scene
 
 func _build_static_box(node_name: String, center: Vector3, size: Vector3, color: Color, yaw_rad: float = 0.0, collision_size: Vector3 = Vector3.ZERO) -> StaticBody3D:

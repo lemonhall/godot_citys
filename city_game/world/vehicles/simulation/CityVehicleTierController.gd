@@ -21,6 +21,7 @@ var _last_assignment_chunk_ids: Array[String] = []
 var _last_assignment_player_position := Vector3.ZERO
 var _assignment_rebuild_elapsed_sec := 0.0
 var _has_assignment_cache := false
+var _simulation_frozen := false
 var _last_profile_stats := {
 	"traffic_spawn_usec": 0,
 	"traffic_update_usec": 0,
@@ -50,6 +51,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_last_assignment_player_position = Vector3.ZERO
 	_assignment_rebuild_elapsed_sec = 0.0
 	_has_assignment_cache = false
+	_simulation_frozen = false
 	_last_profile_stats = {
 		"traffic_spawn_usec": 0,
 		"traffic_update_usec": 0,
@@ -68,12 +70,40 @@ func get_budget_contract() -> Dictionary:
 func prewarm_chunk_entries(chunk_entries: Array) -> void:
 	_vehicle_streamer.prewarm_chunk_entries(chunk_entries)
 
+func set_simulation_frozen(enabled: bool) -> void:
+	if _simulation_frozen == enabled:
+		return
+	_simulation_frozen = enabled
+	if not enabled:
+		_assignment_rebuild_elapsed_sec = ASSIGNMENT_REBUILD_INTERVAL_SEC
+		_has_assignment_cache = false
+
+func is_simulation_frozen() -> bool:
+	return _simulation_frozen
+
 func update_active_chunks(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0) -> Dictionary:
 	var update_started_usec := Time.get_ticks_usec()
 	var spawn_started_usec := Time.get_ticks_usec()
 	_vehicle_streamer.sync_active_chunks(active_chunk_entries)
 	var traffic_spawn_usec := Time.get_ticks_usec() - spawn_started_usec
 	var active_states: Array = _vehicle_streamer.get_active_states()
+	if _simulation_frozen:
+		var frozen_runtime_summary: Dictionary = _vehicle_streamer.get_runtime_summary()
+		_update_runtime_snapshot(
+			active_chunk_entries.size(),
+			active_states.size(),
+			int(_global_snapshot.get("tier0_count", 0)),
+			int(_global_snapshot.get("tier1_count", 0)),
+			int(_global_snapshot.get("tier2_count", 0)),
+			int(_global_snapshot.get("tier3_count", 0)),
+			frozen_runtime_summary,
+			traffic_spawn_usec,
+			0,
+			0,
+			0,
+			update_started_usec
+		)
+		return get_global_summary()
 
 	var step_started_usec := Time.get_ticks_usec()
 	if delta > 0.0:
@@ -209,6 +239,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 func get_global_summary() -> Dictionary:
 	return {
 		"preset": str(_global_snapshot.get("preset", "lite")),
+		"simulation_frozen": _simulation_frozen,
 		"active_chunk_count": int(_global_snapshot.get("active_chunk_count", 0)),
 		"active_page_count": int(_global_snapshot.get("active_page_count", 0)),
 		"active_state_count": int(_global_snapshot.get("active_state_count", 0)),
@@ -254,6 +285,7 @@ func get_runtime_snapshot() -> Dictionary:
 	runtime_snapshot["tier3_budget"] = int(_budget_contract.get("tier3_budget", 1))
 	runtime_snapshot["budget_contract"] = _budget_contract.duplicate(true)
 	runtime_snapshot["profile_stats"] = _last_profile_stats.duplicate(true)
+	runtime_snapshot["simulation_frozen"] = _simulation_frozen
 	return runtime_snapshot
 
 func resolve_projectile_hit(start_position: Vector3, end_position: Vector3, _damage: float = 1.0, _velocity: Vector3 = Vector3.ZERO) -> Dictionary:
@@ -332,6 +364,7 @@ func get_runtime_summary() -> Dictionary:
 		"active_page_count": int(runtime_snapshot.get("active_page_count", 0)),
 		"cached_page_count": int(runtime_snapshot.get("cached_page_count", 0)),
 		"resident_state_count": int(runtime_snapshot.get("resident_state_count", 0)),
+		"simulation_frozen": _simulation_frozen,
 		"page_cache_hit_count": int(runtime_snapshot.get("page_cache_hit_count", 0)),
 		"page_cache_miss_count": int(runtime_snapshot.get("page_cache_miss_count", 0)),
 		"page_generation_count": int(runtime_snapshot.get("page_generation_count", 0)),
@@ -488,6 +521,7 @@ func _update_runtime_snapshot(
 ) -> void:
 	_global_snapshot = {
 		"preset": str(_budget_contract.get("preset", "lite")),
+		"simulation_frozen": _simulation_frozen,
 		"active_chunk_count": active_chunk_count,
 		"active_page_count": int(runtime_snapshot.get("active_page_count", 0)),
 		"active_state_count": active_state_count,
@@ -515,6 +549,7 @@ func _update_runtime_snapshot(
 		"traffic_tier1_count": tier1_count,
 		"traffic_tier2_count": tier2_count,
 		"traffic_tier3_count": tier3_count,
+		"simulation_frozen": _simulation_frozen,
 	}
 	_global_snapshot["profile_stats"] = _last_profile_stats.duplicate(true)
 

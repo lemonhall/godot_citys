@@ -40,6 +40,9 @@ const CitySceneLandmarkRegistry := preload("res://city_game/world/features/CityS
 const CitySceneLandmarkRuntime := preload("res://city_game/world/features/CitySceneLandmarkRuntime.gd")
 const CitySceneInteractivePropRegistry := preload("res://city_game/world/features/CitySceneInteractivePropRegistry.gd")
 const CitySceneInteractivePropRuntime := preload("res://city_game/world/features/CitySceneInteractivePropRuntime.gd")
+const CitySceneMinigameVenueRegistry := preload("res://city_game/world/features/CitySceneMinigameVenueRegistry.gd")
+const CitySceneMinigameVenueRuntime := preload("res://city_game/world/features/CitySceneMinigameVenueRuntime.gd")
+const CitySoccerVenueRuntime := preload("res://city_game/world/minigames/CitySoccerVenueRuntime.gd")
 const CityMusicRoadRuntime := preload("res://city_game/world/features/music_road/CityMusicRoadRuntime.gd")
 const CityNpcInteractionRuntime := preload("res://city_game/world/interactions/CityNpcInteractionRuntime.gd")
 const CityInteractivePropRuntime := preload("res://city_game/world/interactions/CityInteractivePropRuntime.gd")
@@ -103,6 +106,7 @@ const BUILDING_EXPORT_SCENE_ROOT_PREFERRED := "res://city_game/serviceability/bu
 const BUILDING_EXPORT_SCENE_ROOT_FALLBACK := "user://serviceability/buildings/generated"
 const SCENE_LANDMARK_REGISTRY_PATH := "res://city_game/serviceability/landmarks/generated/landmark_override_registry.json"
 const SCENE_INTERACTIVE_PROP_REGISTRY_PATH := "res://city_game/serviceability/interactive_props/generated/interactive_prop_registry.json"
+const SCENE_MINIGAME_VENUE_REGISTRY_PATH := "res://city_game/serviceability/minigame_venues/generated/minigame_venue_registry.json"
 const SERVICE_BUILDING_MAP_PIN_STARTUP_DELAY_FRAMES := 120
 const SERVICE_BUILDING_MAP_PIN_BATCH_SIZE := 1
 const SERVICE_BUILDING_MAP_PIN_BATCH_BUDGET_USEC := 1200
@@ -248,6 +252,9 @@ var _scene_landmark_registry = null
 var _scene_landmark_runtime = null
 var _scene_interactive_prop_registry = null
 var _scene_interactive_prop_runtime = null
+var _scene_minigame_venue_registry = null
+var _scene_minigame_venue_runtime = null
+var _soccer_venue_runtime = null
 var _music_road_runtime = null
 var _music_road_runtime_time_sec := 0.0
 var _building_export_state: Dictionary = {
@@ -307,6 +314,9 @@ func _ready() -> void:
 	_scene_landmark_runtime = CitySceneLandmarkRuntime.new()
 	_scene_interactive_prop_registry = CitySceneInteractivePropRegistry.new()
 	_scene_interactive_prop_runtime = CitySceneInteractivePropRuntime.new()
+	_scene_minigame_venue_registry = CitySceneMinigameVenueRegistry.new()
+	_scene_minigame_venue_runtime = CitySceneMinigameVenueRuntime.new()
+	_soccer_venue_runtime = CitySoccerVenueRuntime.new()
 	_music_road_runtime = CityMusicRoadRuntime.new()
 	_music_road_runtime_time_sec = 0.0
 	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
@@ -322,6 +332,7 @@ func _ready() -> void:
 		_reload_building_override_registry()
 		_reload_scene_landmark_registry()
 		_reload_scene_interactive_prop_registry()
+		_reload_scene_minigame_venue_registry()
 		if chunk_renderer.has_method("set_pedestrians_visible"):
 			chunk_renderer.set_pedestrians_visible(_pedestrians_visible)
 	if debug_overlay != null:
@@ -335,6 +346,7 @@ func _ready() -> void:
 
 	set_control_mode(CONTROL_MODE_PLAYER)
 	update_streaming_for_position(_get_active_anchor_position())
+	_update_soccer_venue_runtime(0.0)
 	_prewarm_actor_pages_around_spawn()
 	if hud != null and hud.has_method("set_fps_overlay_visible"):
 		hud.set_fps_overlay_visible(_fps_overlay_visible)
@@ -393,6 +405,7 @@ func _process(delta: float) -> void:
 	_update_abandoned_vehicle_visuals(delta)
 	if player == null:
 		return
+	_update_soccer_venue_runtime(delta)
 	var frame_started_usec := Time.get_ticks_usec()
 	update_streaming_for_position(player.global_position, delta)
 	_update_task_system(delta)
@@ -1980,6 +1993,39 @@ func get_scene_interactive_prop_runtime_state() -> Dictionary:
 	if _scene_interactive_prop_runtime == null or not _scene_interactive_prop_runtime.has_method("get_state"):
 		return {}
 	return _scene_interactive_prop_runtime.get_state()
+
+func get_scene_minigame_venue_runtime_state() -> Dictionary:
+	if _scene_minigame_venue_runtime == null or not _scene_minigame_venue_runtime.has_method("get_state"):
+		return {}
+	return _scene_minigame_venue_runtime.get_state()
+
+func get_soccer_venue_runtime_state() -> Dictionary:
+	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("get_state"):
+		return {}
+	return _soccer_venue_runtime.get_state()
+
+func is_ambient_simulation_frozen() -> bool:
+	if chunk_renderer != null and chunk_renderer.has_method("is_ambient_simulation_frozen"):
+		return bool(chunk_renderer.is_ambient_simulation_frozen())
+	if _soccer_venue_runtime != null and _soccer_venue_runtime.has_method("is_ambient_simulation_frozen"):
+		return bool(_soccer_venue_runtime.is_ambient_simulation_frozen())
+	return false
+
+func debug_set_soccer_ball_state(world_position: Vector3, linear_velocity: Vector3 = Vector3.ZERO, angular_velocity: Vector3 = Vector3.ZERO) -> Dictionary:
+	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("debug_set_ball_state"):
+		return {
+			"success": false,
+			"error": "runtime_unavailable",
+		}
+	return _soccer_venue_runtime.debug_set_ball_state(chunk_renderer, world_position, linear_velocity, angular_velocity)
+
+func debug_force_soccer_ball_reset() -> Dictionary:
+	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("debug_force_reset_ball"):
+		return {
+			"success": false,
+			"error": "runtime_unavailable",
+		}
+	return _soccer_venue_runtime.debug_force_reset_ball(chunk_renderer)
 
 func get_music_road_runtime_state() -> Dictionary:
 	if _music_road_runtime == null or not _music_road_runtime.has_method("get_state"):
@@ -4353,6 +4399,15 @@ func _reload_scene_interactive_prop_registry() -> Dictionary:
 	_sync_scene_interactive_prop_entries(entries)
 	return entries
 
+func _reload_scene_minigame_venue_registry() -> Dictionary:
+	if _scene_minigame_venue_registry == null:
+		return {}
+	var load_registry_paths: Array[String] = [SCENE_MINIGAME_VENUE_REGISTRY_PATH]
+	_scene_minigame_venue_registry.configure(SCENE_MINIGAME_VENUE_REGISTRY_PATH, load_registry_paths)
+	var entries: Dictionary = _scene_minigame_venue_registry.load_registry()
+	_sync_scene_minigame_venue_entries(entries)
+	return entries
+
 func _resolve_building_override_registry_config() -> Dictionary:
 	var primary_registry_path := _normalize_serviceability_resource_path(_building_serviceability_registry_override_path)
 	var load_registry_paths: Array[String] = []
@@ -4409,6 +4464,26 @@ func _sync_scene_interactive_prop_entries(entries: Dictionary) -> void:
 		runtime_entries = _scene_interactive_prop_runtime.get_entries_snapshot()
 	if chunk_renderer != null and chunk_renderer.has_method("set_scene_interactive_prop_entries"):
 		chunk_renderer.set_scene_interactive_prop_entries(runtime_entries)
+
+func _sync_scene_minigame_venue_entries(entries: Dictionary) -> void:
+	if _scene_minigame_venue_runtime != null and _scene_minigame_venue_runtime.has_method("configure"):
+		_scene_minigame_venue_runtime.configure(entries.duplicate(true))
+	var runtime_entries: Dictionary = entries.duplicate(true)
+	if _scene_minigame_venue_runtime != null and _scene_minigame_venue_runtime.has_method("get_entries_snapshot"):
+		runtime_entries = _scene_minigame_venue_runtime.get_entries_snapshot()
+	if _soccer_venue_runtime != null and _soccer_venue_runtime.has_method("configure"):
+		_soccer_venue_runtime.configure(runtime_entries.duplicate(true))
+	if chunk_renderer != null and chunk_renderer.has_method("set_scene_minigame_venue_entries"):
+		chunk_renderer.set_scene_minigame_venue_entries(runtime_entries)
+
+func _update_soccer_venue_runtime(delta: float) -> void:
+	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("update"):
+		if chunk_renderer != null and chunk_renderer.has_method("set_ambient_simulation_frozen"):
+			chunk_renderer.set_ambient_simulation_frozen(false)
+		return
+	var runtime_state: Dictionary = _soccer_venue_runtime.update(chunk_renderer, player, delta)
+	if chunk_renderer != null and chunk_renderer.has_method("set_ambient_simulation_frozen"):
+		chunk_renderer.set_ambient_simulation_frozen(bool(runtime_state.get("ambient_simulation_frozen", false)))
 
 func _update_music_road_runtime(_delta: float) -> void:
 	_advance_music_road_runtime(_delta)

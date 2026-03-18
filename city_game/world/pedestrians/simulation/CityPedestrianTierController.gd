@@ -33,6 +33,7 @@ var _last_assignment_player_context: Dictionary = {}
 var _assignment_rebuild_elapsed_sec := 0.0
 var _has_assignment_cache := false
 var _force_assignment_rebuild := true
+var _simulation_frozen := false
 var _tier1_step_bucket_accumulator_sec := 0.0
 var _tier1_step_bucket_interval_sec := TIER1_UPDATE_INTERVAL_SEC
 var _tier1_step_bucket_count := 1
@@ -99,6 +100,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_assignment_rebuild_elapsed_sec = 0.0
 	_has_assignment_cache = false
 	_force_assignment_rebuild = true
+	_simulation_frozen = false
 	_tier1_step_bucket_accumulator_sec = 0.0
 	_tier1_step_bucket_interval_sec = TIER1_UPDATE_INTERVAL_SEC
 	_tier1_step_bucket_count = 1
@@ -152,6 +154,17 @@ func get_budget_contract() -> Dictionary:
 
 func prewarm_chunk_entries(chunk_entries: Array) -> void:
 	_pedestrian_streamer.prewarm_chunk_entries(chunk_entries)
+
+func set_simulation_frozen(enabled: bool) -> void:
+	if _simulation_frozen == enabled:
+		return
+	_simulation_frozen = enabled
+	if not enabled:
+		_mark_assignment_rebuild_required()
+		_assignment_rebuild_elapsed_sec = ASSIGNMENT_REBUILD_INTERVAL_SEC
+
+func is_simulation_frozen() -> bool:
+	return _simulation_frozen
 
 func set_player_context(player_position: Vector3, player_velocity: Vector3 = Vector3.ZERO, context: Dictionary = {}) -> void:
 	_reaction_model.set_player_context(player_position, player_velocity, context)
@@ -343,6 +356,39 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	var spawn_started_usec := Time.get_ticks_usec()
 	_pedestrian_streamer.sync_active_chunks(active_chunk_entries)
 	var crowd_spawn_usec := Time.get_ticks_usec() - spawn_started_usec
+	if _simulation_frozen:
+		var frozen_runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_summary()
+		_update_runtime_snapshot(
+			active_chunk_ids.size(),
+			int(frozen_runtime_snapshot.get("resident_state_count", 0)),
+			int(_global_snapshot.get("tier0_count", 0)),
+			int(_global_snapshot.get("tier1_count", 0)),
+			int(_global_snapshot.get("tier2_count", 0)),
+			int(_global_snapshot.get("tier3_count", 0)),
+			frozen_runtime_snapshot,
+			crowd_spawn_usec,
+			_empty_step_profile(),
+			0,
+			0,
+			0,
+			_build_layer_profile_counts(
+				_farfield_state_refs.size(),
+				_midfield_state_refs.size(),
+				_nearfield_state_refs.size(),
+				_midfield_state_refs.size() + _nearfield_state_refs.size(),
+				_midfield_state_refs.size() + _nearfield_state_refs.size()
+			),
+			update_started_usec,
+			{
+				"decision": "reuse",
+				"reason": "simulation_frozen",
+				"player_speed_delta_mps": 0.0,
+			},
+			raw_player_velocity,
+			inferred_player_velocity,
+			player_speed_cap_mps
+		)
+		return get_global_summary()
 	if _reaction_model.advance_time(delta):
 		_mark_assignment_rebuild_required()
 	var active_states: Array = _pedestrian_streamer.get_active_states()
@@ -572,6 +618,7 @@ func get_global_snapshot() -> Dictionary:
 func get_global_summary() -> Dictionary:
 	return {
 		"preset": str(_global_snapshot.get("preset", "lite")),
+		"simulation_frozen": _simulation_frozen,
 		"active_chunk_count": int(_global_snapshot.get("active_chunk_count", 0)),
 		"active_page_count": int(_global_snapshot.get("active_page_count", 0)),
 		"active_state_count": int(_global_snapshot.get("active_state_count", 0)),
@@ -647,6 +694,7 @@ func get_runtime_snapshot() -> Dictionary:
 	runtime_snapshot["tier3_budget"] = int(_budget_contract.get("tier3_budget", 24))
 	runtime_snapshot["reactive_event_count"] = _reaction_model.get_event_count()
 	runtime_snapshot["profile_stats"] = _last_profile_stats.duplicate(true)
+	runtime_snapshot["simulation_frozen"] = _simulation_frozen
 	return runtime_snapshot
 
 func get_runtime_summary() -> Dictionary:
@@ -655,6 +703,7 @@ func get_runtime_summary() -> Dictionary:
 		"active_page_count": int(runtime_snapshot.get("active_page_count", 0)),
 		"cached_page_count": int(runtime_snapshot.get("cached_page_count", 0)),
 		"resident_state_count": int(runtime_snapshot.get("resident_state_count", 0)),
+		"simulation_frozen": _simulation_frozen,
 		"page_cache_hit_count": int(runtime_snapshot.get("page_cache_hit_count", 0)),
 		"page_cache_miss_count": int(runtime_snapshot.get("page_cache_miss_count", 0)),
 		"page_generation_count": int(runtime_snapshot.get("page_generation_count", 0)),
@@ -1055,6 +1104,7 @@ func _update_runtime_snapshot(
 ) -> void:
 	_global_snapshot = {
 		"preset": str(_budget_contract.get("preset", "lite")),
+		"simulation_frozen": _simulation_frozen,
 		"active_chunk_count": active_chunk_count,
 		"active_page_count": int(runtime_snapshot.get("active_page_count", 0)),
 		"active_state_count": active_state_count,
@@ -1097,6 +1147,7 @@ func _update_runtime_snapshot(
 		"crowd_assignment_raw_player_velocity_mps": raw_player_velocity.length(),
 		"crowd_assignment_player_speed_delta_mps": float(assignment_diagnostic.get("player_speed_delta_mps", 0.0)),
 		"crowd_assignment_player_speed_cap_mps": player_speed_cap_mps,
+		"simulation_frozen": _simulation_frozen,
 	}
 	_global_snapshot["profile_stats"] = _last_profile_stats.duplicate(true)
 

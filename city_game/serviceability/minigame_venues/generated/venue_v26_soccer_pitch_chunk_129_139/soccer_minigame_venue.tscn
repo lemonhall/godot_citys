@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://city_game/serviceability/minigame_venues/generated/venue_v26_soccer_pitch_chunk_129_139/SoccerMinigameVenue.gd" id="1"]
+
+[node name="SoccerMinigameVenue" type="Node3D"]
+script = ExtResource("1")

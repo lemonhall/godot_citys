@@ -34,8 +34,10 @@ func _run() -> void:
 	if not T.require_true(self, mounted_venue.has_method("get_play_surface_contract"), "Soccer match AI kick contract requires play surface metadata for goalkeeper defense checks"):
 		return
 	await _start_match(world, mounted_venue, player)
+	var play_surface: Dictionary = mounted_venue.get_play_surface_contract()
+	var kickoff_anchor: Vector3 = play_surface.get("kickoff_anchor", SOCCER_WORLD_POSITION)
 
-	var reset_ball_result: Dictionary = world.debug_set_soccer_ball_state(SOCCER_WORLD_POSITION + Vector3(0.0, 0.6, 0.0), Vector3.ZERO)
+	var reset_ball_result: Dictionary = world.debug_set_soccer_ball_state(kickoff_anchor + Vector3(0.0, 0.6, 0.0), Vector3.ZERO)
 	if not T.require_true(self, bool(reset_ball_result.get("success", false)), "Soccer match AI kick contract must allow deterministic center-ball setup before the AI runs"):
 		return
 
@@ -58,8 +60,6 @@ func _run() -> void:
 	if not T.require_true(self, str(ai_debug.get("last_touch_role_id", "")) != "", "Soccer match AI kick contract must identify whether the last AI touch came from a goalkeeper or field player"):
 		return
 
-	var play_surface: Dictionary = mounted_venue.get_play_surface_contract()
-	var kickoff_anchor: Vector3 = play_surface.get("kickoff_anchor", SOCCER_WORLD_POSITION)
 	var home_goal_box_ball := kickoff_anchor + Vector3(0.0, 0.6, 42.0)
 	var goal_box_result: Dictionary = world.debug_set_soccer_ball_state(home_goal_box_ball, Vector3.ZERO)
 	if not T.require_true(self, bool(goal_box_result.get("success", false)), "Soccer match AI kick contract must allow deterministic goalkeeper-defense setup near the home goal"):

@@ -1,8 +1,8 @@
 extends RefCounted
 class_name CityRadioCatalogRepository
 
-const CityRadioCatalogStore := preload("res://city_game/world/radio/CityRadioCatalogStore.gd")
-const CityRadioBrowserApi := preload("res://city_game/world/radio/CityRadioBrowserApi.gd")
+const CityRadioCatalogStoreScript := preload("res://city_game/world/radio/CityRadioCatalogStore.gd")
+const CityRadioBrowserApiScript := preload("res://city_game/world/radio/CityRadioBrowserApi.gd")
 
 const DEFAULT_STATIONS_LIMIT := 200
 
@@ -19,8 +19,8 @@ static func clear_test_api() -> void:
 	_test_api = null
 
 func _init(store = null, api = null, stations_limit: int = DEFAULT_STATIONS_LIMIT) -> void:
-	_store = store if store != null else CityRadioCatalogStore.new()
-	_api = api if api != null else (_test_api if _test_api != null else CityRadioBrowserApi.new())
+	_store = store if store != null else CityRadioCatalogStoreScript.new()
+	_api = api if api != null else (_test_api if _test_api != null else CityRadioBrowserApiScript.new())
 	_stations_limit = clampi(stations_limit, 1, 500)
 
 func supports_background_sync() -> bool:

@@ -285,8 +285,8 @@ func notify_manual_ball_interaction() -> Dictionary:
 		"game_state": _game_state,
 	}
 
-func debug_set_match_seed(seed: int) -> Dictionary:
-	_forced_match_seed = maxi(seed, 0)
+func debug_set_match_seed(match_seed_value: int) -> Dictionary:
+	_forced_match_seed = maxi(match_seed_value, 0)
 	return {
 		"success": true,
 		"match_seed": _forced_match_seed,
@@ -416,12 +416,12 @@ func _resolve_bound_ball(chunk_renderer: Node, entry: Dictionary) -> Node3D:
 func _resolve_kickoff_anchor(entry: Dictionary, mounted_venue: Node3D) -> Vector3:
 	if mounted_venue != null and mounted_venue.has_method("get_play_surface_contract"):
 		var surface_contract: Dictionary = mounted_venue.get_play_surface_contract()
-		var kickoff_anchor_variant: Variant = surface_contract.get("kickoff_anchor", Vector3.ZERO)
-		if kickoff_anchor_variant is Vector3:
-			return kickoff_anchor_variant as Vector3
-	var kickoff_anchor_variant: Variant = entry.get("world_position", Vector3.ZERO)
-	if kickoff_anchor_variant is Vector3:
-		return kickoff_anchor_variant as Vector3
+		var surface_kickoff_anchor_variant: Variant = surface_contract.get("kickoff_anchor", Vector3.ZERO)
+		if surface_kickoff_anchor_variant is Vector3:
+			return surface_kickoff_anchor_variant as Vector3
+	var entry_kickoff_anchor_variant: Variant = entry.get("world_position", Vector3.ZERO)
+	if entry_kickoff_anchor_variant is Vector3:
+		return entry_kickoff_anchor_variant as Vector3
 	return Vector3.ZERO
 
 func _capture_kickoff_ball_offset(ball_node: Node3D, kickoff_anchor: Vector3) -> void:
@@ -624,7 +624,7 @@ func _refresh_match_hud_state() -> void:
 
 func _format_match_clock(seconds: float) -> String:
 	var whole_seconds := maxi(ceili(maxf(seconds, 0.0)), 0)
-	var minutes := whole_seconds / 60
+	var minutes := int(floor(float(whole_seconds) / 60.0))
 	var remaining_seconds := whole_seconds % 60
 	return "%02d:%02d" % [minutes, remaining_seconds]
 

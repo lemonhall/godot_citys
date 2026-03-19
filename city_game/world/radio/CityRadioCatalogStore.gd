@@ -280,10 +280,13 @@ func _delete_file_if_exists(path: String) -> Dictionary:
 	}
 
 func _build_miss_result(read_result: Dictionary, key: String) -> Dictionary:
+	var empty_payload: Variant = {}
+	if key == "countries":
+		empty_payload = []
 	return {
 		"hit": false,
 		"stale": false,
-		key: [] if key == "countries" else {},
+		key: empty_payload,
 		"error": str(read_result.get("error", "missing")),
 	}
 

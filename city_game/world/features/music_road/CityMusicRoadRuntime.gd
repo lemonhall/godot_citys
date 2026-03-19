@@ -95,18 +95,18 @@ func _resolve_mounted_landmark(chunk_renderer, entry: Dictionary):
 	if chunk_renderer == null:
 		return null
 	if chunk_renderer.has_method("find_scene_landmark_node"):
-		var landmark_id := str(entry.get("landmark_id", "")).strip_edges()
-		if landmark_id != "":
-			var mounted_landmark = chunk_renderer.find_scene_landmark_node(landmark_id)
+		var direct_landmark_id := str(entry.get("landmark_id", "")).strip_edges()
+		if direct_landmark_id != "":
+			var mounted_landmark = chunk_renderer.find_scene_landmark_node(direct_landmark_id)
 			if mounted_landmark != null:
 				return mounted_landmark
 	if not chunk_renderer.has_method("get_chunk_scene"):
 		return null
 	var chunk_id := str(entry.get("anchor_chunk_id", "")).strip_edges()
-	var landmark_id := str(entry.get("landmark_id", "")).strip_edges()
-	if chunk_id == "" or landmark_id == "":
+	var chunk_landmark_id := str(entry.get("landmark_id", "")).strip_edges()
+	if chunk_id == "" or chunk_landmark_id == "":
 		return null
 	var chunk_scene = chunk_renderer.get_chunk_scene(chunk_id)
 	if chunk_scene == null or not chunk_scene.has_method("find_scene_landmark_node"):
 		return null
-	return chunk_scene.find_scene_landmark_node(landmark_id)
+	return chunk_scene.find_scene_landmark_node(chunk_landmark_id)

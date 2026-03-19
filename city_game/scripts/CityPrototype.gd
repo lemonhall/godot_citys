@@ -17,14 +17,14 @@ const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChu
 const CityMinimapProjector := preload("res://city_game/world/map/CityMinimapProjector.gd")
 const CityMapScreenScene := preload("res://city_game/ui/CityMapScreen.tscn")
 const CityMapPinRegistry := preload("res://city_game/world/map/CityMapPinRegistry.gd")
-const CityVehicleRadioController := preload("res://city_game/world/radio/CityVehicleRadioController.gd")
-const CityRadioCatalogStore := preload("res://city_game/world/radio/CityRadioCatalogStore.gd")
-const CityRadioCatalogRepository := preload("res://city_game/world/radio/CityRadioCatalogRepository.gd")
-const CityRadioBrowserApi := preload("res://city_game/world/radio/CityRadioBrowserApi.gd")
-const CityRadioNativeBackend := preload("res://city_game/world/radio/backend/CityRadioNativeBackend.gd")
-const CityRadioMockBackend := preload("res://city_game/world/radio/backend/CityRadioMockBackend.gd")
-const CityRadioQuickBank := preload("res://city_game/world/radio/CityRadioQuickBank.gd")
-const CityRadioUserStateStore := preload("res://city_game/world/radio/CityRadioUserStateStore.gd")
+const CityVehicleRadioControllerScript := preload("res://city_game/world/radio/CityVehicleRadioController.gd")
+const CityRadioCatalogStoreScript := preload("res://city_game/world/radio/CityRadioCatalogStore.gd")
+const CityRadioCatalogRepositoryScript := preload("res://city_game/world/radio/CityRadioCatalogRepository.gd")
+const CityRadioBrowserApiScript := preload("res://city_game/world/radio/CityRadioBrowserApi.gd")
+const CityRadioNativeBackendScript := preload("res://city_game/world/radio/backend/CityRadioNativeBackend.gd")
+const CityRadioMockBackendScript := preload("res://city_game/world/radio/backend/CityRadioMockBackend.gd")
+const CityRadioQuickBankScript := preload("res://city_game/world/radio/CityRadioQuickBank.gd")
+const CityRadioUserStateStoreScript := preload("res://city_game/world/radio/CityRadioUserStateStore.gd")
 const CityTaskBriefViewModel := preload("res://city_game/world/tasks/presentation/CityTaskBriefViewModel.gd")
 const CityTaskPinProjection := preload("res://city_game/world/tasks/presentation/CityTaskPinProjection.gd")
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
@@ -43,7 +43,7 @@ const CitySceneInteractivePropRuntime := preload("res://city_game/world/features
 const CitySceneMinigameVenueRegistry := preload("res://city_game/world/features/CitySceneMinigameVenueRegistry.gd")
 const CitySceneMinigameVenueRuntime := preload("res://city_game/world/features/CitySceneMinigameVenueRuntime.gd")
 const CitySoccerVenueRuntime := preload("res://city_game/world/minigames/CitySoccerVenueRuntime.gd")
-const CityMusicRoadRuntime := preload("res://city_game/world/features/music_road/CityMusicRoadRuntime.gd")
+const CityMusicRoadRuntimeScript := preload("res://city_game/world/features/music_road/CityMusicRoadRuntime.gd")
 const CityNpcInteractionRuntime := preload("res://city_game/world/interactions/CityNpcInteractionRuntime.gd")
 const CityInteractivePropRuntime := preload("res://city_game/world/interactions/CityInteractivePropRuntime.gd")
 const CityDialogueRuntime := preload("res://city_game/world/interactions/CityDialogueRuntime.gd")
@@ -293,12 +293,12 @@ func _ready() -> void:
 	_fast_travel_resolver = CityFastTravelResolver.new(_world_config, _world_data)
 	_autodrive_controller = CityAutodriveController.new()
 	_minimap_projector = CityMinimapProjector.new(_world_config, _world_data)
-	_vehicle_radio_quick_bank = CityRadioQuickBank.new()
-	_vehicle_radio_controller = CityVehicleRadioController.new()
-	_vehicle_radio_catalog_store = CityRadioCatalogStore.new()
-	_vehicle_radio_catalog_repository = CityRadioCatalogRepository.new(_vehicle_radio_catalog_store)
+	_vehicle_radio_quick_bank = CityRadioQuickBankScript.new()
+	_vehicle_radio_controller = CityVehicleRadioControllerScript.new()
+	_vehicle_radio_catalog_store = CityRadioCatalogStoreScript.new()
+	_vehicle_radio_catalog_repository = CityRadioCatalogRepositoryScript.new(_vehicle_radio_catalog_store)
 	_vehicle_radio_backend = _create_vehicle_radio_backend()
-	_vehicle_radio_user_state_store = CityRadioUserStateStore.new()
+	_vehicle_radio_user_state_store = CityRadioUserStateStoreScript.new()
 	if _vehicle_radio_controller != null and _vehicle_radio_controller.has_method("configure"):
 		_vehicle_radio_controller.configure(_vehicle_radio_backend)
 	if _vehicle_radio_backend != null and _vehicle_radio_backend.has_method("attach_audio_host"):
@@ -317,7 +317,7 @@ func _ready() -> void:
 	_scene_minigame_venue_registry = CitySceneMinigameVenueRegistry.new()
 	_scene_minigame_venue_runtime = CitySceneMinigameVenueRuntime.new()
 	_soccer_venue_runtime = CitySoccerVenueRuntime.new()
-	_music_road_runtime = CityMusicRoadRuntime.new()
+	_music_road_runtime = CityMusicRoadRuntimeScript.new()
 	_music_road_runtime_time_sec = 0.0
 	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
 		_inspection_resolver.setup(_world_config, _world_data)
@@ -360,10 +360,10 @@ func _ready() -> void:
 	_update_npc_interaction_system()
 
 func _create_vehicle_radio_backend() -> RefCounted:
-	var native_backend: RefCounted = CityRadioNativeBackend.new()
+	var native_backend: RefCounted = CityRadioNativeBackendScript.new()
 	if native_backend != null and native_backend.has_method("is_available") and bool(native_backend.is_available()):
 		return native_backend
-	return CityRadioMockBackend.new()
+	return CityRadioMockBackendScript.new()
 
 func _exit_tree() -> void:
 	if _vehicle_radio_catalog_sync_thread != null and _vehicle_radio_catalog_sync_thread.is_started():
@@ -2041,13 +2041,13 @@ func debug_force_soccer_ball_reset() -> Dictionary:
 		}
 	return _soccer_venue_runtime.debug_force_reset_ball(chunk_renderer)
 
-func debug_set_soccer_match_seed(seed: int) -> Dictionary:
+func debug_set_soccer_match_seed(match_seed_value: int) -> Dictionary:
 	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("debug_set_match_seed"):
 		return {
 			"success": false,
 			"error": "runtime_unavailable",
 		}
-	return _soccer_venue_runtime.debug_set_match_seed(seed)
+	return _soccer_venue_runtime.debug_set_match_seed(match_seed_value)
 
 func debug_set_soccer_match_clock_remaining_sec(seconds: float) -> Dictionary:
 	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("debug_set_match_clock_remaining_sec"):

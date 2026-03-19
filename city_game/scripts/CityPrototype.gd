@@ -497,6 +497,10 @@ func _handle_missile_command_input(event: InputEvent) -> bool:
 		if button.button_index == MOUSE_BUTTON_RIGHT:
 			var zoom_result := set_missile_command_zoom_active(button.pressed)
 			return bool(zoom_result.get("success", false))
+	if event is InputEventMouseMotion:
+		var motion := event as InputEventMouseMotion
+		var look_result := rotate_missile_command_view(motion.relative)
+		return bool(look_result.get("success", false))
 	if event is InputEventKey:
 		var key_event := event as InputEventKey
 		if not key_event.pressed or key_event.echo:
@@ -2159,6 +2163,11 @@ func set_missile_command_zoom_active(active: bool) -> Dictionary:
 	if _missile_command_venue_runtime == null or not _missile_command_venue_runtime.has_method("set_zoom_active"):
 		return {"success": false, "error": "runtime_unavailable"}
 	return _missile_command_venue_runtime.set_zoom_active(active)
+
+func rotate_missile_command_view(relative: Vector2) -> Dictionary:
+	if _missile_command_venue_runtime == null or not _missile_command_venue_runtime.has_method("apply_look_input"):
+		return {"success": false, "error": "runtime_unavailable"}
+	return _missile_command_venue_runtime.apply_look_input(relative)
 
 func exit_missile_command_mode() -> Dictionary:
 	if _missile_command_venue_runtime == null or not _missile_command_venue_runtime.has_method("exit_battery_mode"):

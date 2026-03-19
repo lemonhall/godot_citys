@@ -52,7 +52,7 @@ func _run() -> void:
 	var gameplay_plane_origin := battery_contract.get("gameplay_plane_origin", Vector3.ZERO) as Vector3
 	var camera_look_target := battery_contract.get("camera_look_target", Vector3.ZERO) as Vector3
 	var gameplay_plane_height_m := float(battery_contract.get("gameplay_plane_height_m", 0.0))
-	if not T.require_true(self, camera_look_target.y >= gameplay_plane_origin.y - gameplay_plane_height_m * 0.12, "Missile Command battery contract must aim the camera into the authored gameplay plane instead of the ground scenery"):
+	if not T.require_true(self, camera_look_target.y >= gameplay_plane_origin.y + gameplay_plane_height_m * 0.12, "Missile Command battery contract must aim the tower cameras high enough to see the authored gameplay plane sky lane instead of the ground scenery"):
 		return
 	var silo_ids: Array = battery_contract.get("silo_ids", [])
 	if not T.require_true(self, silo_ids.size() == 3, "Missile Command battery contract must freeze exactly three launch silos in v29"):
@@ -60,18 +60,57 @@ func _run() -> void:
 	var city_ids: Array = battery_contract.get("city_ids", [])
 	if not T.require_true(self, city_ids.size() == 3, "Missile Command battery contract must freeze exactly three defended city targets in v29"):
 		return
-	if not T.require_true(self, mounted_venue.get_node_or_null("BatteryCameraPivot") != null, "Missile Command battery contract requires an authored BatteryCameraPivot node"):
+	if not T.require_true(self, mounted_venue.has_method("get_silo_camera"), "Missile Command battery contract requires authored silo camera lookup"):
 		return
-	if not T.require_true(self, mounted_venue.get_node_or_null("BatteryCameraPivot/BatteryCamera") != null, "Missile Command battery contract requires an authored BatteryCamera node under BatteryCameraPivot"):
+	if not T.require_true(self, mounted_venue.has_method("get_silo_camera_pivot"), "Missile Command battery contract requires authored silo camera pivot lookup"):
+		return
+	if not T.require_true(self, mounted_venue.has_method("get_silo_camera_look_target"), "Missile Command battery contract requires authored silo camera look target lookup"):
 		return
 	if not T.require_true(self, mounted_venue.get_node_or_null("GameplayPlaneAnchor") != null, "Missile Command battery contract requires an authored GameplayPlaneAnchor node"):
 		return
 	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Left") != null, "Missile Command battery contract requires an authored left launch silo anchor"):
 		return
+	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Left/ViewPivot") != null, "Missile Command battery contract requires an authored left silo ViewPivot node"):
+		return
+	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Left/ViewPivot/ViewCamera") != null, "Missile Command battery contract requires an authored left silo ViewCamera node"):
+		return
+	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Left/ViewLookTarget") != null, "Missile Command battery contract requires an authored left silo ViewLookTarget node"):
+		return
+	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Left/LaunchAnchor") != null, "Missile Command battery contract requires an authored left silo LaunchAnchor node"):
+		return
+	if not T.require_true(self, mounted_venue.get_silo_camera("silo_left") != null, "Missile Command battery contract requires left silo camera resolution through the venue API"):
+		return
 	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Center") != null, "Missile Command battery contract requires an authored center launch silo anchor"):
+		return
+	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Center/ViewPivot") != null, "Missile Command battery contract requires an authored center silo ViewPivot node"):
+		return
+	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Center/ViewPivot/ViewCamera") != null, "Missile Command battery contract requires an authored center silo ViewCamera node"):
+		return
+	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Center/ViewLookTarget") != null, "Missile Command battery contract requires an authored center silo ViewLookTarget node"):
+		return
+	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Center/LaunchAnchor") != null, "Missile Command battery contract requires an authored center silo LaunchAnchor node"):
+		return
+	if not T.require_true(self, mounted_venue.get_silo_camera("silo_center") != null, "Missile Command battery contract requires center silo camera resolution through the venue API"):
 		return
 	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Right") != null, "Missile Command battery contract requires an authored right launch silo anchor"):
 		return
+	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Right/ViewPivot") != null, "Missile Command battery contract requires an authored right silo ViewPivot node"):
+		return
+	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Right/ViewPivot/ViewCamera") != null, "Missile Command battery contract requires an authored right silo ViewCamera node"):
+		return
+	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Right/ViewLookTarget") != null, "Missile Command battery contract requires an authored right silo ViewLookTarget node"):
+		return
+	if not T.require_true(self, mounted_venue.get_node_or_null("LaunchSilos/Right/LaunchAnchor") != null, "Missile Command battery contract requires an authored right silo LaunchAnchor node"):
+		return
+	if not T.require_true(self, mounted_venue.get_silo_camera("silo_right") != null, "Missile Command battery contract requires right silo camera resolution through the venue API"):
+		return
+	for silo_id_variant in silo_ids:
+		var silo_id := str(silo_id_variant)
+		var silo_contract: Dictionary = (battery_contract.get("silos", {}) as Dictionary).get(silo_id, {})
+		var silo_world_position := silo_contract.get("world_position", Vector3.ZERO) as Vector3
+		var launch_world_position := silo_contract.get("launch_world_position", Vector3.ZERO) as Vector3
+		if not T.require_true(self, launch_world_position.y >= silo_world_position.y + 20.0, "Missile Command battery contract must place launch_world_position at the authored tower muzzle instead of near the ground"):
+			return
 	if not T.require_true(self, mounted_venue.get_node_or_null("CityTargets/Left") != null, "Missile Command battery contract requires an authored left city target anchor"):
 		return
 	if not T.require_true(self, mounted_venue.get_node_or_null("CityTargets/Center") != null, "Missile Command battery contract requires an authored center city target anchor"):

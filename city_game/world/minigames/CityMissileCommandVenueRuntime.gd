@@ -1,20 +1,24 @@
 extends RefCounted
 
 const ACTIVE_VENUE_SCAN_RADIUS_M := 768.0
-const DEFAULT_CAMERA_FOV := 54.0
-const ZOOM_CAMERA_FOV := 34.0
+const DEFAULT_CAMERA_FOV := 58.0
+const ZOOM_CAMERA_FOV := 38.0
+const BATTERY_CAMERA_LOOK_SENSITIVITY := 0.0032
+const BATTERY_CAMERA_YAW_MAX_RAD := deg_to_rad(120.0)
+const BATTERY_CAMERA_PITCH_MIN_RAD := deg_to_rad(-55.0)
+const BATTERY_CAMERA_PITCH_MAX_RAD := deg_to_rad(68.0)
 const INTERCEPTOR_SPEED_MPS := 60.0
 const INTERCEPTOR_VISUAL_RADIUS_M := 0.42
 const ENEMY_VISUAL_RADIUS_M := 0.85
-const EXPLOSION_RADIUS_M := 8.5
-const EXPLOSION_DURATION_SEC := 0.72
-const WAVE_INTERMISSION_SEC := 1.0
+const EXPLOSION_RADIUS_M := 10.5
+const EXPLOSION_DURATION_SEC := 1.8
+const WAVE_INTERMISSION_SEC := 1.8
 const MISSILES_PER_SILO := 8
 
 const WAVE_CONFIGS := [
-	{"enemy_count": 4, "spawn_interval_sec": 0.42, "enemy_speed_mps": 23.0},
-	{"enemy_count": 6, "spawn_interval_sec": 0.34, "enemy_speed_mps": 26.0},
-	{"enemy_count": 8, "spawn_interval_sec": 0.28, "enemy_speed_mps": 29.0},
+	{"enemy_count": 4, "spawn_interval_sec": 1.25, "enemy_speed_mps": 18.0},
+	{"enemy_count": 6, "spawn_interval_sec": 0.96, "enemy_speed_mps": 20.0},
+	{"enemy_count": 8, "spawn_interval_sec": 0.78, "enemy_speed_mps": 22.0},
 ]
 
 var _entries_by_venue_id: Dictionary = {}
@@ -49,6 +53,8 @@ var _last_chunk_renderer: Node = null
 var _last_player: Node3D = null
 var _last_mounted_venue: Node3D = null
 var _wave_rng := RandomNumberGenerator.new()
+var _camera_yaw_offset_rad := 0.0
+var _camera_pitch_offset_rad := 0.0
 
 func configure(entries: Dictionary) -> void:
 	_entries_by_venue_id.clear()
@@ -86,6 +92,7 @@ func update(chunk_renderer: Node, player_node: Node3D, delta: float) -> Dictiona
 	if mounted_venue == null:
 		_handle_unavailable_runtime()
 		return get_state()
+	_update_battery_camera_pose(mounted_venue)
 	_update_reticle(mounted_venue)
 	_apply_camera_fov(mounted_venue)
 	if not _battery_mode_active:
@@ -209,6 +216,8 @@ func cycle_silo() -> Dictionary:
 		if int(silo_state.get("missiles_remaining", 0)) <= 0:
 			continue
 		_selected_silo_index = next_index
+		_update_battery_camera_pose(_last_mounted_venue)
+		_activate_battery_camera(_last_mounted_venue)
 		_emit_feedback("切换至 %s" % silo_id.to_upper(), "neutral")
 		_refresh_hud_state()
 		return {"success": true, "selected_silo_index": _selected_silo_index, "selected_silo_id": _resolve_selected_silo_id()}
@@ -218,10 +227,25 @@ func set_zoom_active(active: bool) -> Dictionary:
 	if not _battery_mode_active:
 		return {"success": false, "error": "battery_mode_inactive"}
 	_zoom_active = active
-	_apply_player_zoom_state(_zoom_active)
 	_apply_camera_fov(_last_mounted_venue)
 	_refresh_hud_state()
 	return {"success": true, "zoom_active": _zoom_active}
+
+func apply_look_input(relative: Vector2) -> Dictionary:
+	if not _battery_mode_active:
+		return {"success": false, "error": "battery_mode_inactive"}
+	_camera_yaw_offset_rad = clampf(
+		_camera_yaw_offset_rad - relative.x * BATTERY_CAMERA_LOOK_SENSITIVITY,
+		-BATTERY_CAMERA_YAW_MAX_RAD,
+		BATTERY_CAMERA_YAW_MAX_RAD
+	)
+	_camera_pitch_offset_rad = clampf(
+		_camera_pitch_offset_rad - relative.y * BATTERY_CAMERA_LOOK_SENSITIVITY,
+		BATTERY_CAMERA_PITCH_MIN_RAD,
+		BATTERY_CAMERA_PITCH_MAX_RAD
+	)
+	_update_battery_camera_pose(_last_mounted_venue)
+	return {"success": true}
 
 func exit_battery_mode() -> Dictionary:
 	if not _battery_mode_active:
@@ -246,8 +270,12 @@ func _enter_battery_mode(player_node: Node3D, mounted_venue: Node3D) -> void:
 	_ambient_simulation_frozen = true
 	_zoom_active = false
 	_session_serial += 1
-	_apply_player_movement_lock(player_node, true)
-	_apply_player_zoom_state(false)
+	_camera_yaw_offset_rad = 0.0
+	_camera_pitch_offset_rad = 0.0
+	if player_node != null and player_node.has_method("set_control_enabled"):
+		player_node.set_control_enabled(false)
+	_update_battery_camera_pose(mounted_venue)
+	_activate_battery_camera(mounted_venue)
 	_begin_wave(1)
 	_emit_feedback("进入防空模式", "action")
 	_start_ring_rearm_required = false
@@ -257,8 +285,9 @@ func _exit_battery_mode(reset_session: bool) -> void:
 	_battery_mode_active = false
 	_ambient_simulation_frozen = false
 	_zoom_active = false
-	_apply_player_zoom_state(false)
-	_apply_player_movement_lock(_last_player, false)
+	_restore_player_camera()
+	if _last_player != null and is_instance_valid(_last_player) and _last_player.has_method("set_control_enabled"):
+		_last_player.set_control_enabled(true)
 	if reset_session:
 		_start_ring_rearm_required = true
 		_reset_runtime_state()
@@ -283,6 +312,8 @@ func _reset_runtime_state() -> void:
 	_feedback_event_token = 0
 	_feedback_event_text = ""
 	_feedback_event_tone = "neutral"
+	_camera_yaw_offset_rad = 0.0
+	_camera_pitch_offset_rad = 0.0
 	_refresh_hud_state()
 
 func _initialize_target_states(mounted_venue: Node3D) -> void:
@@ -615,32 +646,49 @@ func _update_reticle(mounted_venue: Node3D) -> void:
 	_reticle_world_position = plane_origin + plane_right * clamped_x + plane_up * clamped_y
 
 func _apply_camera_fov(mounted_venue: Node3D) -> void:
-	if mounted_venue == null or not mounted_venue.has_method("get_battery_camera"):
-		return
-	var camera := mounted_venue.get_battery_camera() as Camera3D
+	var camera := _resolve_target_camera(mounted_venue)
 	if camera == null:
 		return
 	camera.fov = ZOOM_CAMERA_FOV if _zoom_active else DEFAULT_CAMERA_FOV
 
+func _update_battery_camera_pose(mounted_venue: Node3D) -> void:
+	if mounted_venue == null:
+		return
+	var camera_pivot := _resolve_selected_silo_camera_pivot(mounted_venue)
+	var look_target := _resolve_selected_silo_camera_look_target(mounted_venue)
+	if camera_pivot == null or look_target == null:
+		return
+	var contract := _resolve_missile_command_contract(mounted_venue)
+	if contract.is_empty():
+		return
+	var plane_up := contract.get("gameplay_plane_up", Vector3.UP) as Vector3
+	var camera_world_position := camera_pivot.global_position
+	var base_focus_world_position := look_target.global_position
+	var forward := (base_focus_world_position - camera_world_position).normalized()
+	if forward.length_squared() <= 0.0001:
+		return
+	forward = forward.rotated(plane_up, _camera_yaw_offset_rad)
+	var pitch_axis := forward.cross(plane_up).normalized()
+	if pitch_axis.length_squared() > 0.0001:
+		forward = forward.rotated(pitch_axis, _camera_pitch_offset_rad)
+	camera_pivot.look_at(camera_world_position + forward * 120.0, plane_up, true)
+
 func _activate_battery_camera(mounted_venue: Node3D) -> void:
 	if mounted_venue == null:
 		return
-	var battery_camera: Camera3D = mounted_venue.get_battery_camera() as Camera3D if mounted_venue.has_method("get_battery_camera") else null
-	if battery_camera != null:
-		battery_camera.current = true
+	_set_silo_camera_activation(mounted_venue, _resolve_selected_silo_id())
+	_apply_camera_fov(mounted_venue)
 	if _last_player != null and is_instance_valid(_last_player):
 		var player_camera := _last_player.get_node_or_null("CameraRig/Camera3D") as Camera3D
 		if player_camera != null:
 			player_camera.current = false
 	if DisplayServer.get_name() != "headless":
 		_previous_mouse_mode = Input.mouse_mode
-		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 func _restore_player_camera() -> void:
-	if _last_mounted_venue != null and is_instance_valid(_last_mounted_venue) and _last_mounted_venue.has_method("get_battery_camera"):
-		var battery_camera := _last_mounted_venue.get_battery_camera() as Camera3D
-		if battery_camera != null:
-			battery_camera.current = false
+	if _last_mounted_venue != null and is_instance_valid(_last_mounted_venue):
+		_set_silo_camera_activation(_last_mounted_venue, "")
 	if _last_player != null and is_instance_valid(_last_player):
 		var player_camera := _last_player.get_node_or_null("CameraRig/Camera3D") as Camera3D
 		if player_camera != null:
@@ -649,26 +697,42 @@ func _restore_player_camera() -> void:
 		Input.set_mouse_mode(_previous_mouse_mode)
 
 func _resolve_target_camera(mounted_venue: Node3D) -> Camera3D:
+	var selected_camera := _resolve_selected_silo_camera(mounted_venue)
+	if selected_camera != null:
+		return selected_camera
 	if _last_player != null and is_instance_valid(_last_player):
 		var player_camera := _last_player.get_node_or_null("CameraRig/Camera3D") as Camera3D
 		if player_camera != null:
 			return player_camera
-	if mounted_venue != null and mounted_venue.has_method("get_battery_camera"):
-		return mounted_venue.get_battery_camera() as Camera3D
 	return null
 
-func _apply_player_zoom_state(active: bool) -> void:
-	if _last_player != null and is_instance_valid(_last_player) and _last_player.has_method("set_aim_down_sights_active"):
-		_last_player.set_aim_down_sights_active(active)
+func _resolve_selected_silo_camera(mounted_venue: Node3D) -> Camera3D:
+	if mounted_venue == null or not mounted_venue.has_method("get_silo_camera"):
+		return null
+	return mounted_venue.get_silo_camera(_resolve_selected_silo_id()) as Camera3D
 
-func _apply_player_movement_lock(player_node: Node3D, locked: bool) -> void:
-	if player_node == null or not is_instance_valid(player_node):
+func _resolve_selected_silo_camera_pivot(mounted_venue: Node3D) -> Node3D:
+	if mounted_venue == null or not mounted_venue.has_method("get_silo_camera_pivot"):
+		return null
+	return mounted_venue.get_silo_camera_pivot(_resolve_selected_silo_id()) as Node3D
+
+func _resolve_selected_silo_camera_look_target(mounted_venue: Node3D) -> Node3D:
+	if mounted_venue == null or not mounted_venue.has_method("get_silo_camera_look_target"):
+		return null
+	return mounted_venue.get_silo_camera_look_target(_resolve_selected_silo_id()) as Node3D
+
+func _set_silo_camera_activation(mounted_venue: Node3D, active_silo_id: String) -> void:
+	if mounted_venue == null or not mounted_venue.has_method("get_silo_camera"):
 		return
-	if player_node.has_method("set_movement_locked"):
-		player_node.set_movement_locked(locked)
-		return
-	if player_node.has_method("set_control_enabled"):
-		player_node.set_control_enabled(not locked)
+	var silo_ids := _get_silo_ids()
+	if silo_ids.is_empty():
+		silo_ids = ["silo_left", "silo_center", "silo_right"]
+	for silo_id_variant in silo_ids:
+		var silo_id := str(silo_id_variant)
+		var silo_camera := mounted_venue.get_silo_camera(silo_id) as Camera3D
+		if silo_camera == null:
+			continue
+		silo_camera.current = silo_id == active_silo_id
 
 func _sync_venue_state(mounted_venue: Node3D) -> void:
 	if mounted_venue == null or not mounted_venue.has_method("sync_battery_state"):

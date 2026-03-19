@@ -2,17 +2,22 @@ extends Node3D
 
 const CityWorldRingMarker := preload("res://city_game/world/navigation/CityWorldRingMarker.gd")
 
-const GAMEPLAY_PLANE_HALF_WIDTH_M := 36.0
-const GAMEPLAY_PLANE_HEIGHT_M := 54.0
-const RELEASE_BUFFER_M := 30.0
-const PLAY_SURFACE_SIZE := Vector3(72.0, 0.42, 68.0)
-const START_RING_RADIUS_M := 4.4
+const GAMEPLAY_PLANE_HALF_WIDTH_M := 84.0
+const GAMEPLAY_PLANE_HEIGHT_M := 82.0
+const RELEASE_BUFFER_M := 90.0
+const PLAY_SURFACE_SIZE := Vector3(340.0, 2.2, 280.0)
+const START_RING_RADIUS_M := 10.0
 const PLAY_SURFACE_COLLISION_LAYER_VALUE := 1 << 8
-const SCOREBOARD_PANEL_SIZE := Vector3(8.6, 4.6, 0.24)
-const SCOREBOARD_POST_SIZE := Vector3(0.26, 6.0, 0.26)
-const TRACK_VISUAL_RADIUS_M := 1.35
-const INTERCEPTOR_VISUAL_RADIUS_M := 0.72
+const SCOREBOARD_PANEL_SIZE := Vector3(24.0, 12.0, 0.8)
+const SCOREBOARD_POST_SIZE := Vector3(1.2, 18.0, 1.2)
+const TRACK_VISUAL_RADIUS_M := 2.4
+const INTERCEPTOR_VISUAL_RADIUS_M := 1.2
 const BACKDROP_DEPTH_OFFSET_M := 2.8
+const SILO_NODE_NAMES := {
+	"silo_left": "Left",
+	"silo_center": "Center",
+	"silo_right": "Right",
+}
 
 const PLATFORM_COLOR := Color(0.41, 0.42, 0.45, 1.0)
 const DECK_COLOR := Color(0.16, 0.21, 0.24, 1.0)
@@ -30,6 +35,7 @@ const SCOREBOARD_TEXT_COLOR := Color(0.93, 0.95, 0.88, 1.0)
 static var _shared_box_mesh_cache: Dictionary = {}
 static var _shared_box_shape_cache: Dictionary = {}
 static var _shared_sphere_mesh_cache: Dictionary = {}
+static var _shared_cylinder_mesh_cache: Dictionary = {}
 static var _shared_material_cache: Dictionary = {}
 
 var _entry: Dictionary = {}
@@ -88,7 +94,31 @@ func get_scoreboard_state() -> Dictionary:
 	return _scoreboard_state.duplicate(true)
 
 func get_battery_camera() -> Camera3D:
-	return get_node_or_null("BatteryCameraPivot/BatteryCamera") as Camera3D
+	return get_silo_camera("silo_center")
+
+func get_silo_camera(silo_id: String) -> Camera3D:
+	var anchor_path := _resolve_silo_anchor_path(silo_id)
+	if anchor_path == "":
+		return null
+	return get_node_or_null("%s/ViewPivot/ViewCamera" % anchor_path) as Camera3D
+
+func get_silo_camera_pivot(silo_id: String) -> Node3D:
+	var anchor_path := _resolve_silo_anchor_path(silo_id)
+	if anchor_path == "":
+		return null
+	return get_node_or_null("%s/ViewPivot" % anchor_path) as Node3D
+
+func get_silo_camera_look_target(silo_id: String) -> Node3D:
+	var anchor_path := _resolve_silo_anchor_path(silo_id)
+	if anchor_path == "":
+		return null
+	return get_node_or_null("%s/ViewLookTarget" % anchor_path) as Node3D
+
+func get_silo_launch_anchor(silo_id: String) -> Node3D:
+	var anchor_path := _resolve_silo_anchor_path(silo_id)
+	if anchor_path == "":
+		return null
+	return get_node_or_null("%s/LaunchAnchor" % anchor_path) as Node3D
 
 func get_play_surface_collision_layer_value() -> int:
 	return PLAY_SURFACE_COLLISION_LAYER_VALUE
@@ -137,21 +167,19 @@ func _ensure_venue_layout_built() -> void:
 		return
 	_refresh_contracts()
 	_apply_camera_pose()
-	_ensure_platform()
-	_ensure_gameplay_backdrop()
-	_ensure_silos()
-	_ensure_cities()
-	_ensure_scoreboard()
+	_cache_authored_stage_nodes()
 	_ensure_match_start_ring()
 	_ensure_runtime_roots()
 	_layout_initialized = true
 	_apply_scoreboard_state()
+	_apply_city_states({})
+	_apply_silo_states({}, "")
 
 func _refresh_contracts() -> void:
 	var plane_anchor := get_node_or_null("GameplayPlaneAnchor") as Node3D
-	var camera := get_battery_camera()
-	var camera_pivot := get_node_or_null("BatteryCameraPivot") as Node3D
-	var look_target := get_node_or_null("BatteryCameraLookTarget") as Node3D
+	var camera := get_silo_camera("silo_center")
+	var camera_pivot := get_silo_camera_pivot("silo_center")
+	var look_target := get_silo_camera_look_target("silo_center")
 	var silo_contracts := _build_silo_contracts()
 	var city_contracts := _build_city_contracts()
 	var silo_ids: Array[String] = []
@@ -193,12 +221,32 @@ func _refresh_contracts() -> void:
 	}
 
 func _apply_camera_pose() -> void:
-	var pivot := get_node_or_null("BatteryCameraPivot") as Node3D
-	var look_target := get_node_or_null("BatteryCameraLookTarget") as Node3D
-	if pivot == null or look_target == null:
-		return
-	if pivot.global_position.distance_squared_to(look_target.global_position) > 0.001:
-		pivot.look_at(look_target.global_position, Vector3.UP, true)
+	for silo_id_variant in SILO_NODE_NAMES.keys():
+		var silo_id := str(silo_id_variant)
+		var pivot := get_silo_camera_pivot(silo_id)
+		var look_target := get_silo_camera_look_target(silo_id)
+		if pivot == null or look_target == null:
+			continue
+		if pivot.global_position.distance_squared_to(look_target.global_position) > 0.001:
+			pivot.look_at(look_target.global_position, Vector3.UP, true)
+
+func _cache_authored_stage_nodes() -> void:
+	_silo_visual_nodes.clear()
+	var silo_root := get_node_or_null("LaunchSilos") as Node3D
+	if silo_root != null:
+		for node_name in ["Left", "Center", "Right"]:
+			var visual_root := silo_root.get_node_or_null("%s/Visual" % node_name) as Node3D
+			if visual_root == null:
+				continue
+			_silo_visual_nodes["silo_%s" % node_name.to_lower()] = visual_root
+	_city_visual_nodes.clear()
+	var city_root := get_node_or_null("CityTargets") as Node3D
+	if city_root != null:
+		for node_name in ["Left", "Center", "Right"]:
+			var visual_root := city_root.get_node_or_null("%s/Visual" % node_name) as Node3D
+			if visual_root == null:
+				continue
+			_city_visual_nodes["city_%s" % node_name.to_lower()] = visual_root
 
 func _build_silo_contracts() -> Dictionary:
 	var result := {}
@@ -210,12 +258,13 @@ func _build_silo_contracts() -> Dictionary:
 		if anchor == null:
 			continue
 		var silo_id := "silo_%s" % node_name.to_lower()
+		var launch_anchor := anchor.get_node_or_null("LaunchAnchor") as Node3D
 		result[silo_id] = {
 			"silo_id": silo_id,
 			"label": node_name,
 			"local_position": anchor.position,
 			"world_position": _world_from_node(anchor),
-			"launch_world_position": _world_from_node(anchor) + Vector3.UP * 3.6,
+			"launch_world_position": _world_from_node(launch_anchor) if launch_anchor != null else (_world_from_node(anchor) + Vector3.UP * 3.6),
 		}
 	return result
 
@@ -435,10 +484,12 @@ func _sync_explosion_visuals(explosion_tracks: Array) -> void:
 			root.add_child(node)
 			_explosion_track_nodes[track_id] = node
 		var radius_m := maxf(float(track.get("radius_m", 0.0)), 1.0)
-		node.mesh = _get_shared_sphere_mesh(radius_m)
-		node.global_position = track.get("world_position", global_position)
 		var progress := clampf(float(track.get("progress", 0.0)), 0.0, 1.0)
-		node.material_override = _get_shared_material(Color(0.98, 0.82, 0.18, lerpf(0.42, 0.14, progress)), 0.05)
+		var visual_radius_m := maxf(radius_m * lerpf(0.18, 1.0, sqrt(progress)), 0.9)
+		node.mesh = _get_shared_cylinder_mesh(visual_radius_m, 0.18)
+		node.global_position = track.get("world_position", global_position)
+		node.rotation = Vector3(PI * 0.5, 0.0, 0.0)
+		node.material_override = _get_shared_material(Color(0.99, 0.74, 0.16, lerpf(0.72, 0.1, progress)), 0.02)
 	for node_id_variant in _explosion_track_nodes.keys():
 		var node_id := str(node_id_variant)
 		if live_ids.has(node_id):
@@ -569,6 +620,19 @@ func _get_shared_sphere_mesh(radius_m: float) -> SphereMesh:
 	_shared_sphere_mesh_cache[key] = mesh
 	return mesh
 
+func _get_shared_cylinder_mesh(radius_m: float, height_m: float) -> CylinderMesh:
+	var key := "%s|%s" % [str(snappedf(radius_m, 0.01)), str(snappedf(height_m, 0.01))]
+	if _shared_cylinder_mesh_cache.has(key):
+		return _shared_cylinder_mesh_cache.get(key) as CylinderMesh
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius_m
+	mesh.bottom_radius = radius_m
+	mesh.height = height_m
+	mesh.radial_segments = 32
+	mesh.rings = 1
+	_shared_cylinder_mesh_cache[key] = mesh
+	return mesh
+
 func _get_shared_material(color: Color, roughness: float) -> StandardMaterial3D:
 	var key := "%s|%s" % [_color_key(color), str(snappedf(roughness, 0.01))]
 	if _shared_material_cache.has(key):
@@ -592,3 +656,9 @@ func _color_key(value: Color) -> String:
 		str(snappedf(value.b, 0.01)),
 		str(snappedf(value.a, 0.01))
 	]
+
+func _resolve_silo_anchor_path(silo_id: String) -> String:
+	var node_name := str(SILO_NODE_NAMES.get(silo_id, ""))
+	if node_name == "":
+		return ""
+	return "LaunchSilos/%s" % node_name

@@ -24,8 +24,6 @@ func _run() -> void:
 		return
 	if not T.require_true(self, player.has_method("is_control_enabled"), "Missile Command mode contract requires player control introspection"):
 		return
-	if not T.require_true(self, player.has_method("is_movement_locked"), "Missile Command mode contract requires player movement-lock introspection"):
-		return
 	if not T.require_true(self, world.has_method("get_missile_command_runtime_state"), "Missile Command mode contract requires get_missile_command_runtime_state()"):
 		return
 	if not T.require_true(self, world.has_method("get_missile_command_hud_state"), "Missile Command mode contract requires get_missile_command_hud_state()"):
@@ -35,6 +33,8 @@ func _run() -> void:
 	if not T.require_true(self, world.has_method("cycle_missile_command_silo"), "Missile Command mode contract requires cycle_missile_command_silo()"):
 		return
 	if not T.require_true(self, world.has_method("set_missile_command_zoom_active"), "Missile Command mode contract requires set_missile_command_zoom_active()"):
+		return
+	if not T.require_true(self, world.has_method("rotate_missile_command_view"), "Missile Command mode contract requires rotate_missile_command_view()"):
 		return
 	if not T.require_true(self, world.has_method("exit_missile_command_mode"), "Missile Command mode contract requires exit_missile_command_mode()"):
 		return
@@ -51,6 +51,15 @@ func _run() -> void:
 	var mounted_venue: Node3D = await _wait_for_mounted_venue(world)
 	if not T.require_true(self, mounted_venue != null and mounted_venue.has_method("get_match_start_contract"), "Missile Command mode contract requires the mounted venue start ring contract"):
 		return
+	if not T.require_true(self, mounted_venue.has_method("get_silo_camera"), "Missile Command mode contract requires authored silo camera lookup"):
+		return
+	if not T.require_true(self, mounted_venue.has_method("get_silo_camera_pivot"), "Missile Command mode contract requires authored silo camera pivot lookup"):
+		return
+	if not T.require_true(self, mounted_venue.has_method("get_silo_camera_look_target"), "Missile Command mode contract requires authored silo camera look target lookup"):
+		return
+	var player_camera := player.get_node_or_null("CameraRig/Camera3D") as Camera3D
+	if not T.require_true(self, player_camera != null, "Missile Command mode contract requires access to the player camera for restore validation"):
+		return
 
 	var runtime_state: Dictionary = world.get_missile_command_runtime_state()
 	if not T.require_true(self, not bool(runtime_state.get("battery_mode_active", true)), "Standing outside the Missile Command start ring must not begin battery mode"):
@@ -63,9 +72,24 @@ func _run() -> void:
 	runtime_state = await _wait_for_battery_mode(world, true)
 	if not T.require_true(self, bool(runtime_state.get("battery_mode_active", false)), "Entering the Missile Command start ring must activate battery mode"):
 		return
-	if not T.require_true(self, bool(player.is_control_enabled()), "Missile Command battery mode must preserve player look control for free-view aiming"):
+	if not T.require_true(self, not bool(player.is_control_enabled()), "Missile Command battery mode must disable direct player combat and locomotion control while using the tower camera"):
 		return
-	if not T.require_true(self, bool(player.is_movement_locked()), "Missile Command battery mode must lock locomotion while the player keeps free-look control"):
+	await process_frame
+	var selected_silo_id := str(runtime_state.get("selected_silo_id", ""))
+	var selected_silo_camera := mounted_venue.get_silo_camera(selected_silo_id) as Camera3D
+	if not T.require_true(self, selected_silo_camera != null, "Missile Command battery mode must bind the active silo to an authored tower camera"):
+		return
+	if not T.require_true(self, bool(selected_silo_camera.current), "Missile Command battery mode must switch to the selected silo camera instead of keeping the player camera active"):
+		return
+	if not T.require_true(self, not bool(player_camera.current), "Missile Command battery mode must disable the player camera while tower view is active"):
+		return
+	var view_forward_before := -selected_silo_camera.global_basis.z
+	var look_result: Dictionary = world.rotate_missile_command_view(Vector2(-260.0, -180.0))
+	if not T.require_true(self, bool(look_result.get("success", false)), "Missile Command battery mode must accept explicit look input for free tower camera control"):
+		return
+	await process_frame
+	var view_forward_after := -selected_silo_camera.global_basis.z
+	if not T.require_true(self, view_forward_after.distance_to(view_forward_before) > 0.02, "Missile Command tower camera must respond to mouse-look input instead of staying locked to a fixed view"):
 		return
 	if not T.require_true(self, bool(world.is_ambient_simulation_frozen()), "Missile Command battery mode must aggregate world-level ambient freeze"):
 		return
@@ -82,13 +106,31 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(hud_state.get("selected_silo_id", "")) != "", "Missile Command HUD must expose a formal selected_silo_id during battery mode"):
 		return
+	var interceptor_count_before := (runtime_state.get("interceptor_tracks", []) as Array).size()
+	var fire_result: Dictionary = world.request_missile_command_primary_fire()
+	if not T.require_true(self, bool(fire_result.get("success", false)), "Missile Command battery mode must allow the formal primary-fire entrypoint used by left-click tower input"):
+		return
+	await process_frame
+	runtime_state = world.get_missile_command_runtime_state()
+	if not T.require_true(self, (runtime_state.get("interceptor_tracks", []) as Array).size() >= interceptor_count_before + 1, "Missile Command primary-fire entrypoint must materialize a live interceptor track from the selected silo"):
+		return
 
 	var selected_silo_index_before := int(runtime_state.get("selected_silo_index", -1))
+	var selected_silo_camera_before := selected_silo_camera
 	var cycle_result: Dictionary = world.cycle_missile_command_silo()
 	if not T.require_true(self, bool(cycle_result.get("success", false)), "Missile Command mode contract must allow cycling the selected launch silo"):
 		return
+	await process_frame
 	runtime_state = world.get_missile_command_runtime_state()
 	if not T.require_true(self, int(runtime_state.get("selected_silo_index", -1)) != selected_silo_index_before, "Cycling silos in Missile Command battery mode must change selected_silo_index"):
+		return
+	selected_silo_id = str(runtime_state.get("selected_silo_id", ""))
+	selected_silo_camera = mounted_venue.get_silo_camera(selected_silo_id) as Camera3D
+	if not T.require_true(self, selected_silo_camera != null, "Cycling silos must resolve another authored silo camera"):
+		return
+	if not T.require_true(self, bool(selected_silo_camera.current), "Cycling silos must make the newly selected silo camera current"):
+		return
+	if not T.require_true(self, selected_silo_camera_before != null and not bool(selected_silo_camera_before.current), "Cycling silos must release the previously selected silo camera"):
 		return
 
 	var zoom_result: Dictionary = world.set_missile_command_zoom_active(true)
@@ -110,9 +152,12 @@ func _run() -> void:
 	runtime_state = await _wait_for_battery_mode(world, false)
 	if not T.require_true(self, not bool(runtime_state.get("battery_mode_active", true)), "Exiting Missile Command battery mode must clear battery_mode_active"):
 		return
+	await process_frame
 	if not T.require_true(self, bool(player.is_control_enabled()), "Exiting Missile Command battery mode must restore player control"):
 		return
-	if not T.require_true(self, not bool(player.is_movement_locked()), "Exiting Missile Command battery mode must release the movement lock"):
+	if not T.require_true(self, bool(player_camera.current), "Exiting Missile Command battery mode must restore the player camera"):
+		return
+	if not T.require_true(self, not bool(selected_silo_camera.current), "Exiting Missile Command battery mode must release the silo camera"):
 		return
 	if not T.require_true(self, not bool(world.is_ambient_simulation_frozen()), "Exiting Missile Command battery mode must release ambient freeze aggregation"):
 		return

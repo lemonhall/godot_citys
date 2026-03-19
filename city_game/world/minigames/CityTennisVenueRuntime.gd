@@ -5,6 +5,7 @@ const BALL_RADIUS_FALLBACK_M := 0.0675
 const BALL_CONTACT_EPSILON_M := 0.05
 const BOUNCE_COOLDOWN_SEC := 0.10
 const AI_RETURN_DELAY_SEC := 0.18
+const AI_SERVE_DELAY_SEC := 0.48
 const LIVE_OUT_MARGIN_M := 6.0
 const POINT_RESULT_LINGER_SEC := 0.65
 const GAME_BREAK_LINGER_SEC := 1.0
@@ -22,8 +23,9 @@ const PLAYER_STRIKE_RADIUS_M := 3.8
 const PLAYER_STRIKE_HEIGHT_MIN_M := 0.25
 const PLAYER_STRIKE_HEIGHT_MAX_M := 4.2
 const PLAYER_RECEIVE_MARKER_RADIUS_M := 4.2
+const PLAYER_POST_BOUNCE_READY_WINDOW_SEC := 0.72
 const PLAYER_STRIKE_SLOT_BLEND := 0.12
-const PLAYER_STRIKE_SLOT_MIN_AHEAD_M := 1.8
+const PLAYER_STRIKE_SLOT_MIN_AHEAD_M := 0.45
 const MATCH_STATE_IDLE := "idle"
 const MATCH_STATE_PRE_SERVE := "pre_serve"
 const MATCH_STATE_SERVE_IN_FLIGHT := "serve_in_flight"
@@ -82,6 +84,7 @@ var _incoming_strike_world_position := Vector3.ZERO
 var _auto_footwork_assist_state := AUTO_FOOTWORK_STATE_IDLE
 var _strike_window_state := STRIKE_WINDOW_STATE_IDLE
 var _strike_quality_feedback := ""
+var _home_receive_grace_sec := 0.0
 var _ai_return_pattern_index := 0
 var _player_swing_token := 0
 var _player_swing_style := ""
@@ -93,6 +96,9 @@ var _feedback_event_text := ""
 var _feedback_event_tone := "neutral"
 var _rally_shot_count := 0
 var _debug_forced_ai_pressure_error_kind := ""
+var _debug_last_bounce_probe: Dictionary = {}
+var _debug_last_bounce_event: Dictionary = {}
+var _debug_last_live_out_world_position := Vector3.ZERO
 
 func configure(entries: Dictionary) -> void:
 	_entries_by_venue_id.clear()
@@ -176,6 +182,9 @@ func get_state() -> Dictionary:
 		"ball_bounce_count_away": _target_bounce_count if _target_side == "away" else 0,
 		"planned_target_world_position": _planned_target_world_position,
 		"planned_target_side": _planned_target_side,
+		"debug_last_bounce_probe": _debug_last_bounce_probe.duplicate(true),
+		"debug_last_bounce_event": _debug_last_bounce_event.duplicate(true),
+		"debug_last_live_out_world_position": _debug_last_live_out_world_position,
 		"landing_marker_visible": _landing_marker_visible,
 		"landing_marker_world_position": _landing_marker_world_position,
 		"auto_footwork_assist_state": _auto_footwork_assist_state,
@@ -228,7 +237,9 @@ func handle_primary_interaction(chunk_renderer: Node, player_node: Node3D, prop_
 		return _build_handled_interaction_result(false, "missing_player", normalized_prop_id)
 	match _match_state:
 		MATCH_STATE_PRE_SERVE:
-			return _handle_player_serve(ball_node, mounted_venue, player_node, normalized_prop_id)
+			if _server_side == "home":
+				return _handle_player_serve(ball_node, mounted_venue, player_node, normalized_prop_id)
+			return _build_handled_interaction_result(false, "away_server_turn", normalized_prop_id)
 		MATCH_STATE_RALLY:
 			if _target_side == "home":
 				return _handle_player_return(ball_node, mounted_venue, player_node, normalized_prop_id)
@@ -289,6 +300,16 @@ func debug_force_reset_ball(chunk_renderer: Node) -> Dictionary:
 	_refresh_visual_snapshots(mounted_venue)
 	return {"success": true}
 
+func debug_set_ai_pressure_error_kind(error_kind: String) -> Dictionary:
+	var normalized_error_kind := error_kind.strip_edges().to_lower()
+	if normalized_error_kind == "default":
+		normalized_error_kind = ""
+	_debug_forced_ai_pressure_error_kind = normalized_error_kind
+	return {
+		"success": true,
+		"debug_forced_ai_pressure_error_kind": _debug_forced_ai_pressure_error_kind,
+	}
+
 func notify_manual_ball_interaction(prop_id: String = "", _player_node: Node3D = null) -> Dictionary:
 	var normalized_prop_id := str(prop_id).strip_edges()
 	if normalized_prop_id == "" or normalized_prop_id != _bound_ball_prop_id:
@@ -341,6 +362,9 @@ func _reset_runtime_state() -> void:
 	_feedback_event_text = ""
 	_feedback_event_tone = "neutral"
 	_opponent_state = _build_default_opponent_state()
+	_debug_last_bounce_probe.clear()
+	_debug_last_bounce_event.clear()
+	_debug_last_live_out_world_position = Vector3.ZERO
 	_refresh_visual_snapshots()
 
 func _start_match(ball_node: Node3D, mounted_venue: Node3D) -> void:
@@ -365,7 +389,7 @@ func _prepare_next_point(ball_node: Node3D, mounted_venue: Node3D, reset_scores:
 	_last_hitter_side = ""
 	_target_side = ""
 	_target_bounce_count = 0
-	_state_timer_sec = 0.0
+	_state_timer_sec = AI_SERVE_DELAY_SEC if _server_side == "away" else 0.0
 	_match_state = MATCH_STATE_PRE_SERVE
 	_ai_return_armed = false
 	_ai_return_timer_sec = 0.0
@@ -375,13 +399,21 @@ func _prepare_next_point(ball_node: Node3D, mounted_venue: Node3D, reset_scores:
 	_clear_receive_hint_state()
 	_strike_window_state = STRIKE_WINDOW_STATE_IDLE
 	_strike_quality_feedback = ""
+	_debug_last_bounce_probe.clear()
+	_debug_last_bounce_event.clear()
+	_debug_last_live_out_world_position = Vector3.ZERO
 	_reset_ball_to_server_anchor(ball_node, mounted_venue)
-	_emit_feedback_event(FEEDBACK_EVENT_SERVE_READY, "按 E 发球", "action")
+	if _server_side == "home":
+		_emit_feedback_event(FEEDBACK_EVENT_SERVE_READY, "按 E 发球", "action")
+	else:
+		_emit_feedback_event(FEEDBACK_EVENT_SERVE_READY, "对手准备发球", "warning")
 
 func _advance_match_state(ball_node: Node3D, mounted_venue: Node3D, delta: float) -> void:
 	match _match_state:
 		MATCH_STATE_PRE_SERVE:
 			_snap_ball_to_server_anchor_if_idle(ball_node, mounted_venue)
+			if _server_side == "away" and _state_timer_sec <= 0.0:
+				_execute_ai_serve(ball_node, mounted_venue)
 		MATCH_STATE_SERVE_IN_FLIGHT, MATCH_STATE_RALLY:
 			_advance_live_ball(ball_node, mounted_venue, delta)
 		MATCH_STATE_POINT_RESULT, MATCH_STATE_GAME_BREAK:
@@ -406,12 +438,14 @@ func _advance_live_ball(ball_node: Node3D, mounted_venue: Node3D, _delta: float)
 		_apply_point_winner(_resolve_other_side(_last_hitter_side), "net")
 		_freeze_ball(ball_node)
 		return
-	var bounce_side := _detect_bounce_side(mounted_venue, ball_world_position, ball_linear_velocity)
-	if bounce_side != "":
+	var bounce_event := _detect_bounce_event(mounted_venue, ball_world_position, ball_linear_velocity)
+	if not bounce_event.is_empty():
+		var bounce_side := str(bounce_event.get("bounce_side", ""))
+		var bounce_world_position := bounce_event.get("contact_world_position", ball_world_position) as Vector3
 		if _match_state == MATCH_STATE_SERVE_IN_FLIGHT:
-			_handle_serve_bounce(ball_node, mounted_venue, ball_world_position, bounce_side)
+			_handle_serve_bounce(ball_node, mounted_venue, bounce_world_position, bounce_side)
 		else:
-			_handle_rally_bounce(ball_node, mounted_venue, ball_world_position, bounce_side)
+			_handle_rally_bounce(ball_node, mounted_venue, bounce_world_position, bounce_side)
 		if _match_state == MATCH_STATE_POINT_RESULT or _match_state == MATCH_STATE_GAME_BREAK or _match_state == MATCH_STATE_FINAL:
 			_freeze_ball(ball_node)
 			return
@@ -443,6 +477,9 @@ func _handle_serve_bounce(ball_node: Node3D, mounted_venue: Node3D, ball_world_p
 	_strike_quality_feedback = "serve_in"
 	if receiver_side == "away":
 		_arm_ai_return()
+	else:
+		_configure_receive_hint_for_home_return(mounted_venue, ball_world_position)
+		_strike_window_state = STRIKE_WINDOW_STATE_TRACKING
 
 func _handle_rally_bounce(_ball_node: Node3D, mounted_venue: Node3D, ball_world_position: Vector3, bounce_side: String) -> void:
 	var in_play_bounds := mounted_venue.has_method("is_world_point_in_play_bounds") and bool(mounted_venue.is_world_point_in_play_bounds(ball_world_position))
@@ -463,6 +500,7 @@ func _handle_rally_bounce(_ball_node: Node3D, mounted_venue: Node3D, ball_world_
 		return
 	if _target_side == "home":
 		_landing_marker_visible = false
+		_home_receive_grace_sec = PLAYER_POST_BOUNCE_READY_WINDOW_SEC
 	if _target_side == "away":
 		_arm_ai_return()
 
@@ -529,6 +567,7 @@ func _update_timers(delta: float) -> void:
 	var clamped_delta := maxf(delta, 0.0)
 	_state_timer_sec = maxf(_state_timer_sec - clamped_delta, 0.0)
 	_bounce_cooldown_sec = maxf(_bounce_cooldown_sec - clamped_delta, 0.0)
+	_home_receive_grace_sec = maxf(_home_receive_grace_sec - clamped_delta, 0.0)
 	if _ai_return_armed:
 		_ai_return_timer_sec = maxf(_ai_return_timer_sec - clamped_delta, 0.0)
 
@@ -762,19 +801,57 @@ func _resolve_expected_service_box_id() -> String:
 		return "service_box_deuce_away" if serve_from_deuce else "service_box_ad_away"
 	return "service_box_deuce_home" if serve_from_deuce else "service_box_ad_home"
 
-func _detect_bounce_side(mounted_venue: Node3D, ball_world_position: Vector3, ball_linear_velocity: Vector3) -> String:
+func _detect_bounce_event(mounted_venue: Node3D, ball_world_position: Vector3, ball_linear_velocity: Vector3) -> Dictionary:
 	if mounted_venue == null or _bounce_cooldown_sec > 0.0:
-		return ""
+		return {}
 	var court_contract: Dictionary = mounted_venue.get_tennis_court_contract() if mounted_venue.has_method("get_tennis_court_contract") else {}
 	var surface_top_y := float(court_contract.get("surface_top_y", ball_world_position.y))
 	var threshold_y := surface_top_y + _ball_radius_m + BALL_CONTACT_EPSILON_M
 	if _previous_ball_world_position == Vector3.ZERO:
-		return ""
-	if _previous_ball_world_position.y > threshold_y and ball_world_position.y <= threshold_y and ball_linear_velocity.y <= 0.25:
-		_bounce_cooldown_sec = BOUNCE_COOLDOWN_SEC
-		var local_position := mounted_venue.to_local(ball_world_position)
-		return "home" if local_position.z >= 0.0 else "away"
-	return ""
+		return {}
+	var direct_cross := _previous_ball_world_position.y > threshold_y and ball_world_position.y <= threshold_y and ball_linear_velocity.y <= 0.25
+	var rebound_near_surface := _previous_ball_linear_velocity.y < -0.6 \
+		and ball_linear_velocity.y >= -0.05 \
+		and minf(_previous_ball_world_position.y, ball_world_position.y) <= threshold_y + maxf(_ball_radius_m * 1.8, 0.36)
+	_debug_last_bounce_probe = {
+		"previous_ball_world_position": _previous_ball_world_position,
+		"ball_world_position": ball_world_position,
+		"previous_ball_linear_velocity": _previous_ball_linear_velocity,
+		"ball_linear_velocity": ball_linear_velocity,
+		"threshold_y": threshold_y,
+		"direct_cross": direct_cross,
+		"rebound_near_surface": rebound_near_surface,
+		"target_bounce_count": _target_bounce_count,
+		"planned_target_world_position": _planned_target_world_position,
+		"planned_target_side": _planned_target_side,
+	}
+	if not direct_cross and not rebound_near_surface:
+		return {}
+	_bounce_cooldown_sec = BOUNCE_COOLDOWN_SEC
+	var contact_world_position := _resolve_bounce_contact_world_position(mounted_venue, ball_world_position, direct_cross)
+	var local_position := mounted_venue.to_local(contact_world_position)
+	_debug_last_bounce_event = {
+		"bounce_side": "home" if local_position.z >= 0.0 else "away",
+		"contact_world_position": contact_world_position,
+	}
+	return {
+		"bounce_side": "home" if local_position.z >= 0.0 else "away",
+		"contact_world_position": contact_world_position,
+	}
+
+func _resolve_bounce_contact_world_position(mounted_venue: Node3D, ball_world_position: Vector3, direct_cross: bool) -> Vector3:
+	if _target_bounce_count == 0 and _planned_target_world_position != Vector3.ZERO:
+		var planned_contact_world_position := _planned_target_world_position
+		planned_contact_world_position.y = _resolve_surface_top_y(mounted_venue, planned_contact_world_position.y) + _ball_radius_m
+		return planned_contact_world_position
+	var contact_world_position := _previous_ball_world_position.lerp(ball_world_position, 0.5)
+	if direct_cross and absf(ball_world_position.y - _previous_ball_world_position.y) > 0.0001:
+		var surface_top_y := _resolve_surface_top_y(mounted_venue, ball_world_position.y)
+		var contact_plane_y := surface_top_y + _ball_radius_m
+		var travel_fraction := clampf((contact_plane_y - _previous_ball_world_position.y) / (ball_world_position.y - _previous_ball_world_position.y), 0.0, 1.0)
+		contact_world_position = _previous_ball_world_position.lerp(ball_world_position, travel_fraction)
+	contact_world_position.y = _resolve_surface_top_y(mounted_venue, contact_world_position.y) + _ball_radius_m
+	return contact_world_position
 
 func _detect_net_fault(mounted_venue: Node3D, ball_world_position: Vector3) -> bool:
 	if mounted_venue == null or _last_hitter_side == "":
@@ -806,11 +883,34 @@ func _ball_is_out_of_live_bounds(mounted_venue: Node3D, ball_world_position: Vec
 	if absf(local_position.x) <= half_width and absf(local_position.z) <= half_length:
 		return false
 	var surface_top_y := float(court_contract.get("surface_top_y", ball_world_position.y))
+	_debug_last_live_out_world_position = ball_world_position
 	return ball_world_position.y <= surface_top_y + 1.2
 
 func _arm_ai_return() -> void:
 	_ai_return_armed = true
 	_ai_return_timer_sec = AI_RETURN_DELAY_SEC
+
+func _execute_ai_serve(ball_node: Node3D, mounted_venue: Node3D) -> void:
+	if ball_node == null or mounted_venue == null or _match_state != MATCH_STATE_PRE_SERVE or _server_side != "away":
+		return
+	var target_world_position := _resolve_service_target_world_position(mounted_venue, _expected_service_box_id)
+	var launch_source := _resolve_serve_launch_source(mounted_venue)
+	if not _launch_ball_to_target(ball_node, mounted_venue, launch_source, target_world_position, SERVE_DESIRED_SPEED_MPS):
+		return
+	_match_state = MATCH_STATE_SERVE_IN_FLIGHT
+	_last_hitter_side = "away"
+	_target_side = "home"
+	_target_bounce_count = 0
+	_ai_return_armed = false
+	_ai_return_timer_sec = 0.0
+	_register_opponent_swing("serve")
+	_register_planned_target("home", target_world_position)
+	_clear_receive_hint_state()
+	_rally_shot_count = 1
+	_strike_window_state = STRIKE_WINDOW_STATE_IDLE
+	_strike_quality_feedback = "read_away_serve"
+	_previous_ball_world_position = launch_source
+	_previous_ball_linear_velocity = _get_ball_linear_velocity(ball_node)
 
 func _execute_ai_return(ball_node: Node3D, mounted_venue: Node3D) -> void:
 	_ai_return_armed = false
@@ -872,7 +972,7 @@ func _handle_player_return(ball_node: Node3D, mounted_venue: Node3D, player_node
 			"strike_quality_feedback": _strike_quality_feedback,
 		})
 	var target_world_position := _resolve_player_return_target_world_position(mounted_venue)
-	var launch_source := _get_ball_world_position(ball_node)
+	var launch_source := _incoming_strike_world_position if _target_side == "home" and _target_bounce_count >= 1 and _home_receive_grace_sec > 0.0 and _incoming_strike_world_position != Vector3.ZERO else _get_ball_world_position(ball_node)
 	if not _launch_ball_to_target(ball_node, mounted_venue, launch_source, target_world_position, PLAYER_RETURN_DESIRED_SPEED_MPS):
 		return _build_handled_interaction_result(false, "return_launch_failed", prop_id)
 	_last_hitter_side = "home"
@@ -966,6 +1066,10 @@ func _build_ai_return_plan(mounted_venue: Node3D) -> Dictionary:
 	}
 
 func _resolve_ai_pressure_error_kind() -> String:
+	if _debug_forced_ai_pressure_error_kind == "disabled" or _debug_forced_ai_pressure_error_kind == "off" or _debug_forced_ai_pressure_error_kind == "none":
+		return ""
+	if _debug_forced_ai_pressure_error_kind != "":
+		return _debug_forced_ai_pressure_error_kind
 	if _rally_shot_count < 5:
 		return ""
 	return "out" if (_ai_return_pattern_index % 3) == 2 else ""
@@ -1108,7 +1212,7 @@ func _build_match_coach_text() -> String:
 		MATCH_STATE_IDLE:
 			return "走进启动环开始比赛"
 		MATCH_STATE_PRE_SERVE:
-			return "按 E 发球 | WASD 微调落点"
+			return "按 E 发球 | WASD 微调落点" if _server_side == "home" else "对手发球中，准备接球"
 		MATCH_STATE_SERVE_IN_FLIGHT:
 			return "发球已出手，准备下一拍"
 		MATCH_STATE_RALLY:
@@ -1147,13 +1251,13 @@ func _configure_receive_hint_for_home_return(mounted_venue: Node3D, landing_worl
 	_landing_marker_visible = true
 	var player_local := mounted_venue.to_local(_latest_player_world_position)
 	var landing_local := mounted_venue.to_local(landing_world_position)
-	var strike_local := landing_local.lerp(Vector3(player_local.x, 0.0, player_local.z), PLAYER_STRIKE_SLOT_BLEND)
 	var court_contract: Dictionary = mounted_venue.get_tennis_court_contract() if mounted_venue.has_method("get_tennis_court_contract") else {}
 	var court_bounds: Dictionary = court_contract.get("court_bounds", {})
 	var half_width := float(court_bounds.get("half_width_m", 4.115))
 	var half_length := float(court_bounds.get("half_length_m", 11.885))
-	strike_local.x = clampf(strike_local.x, -half_width * 0.46, half_width * 0.46)
-	strike_local.z = clampf(maxf(strike_local.z, landing_local.z + PLAYER_STRIKE_SLOT_MIN_AHEAD_M), landing_local.z + PLAYER_STRIKE_SLOT_MIN_AHEAD_M, half_length - 4.0)
+	var strike_local := landing_local
+	strike_local.x = clampf(lerpf(landing_local.x, player_local.x, PLAYER_STRIKE_SLOT_BLEND * 0.25), -half_width * 0.46, half_width * 0.46)
+	strike_local.z = clampf(landing_local.z + PLAYER_STRIKE_SLOT_MIN_AHEAD_M, 0.0, half_length - 3.2)
 	_incoming_strike_world_position = _to_world_bounce_target(mounted_venue, strike_local)
 	_landing_marker_world_position = _incoming_strike_world_position
 	_auto_footwork_assist_state = AUTO_FOOTWORK_STATE_TRACKING
@@ -1163,6 +1267,7 @@ func _clear_receive_hint_state() -> void:
 	_landing_marker_world_position = Vector3.ZERO
 	_incoming_strike_world_position = Vector3.ZERO
 	_auto_footwork_assist_state = AUTO_FOOTWORK_STATE_IDLE
+	_home_receive_grace_sec = 0.0
 	if _strike_window_state == STRIKE_WINDOW_STATE_TRACKING or _strike_window_state == STRIKE_WINDOW_STATE_RECOVER:
 		_strike_window_state = STRIKE_WINDOW_STATE_IDLE
 
@@ -1187,6 +1292,16 @@ func _evaluate_player_strike_window(ball_node: Node3D, player_node: Node3D, moun
 	).length()
 	var ball_local_position := mounted_venue.to_local(ball_world_position)
 	var slot_local_position := mounted_venue.to_local(_incoming_strike_world_position)
+	var in_post_bounce_receive_window := _target_side == "home" \
+		and _target_bounce_count >= 1 \
+		and _home_receive_grace_sec > 0.0 \
+		and player_node.global_position.distance_to(_incoming_strike_world_position) <= PLAYER_RECEIVE_MARKER_RADIUS_M
+	if in_post_bounce_receive_window:
+		return {
+			"can_strike": true,
+			"window_state": STRIKE_WINDOW_STATE_READY,
+			"feedback": "pickup",
+		}
 	var can_strike := planar_distance_to_player <= PLAYER_STRIKE_RADIUS_M \
 		and planar_distance_to_slot <= PLAYER_STRIKE_RADIUS_M * 1.1 \
 		and relative_height >= PLAYER_STRIKE_HEIGHT_MIN_M \

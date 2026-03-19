@@ -1,0 +1,169 @@
+extends SceneTree
+
+const T := preload("res://tests/_test_util.gd")
+
+const TENNIS_CHUNK_ID := "chunk_158_140"
+const TENNIS_VENUE_ID := "venue:v28:tennis_court:chunk_158_140"
+const TENNIS_PROP_ID := "prop:v28:tennis_ball:chunk_158_140"
+const TENNIS_WORLD_POSITION := Vector3(5489.46, 20.62, 1029.73)
+
+func _init() -> void:
+	call_deferred("_run")
+
+func _run() -> void:
+	var scene := load("res://city_game/scenes/CityPrototype.tscn")
+	if scene == null or not (scene is PackedScene):
+		T.fail_and_quit(self, "Missing CityPrototype.tscn for tennis away serve contract")
+		return
+
+	var world := (scene as PackedScene).instantiate()
+	root.add_child(world)
+	await process_frame
+
+	var player := world.get_node_or_null("Player")
+	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "Tennis away serve contract requires Player teleport API"):
+		return
+	if not T.require_true(self, world.has_method("get_tennis_venue_runtime_state"), "Tennis away serve contract requires get_tennis_venue_runtime_state()"):
+		return
+	if not T.require_true(self, world.has_method("debug_award_tennis_point"), "Tennis away serve contract requires deterministic point award API"):
+		return
+	if not T.require_true(self, world.has_method("get_interactive_prop_interaction_state"), "Tennis away serve contract requires prompt introspection"):
+		return
+
+	player.teleport_to_world_position(TENNIS_WORLD_POSITION + Vector3(0.0, 2.0, 10.0))
+	var mounted_venue: Node3D = await _wait_for_mounted_venue(world)
+	if not T.require_true(self, mounted_venue != null and mounted_venue.has_method("get_tennis_court_contract"), "Tennis away serve contract requires mounted tennis court metadata"):
+		return
+	var mounted_ball: Node3D = await _wait_for_mounted_ball(world)
+	if not T.require_true(self, mounted_ball != null, "Tennis away serve contract requires the mounted tennis ball"):
+		return
+	var opponent_node := mounted_venue.get_node_or_null("OpponentRoot/away_opponent_1")
+	if not T.require_true(self, opponent_node != null and opponent_node.has_method("get_tennis_visual_state"), "Tennis away serve contract requires opponent tennis visual introspection"):
+		return
+
+	await _start_match(world, mounted_venue, player)
+	for _point in range(4):
+		var point_result: Dictionary = world.debug_award_tennis_point("home", "test_rotate_server_to_away")
+		if not T.require_true(self, bool(point_result.get("success", false)), "Tennis away serve contract must allow deterministic home scoring to rotate server order"):
+			return
+		await _pump_frames()
+
+	var away_pre_serve_state: Dictionary = await _wait_for_pre_serve_server(world, "away")
+	if not T.require_true(self, str(away_pre_serve_state.get("server_side", "")) == "away", "Tennis away serve contract must rotate the next server to away after one completed game"):
+		return
+	var standing_height := _estimate_standing_height(player)
+	player.teleport_to_world_position(mounted_ball.global_position + Vector3(-1.2, standing_height - mounted_ball.global_position.y + 0.2, 0.0))
+	await _pump_frames(8)
+	var interaction_state: Dictionary = world.get_interactive_prop_interaction_state()
+	if not T.require_true(self, not bool(interaction_state.get("visible", false)), "Tennis away serve contract must not show a player-controlled '按 E 发球' prompt when the away side is serving"):
+		return
+
+	var court_contract: Dictionary = mounted_venue.get_tennis_court_contract()
+	var home_receive_anchor: Dictionary = court_contract.get("home_deuce_receiver_anchor", {})
+	var home_receive_world_position: Vector3 = home_receive_anchor.get("world_position", TENNIS_WORLD_POSITION)
+	player.teleport_to_world_position(home_receive_world_position + Vector3.UP * standing_height)
+	var away_serve_state: Dictionary = await _wait_for_away_serve_started(world)
+	if not T.require_true(self, str(away_serve_state.get("last_hitter_side", "")) == "away", "Tennis away serve contract must let the away side actually launch the next serve instead of idling forever"):
+		return
+	if not T.require_true(self, str(away_serve_state.get("match_state", "")) == "serve_in_flight" or str(away_serve_state.get("match_state", "")) == "rally", "Tennis away serve contract must leave pre_serve once the away serve begins"):
+		return
+	if not T.require_true(self, str(away_serve_state.get("planned_target_side", "")) == "home", "Tennis away serve contract away serves must target the home/player side"):
+		return
+	var serve_target_variant: Variant = away_serve_state.get("planned_target_world_position", null)
+	if not T.require_true(self, serve_target_variant is Vector3, "Tennis away serve contract must expose the away serve target as Vector3"):
+		return
+	var serve_target := serve_target_variant as Vector3
+	if not T.require_true(self, mounted_venue.get_service_box_id_for_world_point(serve_target) == str(away_serve_state.get("expected_service_box_id", "")), "Tennis away serve contract must land the AI serve in the formally expected home service box"):
+		return
+	var opponent_visual_state: Dictionary = opponent_node.get_tennis_visual_state()
+	if not T.require_true(self, int(opponent_visual_state.get("swing_count", 0)) >= 1, "Tennis away serve contract must trigger an opponent swing when the away serve starts"):
+		return
+	if not T.require_true(self, str(opponent_visual_state.get("last_swing_style", "")) == "serve", "Tennis away serve contract must tag the away opening swing as serve style"):
+		return
+	var home_receive_state: Dictionary = await _wait_for_home_receive_chain(world)
+	if not T.require_true(self, bool(home_receive_state.get("landing_marker_visible", false)), "Tennis away serve contract must open the blue receive ring after a legal away serve lands on the home side"):
+		return
+	if not T.require_true(self, str(home_receive_state.get("target_side", "")) == "home", "Tennis away serve contract must hand the live serve receive state to the home/player side"):
+		return
+
+	world.queue_free()
+	T.pass_and_quit(self)
+
+func _start_match(world, mounted_venue: Node3D, player) -> void:
+	var start_contract: Dictionary = mounted_venue.get_match_start_contract()
+	var start_anchor: Vector3 = start_contract.get("world_position", TENNIS_WORLD_POSITION)
+	var standing_height := _estimate_standing_height(player)
+	player.teleport_to_world_position(start_anchor + Vector3.UP * standing_height)
+	await _wait_for_pre_serve_server(world, "home")
+
+func _wait_for_mounted_venue(world) -> Variant:
+	var chunk_renderer: Variant = world.get_chunk_renderer() if world.has_method("get_chunk_renderer") else null
+	if chunk_renderer == null or not chunk_renderer.has_method("get_chunk_scene"):
+		return null
+	for _frame in range(180):
+		await process_frame
+		var chunk_scene: Variant = chunk_renderer.get_chunk_scene(TENNIS_CHUNK_ID)
+		if chunk_scene == null or not chunk_scene.has_method("find_scene_minigame_venue_node"):
+			continue
+		var mounted_venue: Variant = chunk_scene.find_scene_minigame_venue_node(TENNIS_VENUE_ID)
+		if mounted_venue != null:
+			return mounted_venue
+	return null
+
+func _wait_for_mounted_ball(world) -> Variant:
+	var chunk_renderer: Variant = world.get_chunk_renderer() if world.has_method("get_chunk_renderer") else null
+	if chunk_renderer == null or not chunk_renderer.has_method("get_chunk_scene"):
+		return null
+	for _frame in range(180):
+		await process_frame
+		var chunk_scene: Variant = chunk_renderer.get_chunk_scene(TENNIS_CHUNK_ID)
+		if chunk_scene == null or not chunk_scene.has_method("find_scene_interactive_prop_node"):
+			continue
+		var mounted_ball: Variant = chunk_scene.find_scene_interactive_prop_node(TENNIS_PROP_ID)
+		if mounted_ball != null:
+			return mounted_ball
+	return null
+
+func _wait_for_pre_serve_server(world, expected_server_side: String) -> Dictionary:
+	for _frame in range(480):
+		await physics_frame
+		await process_frame
+		var runtime_state: Dictionary = world.get_tennis_venue_runtime_state()
+		if str(runtime_state.get("match_state", "")) == "pre_serve" and str(runtime_state.get("server_side", "")) == expected_server_side:
+			return runtime_state
+	return world.get_tennis_venue_runtime_state()
+
+func _wait_for_away_serve_started(world) -> Dictionary:
+	for _frame in range(480):
+		await physics_frame
+		await process_frame
+		var runtime_state: Dictionary = world.get_tennis_venue_runtime_state()
+		if str(runtime_state.get("last_hitter_side", "")) == "away" and str(runtime_state.get("server_side", "")) == "away":
+			return runtime_state
+	return world.get_tennis_venue_runtime_state()
+
+func _wait_for_home_receive_chain(world) -> Dictionary:
+	for _frame in range(480):
+		await physics_frame
+		await process_frame
+		var runtime_state: Dictionary = world.get_tennis_venue_runtime_state()
+		if str(runtime_state.get("match_state", "")) == "rally" and str(runtime_state.get("target_side", "")) == "home" and bool(runtime_state.get("landing_marker_visible", false)):
+			return runtime_state
+	return world.get_tennis_venue_runtime_state()
+
+func _pump_frames(frame_count: int = 4) -> void:
+	for _frame in range(frame_count):
+		await physics_frame
+		await process_frame
+
+func _estimate_standing_height(player) -> float:
+	var collision_shape := player.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if collision_shape == null or collision_shape.shape == null:
+		return 1.0
+	if collision_shape.shape is CapsuleShape3D:
+		var capsule := collision_shape.shape as CapsuleShape3D
+		return capsule.radius + capsule.height * 0.5
+	if collision_shape.shape is BoxShape3D:
+		var box := collision_shape.shape as BoxShape3D
+		return box.size.y * 0.5
+	return 1.0

@@ -998,9 +998,7 @@ func get_interactive_prop_interaction_state() -> Dictionary:
 	if _interactive_prop_runtime == null or not _interactive_prop_runtime.has_method("get_state"):
 		return {}
 	var state: Dictionary = (_interactive_prop_runtime.get_state() as Dictionary).duplicate(true)
-	if bool(state.get("visible", false)):
-		state = _augment_tennis_interaction_prompt_state(state)
-	return state
+	return _augment_tennis_interaction_prompt_state(state)
 
 func get_primary_interaction_state() -> Dictionary:
 	return _resolve_primary_interaction_prompt_state()
@@ -2137,6 +2135,14 @@ func debug_award_tennis_point(winner_side: String, reason: String = "debug_point
 		}
 	return _tennis_venue_runtime.debug_award_point(winner_side, reason)
 
+func debug_set_tennis_ai_pressure_error_kind(error_kind: String) -> Dictionary:
+	if _tennis_venue_runtime == null or not _tennis_venue_runtime.has_method("debug_set_ai_pressure_error_kind"):
+		return {
+			"success": false,
+			"error": "runtime_unavailable",
+		}
+	return _tennis_venue_runtime.debug_set_ai_pressure_error_kind(error_kind)
+
 func get_music_road_runtime_state() -> Dictionary:
 	if _music_road_runtime == null or not _music_road_runtime.has_method("get_state"):
 		return {}
@@ -3226,20 +3232,31 @@ func _resolve_primary_interaction_prompt_state() -> Dictionary:
 	return prop_state
 
 func _augment_tennis_interaction_prompt_state(prompt_state: Dictionary) -> Dictionary:
-	if prompt_state.is_empty():
-		return prompt_state
 	if _tennis_venue_runtime == null or not _tennis_venue_runtime.has_method("get_state"):
 		return prompt_state
 	var runtime_state: Dictionary = _tennis_venue_runtime.get_state()
 	var active_tennis_prop_id := str(runtime_state.get("primary_ball_prop_id", ""))
 	if active_tennis_prop_id == "":
 		return prompt_state
-	if str(prompt_state.get("prop_id", "")) != active_tennis_prop_id:
+	if prompt_state.is_empty():
+		prompt_state = {
+			"visible": false,
+			"owner_kind": "interactive_prop",
+			"prop_id": active_tennis_prop_id,
+			"display_name": "Tennis Ball",
+			"interaction_kind": "tennis_ball",
+			"prompt_text": "",
+			"distance_m": 0.0,
+		}
+	elif str(prompt_state.get("prop_id", "")) != "" and str(prompt_state.get("prop_id", "")) != active_tennis_prop_id:
 		return prompt_state
+	else:
+		prompt_state["owner_kind"] = "interactive_prop"
+		prompt_state["prop_id"] = active_tennis_prop_id
 	var match_state := str(runtime_state.get("match_state", "idle"))
 	match match_state:
 		"pre_serve":
-			prompt_state["visible"] = true
+			prompt_state["visible"] = str(runtime_state.get("server_side", "home")) == "home"
 			prompt_state["prompt_text"] = "按 E 发球"
 		"rally":
 			if str(runtime_state.get("target_side", "")) == "home":
@@ -3373,6 +3390,11 @@ func _handle_interactive_prop_primary_interaction() -> Dictionary:
 		}
 	var active_contract: Dictionary = _interactive_prop_runtime.get_active_contract() if _interactive_prop_runtime.has_method("get_active_contract") else {}
 	var active_prop_id := str(active_contract.get("prop_id", ""))
+	if active_prop_id == "":
+		var prompt_state: Dictionary = get_interactive_prop_interaction_state()
+		if bool(prompt_state.get("visible", false)):
+			active_contract = prompt_state.duplicate(true)
+			active_prop_id = str(active_contract.get("prop_id", ""))
 	if active_prop_id != "" and _tennis_venue_runtime != null and _tennis_venue_runtime.has_method("handle_primary_interaction"):
 		var tennis_interaction_result: Dictionary = _tennis_venue_runtime.handle_primary_interaction(chunk_renderer, player, active_prop_id, active_contract.duplicate(true))
 		if bool(tennis_interaction_result.get("handled", false)):

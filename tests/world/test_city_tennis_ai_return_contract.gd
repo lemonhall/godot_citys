@@ -142,6 +142,43 @@ func _run() -> void:
 		return
 	if not T.require_true(self, not bool(home_return_state.get("landing_marker_visible", true)), "Tennis player return contract must hide the incoming landing marker after the player has struck the ball"):
 		return
+	var second_ai_return_state: Dictionary = await _wait_for_ai_return(world)
+	if not T.require_true(self, str(second_ai_return_state.get("last_hitter_side", "")) == "away", "Tennis AI return contract must support a second consecutive AI return after the player keeps the rally alive"):
+		return
+	var second_landing_variant: Variant = second_ai_return_state.get("landing_marker_world_position", null)
+	if not T.require_true(self, second_landing_variant is Vector3, "Tennis AI return contract must expose a second landing marker position as Vector3 on the next rally beat"):
+		return
+	var second_landing_world_position := second_landing_variant as Vector3
+	player.teleport_to_world_position(second_landing_world_position + Vector3.UP * _estimate_standing_height(player))
+	await _pump_frames(8)
+	var second_ready_bundle := await _wait_for_ready_receive_prompt(world, hud_node)
+	var second_ready_runtime_state: Dictionary = second_ready_bundle.get("runtime_state", {})
+	var second_planned_world_position_variant: Variant = second_ai_return_state.get("planned_target_world_position", Vector3.ZERO)
+	var second_planned_world_position := second_planned_world_position_variant as Vector3 if second_planned_world_position_variant is Vector3 else Vector3.ZERO
+	var second_bounce_probe: Dictionary = second_ready_runtime_state.get("debug_last_bounce_probe", {})
+	var second_bounce_event: Dictionary = second_ready_runtime_state.get("debug_last_bounce_event", {})
+	var second_live_out_world_position: Variant = second_ready_runtime_state.get("debug_last_live_out_world_position", Vector3.ZERO)
+	var second_ready_summary := "strike=%s reason=%s winner=%s target=%s bounces_home=%s match=%s landing=%s planned=%s" % [
+		str(second_ready_runtime_state.get("strike_window_state", "")),
+		str(second_ready_runtime_state.get("point_end_reason", "")),
+		str(second_ready_runtime_state.get("point_winner_side", "")),
+		str(second_ready_runtime_state.get("target_side", "")),
+		str(second_ready_runtime_state.get("ball_bounce_count_home", 0)),
+		str(second_ready_runtime_state.get("match_state", "")),
+		str(second_ai_return_state.get("landing_marker_world_position", Vector3.ZERO)),
+		str(second_planned_world_position),
+	]
+	second_ready_summary += " planned_in=%s probe=%s bounce=%s live_out=%s" % [
+		str(mounted_venue.is_world_point_in_play_bounds(second_planned_world_position)),
+		str(second_bounce_probe),
+		str(second_bounce_event),
+		str(second_live_out_world_position),
+	]
+	if not T.require_true(self, str(second_ready_runtime_state.get("strike_window_state", "")) == "ready", "Tennis AI return contract must reopen READY on the second receive ring instead of becoming impossible on rally #2 | %s" % second_ready_summary):
+		return
+	var second_return_result: Dictionary = world.handle_primary_interaction()
+	if not T.require_true(self, bool(second_return_result.get("success", false)), "Tennis AI return contract must let the player convert the second ready receive ring into another legal return"):
+		return
 
 	world.queue_free()
 	T.pass_and_quit(self)
@@ -225,11 +262,15 @@ func _attempt_player_return(world) -> Dictionary:
 	}
 
 func _wait_for_ready_receive_prompt(world, hud_node) -> Dictionary:
+	var first_terminal_state: Dictionary = {}
 	for _frame in range(480):
 		await physics_frame
 		await process_frame
 		var runtime_state: Dictionary = world.get_tennis_venue_runtime_state()
 		var prompt_state: Dictionary = world.get_interactive_prop_interaction_state()
+		var match_state := str(runtime_state.get("match_state", ""))
+		if (match_state == "point_result" or match_state == "game_break" or match_state == "final") and first_terminal_state.is_empty():
+			first_terminal_state = runtime_state.duplicate(true)
 		if str(runtime_state.get("strike_window_state", "")) != "ready":
 			continue
 		if not bool(prompt_state.get("visible", false)):
@@ -241,6 +282,13 @@ func _wait_for_ready_receive_prompt(world, hud_node) -> Dictionary:
 			"prompt_state": prompt_state,
 			"focus_message_state": focus_message_state,
 			"feedback_audio_state": feedback_audio_state,
+		}
+	if not first_terminal_state.is_empty():
+		return {
+			"runtime_state": first_terminal_state,
+			"prompt_state": world.get_interactive_prop_interaction_state(),
+			"focus_message_state": hud_node.get_focus_message_state(),
+			"feedback_audio_state": hud_node.get_tennis_feedback_audio_state(),
 		}
 	return {
 		"runtime_state": world.get_tennis_venue_runtime_state(),

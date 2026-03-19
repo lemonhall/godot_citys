@@ -16,6 +16,8 @@ var _swing_duration_sec := DEFAULT_SWING_DURATION_SEC
 var _last_swing_style := ""
 var _swing_count := 0
 var _swing_sound_count := 0
+var _resolved_grip_anchor_source_point := Vector3.ZERO
+var _resolved_visual_center_source_point := Vector3.ZERO
 
 func _ready() -> void:
 	_ensure_mount_root()
@@ -53,6 +55,11 @@ func play_swing(style: String = "forehand") -> void:
 	_update_pose()
 
 func get_visual_state() -> Dictionary:
+	var grip_anchor_world_position: Variant = null
+	var head_center_world_position: Variant = null
+	if _visual_root != null and is_instance_valid(_visual_root):
+		grip_anchor_world_position = _visual_root.to_global(_resolved_grip_anchor_source_point)
+		head_center_world_position = _visual_root.to_global(_resolved_visual_center_source_point)
 	return {
 		"racket_present": _visual_root != null and is_instance_valid(_visual_root),
 		"equipped_visible": visible,
@@ -62,6 +69,10 @@ func get_visual_state() -> Dictionary:
 		"swing_sound_count": _swing_sound_count,
 		"last_swing_style": _last_swing_style,
 		"target_length_m": maxf(float(_config.get("target_length_m", DEFAULT_TARGET_LENGTH_M)), 0.2),
+		"grip_anchor_source_point": _resolved_grip_anchor_source_point,
+		"grip_anchor_world_position": grip_anchor_world_position,
+		"head_center_source_point": _resolved_visual_center_source_point,
+		"head_center_world_position": head_center_world_position,
 		"mount_position": _mount_root.position if _mount_root != null else Vector3.ZERO,
 		"mount_rotation_degrees": _mount_root.rotation_degrees if _mount_root != null else Vector3.ZERO,
 	}
@@ -232,8 +243,16 @@ func _normalize_visual_scale(target_length_m: float) -> void:
 	if max_extent <= 0.0001:
 		return
 	var scale_factor := target_length_m / max_extent
+	_resolved_visual_center_source_point = center
+	_resolved_grip_anchor_source_point = _resolve_grip_anchor_source_point(center)
 	_visual_root.scale = Vector3.ONE * scale_factor
-	_visual_root.position = -center * scale_factor
+	_visual_root.position = -_resolved_grip_anchor_source_point * scale_factor
+
+func _resolve_grip_anchor_source_point(fallback_center: Vector3) -> Vector3:
+	var grip_anchor_source_point: Variant = _config.get("grip_anchor_source_point", fallback_center)
+	if grip_anchor_source_point is Vector3:
+		return grip_anchor_source_point as Vector3
+	return fallback_center
 
 func _collect_visual_bounds() -> Dictionary:
 	if _visual_root == null:

@@ -2,6 +2,8 @@ extends Node3D
 
 const PLAYER_MODEL_SCENE := preload("res://city_game/assets/minigames/soccer/players/animated_human.glb")
 const TennisRacketVisualRig := preload("res://city_game/world/minigames/TennisRacketVisualRig.gd")
+const TENNIS_RACKET_HAND_ANCHOR_NAME := "TennisRacketHandAnchor"
+const TENNIS_RACKET_HAND_BONE_NAME := "RightHand"
 
 const TEAM_COLORS := {
 	"home": Color(0.88, 0.9, 0.84, 1.0),
@@ -166,34 +168,92 @@ func _build_animation_catalog(animation_player: AnimationPlayer) -> Dictionary:
 	return catalog
 
 func _apply_material_to_meshes(root: Node, material: Material) -> void:
+	if _is_tennis_racket_visual_subtree(root):
+		return
 	if root is MeshInstance3D:
 		(root as MeshInstance3D).material_override = material
 	for child in root.get_children():
 		_apply_material_to_meshes(child, material)
 
+func _is_tennis_racket_visual_subtree(root: Node) -> bool:
+	if _tennis_racket_visual == null or not is_instance_valid(_tennis_racket_visual):
+		return false
+	return root == _tennis_racket_visual or _tennis_racket_visual.is_ancestor_of(root)
+
 func _ensure_tennis_racket_visual() -> void:
+	var racket_mount_parent := _resolve_tennis_racket_mount_parent()
 	if _tennis_racket_visual != null and is_instance_valid(_tennis_racket_visual):
+		if racket_mount_parent != null and _tennis_racket_visual.get_parent() != racket_mount_parent:
+			var existing_parent := _tennis_racket_visual.get_parent()
+			if existing_parent != null:
+				existing_parent.remove_child(_tennis_racket_visual)
+			racket_mount_parent.add_child(_tennis_racket_visual)
+		_apply_tennis_racket_scale_compensation(racket_mount_parent)
 		return
-	_tennis_racket_visual = get_node_or_null("TennisRacketVisual") as Node3D
+	_tennis_racket_visual = find_child("TennisRacketVisual", true, false) as Node3D
 	if _tennis_racket_visual == null:
 		_tennis_racket_visual = TennisRacketVisualRig.new()
 		_tennis_racket_visual.name = "TennisRacketVisual"
-		add_child(_tennis_racket_visual)
+	if racket_mount_parent != null and _tennis_racket_visual.get_parent() != racket_mount_parent:
+		var current_parent := _tennis_racket_visual.get_parent()
+		if current_parent != null:
+			current_parent.remove_child(_tennis_racket_visual)
+		racket_mount_parent.add_child(_tennis_racket_visual)
+	_apply_tennis_racket_scale_compensation(racket_mount_parent)
 	if _tennis_racket_visual.has_method("configure_rig"):
 		_tennis_racket_visual.configure_rig({
-			"mount_position": Vector3(0.6, 1.02, -0.12),
-			"rest_rotation_deg": Vector3(20.0, 16.0, -28.0),
+			"mount_position": Vector3.ZERO,
+			"rest_rotation_deg": Vector3(18.0, -74.0, -26.0),
 			"forehand_rotation_deg": Vector3(-42.0, 24.0, -138.0),
 			"backhand_rotation_deg": Vector3(-34.0, -28.0, 130.0),
 			"serve_rotation_deg": Vector3(-114.0, 20.0, -162.0),
 			"forehand_position_offset": Vector3(0.16, -0.06, 0.22),
 			"backhand_position_offset": Vector3(-0.16, -0.04, 0.18),
 			"serve_position_offset": Vector3(0.04, 0.34, 0.28),
+			"grip_anchor_source_point": Vector3(14.79452, 1.742427, -247.8149),
 			"target_length_m": 1.56,
 			"swing_duration_sec": 0.26,
 		})
 	if _tennis_racket_visual.has_method("set_equipped_visible"):
 		_tennis_racket_visual.set_equipped_visible(true)
+
+func _resolve_tennis_racket_mount_parent() -> Node3D:
+	var skeleton := _find_skeleton_3d(_model_root)
+	if skeleton == null:
+		return self
+	var hand_anchor := skeleton.get_node_or_null(TENNIS_RACKET_HAND_ANCHOR_NAME) as BoneAttachment3D
+	if hand_anchor == null:
+		hand_anchor = BoneAttachment3D.new()
+		hand_anchor.name = TENNIS_RACKET_HAND_ANCHOR_NAME
+		skeleton.add_child(hand_anchor)
+	hand_anchor.bone_name = TENNIS_RACKET_HAND_BONE_NAME
+	return hand_anchor
+
+func _apply_tennis_racket_scale_compensation(racket_mount_parent: Node3D) -> void:
+	if racket_mount_parent == null or _tennis_racket_visual == null or not is_instance_valid(_tennis_racket_visual):
+		return
+	var inherited_scale := racket_mount_parent.global_basis.get_scale()
+	_tennis_racket_visual.scale = Vector3(
+		_inverse_scale_component(inherited_scale.x),
+		_inverse_scale_component(inherited_scale.y),
+		_inverse_scale_component(inherited_scale.z)
+	)
+
+func _inverse_scale_component(component: float) -> float:
+	if absf(component) <= 0.0001:
+		return 1.0
+	return 1.0 / component
+
+func _find_skeleton_3d(root: Node) -> Skeleton3D:
+	if root == null:
+		return null
+	if root is Skeleton3D:
+		return root as Skeleton3D
+	for child in root.get_children():
+		var matched_skeleton := _find_skeleton_3d(child)
+		if matched_skeleton != null:
+			return matched_skeleton
+	return null
 
 func _sync_tennis_racket_visual() -> void:
 	_ensure_tennis_racket_visual()

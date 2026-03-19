@@ -40,8 +40,52 @@ func _run() -> void:
 	var opponent_node := mounted_venue.get_node_or_null("OpponentRoot/away_opponent_1")
 	if not T.require_true(self, opponent_node != null and opponent_node.has_method("get_tennis_visual_state"), "Tennis away serve contract requires opponent tennis visual introspection"):
 		return
+	var opponent_racket_node := opponent_node.find_child("TennisRacketVisual", true, false)
+	if not T.require_true(self, opponent_racket_node != null, "Tennis away serve contract requires a mounted opponent racket visual node"):
+		return
+	var expected_racket_path := "Visual/RootNode/Human Armature/Skeleton3D/TennisRacketHandAnchor/TennisRacketVisual"
+	if not T.require_true(self, str(opponent_node.get_path_to(opponent_racket_node)) == expected_racket_path, "Tennis away serve contract must mount the opponent racket under the RightHand attachment instead of leaving it on the body root"):
+		return
+	var racket_hand_anchor := opponent_racket_node.get_parent()
+	if not T.require_true(self, racket_hand_anchor is BoneAttachment3D, "Tennis away serve contract opponent racket parent must be a BoneAttachment3D hand anchor"):
+		return
+	var hand_anchor := racket_hand_anchor as BoneAttachment3D
+	if not T.require_true(self, str(hand_anchor.bone_name) == "RightHand", "Tennis away serve contract opponent racket hand anchor must target the RightHand bone"):
+		return
+	var initial_opponent_visual_state: Dictionary = opponent_node.get_tennis_visual_state()
+	var grip_anchor_variant: Variant = initial_opponent_visual_state.get("grip_anchor_world_position", null)
+	if not T.require_true(self, grip_anchor_variant is Vector3, "Tennis away serve contract opponent racket visual introspection must expose grip_anchor_world_position for hand-hold alignment checks"):
+		return
+	var grip_anchor_world_position := grip_anchor_variant as Vector3
+	if not T.require_true(self, grip_anchor_world_position.distance_to(hand_anchor.global_position) <= 0.18, "Tennis away serve contract opponent grip anchor must stay close to the RightHand anchor instead of leaving the hand threaded through the string bed"):
+		return
+	var head_center_variant: Variant = initial_opponent_visual_state.get("head_center_world_position", null)
+	if not T.require_true(self, head_center_variant is Vector3, "Tennis away serve contract opponent racket visual introspection must expose head_center_world_position for torso-overlap checks"):
+		return
+	var head_center_world_position := head_center_variant as Vector3
+	var torso_probe_world_position: Vector3 = opponent_node.to_global(Vector3(0.0, 1.0, 0.0))
+	var hand_to_torso: Vector3 = (torso_probe_world_position - hand_anchor.global_position).normalized()
+	var hand_to_head: Vector3 = (head_center_world_position - hand_anchor.global_position).normalized()
+	if not T.require_true(self, hand_to_head.dot(hand_to_torso) <= 0.2, "Tennis away serve contract idle racket orientation must not keep the racket head pointed into the torso/kidney side after hand attachment"):
+		return
+	var opponent_racket_frame_mesh := opponent_racket_node.find_child("frame", true, false) as MeshInstance3D
+	if not T.require_true(self, opponent_racket_frame_mesh != null, "Tennis away serve contract requires the opponent racket frame mesh for material preservation checks"):
+		return
+	if not T.require_true(self, opponent_racket_frame_mesh.material_override == null, "Tennis away serve contract opponent racket must preserve its own embedded material colors instead of inheriting the player tint material"):
+		return
 
 	await _start_match(world, mounted_venue, player)
+	var player_racket_node := player.find_child("TennisRacketVisual", true, false) as Node3D
+	if not T.require_true(self, player_racket_node != null, "Tennis away serve contract requires the player racket visual after match start for scale comparison"):
+		return
+	var player_racket_visual_root := player_racket_node.get_node_or_null("MountRoot/Visual") as Node3D
+	var opponent_racket_visual_root := opponent_racket_node.get_node_or_null("MountRoot/Visual") as Node3D
+	if not T.require_true(self, player_racket_visual_root != null and opponent_racket_visual_root != null, "Tennis away serve contract requires both player and opponent racket visual roots for scale comparison"):
+		return
+	var player_racket_scale := player_racket_visual_root.global_basis.get_scale().length()
+	var opponent_racket_scale := opponent_racket_visual_root.global_basis.get_scale().length()
+	if not T.require_true(self, absf(opponent_racket_scale - player_racket_scale) <= player_racket_scale * 0.35, "Tennis away serve contract opponent hand-mounted racket must stay in the same global scale range as the player racket instead of inheriting the oversized skeleton import scale"):
+		return
 	for _point in range(4):
 		var point_result: Dictionary = world.debug_award_tennis_point("home", "test_rotate_server_to_away")
 		if not T.require_true(self, bool(point_result.get("success", false)), "Tennis away serve contract must allow deterministic home scoring to rotate server order"):

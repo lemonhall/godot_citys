@@ -93,8 +93,24 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(opponent_visual_state.get("last_swing_style", "")) == "serve", "Tennis away serve contract must tag the away opening swing as serve style"):
 		return
-	var home_receive_state: Dictionary = await _wait_for_home_receive_chain(world)
-	if not T.require_true(self, bool(home_receive_state.get("landing_marker_visible", false)), "Tennis away serve contract must open the blue receive ring after a legal away serve lands on the home side"):
+	var receive_landing_variant: Variant = away_serve_state.get("landing_marker_world_position", Vector3.ZERO)
+	if not T.require_true(self, receive_landing_variant is Vector3, "Tennis away serve contract must expose the away serve receive marker as Vector3 while the ball is still traveling"):
+		return
+	var receive_landing_world_position := receive_landing_variant as Vector3
+	player.teleport_to_world_position(receive_landing_world_position + Vector3.UP * standing_height)
+	await _pump_frames(8)
+	var home_receive_state: Dictionary = await _wait_for_ready_receive_window_or_terminal(world)
+	if not T.require_true(self, str(home_receive_state.get("match_state", "")) == "rally", "Tennis away serve contract must keep the point alive long enough for the player to receive the away serve | %s" % _build_runtime_summary(home_receive_state)):
+		return
+	if not T.require_true(self, str(home_receive_state.get("strike_window_state", "")) == "ready", "Tennis away serve contract must reopen the same READY receive window on an away serve that it already uses for AI rally returns | %s" % _build_runtime_summary(home_receive_state)):
+		return
+	var player_return_result: Dictionary = world.handle_primary_interaction()
+	if not T.require_true(self, bool(player_return_result.get("success", false)), "Tennis away serve contract must let the player convert an away serve receive window into a legal return | %s" % str(player_return_result)):
+		return
+	var home_return_state: Dictionary = await _wait_for_last_hitter(world, "home")
+	if not T.require_true(self, str(home_return_state.get("last_hitter_side", "")) == "home", "Tennis away serve contract must actually register the player return after a received away serve | %s" % _build_runtime_summary(home_return_state)):
+		return
+	if not T.require_true(self, bool(home_receive_state.get("landing_marker_visible", false)) or int(home_receive_state.get("ball_bounce_count_home", 0)) >= 1, "Tennis away serve contract must open a live receive chain after a legal away serve lands on the home side"):
 		return
 	if not T.require_true(self, str(home_receive_state.get("target_side", "")) == "home", "Tennis away serve contract must hand the live serve receive state to the home/player side"):
 		return
@@ -163,6 +179,40 @@ func _wait_for_home_receive_chain(world) -> Dictionary:
 		if str(runtime_state.get("match_state", "")) == "rally" and str(runtime_state.get("target_side", "")) == "home" and bool(runtime_state.get("landing_marker_visible", false)):
 			return runtime_state
 	return world.get_tennis_venue_runtime_state()
+
+func _wait_for_ready_receive_window_or_terminal(world) -> Dictionary:
+	for _frame in range(480):
+		await physics_frame
+		await process_frame
+		var runtime_state: Dictionary = world.get_tennis_venue_runtime_state()
+		var match_state := str(runtime_state.get("match_state", ""))
+		if match_state == "point_result" or match_state == "game_break" or match_state == "final":
+			return runtime_state
+		if str(runtime_state.get("strike_window_state", "")) == "ready":
+			return runtime_state
+	return world.get_tennis_venue_runtime_state()
+
+func _wait_for_last_hitter(world, expected_side: String) -> Dictionary:
+	for _frame in range(240):
+		await physics_frame
+		await process_frame
+		var runtime_state: Dictionary = world.get_tennis_venue_runtime_state()
+		if str(runtime_state.get("last_hitter_side", "")) == expected_side:
+			return runtime_state
+	return world.get_tennis_venue_runtime_state()
+
+func _build_runtime_summary(runtime_state: Dictionary) -> String:
+	return "match=%s last=%s winner=%s reason=%s target=%s bounces_home=%s strike=%s landing_visible=%s planned=%s" % [
+		str(runtime_state.get("match_state", "")),
+		str(runtime_state.get("last_hitter_side", "")),
+		str(runtime_state.get("point_winner_side", "")),
+		str(runtime_state.get("point_end_reason", "")),
+		str(runtime_state.get("target_side", "")),
+		str(runtime_state.get("ball_bounce_count_home", 0)),
+		str(runtime_state.get("strike_window_state", "")),
+		str(runtime_state.get("landing_marker_visible", false)),
+		str(runtime_state.get("planned_target_world_position", Vector3.ZERO)),
+	]
 
 func _pump_frames(frame_count: int = 4) -> void:
 	for _frame in range(frame_count):

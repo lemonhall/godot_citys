@@ -482,7 +482,8 @@ func _handle_serve_bounce(ball_node: Node3D, mounted_venue: Node3D, ball_world_p
 	if receiver_side == "away":
 		_arm_ai_return()
 	else:
-		_configure_receive_hint_for_home_return(mounted_venue, ball_world_position)
+		_landing_marker_visible = false
+		_home_receive_grace_sec = PLAYER_POST_BOUNCE_READY_WINDOW_SEC
 		_strike_window_state = STRIKE_WINDOW_STATE_TRACKING
 
 func _handle_rally_bounce(_ball_node: Node3D, mounted_venue: Node3D, ball_world_position: Vector3, bounce_side: String) -> void:

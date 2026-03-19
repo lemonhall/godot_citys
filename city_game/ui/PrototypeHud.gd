@@ -514,7 +514,9 @@ func _apply_tennis_match_hud_state() -> void:
 					"recover":
 						assist_text = "回球已出手，准备下一拍"
 					_:
-						assist_text = "自动跑位中，跟住蓝圈"
+						assist_text = "跟住绿圈，等待击球窗口"
+			"serve_in_flight":
+				assist_text = "跟住绿圈，提前准备接发"
 			"point_result":
 				assist_text = "等待下一分开始"
 			"game_break":

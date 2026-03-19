@@ -53,6 +53,20 @@ const THEME_PALETTES := {
 		"flame_base": Color(0.28, 0.52, 1.0, 0.22),
 		"flame_emission": Color(0.42, 0.66, 1.0, 1.0),
 	},
+	"tennis_receive_hint": {
+		"outer_base": Color(0.3, 0.9, 0.52, 0.12),
+		"outer_emission": Color(0.52, 1.0, 0.66, 0.9),
+		"inner_base": Color(0.48, 0.98, 0.64, 0.08),
+		"inner_emission": Color(0.64, 1.0, 0.76, 0.86),
+		"core_base": Color(0.22, 0.76, 0.38, 0.04),
+		"core_emission": Color(0.38, 0.9, 0.5, 0.78),
+		"dash_base": Color(0.54, 0.98, 0.66, 0.26),
+		"dash_emission": Color(0.7, 1.0, 0.8, 0.86),
+		"cross_base": Color(0.32, 0.82, 0.46, 0.16),
+		"cross_emission": Color(0.5, 0.94, 0.62, 0.82),
+		"flame_base": Color(0.3, 0.9, 0.5, 0.08),
+		"flame_emission": Color(0.5, 1.0, 0.64, 0.72),
+	},
 }
 
 const THEME_VISUAL_PROFILES := {
@@ -79,6 +93,17 @@ const THEME_VISUAL_PROFILES := {
 		"animate_flames": false,
 	},
 	"task_active_objective": {
+		"effect_driver_id": "gpu_unified_shader",
+		"use_shader_layers": true,
+		"show_dash_ring": false,
+		"show_cross_ring": false,
+		"show_flames": false,
+		"animate_geometry_pulse": false,
+		"dash_rotation_speed": 0.0,
+		"cross_rotation_speed": 0.0,
+		"animate_flames": false,
+	},
+	"tennis_receive_hint": {
 		"effect_driver_id": "gpu_unified_shader",
 		"use_shader_layers": true,
 		"show_dash_ring": false,

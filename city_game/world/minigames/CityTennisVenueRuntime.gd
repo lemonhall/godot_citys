@@ -26,6 +26,9 @@ const PLAYER_RECEIVE_MARKER_RADIUS_M := 4.2
 const PLAYER_POST_BOUNCE_READY_WINDOW_SEC := 0.72
 const PLAYER_STRIKE_SLOT_BLEND := 0.12
 const PLAYER_STRIKE_SLOT_MIN_AHEAD_M := 0.45
+const AI_SERVE_RECEIVER_BLEND := 0.72
+const AI_SERVE_SAFE_MARGIN_X_RATIO := 0.22
+const AI_SERVE_SAFE_MARGIN_Z_RATIO := 0.10
 const MATCH_STATE_IDLE := "idle"
 const MATCH_STATE_PRE_SERVE := "pre_serve"
 const MATCH_STATE_SERVE_IN_FLIGHT := "serve_in_flight"
@@ -466,6 +469,7 @@ func _handle_serve_bounce(ball_node: Node3D, mounted_venue: Node3D, ball_world_p
 			_match_state = MATCH_STATE_PRE_SERVE
 			_planned_target_world_position = Vector3.ZERO
 			_planned_target_side = ""
+			_clear_receive_hint_state()
 			_reset_ball_to_server_anchor(ball_node, mounted_venue)
 			return
 		_apply_point_winner(receiver_side, "double_fault")
@@ -893,7 +897,7 @@ func _arm_ai_return() -> void:
 func _execute_ai_serve(ball_node: Node3D, mounted_venue: Node3D) -> void:
 	if ball_node == null or mounted_venue == null or _match_state != MATCH_STATE_PRE_SERVE or _server_side != "away":
 		return
-	var target_world_position := _resolve_service_target_world_position(mounted_venue, _expected_service_box_id)
+	var target_world_position := _resolve_ai_serve_target_world_position(mounted_venue, _expected_service_box_id)
 	var launch_source := _resolve_serve_launch_source(mounted_venue)
 	if not _launch_ball_to_target(ball_node, mounted_venue, launch_source, target_world_position, SERVE_DESIRED_SPEED_MPS):
 		return
@@ -905,9 +909,9 @@ func _execute_ai_serve(ball_node: Node3D, mounted_venue: Node3D) -> void:
 	_ai_return_timer_sec = 0.0
 	_register_opponent_swing("serve")
 	_register_planned_target("home", target_world_position)
-	_clear_receive_hint_state()
+	_configure_receive_hint_for_home_return(mounted_venue, target_world_position)
 	_rally_shot_count = 1
-	_strike_window_state = STRIKE_WINDOW_STATE_IDLE
+	_strike_window_state = STRIKE_WINDOW_STATE_TRACKING
 	_strike_quality_feedback = "read_away_serve"
 	_previous_ball_world_position = launch_source
 	_previous_ball_linear_velocity = _get_ball_linear_velocity(ball_node)
@@ -1015,6 +1019,38 @@ func _resolve_service_target_world_position(mounted_venue: Node3D, service_box_i
 	if absf(shot_bias.y) > 0.05:
 		local_target.z = clampf(lerpf(local_target.z, z_max if shot_bias.y >= 0.0 else z_min, absf(shot_bias.y) * 0.55), z_min, z_max)
 	return _to_world_bounce_target(mounted_venue, local_target)
+
+func _resolve_ai_serve_target_world_position(mounted_venue: Node3D, service_box_id: String) -> Vector3:
+	var court_contract: Dictionary = mounted_venue.get_tennis_court_contract() if mounted_venue != null and mounted_venue.has_method("get_tennis_court_contract") else {}
+	var service_boxes: Dictionary = court_contract.get("service_boxes", {})
+	var service_box: Dictionary = service_boxes.get(service_box_id, {})
+	var local_target := service_box.get("local_center", Vector3.ZERO) as Vector3 if service_box.has("local_center") else Vector3.ZERO
+	var rect: Dictionary = service_box.get("rect", {})
+	var rect_position := rect.get("position", Vector2.ZERO) as Vector2
+	var rect_size := rect.get("size", Vector2.ZERO) as Vector2
+	var margin_x := maxf(rect_size.x * AI_SERVE_SAFE_MARGIN_X_RATIO, 4.5)
+	var margin_z := maxf(rect_size.y * AI_SERVE_SAFE_MARGIN_Z_RATIO, 3.8)
+	var x_min := rect_position.x + margin_x
+	var x_max := rect_position.x + rect_size.x - margin_x
+	var z_min := rect_position.y + margin_z
+	var z_max := rect_position.y + rect_size.y - margin_z
+	var receiver_anchor_local := _resolve_receiver_anchor_local_for_service_box(court_contract, service_box_id, local_target)
+	local_target.x = clampf(lerpf(local_target.x, receiver_anchor_local.x, AI_SERVE_RECEIVER_BLEND), x_min, x_max)
+	local_target.z = clampf(receiver_anchor_local.z - 22.0, z_min, z_max)
+	return _to_world_bounce_target(mounted_venue, local_target)
+
+func _resolve_receiver_anchor_local_for_service_box(court_contract: Dictionary, service_box_id: String, fallback_value: Vector3 = Vector3.ZERO) -> Vector3:
+	match service_box_id:
+		"service_box_deuce_home":
+			return _extract_local_anchor(court_contract.get("home_deuce_receiver_anchor", {}), fallback_value)
+		"service_box_ad_home":
+			return _extract_local_anchor(court_contract.get("home_ad_receiver_anchor", {}), fallback_value)
+		"service_box_deuce_away":
+			return _extract_local_anchor(court_contract.get("away_deuce_receiver_anchor", {}), fallback_value)
+		"service_box_ad_away":
+			return _extract_local_anchor(court_contract.get("away_ad_receiver_anchor", {}), fallback_value)
+		_:
+			return fallback_value
 
 func _resolve_player_return_target_world_position(mounted_venue: Node3D) -> Vector3:
 	var court_contract: Dictionary = mounted_venue.get_tennis_court_contract() if mounted_venue.has_method("get_tennis_court_contract") else {}
@@ -1214,16 +1250,18 @@ func _build_match_coach_text() -> String:
 		MATCH_STATE_PRE_SERVE:
 			return "按 E 发球 | WASD 微调落点" if _server_side == "home" else "对手发球中，准备接球"
 		MATCH_STATE_SERVE_IN_FLIGHT:
+			if _target_side == "home" and _landing_marker_visible:
+				return "跟住绿圈，提前准备接发"
 			return "发球已出手，准备下一拍"
 		MATCH_STATE_RALLY:
 			if _target_side == "home":
 				match _strike_window_state:
 					STRIKE_WINDOW_STATE_READY:
-						return "进入蓝圈后按 E 回球"
+						return "进入绿圈后按 E 回球"
 					STRIKE_WINDOW_STATE_RECOVER:
 						return "回位，准备下一拍"
 					_:
-						return "跟住蓝圈，等 READY 再按 E"
+						return "跟住绿圈，等 READY 再按 E"
 			if _target_side == "away":
 				return "回球已过网，观察对手落点"
 			return "保持站位，准备来球"

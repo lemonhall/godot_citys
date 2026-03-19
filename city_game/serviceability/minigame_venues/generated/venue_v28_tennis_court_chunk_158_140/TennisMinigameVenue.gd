@@ -395,7 +395,7 @@ func _ensure_receive_landing_marker() -> void:
 		_receive_landing_marker = CityWorldRingMarker.new()
 		_receive_landing_marker.name = "ReceiveLandingMarker"
 		add_child(_receive_landing_marker)
-	_receive_landing_marker.set_marker_theme("task_active_objective")
+	_receive_landing_marker.set_marker_theme("tennis_receive_hint")
 	_apply_receive_landing_marker_state()
 
 func _apply_receive_landing_marker_state() -> void:

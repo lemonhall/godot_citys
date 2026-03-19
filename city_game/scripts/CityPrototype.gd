@@ -3263,7 +3263,7 @@ func _augment_tennis_interaction_prompt_state(prompt_state: Dictionary) -> Dicti
 				var strike_window_state := str(runtime_state.get("strike_window_state", "idle"))
 				var has_receive_chain := bool(runtime_state.get("landing_marker_visible", false)) or str(runtime_state.get("auto_footwork_assist_state", "idle")) != "idle"
 				prompt_state["visible"] = strike_window_state == "ready" or has_receive_chain
-				prompt_state["prompt_text"] = "按 E 回球" if strike_window_state == "ready" else "跟住蓝圈，等待时机"
+				prompt_state["prompt_text"] = "按 E 回球" if strike_window_state == "ready" else "跟住绿圈，等待时机"
 			else:
 				prompt_state["visible"] = false
 		_:

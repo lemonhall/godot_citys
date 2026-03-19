@@ -65,15 +65,28 @@ func _run() -> void:
 	var away_serve_state: Dictionary = await _wait_for_away_serve_started(world)
 	if not T.require_true(self, str(away_serve_state.get("last_hitter_side", "")) == "away", "Tennis away serve contract must let the away side actually launch the next serve instead of idling forever"):
 		return
-	if not T.require_true(self, str(away_serve_state.get("match_state", "")) == "serve_in_flight" or str(away_serve_state.get("match_state", "")) == "rally", "Tennis away serve contract must leave pre_serve once the away serve begins"):
+	if not T.require_true(self, str(away_serve_state.get("match_state", "")) == "serve_in_flight", "Tennis away serve contract must expose the away serve while it is still in flight so the player has time to read it early"):
 		return
 	if not T.require_true(self, str(away_serve_state.get("planned_target_side", "")) == "home", "Tennis away serve contract away serves must target the home/player side"):
+		return
+	if not T.require_true(self, bool(away_serve_state.get("landing_marker_visible", false)), "Tennis away serve contract must surface the receive ring as soon as the away serve is launched, not only after the bounce is already late"):
 		return
 	var serve_target_variant: Variant = away_serve_state.get("planned_target_world_position", null)
 	if not T.require_true(self, serve_target_variant is Vector3, "Tennis away serve contract must expose the away serve target as Vector3"):
 		return
 	var serve_target := serve_target_variant as Vector3
 	if not T.require_true(self, mounted_venue.get_service_box_id_for_world_point(serve_target) == str(away_serve_state.get("expected_service_box_id", "")), "Tennis away serve contract must land the AI serve in the formally expected home service box"):
+		return
+	var expected_service_box_id := str(away_serve_state.get("expected_service_box_id", ""))
+	var receiver_anchor_key := "home_deuce_receiver_anchor" if expected_service_box_id == "service_box_deuce_home" else "home_ad_receiver_anchor"
+	var receiver_anchor_contract: Dictionary = court_contract.get(receiver_anchor_key, {})
+	var receiver_anchor_world_position: Vector3 = receiver_anchor_contract.get("world_position", home_receive_world_position)
+	var serve_target_local := mounted_venue.to_local(serve_target)
+	var receiver_anchor_local := mounted_venue.to_local(receiver_anchor_world_position)
+	var service_line_distance_m := float(court_contract.get("service_line_distance_m", 48.0))
+	if not T.require_true(self, absf(serve_target_local.x - receiver_anchor_local.x) <= 4.5, "Tennis away serve contract AI serves must not drag the player into a too-wide receive sprint before the rally even starts"):
+		return
+	if not T.require_true(self, serve_target_local.z >= service_line_distance_m * 0.72, "Tennis away serve contract AI serves must land in the deeper player-reachable part of the home service box instead of a too-short drop shot"):
 		return
 	var opponent_visual_state: Dictionary = opponent_node.get_tennis_visual_state()
 	if not T.require_true(self, int(opponent_visual_state.get("swing_count", 0)) >= 1, "Tennis away serve contract must trigger an opponent swing when the away serve starts"):
@@ -138,7 +151,7 @@ func _wait_for_away_serve_started(world) -> Dictionary:
 		await physics_frame
 		await process_frame
 		var runtime_state: Dictionary = world.get_tennis_venue_runtime_state()
-		if str(runtime_state.get("last_hitter_side", "")) == "away" and str(runtime_state.get("server_side", "")) == "away":
+		if str(runtime_state.get("last_hitter_side", "")) == "away" and str(runtime_state.get("server_side", "")) == "away" and str(runtime_state.get("match_state", "")) == "serve_in_flight":
 			return runtime_state
 	return world.get_tennis_venue_runtime_state()
 

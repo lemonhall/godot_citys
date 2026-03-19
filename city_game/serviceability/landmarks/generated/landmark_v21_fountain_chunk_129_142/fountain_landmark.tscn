@@ -1,8 +1,17 @@
 [gd_scene format=3 uid="uid://ca0l5c14vjbgt"]
 
 [ext_resource type="PackedScene" uid="uid://bx3e57m46efi5" path="res://city_game/assets/environment/source/fountains/Santo Spirito Fountain.glb" id="1_fountain"]
+[ext_resource type="PackedScene" path="res://city_game/assets/environment/source/creatures/lobster_02.glb" id="2_lobster"]
+[ext_resource type="Script" path="res://city_game/serviceability/landmarks/generated/landmark_v21_fountain_chunk_129_142/FountainLobster.gd" id="3_script"]
 
 [node name="FountainLandmark" type="Node3D" unique_id=1580781387]
 
 [node name="Model" parent="." unique_id=2131040129 instance=ExtResource("1_fountain")]
 transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 2.44016, 0)
+
+[node name="Lobster" type="Node3D" parent="."]
+transform = Transform3D(0.32094365, 0, 0.9470984, 0, 1, 0, -0.9470984, 0, 0.32094365, 2.4418716, 0, 12.168333)
+script = ExtResource("3_script")
+
+[node name="Model" parent="Lobster" instance=ExtResource("2_lobster")]
+transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0)

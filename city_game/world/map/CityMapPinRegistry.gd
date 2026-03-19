@@ -76,6 +76,9 @@ func replace_service_building_pins(service_building_pins: Array) -> void:
 func replace_scene_landmark_pins(scene_landmark_pins: Array) -> void:
 	_replace_pins_by_source("scene_landmark_manifest", scene_landmark_pins)
 
+func replace_scene_minigame_venue_pins(scene_minigame_venue_pins: Array) -> void:
+	_replace_pins_by_source("scene_minigame_venue_manifest", scene_minigame_venue_pins)
+
 func _replace_pins_by_source(pin_source: String, replacement_pins: Array) -> void:
 	var to_remove: Array[String] = []
 	for pin_id_variant in _pins_by_id.keys():

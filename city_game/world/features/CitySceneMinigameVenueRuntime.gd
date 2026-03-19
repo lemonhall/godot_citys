@@ -1,6 +1,10 @@
 extends RefCounted
 
 const FEATURE_KIND := "scene_minigame_venue"
+const PIN_TYPE := "landmark"
+const PIN_SOURCE := "scene_minigame_venue_manifest"
+const VISIBILITY_SCOPE := "full_map"
+const DEFAULT_PRIORITY := 69
 
 var _entries_by_venue_id: Dictionary = {}
 var _entries_by_chunk_id: Dictionary = {}
@@ -50,11 +54,29 @@ func get_entries_for_chunk(chunk_id: String) -> Array:
 		snapshot.append(entry.duplicate(true))
 	return snapshot
 
+func get_full_map_pins() -> Array[Dictionary]:
+	var pins: Array[Dictionary] = []
+	for entry_variant in _entries_by_venue_id.values():
+		var entry: Dictionary = entry_variant
+		var pin := _build_pin_from_entry(entry)
+		if pin.is_empty():
+			continue
+		pins.append(pin)
+	pins.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var a_priority := int(a.get("priority", 0))
+		var b_priority := int(b.get("priority", 0))
+		if a_priority == b_priority:
+			return str(a.get("pin_id", "")) < str(b.get("pin_id", ""))
+		return a_priority < b_priority
+	)
+	return pins
+
 func get_state() -> Dictionary:
 	return {
 		"entry_count": _entries_by_venue_id.size(),
 		"chunk_count": _entries_by_chunk_id.size(),
 		"manifest_read_count": _manifest_read_count,
+		"pin_count": get_full_map_pins().size(),
 	}
 
 func _resolve_registry_entry(venue_id: String, registry_entry: Dictionary) -> Dictionary:
@@ -89,6 +111,10 @@ func _resolve_registry_entry(venue_id: String, registry_entry: Dictionary) -> Di
 	var anchor_chunk_key: Variant = _decode_vector2i(manifest.get("anchor_chunk_key", null))
 	if world_position == null or surface_normal == null or scene_root_offset == null or anchor_chunk_key == null:
 		return {}
+	var full_map_pin: Dictionary = {}
+	var full_map_pin_variant = manifest.get("full_map_pin", {})
+	if full_map_pin_variant is Dictionary:
+		full_map_pin = (full_map_pin_variant as Dictionary).duplicate(true)
 	return {
 		"venue_id": resolved_venue_id,
 		"display_name": str(manifest.get("display_name", resolved_venue_id)),
@@ -102,7 +128,48 @@ func _resolve_registry_entry(venue_id: String, registry_entry: Dictionary) -> Di
 		"scene_path": scene_path,
 		"manifest_path": manifest_path,
 		"primary_ball_prop_id": str(manifest.get("primary_ball_prop_id", "")),
+		"full_map_pin": full_map_pin,
 		"yaw_rad": float(manifest.get("yaw_rad", 0.0)),
+	}
+
+func _build_pin_from_entry(entry: Dictionary) -> Dictionary:
+	var full_map_pin_variant = entry.get("full_map_pin", {})
+	if not (full_map_pin_variant is Dictionary):
+		return {}
+	var full_map_pin: Dictionary = full_map_pin_variant
+	if not bool(full_map_pin.get("visible", false)):
+		return {}
+	var icon_id := str(full_map_pin.get("icon_id", "")).strip_edges()
+	if icon_id == "":
+		return {}
+	var venue_id := str(entry.get("venue_id", "")).strip_edges()
+	if venue_id == "":
+		return {}
+	var world_position: Variant = _decode_vector3(full_map_pin.get("world_position", null))
+	if world_position == null:
+		world_position = entry.get("world_position", null)
+	if not (world_position is Vector3):
+		return {}
+	var display_name := str(entry.get("display_name", venue_id)).strip_edges()
+	var title := str(full_map_pin.get("title", "")).strip_edges()
+	if title == "":
+		title = display_name
+	var subtitle := str(full_map_pin.get("subtitle", "")).strip_edges()
+	if subtitle == "":
+		subtitle = display_name
+	return {
+		"pin_id": "scene_minigame_venue:%s" % venue_id,
+		"pin_type": PIN_TYPE,
+		"pin_source": PIN_SOURCE,
+		"visibility_scope": VISIBILITY_SCOPE,
+		"venue_id": venue_id,
+		"world_position": world_position,
+		"title": title,
+		"subtitle": subtitle,
+		"priority": int(full_map_pin.get("priority", DEFAULT_PRIORITY)),
+		"icon_id": icon_id,
+		"is_selectable": false,
+		"route_target_override": {},
 	}
 
 func _decode_vector3(value: Variant) -> Variant:

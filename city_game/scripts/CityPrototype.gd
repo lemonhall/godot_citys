@@ -4516,6 +4516,13 @@ func _sync_scene_minigame_venue_entries(entries: Dictionary) -> void:
 		_soccer_venue_runtime.configure(runtime_entries.duplicate(true))
 	if chunk_renderer != null and chunk_renderer.has_method("set_scene_minigame_venue_entries"):
 		chunk_renderer.set_scene_minigame_venue_entries(runtime_entries)
+	if _map_pin_registry != null and _map_pin_registry.has_method("replace_scene_minigame_venue_pins"):
+		var pins: Array = []
+		if _scene_minigame_venue_runtime != null and _scene_minigame_venue_runtime.has_method("get_full_map_pins"):
+			pins = _scene_minigame_venue_runtime.get_full_map_pins()
+		_map_pin_registry.replace_scene_minigame_venue_pins(pins)
+	if _full_map_open and _map_screen != null and _map_screen.has_method("set_pins"):
+		_map_screen.set_pins(_get_map_pins("full_map"))
 
 func _update_soccer_venue_runtime(delta: float) -> void:
 	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("update"):

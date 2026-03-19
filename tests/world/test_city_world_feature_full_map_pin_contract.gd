@@ -26,12 +26,14 @@ func _run() -> void:
 	var map_state: Dictionary = {}
 	var fountain_marker: Dictionary = {}
 	var radio_tower_marker: Dictionary = {}
+	var football_marker: Dictionary = {}
 	for _frame in range(90):
 		await process_frame
 		map_state = world.get_map_screen_state()
 		fountain_marker = _find_marker_by_icon_id(map_state.get("pin_markers", []), "fountain")
 		radio_tower_marker = _find_marker_by_icon_id(map_state.get("pin_markers", []), "radio_tower")
-		if not fountain_marker.is_empty() and not radio_tower_marker.is_empty():
+		football_marker = _find_marker_by_icon_id(map_state.get("pin_markers", []), "football")
+		if not fountain_marker.is_empty() and not radio_tower_marker.is_empty() and not football_marker.is_empty():
 			break
 	if not T.require_true(self, not fountain_marker.is_empty(), "Full map render state must expose a fountain marker from the scene_landmark manifest pipeline"):
 		return
@@ -49,6 +51,14 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(radio_tower_marker.get("icon_glyph", "")) == "📡", "Radio tower marker must resolve the radio tower glyph from icon_id in UI layer"):
 		return
+	if not T.require_true(self, not football_marker.is_empty(), "Full map render state must expose a football marker from the scene_minigame_venue manifest pipeline"):
+		return
+	if not T.require_true(self, str(football_marker.get("pin_type", "")) == "landmark", "Football marker must reuse the landmark pin family on full map"):
+		return
+	if not T.require_true(self, str(football_marker.get("visibility_scope", "")) == "full_map", "Football marker must remain full_map only in render state"):
+		return
+	if not T.require_true(self, str(football_marker.get("icon_glyph", "")) == "⚽", "Football marker must resolve the football glyph from icon_id in UI layer"):
+		return
 
 	var minimap_snapshot: Dictionary = world.build_minimap_snapshot()
 	var pin_overlay: Dictionary = minimap_snapshot.get("pin_overlay", {})
@@ -57,6 +67,8 @@ func _run() -> void:
 		if not T.require_true(self, str(pin.get("icon_id", "")) != "fountain", "Fountain full-map marker must not leak into minimap overlay"):
 			return
 		if not T.require_true(self, str(pin.get("icon_id", "")) != "radio_tower", "Radio tower full-map marker must not leak into minimap overlay"):
+			return
+		if not T.require_true(self, str(pin.get("icon_id", "")) != "football", "Football full-map marker must not leak into minimap overlay"):
 			return
 
 	world.queue_free()

@@ -116,6 +116,20 @@ var _tennis_match_hud_state: Dictionary = {
 	"feedback_event_text": "",
 	"feedback_event_tone": "neutral",
 }
+var _missile_command_hud_state: Dictionary = {
+	"visible": false,
+	"wave_index": 0,
+	"wave_total": 3,
+	"wave_state": "idle",
+	"selected_silo_id": "",
+	"selected_silo_missiles_remaining": 0,
+	"cities_alive_count": 0,
+	"enemy_remaining_count": 0,
+	"zoom_active": false,
+	"feedback_event_token": 0,
+	"feedback_event_text": "",
+	"feedback_event_tone": "neutral",
+}
 var _tennis_feedback_audio_player: AudioStreamPlayer = null
 var _tennis_feedback_audio_state: Dictionary = {
 	"play_count": 0,
@@ -130,6 +144,7 @@ func _ready() -> void:
 	_ensure_fps_label()
 	_ensure_soccer_match_hud_view()
 	_ensure_tennis_match_hud_view()
+	_ensure_missile_command_hud_view()
 	_ensure_tennis_feedback_audio_player()
 	_ensure_focus_message_view()
 	_ensure_interaction_prompt_view()
@@ -346,6 +361,26 @@ func set_tennis_match_hud_state(state: Dictionary) -> void:
 func get_tennis_match_hud_state() -> Dictionary:
 	return _tennis_match_hud_state.duplicate(true)
 
+func set_missile_command_hud_state(state: Dictionary) -> void:
+	_missile_command_hud_state = {
+		"visible": bool(state.get("visible", false)),
+		"wave_index": int(state.get("wave_index", 0)),
+		"wave_total": int(state.get("wave_total", 3)),
+		"wave_state": str(state.get("wave_state", "idle")),
+		"selected_silo_id": str(state.get("selected_silo_id", "")),
+		"selected_silo_missiles_remaining": int(state.get("selected_silo_missiles_remaining", 0)),
+		"cities_alive_count": int(state.get("cities_alive_count", 0)),
+		"enemy_remaining_count": int(state.get("enemy_remaining_count", 0)),
+		"zoom_active": bool(state.get("zoom_active", false)),
+		"feedback_event_token": int(state.get("feedback_event_token", 0)),
+		"feedback_event_text": str(state.get("feedback_event_text", "")),
+		"feedback_event_tone": str(state.get("feedback_event_tone", "neutral")),
+	}
+	_apply_missile_command_hud_state()
+
+func get_missile_command_hud_state() -> Dictionary:
+	return _missile_command_hud_state.duplicate(true)
+
 func get_tennis_feedback_audio_state() -> Dictionary:
 	return _tennis_feedback_audio_state.duplicate(true)
 
@@ -374,6 +409,7 @@ func _apply_state() -> void:
 	_apply_controls_help_state()
 	_apply_soccer_match_hud_state()
 	_apply_tennis_match_hud_state()
+	_apply_missile_command_hud_state()
 
 func _apply_panel_state() -> void:
 	var panel := get_node_or_null("Root/Panel") as PanelContainer
@@ -543,6 +579,45 @@ func _apply_tennis_match_hud_state() -> void:
 				coach_color = Color(0.98, 0.98, 0.72, 1.0)
 		coach_label.add_theme_color_override("font_color", coach_color)
 
+func _apply_missile_command_hud_state() -> void:
+	var panel := get_node_or_null("Root/MissileCommandHud") as PanelContainer
+	var wave_label := get_node_or_null("Root/MissileCommandHud/Margin/VBox/Wave") as Label
+	var targets_label := get_node_or_null("Root/MissileCommandHud/Margin/VBox/Targets") as Label
+	var silo_label := get_node_or_null("Root/MissileCommandHud/Margin/VBox/Silo") as Label
+	var feedback_label := get_node_or_null("Root/MissileCommandHud/Margin/VBox/Feedback") as Label
+	if panel != null:
+		panel.visible = bool(_missile_command_hud_state.get("visible", false))
+	if wave_label != null:
+		wave_label.text = "WAVE %d / %d   %s" % [
+			int(_missile_command_hud_state.get("wave_index", 0)),
+			int(_missile_command_hud_state.get("wave_total", 3)),
+			str(_missile_command_hud_state.get("wave_state", "idle")).to_upper()
+		]
+	if targets_label != null:
+		targets_label.text = "CITIES %d   THREATS %d   ZOOM %s" % [
+			int(_missile_command_hud_state.get("cities_alive_count", 0)),
+			int(_missile_command_hud_state.get("enemy_remaining_count", 0)),
+			"ON" if bool(_missile_command_hud_state.get("zoom_active", false)) else "OFF"
+		]
+	if silo_label != null:
+		silo_label.text = "%s  MISSILES %d" % [
+			str(_missile_command_hud_state.get("selected_silo_id", "")).to_upper(),
+			int(_missile_command_hud_state.get("selected_silo_missiles_remaining", 0))
+		]
+	if feedback_label != null:
+		var feedback_text := str(_missile_command_hud_state.get("feedback_event_text", ""))
+		feedback_label.text = feedback_text if feedback_text != "" else "左键发射  右键放大  Q 切井  Esc 退出"
+		var tone := str(_missile_command_hud_state.get("feedback_event_tone", "neutral"))
+		var feedback_color := Color(0.84, 0.9, 0.96, 1.0)
+		match tone:
+			"success":
+				feedback_color = Color(0.8, 1.0, 0.76, 1.0)
+			"warning":
+				feedback_color = Color(1.0, 0.86, 0.64, 1.0)
+			"action":
+				feedback_color = Color(0.78, 0.96, 1.0, 1.0)
+		feedback_label.add_theme_color_override("font_color", feedback_color)
+
 func _ensure_mouse_passthrough() -> void:
 	var root := get_node_or_null("Root") as Control
 	if root != null:
@@ -571,6 +646,9 @@ func _ensure_mouse_passthrough() -> void:
 	var tennis_match_hud := get_node_or_null("Root/TennisMatchHud") as Control
 	if tennis_match_hud != null:
 		tennis_match_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var missile_command_hud := get_node_or_null("Root/MissileCommandHud") as Control
+	if missile_command_hud != null:
+		missile_command_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 func _ensure_crosshair_view() -> void:
 	var root := get_node_or_null("Root") as Control
@@ -758,6 +836,62 @@ func _ensure_tennis_feedback_audio_player() -> void:
 		_tennis_feedback_audio_player.name = "TennisFeedbackAudio"
 		_tennis_feedback_audio_player.volume_db = -11.0
 		root.add_child(_tennis_feedback_audio_player)
+
+func _ensure_missile_command_hud_view() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("MissileCommandHud") != null:
+		return
+	var panel := PanelContainer.new()
+	panel.name = "MissileCommandHud"
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.0
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.0
+	panel.offset_left = -220.0
+	panel.offset_top = 18.0
+	panel.offset_right = 220.0
+	panel.offset_bottom = 124.0
+	panel.visible = false
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var stylebox := StyleBoxFlat.new()
+	stylebox.bg_color = Color(0.04, 0.08, 0.11, 0.9)
+	stylebox.corner_radius_top_left = 12
+	stylebox.corner_radius_top_right = 12
+	stylebox.corner_radius_bottom_left = 12
+	stylebox.corner_radius_bottom_right = 12
+	stylebox.border_width_left = 1
+	stylebox.border_width_top = 1
+	stylebox.border_width_right = 1
+	stylebox.border_width_bottom = 1
+	stylebox.border_color = Color(0.76, 0.9, 0.98, 0.18)
+	panel.add_theme_stylebox_override("panel", stylebox)
+	var margin := MarginContainer.new()
+	margin.name = "Margin"
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 14)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	panel.add_child(margin)
+	var vbox := VBoxContainer.new()
+	vbox.name = "VBox"
+	vbox.add_theme_constant_override("separation", 2)
+	margin.add_child(vbox)
+	for label_spec in [
+		{"name": "Wave", "font_size": 24, "color": Color(0.97, 0.94, 0.86, 1.0)},
+		{"name": "Targets", "font_size": 15, "color": Color(0.82, 0.9, 0.98, 1.0)},
+		{"name": "Silo", "font_size": 16, "color": Color(0.82, 1.0, 0.84, 1.0)},
+		{"name": "Feedback", "font_size": 13, "color": Color(0.84, 0.9, 0.96, 1.0)},
+	]:
+		var label := Label.new()
+		label.name = str(label_spec.get("name", "Label"))
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.add_theme_font_size_override("font_size", int(label_spec.get("font_size", 14)))
+		label.add_theme_color_override("font_color", label_spec.get("color", Color.WHITE))
+		vbox.add_child(label)
+	root.add_child(panel)
 
 func _handle_tennis_feedback_event(state: Dictionary) -> void:
 	var event_token := int(state.get("feedback_event_token", 0))

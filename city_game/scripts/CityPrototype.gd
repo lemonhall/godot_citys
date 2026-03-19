@@ -44,6 +44,7 @@ const CitySceneMinigameVenueRegistry := preload("res://city_game/world/features/
 const CitySceneMinigameVenueRuntime := preload("res://city_game/world/features/CitySceneMinigameVenueRuntime.gd")
 const CitySoccerVenueRuntime := preload("res://city_game/world/minigames/CitySoccerVenueRuntime.gd")
 const CityTennisVenueRuntime := preload("res://city_game/world/minigames/CityTennisVenueRuntime.gd")
+const CityMissileCommandVenueRuntime := preload("res://city_game/world/minigames/CityMissileCommandVenueRuntime.gd")
 const CityMusicRoadRuntimeScript := preload("res://city_game/world/features/music_road/CityMusicRoadRuntime.gd")
 const CityNpcInteractionRuntime := preload("res://city_game/world/interactions/CityNpcInteractionRuntime.gd")
 const CityInteractivePropRuntime := preload("res://city_game/world/interactions/CityInteractivePropRuntime.gd")
@@ -257,6 +258,7 @@ var _scene_minigame_venue_registry = null
 var _scene_minigame_venue_runtime = null
 var _soccer_venue_runtime = null
 var _tennis_venue_runtime = null
+var _missile_command_venue_runtime = null
 var _music_road_runtime = null
 var _music_road_runtime_time_sec := 0.0
 var _building_export_state: Dictionary = {
@@ -320,6 +322,7 @@ func _ready() -> void:
 	_scene_minigame_venue_runtime = CitySceneMinigameVenueRuntime.new()
 	_soccer_venue_runtime = CitySoccerVenueRuntime.new()
 	_tennis_venue_runtime = CityTennisVenueRuntime.new()
+	_missile_command_venue_runtime = CityMissileCommandVenueRuntime.new()
 	_music_road_runtime = CityMusicRoadRuntimeScript.new()
 	_music_road_runtime_time_sec = 0.0
 	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
@@ -430,6 +433,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _handle_vehicle_radio_bound_input(event):
 		get_viewport().set_input_as_handled()
 		return
+	if _handle_missile_command_input(event):
+		get_viewport().set_input_as_handled()
+		return
+	if _is_missile_command_mode_active():
+		if not (event is InputEventMouseMotion):
+			get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey:
 		var key_event := event as InputEventKey
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_F1:
@@ -473,6 +483,36 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if DisplayServer.get_name() == "headless":
 		return
+
+func _handle_missile_command_input(event: InputEvent) -> bool:
+	if _missile_command_venue_runtime == null:
+		return false
+	if not _is_missile_command_mode_active():
+		return false
+	if event is InputEventMouseButton:
+		var button := event as InputEventMouseButton
+		if button.button_index == MOUSE_BUTTON_LEFT and button.pressed:
+			var fire_result := request_missile_command_primary_fire()
+			return bool(fire_result.get("success", false))
+		if button.button_index == MOUSE_BUTTON_RIGHT:
+			var zoom_result := set_missile_command_zoom_active(button.pressed)
+			return bool(zoom_result.get("success", false))
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		if not key_event.pressed or key_event.echo:
+			return false
+		if key_event.keycode == KEY_Q:
+			var cycle_result := cycle_missile_command_silo()
+			return bool(cycle_result.get("success", false))
+		if key_event.keycode == KEY_ESCAPE:
+			var exit_result := exit_missile_command_mode()
+			return bool(exit_result.get("success", false))
+	return false
+
+func _is_missile_command_mode_active() -> bool:
+	if _missile_command_venue_runtime == null or not _missile_command_venue_runtime.has_method("get_state"):
+		return false
+	return bool((_missile_command_venue_runtime.get_state() as Dictionary).get("battery_mode_active", false))
 
 func _handle_autodrive_shortcut() -> bool:
 	if player == null or not player.has_method("is_driving_vehicle") or not bool(player.is_driving_vehicle()):
@@ -2041,6 +2081,22 @@ func _build_default_tennis_match_hud_state() -> Dictionary:
 		"feedback_event_tone": "neutral",
 	}
 
+func _build_default_missile_command_hud_state() -> Dictionary:
+	return {
+		"visible": false,
+		"wave_index": 0,
+		"wave_total": 3,
+		"wave_state": "idle",
+		"selected_silo_id": "",
+		"selected_silo_missiles_remaining": 0,
+		"cities_alive_count": 0,
+		"enemy_remaining_count": 0,
+		"zoom_active": false,
+		"feedback_event_token": 0,
+		"feedback_event_text": "",
+		"feedback_event_tone": "neutral",
+	}
+
 func get_soccer_venue_runtime_state() -> Dictionary:
 	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("get_state"):
 		return {}
@@ -2061,6 +2117,16 @@ func get_tennis_match_hud_state() -> Dictionary:
 		return _build_default_tennis_match_hud_state()
 	return _tennis_venue_runtime.get_match_hud_state()
 
+func get_missile_command_runtime_state() -> Dictionary:
+	if _missile_command_venue_runtime == null or not _missile_command_venue_runtime.has_method("get_state"):
+		return {}
+	return _missile_command_venue_runtime.get_state()
+
+func get_missile_command_hud_state() -> Dictionary:
+	if _missile_command_venue_runtime == null or not _missile_command_venue_runtime.has_method("get_match_hud_state"):
+		return _build_default_missile_command_hud_state()
+	return _missile_command_venue_runtime.get_match_hud_state()
+
 func is_ambient_simulation_frozen() -> bool:
 	if chunk_renderer != null and chunk_renderer.has_method("is_ambient_simulation_frozen"):
 		return bool(chunk_renderer.is_ambient_simulation_frozen())
@@ -2068,8 +2134,41 @@ func is_ambient_simulation_frozen() -> bool:
 		if bool(_soccer_venue_runtime.is_ambient_simulation_frozen()):
 			return true
 	if _tennis_venue_runtime != null and _tennis_venue_runtime.has_method("is_ambient_simulation_frozen"):
-		return bool(_tennis_venue_runtime.is_ambient_simulation_frozen())
+		if bool(_tennis_venue_runtime.is_ambient_simulation_frozen()):
+			return true
+	if _missile_command_venue_runtime != null and _missile_command_venue_runtime.has_method("is_ambient_simulation_frozen"):
+		return bool(_missile_command_venue_runtime.is_ambient_simulation_frozen())
 	return false
+
+func request_missile_command_primary_fire() -> Dictionary:
+	if _missile_command_venue_runtime == null or not _missile_command_venue_runtime.has_method("request_primary_fire"):
+		return {"success": false, "error": "runtime_unavailable"}
+	return _missile_command_venue_runtime.request_primary_fire()
+
+func request_missile_command_fire_at_world_position(world_position: Vector3) -> Dictionary:
+	if _missile_command_venue_runtime == null or not _missile_command_venue_runtime.has_method("request_fire_at_world_position"):
+		return {"success": false, "error": "runtime_unavailable"}
+	return _missile_command_venue_runtime.request_fire_at_world_position(world_position)
+
+func cycle_missile_command_silo() -> Dictionary:
+	if _missile_command_venue_runtime == null or not _missile_command_venue_runtime.has_method("cycle_silo"):
+		return {"success": false, "error": "runtime_unavailable"}
+	return _missile_command_venue_runtime.cycle_silo()
+
+func set_missile_command_zoom_active(active: bool) -> Dictionary:
+	if _missile_command_venue_runtime == null or not _missile_command_venue_runtime.has_method("set_zoom_active"):
+		return {"success": false, "error": "runtime_unavailable"}
+	return _missile_command_venue_runtime.set_zoom_active(active)
+
+func exit_missile_command_mode() -> Dictionary:
+	if _missile_command_venue_runtime == null or not _missile_command_venue_runtime.has_method("exit_battery_mode"):
+		return {"success": false, "error": "runtime_unavailable"}
+	return _missile_command_venue_runtime.exit_battery_mode()
+
+func debug_set_missile_command_wave_seed(seed_value: int) -> Dictionary:
+	if _missile_command_venue_runtime == null or not _missile_command_venue_runtime.has_method("debug_set_wave_seed"):
+		return {"success": false, "error": "runtime_unavailable"}
+	return _missile_command_venue_runtime.debug_set_wave_seed(seed_value)
 
 func debug_set_soccer_ball_state(world_position: Vector3, linear_velocity: Vector3 = Vector3.ZERO, angular_velocity: Vector3 = Vector3.ZERO) -> Dictionary:
 	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("debug_set_ball_state"):
@@ -2378,6 +2477,10 @@ func _build_crosshair_state() -> Dictionary:
 		var visible_rect := get_viewport().get_visible_rect()
 		if visible_rect.size.x > 0.0 and visible_rect.size.y > 0.0:
 			viewport_size = visible_rect.size
+	if _missile_command_venue_runtime != null and _missile_command_venue_runtime.has_method("get_crosshair_state"):
+		var missile_crosshair_state := (_missile_command_venue_runtime.get_crosshair_state() as Dictionary).duplicate(true)
+		if bool(missile_crosshair_state.get("visible", false)):
+			return missile_crosshair_state
 	if player == null or not player.has_method("get_aim_target_world_position"):
 		return {
 			"visible": false,
@@ -4648,6 +4751,8 @@ func _sync_scene_minigame_venue_entries(entries: Dictionary) -> void:
 		_soccer_venue_runtime.configure(runtime_entries.duplicate(true))
 	if _tennis_venue_runtime != null and _tennis_venue_runtime.has_method("configure"):
 		_tennis_venue_runtime.configure(runtime_entries.duplicate(true))
+	if _missile_command_venue_runtime != null and _missile_command_venue_runtime.has_method("configure"):
+		_missile_command_venue_runtime.configure(runtime_entries.duplicate(true))
 	if chunk_renderer != null and chunk_renderer.has_method("set_scene_minigame_venue_entries"):
 		chunk_renderer.set_scene_minigame_venue_entries(runtime_entries)
 	if _map_pin_registry != null and _map_pin_registry.has_method("replace_scene_minigame_venue_pins"):
@@ -4661,12 +4766,16 @@ func _sync_scene_minigame_venue_entries(entries: Dictionary) -> void:
 func _update_minigame_venue_runtimes(delta: float) -> void:
 	var soccer_runtime_state: Dictionary = {}
 	var tennis_runtime_state: Dictionary = {}
+	var missile_command_runtime_state: Dictionary = {}
 	if _soccer_venue_runtime != null and _soccer_venue_runtime.has_method("update"):
 		soccer_runtime_state = _soccer_venue_runtime.update(chunk_renderer, player, delta)
 	if _tennis_venue_runtime != null and _tennis_venue_runtime.has_method("update"):
 		tennis_runtime_state = _tennis_venue_runtime.update(chunk_renderer, player, delta)
+	if _missile_command_venue_runtime != null and _missile_command_venue_runtime.has_method("update"):
+		missile_command_runtime_state = _missile_command_venue_runtime.update(chunk_renderer, player, delta)
 	var ambient_simulation_frozen := bool(soccer_runtime_state.get("ambient_simulation_frozen", false)) \
-		or bool(tennis_runtime_state.get("ambient_simulation_frozen", false))
+		or bool(tennis_runtime_state.get("ambient_simulation_frozen", false)) \
+		or bool(missile_command_runtime_state.get("ambient_simulation_frozen", false))
 	if chunk_renderer != null and chunk_renderer.has_method("set_ambient_simulation_frozen"):
 		chunk_renderer.set_ambient_simulation_frozen(ambient_simulation_frozen)
 	if hud != null and hud.has_method("set_soccer_match_hud_state"):
@@ -4679,6 +4788,13 @@ func _update_minigame_venue_runtimes(delta: float) -> void:
 		if tennis_hud_state.is_empty():
 			tennis_hud_state = _build_default_tennis_match_hud_state()
 		hud.set_tennis_match_hud_state(tennis_hud_state)
+	if hud != null and hud.has_method("set_missile_command_hud_state"):
+		var missile_hud_state: Dictionary = (missile_command_runtime_state.get("match_hud_state", {}) as Dictionary).duplicate(true)
+		if missile_hud_state.is_empty():
+			missile_hud_state = _build_default_missile_command_hud_state()
+		hud.set_missile_command_hud_state(missile_hud_state)
+	if hud != null and hud.has_method("set_crosshair_state"):
+		hud.set_crosshair_state(_build_crosshair_state())
 
 func _update_music_road_runtime(_delta: float) -> void:
 	_advance_music_road_runtime(_delta)

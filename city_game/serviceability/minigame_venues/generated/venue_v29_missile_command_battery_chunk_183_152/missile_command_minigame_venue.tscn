@@ -1,0 +1,49 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://city_game/serviceability/minigame_venues/generated/venue_v29_missile_command_battery_chunk_183_152/MissileCommandMinigameVenue.gd" id="1"]
+
+[node name="MissileCommandMinigameVenue" type="Node3D"]
+script = ExtResource("1")
+
+[node name="GameplayPlaneAnchor" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 31, -28)
+
+[node name="BatteryCameraLookTarget" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 29, -29)
+
+[node name="BatteryCameraPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 24, 40)
+
+[node name="BatteryCamera" type="Camera3D" parent="BatteryCameraPivot"]
+current = false
+fov = 46.0
+near = 0.1
+far = 900.0
+
+[node name="StartRingAnchor" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.18, 24)
+
+[node name="ScoreboardAnchor" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 26, 6.8, -3)
+
+[node name="LaunchSilos" type="Node3D" parent="."]
+
+[node name="Left" type="Node3D" parent="LaunchSilos"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18, 0, 7)
+
+[node name="Center" type="Node3D" parent="LaunchSilos"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 4.5)
+
+[node name="Right" type="Node3D" parent="LaunchSilos"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 0, 7)
+
+[node name="CityTargets" type="Node3D" parent="."]
+
+[node name="Left" type="Node3D" parent="CityTargets"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18, 0, -25)
+
+[node name="Center" type="Node3D" parent="CityTargets"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -29)
+
+[node name="Right" type="Node3D" parent="CityTargets"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 0, -25)

@@ -84,6 +84,7 @@ const SPORTS_CAR_SPEED_MULTIPLIER := 2.0
 var _gravity := ProjectSettings.get_setting("physics/3d/default_gravity") as float
 var _pitch := deg_to_rad(-18.0)
 var _control_enabled := true
+var _movement_locked := false
 var _speed_profile := "player"
 var _stabilization_suspend_frames := 0
 var _collision_resume_process_frames := 0
@@ -246,15 +247,16 @@ func _physics_process(delta: float) -> void:
 	if _traversal_mode == TRAVERSAL_MODE_GROUND_SLAM:
 		_process_ground_slam(delta)
 		return
-	if _control_enabled and _jump_requested():
+	var movement_input_enabled := _control_enabled and not _movement_locked
+	if movement_input_enabled and _jump_requested():
 		if request_wall_climb():
 			return
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
-	elif _control_enabled and _jump_requested():
+	elif movement_input_enabled and _jump_requested():
 		velocity.y = jump_velocity
 
-	var input_dir := _read_move_input() if _control_enabled else Vector2.ZERO
+	var input_dir := _read_move_input() if movement_input_enabled else Vector2.ZERO
 	var move_dir := Vector3.ZERO
 	if input_dir.length() > 0.0:
 		var forward := -global_transform.basis.z
@@ -298,6 +300,15 @@ func set_control_enabled(enabled: bool) -> void:
 
 func is_control_enabled() -> bool:
 	return _control_enabled
+
+func set_movement_locked(enabled: bool) -> void:
+	_movement_locked = enabled
+	if enabled:
+		velocity.x = 0.0
+		velocity.z = 0.0
+
+func is_movement_locked() -> bool:
+	return _movement_locked
 
 func set_weapon_mode(mode: String) -> void:
 	if _driving_vehicle:

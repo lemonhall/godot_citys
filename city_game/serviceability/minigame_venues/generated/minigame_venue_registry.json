@@ -1,6 +1,12 @@
 {
 	"schema_version": "v26-scene-minigame-venue-registry-1",
 	"entries": {
+		"venue:v29:missile_command_battery:chunk_183_152": {
+			"venue_id": "venue:v29:missile_command_battery:chunk_183_152",
+			"feature_kind": "scene_minigame_venue",
+			"scene_path": "res://city_game/serviceability/minigame_venues/generated/venue_v29_missile_command_battery_chunk_183_152/missile_command_minigame_venue.tscn",
+			"manifest_path": "res://city_game/serviceability/minigame_venues/generated/venue_v29_missile_command_battery_chunk_183_152/minigame_venue_manifest.json"
+		},
 		"venue:v28:tennis_court:chunk_158_140": {
 			"venue_id": "venue:v28:tennis_court:chunk_158_140",
 			"feature_kind": "scene_minigame_venue",

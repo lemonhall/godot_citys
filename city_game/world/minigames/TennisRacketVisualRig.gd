@@ -1,7 +1,8 @@
+@tool
 extends Node3D
 
 const RACKET_SCENE_PATH := "res://city_game/assets/minigames/tennis/props/TennisRacket.glb"
-const DEFAULT_TARGET_LENGTH_M := 1.02
+const DEFAULT_TARGET_LENGTH_M := 0.69
 const DEFAULT_SWING_DURATION_SEC := 0.24
 const AUDIO_SAMPLE_RATE := 22050
 
@@ -11,6 +12,10 @@ var _config: Dictionary = {}
 var _mount_root: Node3D = null
 var _visual_root: Node3D = null
 var _swing_audio_player: AudioStreamPlayer3D = null
+var _authored_mount_position := Vector3.ZERO
+var _authored_mount_rotation_degrees := Vector3.ZERO
+var _authored_visual_transform := Transform3D.IDENTITY
+var _authored_transform_captured := false
 var _swing_elapsed_sec := 0.0
 var _swing_duration_sec := DEFAULT_SWING_DURATION_SEC
 var _last_swing_style := ""
@@ -23,6 +28,7 @@ func _ready() -> void:
 	_ensure_mount_root()
 	_ensure_visual_root()
 	_ensure_swing_audio_player()
+	_capture_authored_transforms()
 	_apply_config()
 	_update_pose()
 
@@ -37,6 +43,7 @@ func configure_rig(config: Dictionary) -> void:
 	if is_node_ready():
 		_ensure_mount_root()
 		_ensure_visual_root()
+		_capture_authored_transforms()
 		_apply_config()
 		_update_pose()
 
@@ -98,6 +105,16 @@ func _ensure_visual_root() -> void:
 		_visual_root.name = "Visual"
 		_mount_root.add_child(_visual_root)
 
+func _capture_authored_transforms() -> void:
+	if _authored_transform_captured:
+		return
+	if _mount_root != null and is_instance_valid(_mount_root):
+		_authored_mount_position = _mount_root.position
+		_authored_mount_rotation_degrees = _mount_root.rotation_degrees
+	if _visual_root != null and is_instance_valid(_visual_root):
+		_authored_visual_transform = _visual_root.transform
+	_authored_transform_captured = true
+
 func _instantiate_racket_visual() -> Node3D:
 	var document := GLTFDocument.new()
 	var state := GLTFState.new()
@@ -112,14 +129,15 @@ func _instantiate_racket_visual() -> Node3D:
 func _apply_config() -> void:
 	if _mount_root == null:
 		return
-	var mount_position: Variant = _config.get("mount_position", Vector3(0.5, 1.05, -0.12))
-	if mount_position is Vector3:
-		_mount_root.position = mount_position as Vector3
-	var rest_rotation_deg: Variant = _config.get("rest_rotation_deg", Vector3(18.0, 10.0, -38.0))
-	if rest_rotation_deg is Vector3:
-		_mount_root.rotation_degrees = rest_rotation_deg as Vector3
+	_mount_root.position = _resolve_config_vector("mount_position", _authored_mount_position)
+	_mount_root.rotation_degrees = _resolve_config_vector("rest_rotation_deg", _authored_mount_rotation_degrees)
+	_resolved_grip_anchor_source_point = _resolve_grip_anchor_source_point(Vector3.ZERO)
+	_resolved_visual_center_source_point = _resolve_config_vector("head_center_source_point", Vector3.ZERO)
 	if _visual_root != null and is_instance_valid(_visual_root):
-		_normalize_visual_scale(maxf(float(_config.get("target_length_m", DEFAULT_TARGET_LENGTH_M)), 0.2))
+		if bool(_config.get("normalize_visual_to_target_length", false)):
+			_normalize_visual_scale(maxf(float(_config.get("target_length_m", DEFAULT_TARGET_LENGTH_M)), 0.2))
+		else:
+			_visual_root.transform = _authored_visual_transform
 
 func _ensure_swing_audio_player() -> void:
 	if _swing_audio_player != null and is_instance_valid(_swing_audio_player):
@@ -144,11 +162,8 @@ func _play_swing_audio(style: String) -> void:
 func _update_pose() -> void:
 	if _mount_root == null:
 		return
-	var rest_mount_position := _resolve_config_vector("mount_position", Vector3(0.5, 1.05, -0.12))
-	var rest_rotation_deg: Variant = _config.get("rest_rotation_deg", Vector3(18.0, 10.0, -38.0))
-	var resolved_rest_rotation := Vector3(18.0, 10.0, -38.0)
-	if rest_rotation_deg is Vector3:
-		resolved_rest_rotation = rest_rotation_deg as Vector3
+	var rest_mount_position := _resolve_config_vector("mount_position", _authored_mount_position)
+	var resolved_rest_rotation := _resolve_config_vector("rest_rotation_deg", _authored_mount_rotation_degrees)
 	var progress := _resolve_swing_progress()
 	var envelope := sin(progress * PI)
 	_mount_root.position = rest_mount_position + _resolve_swing_position(_last_swing_style) * envelope

@@ -1,9 +1,9 @@
+@tool
 extends Node3D
 
-const PLAYER_MODEL_SCENE := preload("res://city_game/assets/minigames/soccer/players/animated_human.glb")
-const TennisRacketVisualRig := preload("res://city_game/world/minigames/TennisRacketVisualRig.gd")
-const TENNIS_RACKET_HAND_ANCHOR_NAME := "TennisRacketHandAnchor"
-const TENNIS_RACKET_HAND_BONE_NAME := "RightHand"
+const VISUAL_SCENE_PATH := "res://city_game/serviceability/minigame_venues/generated/venue_v28_tennis_court_chunk_158_140/TennisOpponent.tscn"
+const VISUAL_ROOT_PATH := NodePath("Visual")
+const TENNIS_RACKET_VISUAL_PATH := NodePath("Visual/RootNode/Human Armature/Skeleton3D/TennisRacketHandAnchor/TennisRacketSocket/TennisRacketVisual")
 
 const TEAM_COLORS := {
 	"home": Color(0.88, 0.9, 0.84, 1.0),
@@ -11,6 +11,18 @@ const TEAM_COLORS := {
 }
 
 const DEFAULT_ANIMATION_BLEND_SEC := 0.16
+const TENNIS_RACKET_CONFIG := {
+	"forehand_rotation_deg": Vector3(-42.0, 24.0, -138.0),
+	"backhand_rotation_deg": Vector3(-34.0, -28.0, 130.0),
+	"serve_rotation_deg": Vector3(-114.0, 20.0, -162.0),
+	"forehand_position_offset": Vector3(0.16, -0.06, 0.22),
+	"backhand_position_offset": Vector3(-0.16, -0.04, 0.18),
+	"serve_position_offset": Vector3(0.04, 0.34, 0.28),
+	"normalize_visual_to_target_length": false,
+	"grip_anchor_source_point": Vector3(14.79297, 1.824243, -254.1751),
+	"target_length_m": 0.69,
+	"swing_duration_sec": 0.26,
+}
 
 var _opponent_contract: Dictionary = {}
 var _runtime_state: Dictionary = {}
@@ -26,15 +38,16 @@ var _active_animation_name := ""
 var _last_swing_token := 0
 
 func _ready() -> void:
-	_ensure_visual_root()
-	_ensure_tennis_racket_visual()
+	_resolve_scene_nodes()
+	_configure_scene_racket()
 	_apply_contract_visuals()
 	_apply_runtime_state()
 
 func configure_opponent(opponent_contract: Dictionary) -> void:
 	_opponent_contract = opponent_contract.duplicate(true)
 	name = str(_opponent_contract.get("player_id", "TennisOpponent"))
-	_ensure_visual_root()
+	_resolve_scene_nodes()
+	_configure_scene_racket()
 	_apply_contract_visuals()
 	if _runtime_state.is_empty():
 		_runtime_state = _build_default_runtime_state()
@@ -43,6 +56,9 @@ func configure_opponent(opponent_contract: Dictionary) -> void:
 func apply_runtime_state(runtime_state: Dictionary) -> void:
 	_runtime_state = runtime_state.duplicate(true)
 	_apply_runtime_state()
+
+func get_visual_scene_path() -> String:
+	return VISUAL_SCENE_PATH
 
 func get_tennis_visual_state() -> Dictionary:
 	if _tennis_racket_visual != null and is_instance_valid(_tennis_racket_visual) and _tennis_racket_visual.has_method("get_visual_state"):
@@ -57,18 +73,19 @@ func get_tennis_visual_state() -> Dictionary:
 		"last_swing_style": "",
 	}
 
-func _ensure_visual_root() -> void:
-	if _model_root != null and is_instance_valid(_model_root):
-		return
-	if PLAYER_MODEL_SCENE != null:
-		_model_root = PLAYER_MODEL_SCENE.instantiate() as Node3D
-	if _model_root == null:
-		_model_root = _build_fallback_model()
-	_model_root.name = "Visual"
-	add_child(_model_root)
+func _resolve_scene_nodes() -> void:
+	_model_root = get_node_or_null(VISUAL_ROOT_PATH) as Node3D
 	_animation_player = _find_animation_player(_model_root)
 	_animation_catalog = _build_animation_catalog(_animation_player)
-	_ensure_tennis_racket_visual()
+	_tennis_racket_visual = get_node_or_null(TENNIS_RACKET_VISUAL_PATH) as Node3D
+
+func _configure_scene_racket() -> void:
+	if _tennis_racket_visual == null or not is_instance_valid(_tennis_racket_visual):
+		return
+	if _tennis_racket_visual.has_method("configure_rig"):
+		_tennis_racket_visual.configure_rig(TENNIS_RACKET_CONFIG)
+	if _tennis_racket_visual.has_method("set_equipped_visible"):
+		_tennis_racket_visual.set_equipped_visible(true)
 
 func _apply_contract_visuals() -> void:
 	if _model_root == null:
@@ -135,6 +152,8 @@ func _build_default_runtime_state() -> Dictionary:
 func _find_animation_player(root: Node) -> AnimationPlayer:
 	if root is AnimationPlayer:
 		return root as AnimationPlayer
+	if root == null:
+		return null
 	for child in root.get_children():
 		var match_player := _find_animation_player(child)
 		if match_player != null:
@@ -180,83 +199,7 @@ func _is_tennis_racket_visual_subtree(root: Node) -> bool:
 		return false
 	return root == _tennis_racket_visual or _tennis_racket_visual.is_ancestor_of(root)
 
-func _ensure_tennis_racket_visual() -> void:
-	var racket_mount_parent := _resolve_tennis_racket_mount_parent()
-	if _tennis_racket_visual != null and is_instance_valid(_tennis_racket_visual):
-		if racket_mount_parent != null and _tennis_racket_visual.get_parent() != racket_mount_parent:
-			var existing_parent := _tennis_racket_visual.get_parent()
-			if existing_parent != null:
-				existing_parent.remove_child(_tennis_racket_visual)
-			racket_mount_parent.add_child(_tennis_racket_visual)
-		_apply_tennis_racket_scale_compensation(racket_mount_parent)
-		return
-	_tennis_racket_visual = find_child("TennisRacketVisual", true, false) as Node3D
-	if _tennis_racket_visual == null:
-		_tennis_racket_visual = TennisRacketVisualRig.new()
-		_tennis_racket_visual.name = "TennisRacketVisual"
-	if racket_mount_parent != null and _tennis_racket_visual.get_parent() != racket_mount_parent:
-		var current_parent := _tennis_racket_visual.get_parent()
-		if current_parent != null:
-			current_parent.remove_child(_tennis_racket_visual)
-		racket_mount_parent.add_child(_tennis_racket_visual)
-	_apply_tennis_racket_scale_compensation(racket_mount_parent)
-	if _tennis_racket_visual.has_method("configure_rig"):
-		_tennis_racket_visual.configure_rig({
-			"mount_position": Vector3.ZERO,
-			"rest_rotation_deg": Vector3(18.0, -74.0, -26.0),
-			"forehand_rotation_deg": Vector3(-42.0, 24.0, -138.0),
-			"backhand_rotation_deg": Vector3(-34.0, -28.0, 130.0),
-			"serve_rotation_deg": Vector3(-114.0, 20.0, -162.0),
-			"forehand_position_offset": Vector3(0.16, -0.06, 0.22),
-			"backhand_position_offset": Vector3(-0.16, -0.04, 0.18),
-			"serve_position_offset": Vector3(0.04, 0.34, 0.28),
-			"grip_anchor_source_point": Vector3(14.79452, 1.742427, -247.8149),
-			"target_length_m": 1.56,
-			"swing_duration_sec": 0.26,
-		})
-	if _tennis_racket_visual.has_method("set_equipped_visible"):
-		_tennis_racket_visual.set_equipped_visible(true)
-
-func _resolve_tennis_racket_mount_parent() -> Node3D:
-	var skeleton := _find_skeleton_3d(_model_root)
-	if skeleton == null:
-		return self
-	var hand_anchor := skeleton.get_node_or_null(TENNIS_RACKET_HAND_ANCHOR_NAME) as BoneAttachment3D
-	if hand_anchor == null:
-		hand_anchor = BoneAttachment3D.new()
-		hand_anchor.name = TENNIS_RACKET_HAND_ANCHOR_NAME
-		skeleton.add_child(hand_anchor)
-	hand_anchor.bone_name = TENNIS_RACKET_HAND_BONE_NAME
-	return hand_anchor
-
-func _apply_tennis_racket_scale_compensation(racket_mount_parent: Node3D) -> void:
-	if racket_mount_parent == null or _tennis_racket_visual == null or not is_instance_valid(_tennis_racket_visual):
-		return
-	var inherited_scale := racket_mount_parent.global_basis.get_scale()
-	_tennis_racket_visual.scale = Vector3(
-		_inverse_scale_component(inherited_scale.x),
-		_inverse_scale_component(inherited_scale.y),
-		_inverse_scale_component(inherited_scale.z)
-	)
-
-func _inverse_scale_component(component: float) -> float:
-	if absf(component) <= 0.0001:
-		return 1.0
-	return 1.0 / component
-
-func _find_skeleton_3d(root: Node) -> Skeleton3D:
-	if root == null:
-		return null
-	if root is Skeleton3D:
-		return root as Skeleton3D
-	for child in root.get_children():
-		var matched_skeleton := _find_skeleton_3d(child)
-		if matched_skeleton != null:
-			return matched_skeleton
-	return null
-
 func _sync_tennis_racket_visual() -> void:
-	_ensure_tennis_racket_visual()
 	if _tennis_racket_visual == null or not is_instance_valid(_tennis_racket_visual):
 		return
 	if _tennis_racket_visual.has_method("set_equipped_visible"):
@@ -265,23 +208,3 @@ func _sync_tennis_racket_visual() -> void:
 	if swing_token > 0 and swing_token != _last_swing_token and _tennis_racket_visual.has_method("play_swing"):
 		_tennis_racket_visual.play_swing(str(_runtime_state.get("swing_style", "forehand")))
 	_last_swing_token = swing_token
-
-func _build_fallback_model() -> Node3D:
-	var root := Node3D.new()
-	var body := MeshInstance3D.new()
-	body.name = "Body"
-	var capsule := CapsuleMesh.new()
-	capsule.mid_height = 1.0
-	capsule.radius = 0.24
-	body.mesh = capsule
-	body.position = Vector3(0.0, 0.74, 0.0)
-	root.add_child(body)
-	var head := MeshInstance3D.new()
-	head.name = "Head"
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.18
-	sphere.height = 0.36
-	head.mesh = sphere
-	head.position = Vector3(0.0, 1.58, 0.0)
-	root.add_child(head)
-	return root

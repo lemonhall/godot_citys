@@ -54,7 +54,7 @@ func _run() -> void:
 	var player_visual_state: Dictionary = player.get_tennis_visual_state()
 	if not T.require_true(self, bool(player_visual_state.get("equipped_visible", false)), "Tennis AI return contract must surface the player racket once the live match enters pre-serve state"):
 		return
-	if not T.require_true(self, float(player_visual_state.get("target_length_m", 0.0)) >= 1.45 and float(player_visual_state.get("target_length_m", 0.0)) <= 1.75, "Tennis AI return contract must enlarge the equipped racket to the newly requested 1.5x readability scale"):
+	if not T.require_true(self, float(player_visual_state.get("target_length_m", 0.0)) >= 0.66 and float(player_visual_state.get("target_length_m", 0.0)) <= 0.74, "Tennis AI return contract must keep the equipped racket near a real-world adult length around 0.69m"):
 		return
 	player.teleport_to_world_position(mounted_ball.global_position + Vector3(-1.2, 0.95, 0.0))
 	await _pump_frames(10)

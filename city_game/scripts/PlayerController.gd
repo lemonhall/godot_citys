@@ -1186,7 +1186,8 @@ func _ensure_tennis_racket_visual() -> void:
 			"forehand_position_offset": Vector3(0.18, -0.07, 0.24),
 			"backhand_position_offset": Vector3(-0.18, -0.04, 0.22),
 			"serve_position_offset": Vector3(0.05, 0.38, 0.32),
-			"target_length_m": 1.62,
+			"normalize_visual_to_target_length": true,
+			"target_length_m": 0.69,
 			"swing_duration_sec": 0.28,
 		})
 

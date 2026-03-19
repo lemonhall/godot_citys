@@ -2,6 +2,7 @@ extends Node3D
 
 const CityWorldRingMarker := preload("res://city_game/world/navigation/CityWorldRingMarker.gd")
 const TennisOpponent := preload("res://city_game/serviceability/minigame_venues/generated/venue_v28_tennis_court_chunk_158_140/TennisOpponent.gd")
+const TennisOpponentScene := preload("res://city_game/serviceability/minigame_venues/generated/venue_v28_tennis_court_chunk_158_140/TennisOpponent.tscn")
 
 const BASE_COURT_LENGTH_M := 23.77
 const BASE_SINGLES_WIDTH_M := 8.23
@@ -414,7 +415,9 @@ func _ensure_opponent_node() -> void:
 	if _opponent_node == null or not is_instance_valid(_opponent_node):
 		_opponent_node = opponent_root.get_node_or_null("away_opponent_1") as Node3D
 	if _opponent_node == null:
-		_opponent_node = TennisOpponent.new()
+		_opponent_node = TennisOpponentScene.instantiate() as Node3D
+		if _opponent_node == null:
+			_opponent_node = TennisOpponent.new()
 		_opponent_node.name = "away_opponent_1"
 		opponent_root.add_child(_opponent_node)
 	if _opponent_node.has_method("configure_opponent"):

@@ -220,6 +220,7 @@ func _ensure_feedback_visuals() -> void:
 		_trail_visual.visible = false
 		_trail_visual.set_meta("feedback_visual", true)
 		_visual_root.add_child(_trail_visual)
+	_trail_visual.top_level = true
 	_ensure_impact_audio_player()
 
 func _ensure_impact_audio_player() -> void:
@@ -261,9 +262,10 @@ func _update_feedback_visuals(delta: float) -> void:
 	var trail_mesh := _trail_visual.mesh as BoxMesh
 	if trail_mesh != null:
 		trail_mesh.size = Vector3(trail_width, trail_width, trail_length)
-	_trail_visual.position = -direction * trail_length * 0.44
+	var trail_world_position := global_position - direction * trail_length * 0.46 + Vector3.UP * (_target_diameter_m * 0.04)
+	_trail_visual.global_position = trail_world_position
 	var up_axis := Vector3.UP if absf(direction.dot(Vector3.UP)) < 0.94 else Vector3.FORWARD
-	_trail_visual.look_at(_trail_visual.global_position + direction, up_axis)
+	_trail_visual.look_at(trail_world_position + direction, up_axis)
 
 func _on_body_entered(body: Node) -> void:
 	if body == null or _impact_audio_cooldown_sec > 0.0:

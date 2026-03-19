@@ -122,13 +122,13 @@ func update(chunk_renderer: Node, player_node: Node3D, delta: float) -> Dictiona
 		_set_player_racket_visible(player_node, false)
 		_handle_unavailable_runtime(str(entry.get("primary_ball_prop_id", "")))
 		return get_state()
-	_set_player_racket_visible(player_node, true)
 	var mounted_venue := _resolve_mounted_venue(chunk_renderer, entry)
 	var ball_node := _resolve_bound_ball(chunk_renderer, entry)
 	_update_ball_radius(entry)
 	_latest_player_world_position = player_node.global_position if player_node != null and is_instance_valid(player_node) else Vector3.ZERO
 	_update_ambient_freeze(player_node, mounted_venue)
 	if mounted_venue == null or ball_node == null:
+		_set_player_racket_visible(player_node, _match_state != MATCH_STATE_IDLE)
 		_clear_receive_hint_state()
 		_refresh_visual_snapshots(mounted_venue)
 		return get_state()
@@ -137,10 +137,12 @@ func update(chunk_renderer: Node, player_node: Node3D, delta: float) -> Dictiona
 	var in_release_bounds := mounted_venue.has_method("is_world_point_in_release_bounds") and bool(mounted_venue.is_world_point_in_release_bounds(player_world_position))
 	if not in_release_bounds and _has_dirty_match_session():
 		_perform_full_match_reset(ball_node, mounted_venue)
+		_set_player_racket_visible(player_node, false)
 		_refresh_visual_snapshots(mounted_venue)
 		return get_state()
 	if _match_state == MATCH_STATE_IDLE and _can_player_start_match(player_world_position, mounted_venue):
 		_start_match(ball_node, mounted_venue)
+	_set_player_racket_visible(player_node, _match_state != MATCH_STATE_IDLE)
 	_update_timers(delta)
 	_advance_match_state(ball_node, mounted_venue, delta)
 	_update_player_receive_assist(player_node, mounted_venue, ball_node, delta)
@@ -556,12 +558,11 @@ func _update_player_receive_assist(player_node: Node3D, mounted_venue: Node3D, b
 		if not has_receive_slot:
 			_auto_footwork_assist_state = AUTO_FOOTWORK_STATE_IDLE
 		return
-	var desired_position := Vector3(_incoming_strike_world_position.x, player_node.global_position.y, _incoming_strike_world_position.z)
-	if player_node.has_method("advance_toward_world_position"):
-		var arrived := bool(player_node.advance_toward_world_position(desired_position, PLAYER_AUTO_FOOTWORK_SPEED_MPS * maxf(delta, 0.0)))
-		_auto_footwork_assist_state = AUTO_FOOTWORK_STATE_SET if arrived else AUTO_FOOTWORK_STATE_TRACKING
-	else:
-		_auto_footwork_assist_state = AUTO_FOOTWORK_STATE_TRACKING
+	var player_slot_distance := Vector2(
+		player_node.global_position.x - _incoming_strike_world_position.x,
+		player_node.global_position.z - _incoming_strike_world_position.z
+	).length()
+	_auto_footwork_assist_state = AUTO_FOOTWORK_STATE_SET if player_slot_distance <= PLAYER_RECEIVE_MARKER_RADIUS_M * 0.6 else AUTO_FOOTWORK_STATE_TRACKING
 	var previous_strike_window_state := _strike_window_state
 	var strike_eval := _evaluate_player_strike_window(ball_node, player_node, mounted_venue)
 	if bool(strike_eval.get("can_strike", false)):
@@ -799,9 +800,13 @@ func _ball_is_out_of_live_bounds(mounted_venue: Node3D, ball_world_position: Vec
 	var local_position := mounted_venue.to_local(ball_world_position)
 	var court_contract: Dictionary = mounted_venue.get_tennis_court_contract() if mounted_venue.has_method("get_tennis_court_contract") else {}
 	var court_bounds: Dictionary = court_contract.get("court_bounds", {})
-	var half_width := float(court_bounds.get("half_width_m", 4.115)) + LIVE_OUT_MARGIN_M
-	var half_length := float(court_bounds.get("half_length_m", 11.885)) + LIVE_OUT_MARGIN_M
-	return absf(local_position.x) > half_width or absf(local_position.z) > half_length
+	var release_buffer_m := float(court_contract.get("release_buffer_m", LIVE_OUT_MARGIN_M + 18.0))
+	var half_width := float(court_bounds.get("half_width_m", 4.115)) + release_buffer_m + LIVE_OUT_MARGIN_M
+	var half_length := float(court_bounds.get("half_length_m", 11.885)) + release_buffer_m + LIVE_OUT_MARGIN_M
+	if absf(local_position.x) <= half_width and absf(local_position.z) <= half_length:
+		return false
+	var surface_top_y := float(court_contract.get("surface_top_y", ball_world_position.y))
+	return ball_world_position.y <= surface_top_y + 1.2
 
 func _arm_ai_return() -> void:
 	_ai_return_armed = true
@@ -821,7 +826,7 @@ func _execute_ai_return(ball_node: Node3D, mounted_venue: Node3D) -> void:
 	_target_side = "home"
 	_target_bounce_count = 0
 	_rally_shot_count += 1
-	_register_opponent_swing("forehand")
+	_register_opponent_swing(_resolve_opponent_swing_style(mounted_venue, target_world_position))
 	_register_planned_target("home", target_world_position)
 	if pressure_error_kind == "out":
 		_clear_receive_hint_state()
@@ -1008,7 +1013,28 @@ func _resolve_player_swing_style(ball_node: Node3D, player_node: Node3D) -> Stri
 	if ball_node == null or player_node == null:
 		return "forehand"
 	var local_delta := player_node.to_local(_get_ball_world_position(ball_node))
-	return "backhand" if local_delta.x < 0.0 else "forehand"
+	if local_delta.x <= -0.7:
+		return "backhand"
+	if local_delta.x >= 0.7:
+		return "forehand"
+	return "backhand" if (_player_swing_token % 2) == 0 else "forehand"
+
+func _resolve_opponent_swing_style(mounted_venue: Node3D, target_world_position: Vector3) -> String:
+	if mounted_venue == null:
+		return "backhand" if (_opponent_swing_token % 2) == 0 else "forehand"
+	var court_contract: Dictionary = mounted_venue.get_tennis_court_contract() if mounted_venue.has_method("get_tennis_court_contract") else {}
+	var default_anchor := _extract_local_anchor(court_contract.get("away_baseline_anchor", {}), Vector3.ZERO)
+	var opponent_local_position := default_anchor
+	var opponent_local_variant: Variant = _opponent_state.get("local_position", default_anchor)
+	if opponent_local_variant is Vector3:
+		opponent_local_position = opponent_local_variant as Vector3
+	var target_local := mounted_venue.to_local(target_world_position)
+	var lateral_delta := target_local.x - opponent_local_position.x
+	if lateral_delta >= 1.6:
+		return "backhand"
+	if lateral_delta <= -1.6:
+		return "forehand"
+	return "backhand" if (_opponent_swing_token % 2) == 0 else "forehand"
 
 func _emit_feedback_event(kind: String, text: String, tone: String = "neutral") -> void:
 	var resolved_kind := kind.strip_edges()

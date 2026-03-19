@@ -47,6 +47,17 @@ func _run() -> void:
 	var trail_visible := await _wait_for_trail_visible(ball_node)
 	if not T.require_true(self, trail_visible, "Tennis ball feedback contract requires the motion trail to become visible while the ball is traveling at playable speed"):
 		return
+	var trail_visual := ball_node.get_node_or_null("VisualRoot/TrailVisual") as MeshInstance3D
+	if not T.require_true(self, trail_visual != null, "Tennis ball feedback contract requires a concrete TrailVisual node for alignment checks"):
+		return
+	var planar_velocity := Vector2(rigid_ball.linear_velocity.x, rigid_ball.linear_velocity.z)
+	if not T.require_true(self, planar_velocity.length() > 0.001, "Tennis ball feedback contract requires a non-zero planar ball velocity for trail alignment checks"):
+		return
+	var planar_direction := planar_velocity.normalized()
+	var planar_offset := Vector2(ball_node.global_position.x - trail_visual.global_position.x, ball_node.global_position.z - trail_visual.global_position.z)
+	var planar_lateral_error := absf(planar_direction.x * planar_offset.y - planar_direction.y * planar_offset.x)
+	if not T.require_true(self, planar_lateral_error <= 0.08, "Tennis ball feedback contract motion trail must stay aligned behind the ball instead of drifting sideways across the XZ plane"):
+		return
 
 	var impact_audio_observed := await _wait_for_impact_audio(ball_node)
 	if not T.require_true(self, impact_audio_observed, "Tennis ball feedback contract requires a real bounce/contact to trigger an impact audio event"):

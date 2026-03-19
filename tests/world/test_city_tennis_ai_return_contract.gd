@@ -51,6 +51,11 @@ func _run() -> void:
 		return
 
 	await _start_match(world, mounted_venue, player)
+	var player_visual_state: Dictionary = player.get_tennis_visual_state()
+	if not T.require_true(self, bool(player_visual_state.get("equipped_visible", false)), "Tennis AI return contract must surface the player racket once the live match enters pre-serve state"):
+		return
+	if not T.require_true(self, float(player_visual_state.get("target_length_m", 0.0)) >= 1.45 and float(player_visual_state.get("target_length_m", 0.0)) <= 1.75, "Tennis AI return contract must enlarge the equipped racket to the newly requested 1.5x readability scale"):
+		return
 	player.teleport_to_world_position(mounted_ball.global_position + Vector3(-1.2, 0.95, 0.0))
 	await _pump_frames(10)
 	var pre_serve_prompt_state: Dictionary = world.get_interactive_prop_interaction_state()
@@ -61,7 +66,7 @@ func _run() -> void:
 	var serve_result: Dictionary = world.handle_primary_interaction()
 	if not T.require_true(self, bool(serve_result.get("success", false)), "Tennis AI return contract must allow the player to trigger a real serve through the shared interaction entrypoint"):
 		return
-	var player_visual_state: Dictionary = player.get_tennis_visual_state()
+	player_visual_state = player.get_tennis_visual_state()
 	if not T.require_true(self, int(player_visual_state.get("swing_count", 0)) >= 1, "Tennis AI return contract must trigger a visible player swing when the opening serve is performed"):
 		return
 	if not T.require_true(self, int(player_visual_state.get("swing_sound_count", 0)) >= 1, "Tennis AI return contract must trigger audible player swing feedback when the opening serve is performed"):
@@ -71,6 +76,7 @@ func _run() -> void:
 	var rally_state: Dictionary = await _wait_for_match_state(world, "rally")
 	if not T.require_true(self, str(rally_state.get("last_hitter_side", "")) == "home", "Tennis AI return contract must preserve the player as last_hitter_side after the opening serve"):
 		return
+	var player_receive_anchor: Vector3 = player.global_position
 
 	var ai_return_state: Dictionary = await _wait_for_ai_return(world)
 	if not T.require_true(self, str(ai_return_state.get("last_hitter_side", "")) == "away", "Tennis AI return contract must let the away side perform a formal return instead of remaining idle"):
@@ -89,13 +95,18 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(ai_return_state.get("strike_window_state", "")) == "tracking" or str(ai_return_state.get("strike_window_state", "")) == "ready", "Tennis AI return contract must surface a readable strike_window_state while the ball is coming back"):
 		return
+	var auto_move_distance := await _measure_player_receive_drift(world, player, player_receive_anchor)
+	if not T.require_true(self, auto_move_distance <= 0.25, "Tennis AI return contract must not auto-walk the player into the receive ring anymore"):
+		return
 	var opponent_visual_state: Dictionary = opponent_node.get_tennis_visual_state()
 	if not T.require_true(self, int(opponent_visual_state.get("swing_count", 0)) >= 1, "Tennis AI return contract must trigger a visible opponent swing when the AI sends the ball back"):
 		return
 	if not T.require_true(self, int(opponent_visual_state.get("swing_sound_count", 0)) >= 1, "Tennis AI return contract must trigger audible opponent swing feedback when the AI sends the ball back"):
 		return
-	if not T.require_true(self, str(opponent_visual_state.get("last_swing_style", "")) == "forehand", "Tennis AI return contract AI return visual must default to a readable forehand swing"):
+	if not T.require_true(self, str(opponent_visual_state.get("last_swing_style", "")) == "forehand" or str(opponent_visual_state.get("last_swing_style", "")) == "backhand", "Tennis AI return contract AI return visual must resolve to a readable tennis swing style"):
 		return
+	player.teleport_to_world_position(landing_marker_world_position + Vector3.UP * _estimate_standing_height(player))
+	await _pump_frames(8)
 	var ready_bundle := await _wait_for_ready_receive_prompt(world, hud_node)
 	var ready_runtime_state: Dictionary = ready_bundle.get("runtime_state", {})
 	var ready_prompt_state: Dictionary = ready_bundle.get("prompt_state", {})
@@ -123,6 +134,8 @@ func _run() -> void:
 	if not T.require_true(self, int(player_visual_state.get("swing_count", 0)) >= 2, "Tennis AI return contract must trigger another visible player swing when the player returns the AI shot"):
 		return
 	if not T.require_true(self, int(player_visual_state.get("swing_sound_count", 0)) >= 2, "Tennis AI return contract must trigger another audible player swing cue when the player returns the AI shot"):
+		return
+	if not T.require_true(self, str(player_visual_state.get("last_swing_style", "")) == "forehand" or str(player_visual_state.get("last_swing_style", "")) == "backhand", "Tennis AI return contract player return visual must resolve to a readable forehand/backhand swing instead of a generic pose"):
 		return
 	var home_return_state: Dictionary = await _wait_for_last_hitter(world, "home")
 	if not T.require_true(self, str(home_return_state.get("planned_target_side", "")) == "away", "Tennis player return planner must send the ball back toward the away side by default"):
@@ -187,11 +200,20 @@ func _wait_for_ai_return(world) -> Dictionary:
 	return world.get_tennis_venue_runtime_state()
 
 func _attempt_player_return(world) -> Dictionary:
+	var repositioned := false
 	for _frame in range(480):
 		await physics_frame
 		await process_frame
 		var runtime_state: Dictionary = world.get_tennis_venue_runtime_state()
 		var interaction_state: Dictionary = world.get_interactive_prop_interaction_state()
+		if not repositioned and bool(runtime_state.get("landing_marker_visible", false)):
+			var strike_anchor_variant: Variant = runtime_state.get("landing_marker_world_position", Vector3.ZERO)
+			if strike_anchor_variant is Vector3:
+				var strike_anchor := strike_anchor_variant as Vector3
+				var player: Node3D = world.get_node_or_null("Player") as Node3D
+				if player != null and player.has_method("teleport_to_world_position"):
+					player.teleport_to_world_position(strike_anchor + Vector3.UP * _estimate_standing_height(player))
+					repositioned = true
 		if str(runtime_state.get("strike_window_state", "")) != "ready":
 			continue
 		if not bool(interaction_state.get("visible", false)):
@@ -240,6 +262,16 @@ func _pump_frames(frame_count: int = 4) -> void:
 	for _frame in range(frame_count):
 		await physics_frame
 		await process_frame
+
+func _measure_player_receive_drift(world, player, anchor: Vector3) -> float:
+	for _frame in range(24):
+		await physics_frame
+		await process_frame
+		var runtime_state: Dictionary = world.get_tennis_venue_runtime_state()
+		if str(runtime_state.get("strike_window_state", "")) == "ready":
+			break
+	var player_world_position: Vector3 = player.global_position
+	return Vector2(player_world_position.x - anchor.x, player_world_position.z - anchor.z).length()
 
 func _estimate_standing_height(player) -> float:
 	var collision_shape := player.get_node_or_null("CollisionShape3D") as CollisionShape3D

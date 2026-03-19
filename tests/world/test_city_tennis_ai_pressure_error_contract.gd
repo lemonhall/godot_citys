@@ -58,6 +58,18 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(pressure_result.get("rally_shot_count", 0)) >= 5, "Tennis AI pressure error contract must only introduce the deterministic AI miss after a real rally has been established"):
 		return
+	var pressure_target_variant: Variant = pressure_result.get("planned_target_world_position", Vector3.ZERO)
+	if not T.require_true(self, pressure_target_variant is Vector3, "Tennis AI pressure error contract must preserve the pressured miss landing target as Vector3"):
+		return
+	var pressure_target := pressure_target_variant as Vector3
+	if not T.require_true(self, not bool(mounted_venue.is_world_point_in_play_bounds(pressure_target)), "Tennis AI pressure error contract AI out balls must miss the first landing inside the formal in-play bounds"):
+		return
+	if not T.require_true(self, mounted_venue.to_local(pressure_target).z > 0.0, "Tennis AI pressure error contract AI pressure misses must still target the player/home side before missing long or wide"):
+		return
+	var court_contract: Dictionary = mounted_venue.get_tennis_court_contract()
+	var surface_top_y := float(court_contract.get("surface_top_y", mounted_ball.global_position.y))
+	if not T.require_true(self, mounted_ball.global_position.y <= surface_top_y + 2.0, "Tennis AI pressure error contract should not score an AI out while the ball is still obviously high in the air"):
+		return
 
 	world.queue_free()
 	T.pass_and_quit(self)

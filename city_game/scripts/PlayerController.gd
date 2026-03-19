@@ -1178,13 +1178,16 @@ func _ensure_tennis_racket_visual() -> void:
 		visual_parent.add_child(_tennis_racket_visual)
 	if _tennis_racket_visual.has_method("configure_rig"):
 		_tennis_racket_visual.configure_rig({
-			"mount_position": Vector3(0.62, 0.34, -0.18),
-			"rest_rotation_deg": Vector3(24.0, 8.0, -34.0),
-			"forehand_rotation_deg": Vector3(-34.0, 14.0, -116.0),
-			"backhand_rotation_deg": Vector3(-24.0, -14.0, 96.0),
-			"serve_rotation_deg": Vector3(-94.0, 18.0, -152.0),
-			"target_length_m": 1.08,
-			"swing_duration_sec": 0.24,
+			"mount_position": Vector3(0.66, 0.38, -0.18),
+			"rest_rotation_deg": Vector3(18.0, 16.0, -26.0),
+			"forehand_rotation_deg": Vector3(-48.0, 28.0, -146.0),
+			"backhand_rotation_deg": Vector3(-36.0, -30.0, 136.0),
+			"serve_rotation_deg": Vector3(-122.0, 24.0, -168.0),
+			"forehand_position_offset": Vector3(0.18, -0.07, 0.24),
+			"backhand_position_offset": Vector3(-0.18, -0.04, 0.22),
+			"serve_position_offset": Vector3(0.05, 0.38, 0.32),
+			"target_length_m": 1.62,
+			"swing_duration_sec": 0.28,
 		})
 
 func _ensure_grenade_hold_visual() -> void:

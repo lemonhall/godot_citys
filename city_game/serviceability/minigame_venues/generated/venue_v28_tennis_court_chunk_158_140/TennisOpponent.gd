@@ -181,13 +181,16 @@ func _ensure_tennis_racket_visual() -> void:
 		add_child(_tennis_racket_visual)
 	if _tennis_racket_visual.has_method("configure_rig"):
 		_tennis_racket_visual.configure_rig({
-			"mount_position": Vector3(0.56, 1.04, -0.14),
-			"rest_rotation_deg": Vector3(22.0, 12.0, -36.0),
-			"forehand_rotation_deg": Vector3(-34.0, 10.0, -110.0),
-			"backhand_rotation_deg": Vector3(-24.0, -12.0, 92.0),
-			"serve_rotation_deg": Vector3(-88.0, 16.0, -146.0),
-			"target_length_m": 1.04,
-			"swing_duration_sec": 0.22,
+			"mount_position": Vector3(0.6, 1.02, -0.12),
+			"rest_rotation_deg": Vector3(20.0, 16.0, -28.0),
+			"forehand_rotation_deg": Vector3(-42.0, 24.0, -138.0),
+			"backhand_rotation_deg": Vector3(-34.0, -28.0, 130.0),
+			"serve_rotation_deg": Vector3(-114.0, 20.0, -162.0),
+			"forehand_position_offset": Vector3(0.16, -0.06, 0.22),
+			"backhand_position_offset": Vector3(-0.16, -0.04, 0.18),
+			"serve_position_offset": Vector3(0.04, 0.34, 0.28),
+			"target_length_m": 1.56,
+			"swing_duration_sec": 0.26,
 		})
 	if _tennis_racket_visual.has_method("set_equipped_visible"):
 		_tennis_racket_visual.set_equipped_visible(true)

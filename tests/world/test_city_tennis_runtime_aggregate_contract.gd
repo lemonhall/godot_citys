@@ -54,7 +54,7 @@ func _run() -> void:
 	var player_visual_state: Dictionary = player.get_tennis_visual_state()
 	if not T.require_true(self, bool(player_visual_state.get("racket_present", false)), "Tennis runtime aggregate contract must equip the player with a racket visual"):
 		return
-	if not T.require_true(self, bool(player_visual_state.get("equipped_visible", false)), "Tennis runtime aggregate contract must surface the player racket visual while the player is inside the tennis venue runtime"):
+	if not T.require_true(self, not bool(player_visual_state.get("equipped_visible", true)), "Tennis runtime aggregate contract must keep the player racket hidden until a live tennis match actually starts"):
 		return
 	var opponent_node := mounted_venue.get_node_or_null("OpponentRoot/away_opponent_1")
 	if not T.require_true(self, opponent_node != null and opponent_node.has_method("get_tennis_visual_state"), "Tennis runtime aggregate contract requires opponent tennis visual introspection"):

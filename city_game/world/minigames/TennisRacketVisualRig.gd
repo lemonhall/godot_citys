@@ -61,6 +61,9 @@ func get_visual_state() -> Dictionary:
 		"swing_count": _swing_count,
 		"swing_sound_count": _swing_sound_count,
 		"last_swing_style": _last_swing_style,
+		"target_length_m": maxf(float(_config.get("target_length_m", DEFAULT_TARGET_LENGTH_M)), 0.2),
+		"mount_position": _mount_root.position if _mount_root != null else Vector3.ZERO,
+		"mount_rotation_degrees": _mount_root.rotation_degrees if _mount_root != null else Vector3.ZERO,
 	}
 
 func _ensure_mount_root() -> void:
@@ -130,12 +133,14 @@ func _play_swing_audio(style: String) -> void:
 func _update_pose() -> void:
 	if _mount_root == null:
 		return
+	var rest_mount_position := _resolve_config_vector("mount_position", Vector3(0.5, 1.05, -0.12))
 	var rest_rotation_deg: Variant = _config.get("rest_rotation_deg", Vector3(18.0, 10.0, -38.0))
 	var resolved_rest_rotation := Vector3(18.0, 10.0, -38.0)
 	if rest_rotation_deg is Vector3:
 		resolved_rest_rotation = rest_rotation_deg as Vector3
 	var progress := _resolve_swing_progress()
 	var envelope := sin(progress * PI)
+	_mount_root.position = rest_mount_position + _resolve_swing_position(_last_swing_style) * envelope
 	_mount_root.rotation_degrees = resolved_rest_rotation + _resolve_swing_rotation(_last_swing_style) * envelope
 
 func _resolve_swing_progress() -> float:
@@ -151,6 +156,15 @@ func _resolve_swing_rotation(style: String) -> Vector3:
 			return _resolve_config_vector("backhand_rotation_deg", Vector3(-26.0, -18.0, 102.0))
 		_:
 			return _resolve_config_vector("forehand_rotation_deg", Vector3(-36.0, 12.0, -112.0))
+
+func _resolve_swing_position(style: String) -> Vector3:
+	match _normalize_swing_style(style):
+		"serve":
+			return _resolve_config_vector("serve_position_offset", Vector3(0.06, 0.32, 0.24))
+		"backhand":
+			return _resolve_config_vector("backhand_position_offset", Vector3(-0.14, -0.03, 0.16))
+		_:
+			return _resolve_config_vector("forehand_position_offset", Vector3(0.14, -0.06, 0.18))
 
 func _normalize_swing_style(style: String) -> String:
 	var normalized := style.strip_edges().to_lower()

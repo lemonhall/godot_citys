@@ -167,11 +167,20 @@ func _wait_for_ai_return(world) -> Dictionary:
 	return world.get_tennis_venue_runtime_state()
 
 func _attempt_player_return(world) -> Dictionary:
+	var repositioned := false
 	for _frame in range(480):
 		await physics_frame
 		await process_frame
 		var runtime_state: Dictionary = world.get_tennis_venue_runtime_state()
 		var interaction_state: Dictionary = world.get_interactive_prop_interaction_state()
+		if not repositioned and bool(runtime_state.get("landing_marker_visible", false)):
+			var strike_anchor_variant: Variant = runtime_state.get("landing_marker_world_position", Vector3.ZERO)
+			if strike_anchor_variant is Vector3:
+				var strike_anchor := strike_anchor_variant as Vector3
+				var player: Node3D = world.get_node_or_null("Player") as Node3D
+				if player != null and player.has_method("teleport_to_world_position"):
+					player.teleport_to_world_position(strike_anchor + Vector3.UP * _estimate_standing_height(player))
+					repositioned = true
 		if str(runtime_state.get("strike_window_state", "")) != "ready":
 			continue
 		if not bool(interaction_state.get("visible", false)):

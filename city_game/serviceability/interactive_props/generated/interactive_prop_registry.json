@@ -1,6 +1,12 @@
 {
 	"schema_version": "v25-scene-interactive-prop-registry-1",
 	"entries": {
+		"prop:v28:tennis_ball:chunk_158_140": {
+			"prop_id": "prop:v28:tennis_ball:chunk_158_140",
+			"feature_kind": "scene_interactive_prop",
+			"scene_path": "res://city_game/serviceability/interactive_props/generated/prop_v28_tennis_ball_chunk_158_140/tennis_ball_prop.tscn",
+			"manifest_path": "res://city_game/serviceability/interactive_props/generated/prop_v28_tennis_ball_chunk_158_140/interactive_prop_manifest.json"
+		},
 		"prop:v25:soccer_ball:chunk_129_139": {
 			"prop_id": "prop:v25:soccer_ball:chunk_129_139",
 			"feature_kind": "scene_interactive_prop",

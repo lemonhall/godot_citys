@@ -1,6 +1,12 @@
 {
 	"schema_version": "v26-scene-minigame-venue-registry-1",
 	"entries": {
+		"venue:v28:tennis_court:chunk_158_140": {
+			"venue_id": "venue:v28:tennis_court:chunk_158_140",
+			"feature_kind": "scene_minigame_venue",
+			"scene_path": "res://city_game/serviceability/minigame_venues/generated/venue_v28_tennis_court_chunk_158_140/tennis_minigame_venue.tscn",
+			"manifest_path": "res://city_game/serviceability/minigame_venues/generated/venue_v28_tennis_court_chunk_158_140/minigame_venue_manifest.json"
+		},
 		"venue:v26:soccer_pitch:chunk_129_139": {
 			"venue_id": "venue:v26:soccer_pitch:chunk_129_139",
 			"feature_kind": "scene_minigame_venue",

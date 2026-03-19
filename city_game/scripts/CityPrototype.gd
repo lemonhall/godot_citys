@@ -43,6 +43,7 @@ const CitySceneInteractivePropRuntime := preload("res://city_game/world/features
 const CitySceneMinigameVenueRegistry := preload("res://city_game/world/features/CitySceneMinigameVenueRegistry.gd")
 const CitySceneMinigameVenueRuntime := preload("res://city_game/world/features/CitySceneMinigameVenueRuntime.gd")
 const CitySoccerVenueRuntime := preload("res://city_game/world/minigames/CitySoccerVenueRuntime.gd")
+const CityTennisVenueRuntime := preload("res://city_game/world/minigames/CityTennisVenueRuntime.gd")
 const CityMusicRoadRuntimeScript := preload("res://city_game/world/features/music_road/CityMusicRoadRuntime.gd")
 const CityNpcInteractionRuntime := preload("res://city_game/world/interactions/CityNpcInteractionRuntime.gd")
 const CityInteractivePropRuntime := preload("res://city_game/world/interactions/CityInteractivePropRuntime.gd")
@@ -255,6 +256,7 @@ var _scene_interactive_prop_runtime = null
 var _scene_minigame_venue_registry = null
 var _scene_minigame_venue_runtime = null
 var _soccer_venue_runtime = null
+var _tennis_venue_runtime = null
 var _music_road_runtime = null
 var _music_road_runtime_time_sec := 0.0
 var _building_export_state: Dictionary = {
@@ -317,6 +319,7 @@ func _ready() -> void:
 	_scene_minigame_venue_registry = CitySceneMinigameVenueRegistry.new()
 	_scene_minigame_venue_runtime = CitySceneMinigameVenueRuntime.new()
 	_soccer_venue_runtime = CitySoccerVenueRuntime.new()
+	_tennis_venue_runtime = CityTennisVenueRuntime.new()
 	_music_road_runtime = CityMusicRoadRuntimeScript.new()
 	_music_road_runtime_time_sec = 0.0
 	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
@@ -346,7 +349,7 @@ func _ready() -> void:
 
 	set_control_mode(CONTROL_MODE_PLAYER)
 	update_streaming_for_position(_get_active_anchor_position())
-	_update_soccer_venue_runtime(0.0)
+	_update_minigame_venue_runtimes(0.0)
 	_prewarm_actor_pages_around_spawn()
 	if hud != null and hud.has_method("set_fps_overlay_visible"):
 		hud.set_fps_overlay_visible(_fps_overlay_visible)
@@ -405,7 +408,7 @@ func _process(delta: float) -> void:
 	_update_abandoned_vehicle_visuals(delta)
 	if player == null:
 		return
-	_update_soccer_venue_runtime(delta)
+	_update_minigame_venue_runtimes(delta)
 	var frame_started_usec := Time.get_ticks_usec()
 	update_streaming_for_position(player.global_position, delta)
 	_update_task_system(delta)
@@ -994,7 +997,10 @@ func get_npc_interaction_state() -> Dictionary:
 func get_interactive_prop_interaction_state() -> Dictionary:
 	if _interactive_prop_runtime == null or not _interactive_prop_runtime.has_method("get_state"):
 		return {}
-	return _interactive_prop_runtime.get_state()
+	var state: Dictionary = (_interactive_prop_runtime.get_state() as Dictionary).duplicate(true)
+	if bool(state.get("visible", false)):
+		state = _augment_tennis_interaction_prompt_state(state)
+	return state
 
 func get_primary_interaction_state() -> Dictionary:
 	return _resolve_primary_interaction_prompt_state()
@@ -1999,6 +2005,44 @@ func get_scene_minigame_venue_runtime_state() -> Dictionary:
 		return {}
 	return _scene_minigame_venue_runtime.get_state()
 
+func _build_default_soccer_match_hud_state() -> Dictionary:
+	return {
+		"visible": false,
+		"match_state": "idle",
+		"home_score": 0,
+		"away_score": 0,
+		"home_team_color_id": "red",
+		"away_team_color_id": "blue",
+		"clock_text": "05:00",
+		"winner_side": "",
+	}
+
+func _build_default_tennis_match_hud_state() -> Dictionary:
+	return {
+		"visible": false,
+		"match_state": "idle",
+		"home_games": 0,
+		"away_games": 0,
+		"home_point_label": "0",
+		"away_point_label": "0",
+		"server_side": "home",
+		"winner_side": "",
+		"point_end_reason": "",
+		"landing_marker_visible": false,
+		"landing_marker_world_position": Vector3.ZERO,
+		"auto_footwork_assist_state": "idle",
+		"strike_window_state": "idle",
+		"strike_quality_feedback": "",
+		"expected_service_box_id": "",
+		"state_text": "",
+		"coach_text": "",
+		"coach_tone": "neutral",
+		"feedback_event_token": 0,
+		"feedback_event_kind": "",
+		"feedback_event_text": "",
+		"feedback_event_tone": "neutral",
+	}
+
 func get_soccer_venue_runtime_state() -> Dictionary:
 	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("get_state"):
 		return {}
@@ -2006,23 +2050,27 @@ func get_soccer_venue_runtime_state() -> Dictionary:
 
 func get_soccer_match_hud_state() -> Dictionary:
 	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("get_match_hud_state"):
-		return {
-			"visible": false,
-			"match_state": "idle",
-			"home_score": 0,
-			"away_score": 0,
-			"home_team_color_id": "red",
-			"away_team_color_id": "blue",
-			"clock_text": "05:00",
-			"winner_side": "",
-		}
+		return _build_default_soccer_match_hud_state()
 	return _soccer_venue_runtime.get_match_hud_state()
+
+func get_tennis_venue_runtime_state() -> Dictionary:
+	if _tennis_venue_runtime == null or not _tennis_venue_runtime.has_method("get_state"):
+		return {}
+	return _tennis_venue_runtime.get_state()
+
+func get_tennis_match_hud_state() -> Dictionary:
+	if _tennis_venue_runtime == null or not _tennis_venue_runtime.has_method("get_match_hud_state"):
+		return _build_default_tennis_match_hud_state()
+	return _tennis_venue_runtime.get_match_hud_state()
 
 func is_ambient_simulation_frozen() -> bool:
 	if chunk_renderer != null and chunk_renderer.has_method("is_ambient_simulation_frozen"):
 		return bool(chunk_renderer.is_ambient_simulation_frozen())
 	if _soccer_venue_runtime != null and _soccer_venue_runtime.has_method("is_ambient_simulation_frozen"):
-		return bool(_soccer_venue_runtime.is_ambient_simulation_frozen())
+		if bool(_soccer_venue_runtime.is_ambient_simulation_frozen()):
+			return true
+	if _tennis_venue_runtime != null and _tennis_venue_runtime.has_method("is_ambient_simulation_frozen"):
+		return bool(_tennis_venue_runtime.is_ambient_simulation_frozen())
 	return false
 
 func debug_set_soccer_ball_state(world_position: Vector3, linear_velocity: Vector3 = Vector3.ZERO, angular_velocity: Vector3 = Vector3.ZERO) -> Dictionary:
@@ -2064,6 +2112,30 @@ func debug_advance_soccer_match_time(delta_sec: float) -> Dictionary:
 			"error": "runtime_unavailable",
 		}
 	return _soccer_venue_runtime.debug_advance_match_time(delta_sec)
+
+func debug_set_tennis_ball_state(world_position: Vector3, linear_velocity: Vector3 = Vector3.ZERO, angular_velocity: Vector3 = Vector3.ZERO) -> Dictionary:
+	if _tennis_venue_runtime == null or not _tennis_venue_runtime.has_method("debug_set_ball_state"):
+		return {
+			"success": false,
+			"error": "runtime_unavailable",
+		}
+	return _tennis_venue_runtime.debug_set_ball_state(chunk_renderer, world_position, linear_velocity, angular_velocity)
+
+func debug_force_tennis_ball_reset() -> Dictionary:
+	if _tennis_venue_runtime == null or not _tennis_venue_runtime.has_method("debug_force_reset_ball"):
+		return {
+			"success": false,
+			"error": "runtime_unavailable",
+		}
+	return _tennis_venue_runtime.debug_force_reset_ball(chunk_renderer)
+
+func debug_award_tennis_point(winner_side: String, reason: String = "debug_point") -> Dictionary:
+	if _tennis_venue_runtime == null or not _tennis_venue_runtime.has_method("debug_award_point"):
+		return {
+			"success": false,
+			"error": "runtime_unavailable",
+		}
+	return _tennis_venue_runtime.debug_award_point(winner_side, reason)
 
 func get_music_road_runtime_state() -> Dictionary:
 	if _music_road_runtime == null or not _music_road_runtime.has_method("get_state"):
@@ -3153,6 +3225,34 @@ func _resolve_primary_interaction_prompt_state() -> Dictionary:
 		return npc_state
 	return prop_state
 
+func _augment_tennis_interaction_prompt_state(prompt_state: Dictionary) -> Dictionary:
+	if prompt_state.is_empty():
+		return prompt_state
+	if _tennis_venue_runtime == null or not _tennis_venue_runtime.has_method("get_state"):
+		return prompt_state
+	var runtime_state: Dictionary = _tennis_venue_runtime.get_state()
+	var active_tennis_prop_id := str(runtime_state.get("primary_ball_prop_id", ""))
+	if active_tennis_prop_id == "":
+		return prompt_state
+	if str(prompt_state.get("prop_id", "")) != active_tennis_prop_id:
+		return prompt_state
+	var match_state := str(runtime_state.get("match_state", "idle"))
+	match match_state:
+		"pre_serve":
+			prompt_state["visible"] = true
+			prompt_state["prompt_text"] = "按 E 发球"
+		"rally":
+			if str(runtime_state.get("target_side", "")) == "home":
+				var strike_window_state := str(runtime_state.get("strike_window_state", "idle"))
+				var has_receive_chain := bool(runtime_state.get("landing_marker_visible", false)) or str(runtime_state.get("auto_footwork_assist_state", "idle")) != "idle"
+				prompt_state["visible"] = strike_window_state == "ready" or has_receive_chain
+				prompt_state["prompt_text"] = "按 E 回球" if strike_window_state == "ready" else "跟住蓝圈，等待时机"
+			else:
+				prompt_state["visible"] = false
+		_:
+			prompt_state["visible"] = false
+	return prompt_state
+
 func _build_dialogue_panel_state() -> Dictionary:
 	var dialogue_state := get_dialogue_runtime_state()
 	return {
@@ -3271,12 +3371,22 @@ func _handle_interactive_prop_primary_interaction() -> Dictionary:
 			"success": false,
 			"error": "missing_interactive_prop_runtime",
 		}
+	var active_contract: Dictionary = _interactive_prop_runtime.get_active_contract() if _interactive_prop_runtime.has_method("get_active_contract") else {}
+	var active_prop_id := str(active_contract.get("prop_id", ""))
+	if active_prop_id != "" and _tennis_venue_runtime != null and _tennis_venue_runtime.has_method("handle_primary_interaction"):
+		var tennis_interaction_result: Dictionary = _tennis_venue_runtime.handle_primary_interaction(chunk_renderer, player, active_prop_id, active_contract.duplicate(true))
+		if bool(tennis_interaction_result.get("handled", false)):
+			if not tennis_interaction_result.has("owner_kind"):
+				tennis_interaction_result["owner_kind"] = "interactive_prop"
+			_update_npc_interaction_system()
+			return tennis_interaction_result
 	var interaction_result: Dictionary = _interactive_prop_runtime.trigger_active_interaction(player)
 	if not interaction_result.has("owner_kind"):
 		interaction_result["owner_kind"] = "interactive_prop"
-	if bool(interaction_result.get("success", false)) and str(interaction_result.get("interaction_kind", "")) == "kick":
+	if bool(interaction_result.get("success", false)):
+		var prop_id := str(interaction_result.get("prop_id", ""))
 		if _soccer_venue_runtime != null and _soccer_venue_runtime.has_method("notify_manual_ball_interaction"):
-			_soccer_venue_runtime.notify_manual_ball_interaction()
+			_soccer_venue_runtime.notify_manual_ball_interaction(prop_id, player)
 	_update_npc_interaction_system()
 	return interaction_result
 
@@ -4514,6 +4624,8 @@ func _sync_scene_minigame_venue_entries(entries: Dictionary) -> void:
 		runtime_entries = _scene_minigame_venue_runtime.get_entries_snapshot()
 	if _soccer_venue_runtime != null and _soccer_venue_runtime.has_method("configure"):
 		_soccer_venue_runtime.configure(runtime_entries.duplicate(true))
+	if _tennis_venue_runtime != null and _tennis_venue_runtime.has_method("configure"):
+		_tennis_venue_runtime.configure(runtime_entries.duplicate(true))
 	if chunk_renderer != null and chunk_renderer.has_method("set_scene_minigame_venue_entries"):
 		chunk_renderer.set_scene_minigame_venue_entries(runtime_entries)
 	if _map_pin_registry != null and _map_pin_registry.has_method("replace_scene_minigame_venue_pins"):
@@ -4524,27 +4636,27 @@ func _sync_scene_minigame_venue_entries(entries: Dictionary) -> void:
 	if _full_map_open and _map_screen != null and _map_screen.has_method("set_pins"):
 		_map_screen.set_pins(_get_map_pins("full_map"))
 
-func _update_soccer_venue_runtime(delta: float) -> void:
-	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("update"):
-		if chunk_renderer != null and chunk_renderer.has_method("set_ambient_simulation_frozen"):
-			chunk_renderer.set_ambient_simulation_frozen(false)
-		if hud != null and hud.has_method("set_soccer_match_hud_state"):
-			hud.set_soccer_match_hud_state({
-				"visible": false,
-				"match_state": "idle",
-				"home_score": 0,
-				"away_score": 0,
-				"home_team_color_id": "red",
-				"away_team_color_id": "blue",
-				"clock_text": "05:00",
-				"winner_side": "",
-			})
-		return
-	var runtime_state: Dictionary = _soccer_venue_runtime.update(chunk_renderer, player, delta)
+func _update_minigame_venue_runtimes(delta: float) -> void:
+	var soccer_runtime_state: Dictionary = {}
+	var tennis_runtime_state: Dictionary = {}
+	if _soccer_venue_runtime != null and _soccer_venue_runtime.has_method("update"):
+		soccer_runtime_state = _soccer_venue_runtime.update(chunk_renderer, player, delta)
+	if _tennis_venue_runtime != null and _tennis_venue_runtime.has_method("update"):
+		tennis_runtime_state = _tennis_venue_runtime.update(chunk_renderer, player, delta)
+	var ambient_simulation_frozen := bool(soccer_runtime_state.get("ambient_simulation_frozen", false)) \
+		or bool(tennis_runtime_state.get("ambient_simulation_frozen", false))
 	if chunk_renderer != null and chunk_renderer.has_method("set_ambient_simulation_frozen"):
-		chunk_renderer.set_ambient_simulation_frozen(bool(runtime_state.get("ambient_simulation_frozen", false)))
+		chunk_renderer.set_ambient_simulation_frozen(ambient_simulation_frozen)
 	if hud != null and hud.has_method("set_soccer_match_hud_state"):
-		hud.set_soccer_match_hud_state((runtime_state.get("match_hud_state", {}) as Dictionary).duplicate(true))
+		var soccer_hud_state: Dictionary = (soccer_runtime_state.get("match_hud_state", {}) as Dictionary).duplicate(true)
+		if soccer_hud_state.is_empty():
+			soccer_hud_state = _build_default_soccer_match_hud_state()
+		hud.set_soccer_match_hud_state(soccer_hud_state)
+	if hud != null and hud.has_method("set_tennis_match_hud_state"):
+		var tennis_hud_state: Dictionary = (tennis_runtime_state.get("match_hud_state", {}) as Dictionary).duplicate(true)
+		if tennis_hud_state.is_empty():
+			tennis_hud_state = _build_default_tennis_match_hud_state()
+		hud.set_tennis_match_hud_state(tennis_hud_state)
 
 func _update_music_road_runtime(_delta: float) -> void:
 	_advance_music_road_runtime(_delta)

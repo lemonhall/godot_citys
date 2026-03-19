@@ -5,6 +5,9 @@ const CityControlsHelpOverlayScript := preload("res://city_game/ui/CityControlsH
 const CityDialoguePanelScript := preload("res://city_game/ui/CityDialoguePanel.gd")
 const CityVehicleRadioBrowserScript := preload("res://city_game/ui/CityVehicleRadioBrowser.gd")
 const CityVehicleRadioQuickOverlayScript := preload("res://city_game/ui/CityVehicleRadioQuickOverlay.gd")
+const AUDIO_SAMPLE_RATE := 22050
+
+static var _tennis_feedback_audio_stream_cache: Dictionary = {}
 
 var _status_text := "Booting city skeleton..."
 var _debug_text := ""
@@ -89,12 +92,45 @@ var _soccer_match_hud_state: Dictionary = {
 	"clock_text": "05:00",
 	"winner_side": "",
 }
+var _tennis_match_hud_state: Dictionary = {
+	"visible": false,
+	"match_state": "idle",
+	"home_games": 0,
+	"away_games": 0,
+	"home_point_label": "0",
+	"away_point_label": "0",
+	"server_side": "home",
+	"winner_side": "",
+	"point_end_reason": "",
+	"landing_marker_visible": false,
+	"landing_marker_world_position": Vector3.ZERO,
+	"auto_footwork_assist_state": "idle",
+	"strike_window_state": "idle",
+	"strike_quality_feedback": "",
+	"expected_service_box_id": "",
+	"state_text": "",
+	"coach_text": "",
+	"coach_tone": "neutral",
+	"feedback_event_token": 0,
+	"feedback_event_kind": "",
+	"feedback_event_text": "",
+	"feedback_event_tone": "neutral",
+}
+var _tennis_feedback_audio_player: AudioStreamPlayer = null
+var _tennis_feedback_audio_state: Dictionary = {
+	"play_count": 0,
+	"last_event_kind": "",
+	"last_event_token": 0,
+}
+var _last_tennis_feedback_event_token := 0
 
 func _ready() -> void:
 	_ensure_mouse_passthrough()
 	_ensure_crosshair_view()
 	_ensure_fps_label()
 	_ensure_soccer_match_hud_view()
+	_ensure_tennis_match_hud_view()
+	_ensure_tennis_feedback_audio_player()
 	_ensure_focus_message_view()
 	_ensure_interaction_prompt_view()
 	_ensure_dialogue_panel_view()
@@ -279,6 +315,40 @@ func set_soccer_match_hud_state(state: Dictionary) -> void:
 func get_soccer_match_hud_state() -> Dictionary:
 	return _soccer_match_hud_state.duplicate(true)
 
+func set_tennis_match_hud_state(state: Dictionary) -> void:
+	_tennis_match_hud_state = {
+		"visible": bool(state.get("visible", false)),
+		"match_state": str(state.get("match_state", "idle")),
+		"home_games": int(state.get("home_games", 0)),
+		"away_games": int(state.get("away_games", 0)),
+		"home_point_label": str(state.get("home_point_label", "0")),
+		"away_point_label": str(state.get("away_point_label", "0")),
+		"server_side": str(state.get("server_side", "home")),
+		"winner_side": str(state.get("winner_side", "")),
+		"point_end_reason": str(state.get("point_end_reason", "")),
+		"landing_marker_visible": bool(state.get("landing_marker_visible", false)),
+		"landing_marker_world_position": state.get("landing_marker_world_position", Vector3.ZERO),
+		"auto_footwork_assist_state": str(state.get("auto_footwork_assist_state", "idle")),
+		"strike_window_state": str(state.get("strike_window_state", "idle")),
+		"strike_quality_feedback": str(state.get("strike_quality_feedback", "")),
+		"expected_service_box_id": str(state.get("expected_service_box_id", "")),
+		"state_text": str(state.get("state_text", "")),
+		"coach_text": str(state.get("coach_text", "")),
+		"coach_tone": str(state.get("coach_tone", "neutral")),
+		"feedback_event_token": int(state.get("feedback_event_token", 0)),
+		"feedback_event_kind": str(state.get("feedback_event_kind", "")),
+		"feedback_event_text": str(state.get("feedback_event_text", "")),
+		"feedback_event_tone": str(state.get("feedback_event_tone", "neutral")),
+	}
+	_handle_tennis_feedback_event(_tennis_match_hud_state)
+	_apply_tennis_match_hud_state()
+
+func get_tennis_match_hud_state() -> Dictionary:
+	return _tennis_match_hud_state.duplicate(true)
+
+func get_tennis_feedback_audio_state() -> Dictionary:
+	return _tennis_feedback_audio_state.duplicate(true)
+
 func toggle_debug_expanded() -> void:
 	_debug_expanded = not _debug_expanded
 	_apply_panel_state()
@@ -303,6 +373,7 @@ func _apply_state() -> void:
 	_apply_vehicle_radio_quick_overlay_state()
 	_apply_controls_help_state()
 	_apply_soccer_match_hud_state()
+	_apply_tennis_match_hud_state()
 
 func _apply_panel_state() -> void:
 	var panel := get_node_or_null("Root/Panel") as PanelContainer
@@ -402,6 +473,74 @@ func _apply_soccer_match_hud_state() -> void:
 			state_text = "%s WINS" % winner_side.to_upper()
 		state_label.text = state_text
 
+func _apply_tennis_match_hud_state() -> void:
+	var panel := get_node_or_null("Root/TennisMatchHud") as PanelContainer
+	var games_label := get_node_or_null("Root/TennisMatchHud/Margin/VBox/Games") as Label
+	var points_label := get_node_or_null("Root/TennisMatchHud/Margin/VBox/Points") as Label
+	var state_label := get_node_or_null("Root/TennisMatchHud/Margin/VBox/State") as Label
+	var assist_label := get_node_or_null("Root/TennisMatchHud/Margin/VBox/Assist") as Label
+	var coach_label := get_node_or_null("Root/TennisMatchHud/Margin/VBox/Coach") as Label
+	if panel != null:
+		panel.visible = bool(_tennis_match_hud_state.get("visible", false))
+	if games_label != null:
+		var server_side := str(_tennis_match_hud_state.get("server_side", "home")).to_upper()
+		games_label.text = "GAMES %d  :  %d    SRV %s" % [
+			int(_tennis_match_hud_state.get("home_games", 0)),
+			int(_tennis_match_hud_state.get("away_games", 0)),
+			server_side
+		]
+	if points_label != null:
+		points_label.text = "%s  :  %s" % [
+			str(_tennis_match_hud_state.get("home_point_label", "0")),
+			str(_tennis_match_hud_state.get("away_point_label", "0"))
+		]
+	if state_label != null:
+		var state_text := str(_tennis_match_hud_state.get("state_text", ""))
+		if state_text == "":
+			state_text = str(_tennis_match_hud_state.get("match_state", "idle")).to_upper()
+		state_label.text = state_text
+	if assist_label != null:
+		var assist_text := "等待开赛"
+		var expected_service_box_id := str(_tennis_match_hud_state.get("expected_service_box_id", ""))
+		var match_state := str(_tennis_match_hud_state.get("match_state", "idle"))
+		var strike_window_state := str(_tennis_match_hud_state.get("strike_window_state", "idle"))
+		match match_state:
+			"pre_serve":
+				assist_text = "目标发球区：%s" % expected_service_box_id.to_upper()
+			"rally":
+				match strike_window_state:
+					"ready":
+						assist_text = "击球窗口已开，按 E 回球"
+					"recover":
+						assist_text = "回球已出手，准备下一拍"
+					_:
+						assist_text = "自动跑位中，跟住蓝圈"
+			"point_result":
+				assist_text = "等待下一分开始"
+			"game_break":
+				assist_text = "换发球，准备下一局"
+			"final":
+				assist_text = "离开场地可重置比赛"
+		assist_label.text = assist_text
+		var assist_color := Color(0.72, 0.86, 0.94, 1.0)
+		if strike_window_state == "ready":
+			assist_color = Color(0.74, 0.98, 0.82, 1.0)
+		elif strike_window_state == "recover":
+			assist_color = Color(0.98, 0.88, 0.62, 1.0)
+		assist_label.add_theme_color_override("font_color", assist_color)
+	if coach_label != null:
+		coach_label.text = str(_tennis_match_hud_state.get("coach_text", ""))
+		var coach_tone := str(_tennis_match_hud_state.get("coach_tone", "neutral"))
+		var coach_color := Color(0.86, 0.9, 0.96, 1.0)
+		match coach_tone:
+			"success":
+				coach_color = Color(0.82, 1.0, 0.76, 1.0)
+			"warning":
+				coach_color = Color(1.0, 0.88, 0.66, 1.0)
+			"action":
+				coach_color = Color(0.98, 0.98, 0.72, 1.0)
+		coach_label.add_theme_color_override("font_color", coach_color)
+
 func _ensure_mouse_passthrough() -> void:
 	var root := get_node_or_null("Root") as Control
 	if root != null:
@@ -427,6 +566,9 @@ func _ensure_mouse_passthrough() -> void:
 	var soccer_match_hud := get_node_or_null("Root/SoccerMatchHud") as Control
 	if soccer_match_hud != null:
 		soccer_match_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tennis_match_hud := get_node_or_null("Root/TennisMatchHud") as Control
+	if tennis_match_hud != null:
+		tennis_match_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 func _ensure_crosshair_view() -> void:
 	var root := get_node_or_null("Root") as Control
@@ -518,7 +660,238 @@ func _ensure_soccer_match_hud_view() -> void:
 	state_label.add_theme_font_size_override("font_size", 13)
 	state_label.add_theme_color_override("font_color", Color(0.74, 0.84, 0.92, 1.0))
 	vbox.add_child(state_label)
+	var assist_label := Label.new()
+	assist_label.name = "Assist"
+	assist_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	assist_label.add_theme_font_size_override("font_size", 12)
+	assist_label.add_theme_color_override("font_color", Color(0.78, 0.92, 0.86, 1.0))
+	vbox.add_child(assist_label)
 	root.add_child(panel)
+
+func _ensure_tennis_match_hud_view() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("TennisMatchHud") != null:
+		return
+	var panel := PanelContainer.new()
+	panel.name = "TennisMatchHud"
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.0
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.0
+	panel.offset_left = -168.0
+	panel.offset_top = 124.0
+	panel.offset_right = 168.0
+	panel.offset_bottom = 254.0
+	panel.visible = false
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var stylebox := StyleBoxFlat.new()
+	stylebox.bg_color = Color(0.05, 0.08, 0.13, 0.88)
+	stylebox.corner_radius_top_left = 12
+	stylebox.corner_radius_top_right = 12
+	stylebox.corner_radius_bottom_left = 12
+	stylebox.corner_radius_bottom_right = 12
+	stylebox.border_width_left = 1
+	stylebox.border_width_top = 1
+	stylebox.border_width_right = 1
+	stylebox.border_width_bottom = 1
+	stylebox.border_color = Color(0.9, 0.96, 1.0, 0.16)
+	panel.add_theme_stylebox_override("panel", stylebox)
+	var margin := MarginContainer.new()
+	margin.name = "Margin"
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 14)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	panel.add_child(margin)
+	var vbox := VBoxContainer.new()
+	vbox.name = "VBox"
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 2)
+	margin.add_child(vbox)
+	var games_label := Label.new()
+	games_label.name = "Games"
+	games_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	games_label.add_theme_font_size_override("font_size", 15)
+	games_label.add_theme_color_override("font_color", Color(0.84, 0.94, 1.0, 1.0))
+	vbox.add_child(games_label)
+	var points_label := Label.new()
+	points_label.name = "Points"
+	points_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	points_label.add_theme_font_size_override("font_size", 28)
+	points_label.add_theme_color_override("font_color", Color(1.0, 0.96, 0.88, 1.0))
+	vbox.add_child(points_label)
+	var state_label := Label.new()
+	state_label.name = "State"
+	state_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	state_label.add_theme_font_size_override("font_size", 13)
+	state_label.add_theme_color_override("font_color", Color(0.74, 0.84, 0.92, 1.0))
+	vbox.add_child(state_label)
+	var assist_label := Label.new()
+	assist_label.name = "Assist"
+	assist_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	assist_label.add_theme_font_size_override("font_size", 12)
+	assist_label.add_theme_color_override("font_color", Color(0.78, 0.92, 0.86, 1.0))
+	vbox.add_child(assist_label)
+	var coach_label := Label.new()
+	coach_label.name = "Coach"
+	coach_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	coach_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	coach_label.add_theme_font_size_override("font_size", 13)
+	coach_label.add_theme_color_override("font_color", Color(0.86, 0.9, 0.96, 1.0))
+	vbox.add_child(coach_label)
+	root.add_child(panel)
+
+func _ensure_tennis_feedback_audio_player() -> void:
+	if _tennis_feedback_audio_player != null and is_instance_valid(_tennis_feedback_audio_player):
+		return
+	_tennis_feedback_audio_player = get_node_or_null("Root/TennisFeedbackAudio") as AudioStreamPlayer
+	if _tennis_feedback_audio_player == null:
+		var root := get_node_or_null("Root") as Control
+		if root == null:
+			return
+		_tennis_feedback_audio_player = AudioStreamPlayer.new()
+		_tennis_feedback_audio_player.name = "TennisFeedbackAudio"
+		_tennis_feedback_audio_player.volume_db = -11.0
+		root.add_child(_tennis_feedback_audio_player)
+
+func _handle_tennis_feedback_event(state: Dictionary) -> void:
+	var event_token := int(state.get("feedback_event_token", 0))
+	if event_token <= 0 or event_token <= _last_tennis_feedback_event_token:
+		return
+	_last_tennis_feedback_event_token = event_token
+	var event_kind := str(state.get("feedback_event_kind", ""))
+	var event_text := str(state.get("feedback_event_text", "")).strip_edges()
+	var event_tone := str(state.get("feedback_event_tone", "neutral"))
+	if event_text != "":
+		set_focus_message(event_text, _resolve_tennis_feedback_duration_sec(event_kind))
+	_play_tennis_feedback_audio(event_kind, event_tone, event_token)
+
+func _resolve_tennis_feedback_duration_sec(event_kind: String) -> float:
+	match event_kind:
+		"ready":
+			return 1.35
+		"serve_ready":
+			return 1.25
+		"point_result":
+			return 1.8
+		"game_break":
+			return 1.8
+		"final":
+			return 2.4
+		_:
+			return 1.4
+
+func _play_tennis_feedback_audio(event_kind: String, event_tone: String, event_token: int) -> void:
+	_ensure_tennis_feedback_audio_player()
+	_tennis_feedback_audio_state["play_count"] = int(_tennis_feedback_audio_state.get("play_count", 0)) + 1
+	_tennis_feedback_audio_state["last_event_kind"] = event_kind
+	_tennis_feedback_audio_state["last_event_token"] = event_token
+	if _tennis_feedback_audio_player == null or not is_instance_valid(_tennis_feedback_audio_player):
+		return
+	_tennis_feedback_audio_player.stream = _resolve_tennis_feedback_audio_stream(event_kind, event_tone)
+	_tennis_feedback_audio_player.play()
+
+func _resolve_tennis_feedback_audio_stream(event_kind: String, event_tone: String) -> AudioStreamWAV:
+	var cache_key := "%s|%s" % [event_kind, event_tone]
+	if _tennis_feedback_audio_stream_cache.has(cache_key):
+		return _tennis_feedback_audio_stream_cache.get(cache_key) as AudioStreamWAV
+	var stream := _build_tennis_feedback_audio_stream(event_kind, event_tone)
+	_tennis_feedback_audio_stream_cache[cache_key] = stream
+	return stream
+
+func _build_tennis_feedback_audio_stream(event_kind: String, event_tone: String) -> AudioStreamWAV:
+	var pattern := _resolve_tennis_feedback_pattern(event_kind, event_tone)
+	var data := PackedByteArray()
+	for segment_variant in pattern:
+		var segment: Dictionary = segment_variant
+		data.append_array(_build_tennis_feedback_segment(
+			float(segment.get("freq_hz", 660.0)),
+			float(segment.get("duration_sec", 0.08)),
+			float(segment.get("gain", 0.42))
+		))
+		var gap_sec := maxf(float(segment.get("gap_sec", 0.0)), 0.0)
+		if gap_sec <= 0.0:
+			continue
+		var gap_sample_count := maxi(int(round(gap_sec * AUDIO_SAMPLE_RATE)), 1)
+		var gap_bytes := PackedByteArray()
+		gap_bytes.resize(gap_sample_count * 2)
+		data.append_array(gap_bytes)
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = AUDIO_SAMPLE_RATE
+	stream.stereo = false
+	stream.data = data
+	return stream
+
+func _resolve_tennis_feedback_pattern(event_kind: String, event_tone: String) -> Array:
+	match event_kind:
+		"ready":
+			return [
+				{"freq_hz": 900.0, "duration_sec": 0.085, "gain": 0.48},
+			]
+		"serve_ready":
+			return [
+				{"freq_hz": 620.0, "duration_sec": 0.075, "gain": 0.42},
+			]
+		"point_result":
+			if event_tone == "success":
+				return [
+					{"freq_hz": 620.0, "duration_sec": 0.06, "gain": 0.34, "gap_sec": 0.025},
+					{"freq_hz": 880.0, "duration_sec": 0.11, "gain": 0.46},
+				]
+			return [
+				{"freq_hz": 520.0, "duration_sec": 0.075, "gain": 0.34, "gap_sec": 0.025},
+				{"freq_hz": 340.0, "duration_sec": 0.13, "gain": 0.44},
+			]
+		"game_break":
+			return [
+				{"freq_hz": 540.0, "duration_sec": 0.07, "gain": 0.34, "gap_sec": 0.025},
+				{"freq_hz": 700.0, "duration_sec": 0.09, "gain": 0.38},
+			]
+		"final":
+			if event_tone == "success":
+				return [
+					{"freq_hz": 520.0, "duration_sec": 0.07, "gain": 0.34, "gap_sec": 0.02},
+					{"freq_hz": 660.0, "duration_sec": 0.08, "gain": 0.38, "gap_sec": 0.02},
+					{"freq_hz": 880.0, "duration_sec": 0.16, "gain": 0.48},
+				]
+			return [
+				{"freq_hz": 520.0, "duration_sec": 0.08, "gain": 0.34, "gap_sec": 0.02},
+				{"freq_hz": 420.0, "duration_sec": 0.09, "gain": 0.38, "gap_sec": 0.02},
+				{"freq_hz": 300.0, "duration_sec": 0.16, "gain": 0.46},
+			]
+		_:
+			if event_tone == "action":
+				return [
+					{"freq_hz": 700.0, "duration_sec": 0.08, "gain": 0.4},
+				]
+			if event_tone == "warning":
+				return [
+					{"freq_hz": 420.0, "duration_sec": 0.09, "gain": 0.42},
+				]
+			return [
+				{"freq_hz": 760.0, "duration_sec": 0.08, "gain": 0.42},
+			]
+
+func _build_tennis_feedback_segment(freq_hz: float, duration_sec: float, gain: float) -> PackedByteArray:
+	var sample_count := maxi(int(round(maxf(duration_sec, 0.02) * AUDIO_SAMPLE_RATE)), 1)
+	var data := PackedByteArray()
+	data.resize(sample_count * 2)
+	for sample_index in range(sample_count):
+		var progress := float(sample_index) / float(maxi(sample_count - 1, 1))
+		var time_sec := float(sample_index) / float(AUDIO_SAMPLE_RATE)
+		var envelope := sin(progress * PI)
+		var vibrato := sin(TAU * 7.0 * time_sec) * 0.018
+		var sample := sin(TAU * (freq_hz * (1.0 + vibrato)) * time_sec) * envelope * gain
+		var pcm_value := int(round(clampf(sample, -1.0, 1.0) * 32767.0))
+		if pcm_value < 0:
+			pcm_value += 65536
+		data[sample_index * 2] = pcm_value & 0xFF
+		data[sample_index * 2 + 1] = (pcm_value >> 8) & 0xFF
+	return data
 
 func _ensure_focus_message_view() -> void:
 	var root := get_node_or_null("Root") as Control

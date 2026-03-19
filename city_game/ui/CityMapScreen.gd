@@ -26,6 +26,7 @@ const PIN_ICON_GLYPHS := {
 	"radio_tower": "📡",
 	"shop": "🛍",
 	"restaurant": "🍽",
+	"tennis": "🎾",
 }
 const CityTaskBriefPanelScene := preload("res://city_game/ui/CityTaskBriefPanel.tscn")
 

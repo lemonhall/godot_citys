@@ -1,9 +1,8 @@
 extends RefCounted
 
 const DEFAULT_RELEASE_BUFFER_M := 24.0
-const GOAL_RESULT_LINGER_SEC := 2.4
-const OUT_OF_BOUNDS_LINGER_SEC := 1.2
-const RESETTING_LINGER_SEC := 1.0
+const GOAL_RESULT_LINGER_SEC := 0.75
+const OUT_OF_BOUNDS_LINGER_SEC := 0.45
 const IN_PLAY_SPEED_THRESHOLD_MPS := 0.35
 const IN_PLAY_DISTANCE_THRESHOLD_M := 0.45
 const DEFAULT_BALL_CENTER_OFFSET := Vector3(0.0, 0.6, 0.0)
@@ -273,7 +272,13 @@ func debug_force_reset_ball(chunk_renderer: Node) -> Dictionary:
 	_refresh_match_hud_state()
 	return {"success": true}
 
-func notify_manual_ball_interaction() -> Dictionary:
+func notify_manual_ball_interaction(prop_id: String = "", _player_node: Node3D = null) -> Dictionary:
+	var normalized_prop_id := str(prop_id).strip_edges()
+	if normalized_prop_id != "" and normalized_prop_id != _bound_ball_prop_id:
+		return {
+			"success": false,
+			"error": "prop_mismatch",
+		}
 	_last_ai_touch_cooldown_sec = 0.32
 	_clear_ai_possession()
 	_clear_ai_touch_streaks()
@@ -501,16 +506,8 @@ func _advance_ball_game_state(mounted_venue: Node3D, ball_node: Node3D, ball_wor
 		"goal_scored":
 			_state_timer_sec = maxf(_state_timer_sec - maxf(delta, 0.0), 0.0)
 			if _state_timer_sec <= 0.0:
-				_perform_ball_reset(ball_node, kickoff_anchor)
-				_arm_match_restart(_pending_restart_team_id)
-				_set_game_state("resetting", RESETTING_LINGER_SEC)
+				_set_game_state("idle", 0.0)
 		"out_of_bounds":
-			_state_timer_sec = maxf(_state_timer_sec - maxf(delta, 0.0), 0.0)
-			if _state_timer_sec <= 0.0:
-				_perform_ball_reset(ball_node, kickoff_anchor)
-				_arm_match_restart(_resolve_out_of_bounds_restart_team_id())
-				_set_game_state("resetting", RESETTING_LINGER_SEC)
-		"resetting":
 			_state_timer_sec = maxf(_state_timer_sec - maxf(delta, 0.0), 0.0)
 			if _state_timer_sec <= 0.0:
 				_set_game_state("idle", 0.0)
@@ -520,8 +517,12 @@ func _advance_ball_game_state(mounted_venue: Node3D, ball_node: Node3D, ball_wor
 			var goal_event := _resolve_goal_event(mounted_venue, ball_world_position, ball_linear_velocity)
 			if not goal_event.is_empty():
 				_apply_goal_event(goal_event)
+				_perform_ball_reset(ball_node, kickoff_anchor)
+				_arm_match_restart(_pending_restart_team_id)
 			elif _is_ball_out_of_bounds(mounted_venue, ball_world_position):
 				_last_result_state = "out_of_bounds"
+				_perform_ball_reset(ball_node, kickoff_anchor)
+				_arm_match_restart(_resolve_out_of_bounds_restart_team_id())
 				_set_game_state("out_of_bounds", OUT_OF_BOUNDS_LINGER_SEC)
 			elif _game_state == "idle" and _is_ball_in_play(ball_world_position, ball_linear_velocity, kickoff_anchor):
 				_set_game_state("in_play", 0.0)
@@ -605,8 +606,6 @@ func _build_game_state_label() -> String:
 			return "GOAL"
 		"out_of_bounds":
 			return "OUT"
-		"resetting":
-			return "RESET"
 		_:
 			return "MATCH" if _match_state == MATCH_STATE_IN_PROGRESS else "READY"
 
@@ -794,7 +793,7 @@ func _advance_match_ai(ball_node: Node3D, mounted_venue: Node3D, delta: float) -
 	_kickoff_protection_timer_sec = maxf(_kickoff_protection_timer_sec - maxf(delta, 0.0), 0.0)
 	if _ai_possession_timer_sec <= 0.0:
 		_clear_ai_possession()
-	if _game_state == "goal_scored" or _game_state == "out_of_bounds" or _game_state == "resetting":
+	if _game_state == "goal_scored" or _game_state == "out_of_bounds":
 		_clear_ai_possession()
 		_sync_ai_control_debug_state()
 		_reform_match_players_to_restart_shape()

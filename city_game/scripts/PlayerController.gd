@@ -1,6 +1,7 @@
 extends CharacterBody3D
 
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
+const TennisRacketVisualRig := preload("res://city_game/world/minigames/TennisRacketVisualRig.gd")
 
 signal primary_fire_requested
 signal grenade_throw_requested
@@ -136,6 +137,7 @@ var _vehicle_mouse_steer := 0.0
 var _vehicle_visual_catalog: CityVehicleVisualCatalog = null
 var _drive_vehicle_visual_root: Node3D = null
 var _drive_vehicle_model_root: Node3D = null
+var _tennis_racket_visual: Node3D = null
 
 func _ready() -> void:
 	camera_rig.rotation.x = _pitch
@@ -146,6 +148,8 @@ func _ready() -> void:
 	_rng.seed = 1337
 	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
 	_ensure_traversal_fx_root()
+	_ensure_tennis_racket_visual()
+	set_tennis_racket_visible(false)
 	_update_grenade_hold_visual()
 	_update_grenade_preview()
 	floor_snap_length = _current_floor_snap_length()
@@ -317,6 +321,32 @@ func get_weapon_state() -> Dictionary:
 		"grenade_ready": _grenade_ready_active,
 		"aim_down_sights_active": _aim_down_sights_active,
 		"driving_vehicle": _driving_vehicle,
+	}
+
+func set_tennis_racket_visible(is_visible: bool) -> void:
+	_ensure_tennis_racket_visual()
+	if _tennis_racket_visual != null and is_instance_valid(_tennis_racket_visual) and _tennis_racket_visual.has_method("set_equipped_visible"):
+		_tennis_racket_visual.set_equipped_visible(is_visible)
+
+func play_tennis_swing(swing_style: String = "forehand") -> void:
+	_ensure_tennis_racket_visual()
+	if _tennis_racket_visual != null and is_instance_valid(_tennis_racket_visual):
+		if _tennis_racket_visual.has_method("set_equipped_visible"):
+			_tennis_racket_visual.set_equipped_visible(true)
+		if _tennis_racket_visual.has_method("play_swing"):
+			_tennis_racket_visual.play_swing(swing_style)
+
+func get_tennis_visual_state() -> Dictionary:
+	if _tennis_racket_visual != null and is_instance_valid(_tennis_racket_visual) and _tennis_racket_visual.has_method("get_visual_state"):
+		return _tennis_racket_visual.get_visual_state()
+	return {
+		"racket_present": false,
+		"equipped_visible": false,
+		"swing_active": false,
+		"swing_progress": 0.0,
+		"swing_count": 0,
+		"swing_sound_count": 0,
+		"last_swing_style": "",
 	}
 
 func set_speed_profile(profile: String) -> void:
@@ -1136,6 +1166,26 @@ func _ensure_traversal_fx_root() -> void:
 	fx_root.name = "TraversalFx"
 	add_child(fx_root)
 	_traversal_fx_root = fx_root
+
+func _ensure_tennis_racket_visual() -> void:
+	if _tennis_racket_visual != null and is_instance_valid(_tennis_racket_visual):
+		return
+	var visual_parent := player_visual if player_visual != null and is_instance_valid(player_visual) else self
+	_tennis_racket_visual = visual_parent.get_node_or_null("TennisRacketVisual") as Node3D
+	if _tennis_racket_visual == null:
+		_tennis_racket_visual = TennisRacketVisualRig.new()
+		_tennis_racket_visual.name = "TennisRacketVisual"
+		visual_parent.add_child(_tennis_racket_visual)
+	if _tennis_racket_visual.has_method("configure_rig"):
+		_tennis_racket_visual.configure_rig({
+			"mount_position": Vector3(0.62, 0.34, -0.18),
+			"rest_rotation_deg": Vector3(24.0, 8.0, -34.0),
+			"forehand_rotation_deg": Vector3(-34.0, 14.0, -116.0),
+			"backhand_rotation_deg": Vector3(-24.0, -14.0, 96.0),
+			"serve_rotation_deg": Vector3(-94.0, 18.0, -152.0),
+			"target_length_m": 1.08,
+			"swing_duration_sec": 0.24,
+		})
 
 func _ensure_grenade_hold_visual() -> void:
 	if get_node_or_null("GrenadeHoldVisual") != null:

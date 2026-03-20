@@ -30,6 +30,7 @@ const CityTaskPinProjection := preload("res://city_game/world/tasks/presentation
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
 const CityProjectile := preload("res://city_game/combat/CityProjectile.gd")
 const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
+const CityMissileScene := preload("res://city_game/combat/CityMissile.tscn")
 const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesignatorBeam.gd")
 const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
 const CityWorldInspectionResolver := preload("res://city_game/world/inspection/CityWorldInspectionResolver.gd")
@@ -222,6 +223,7 @@ var _minimap_build_last_usec := 0
 var _combat_root: Node3D = null
 var _projectile_root: Node3D = null
 var _grenade_root: Node3D = null
+var _missile_root: Node3D = null
 var _laser_beam_root: Node3D = null
 var _enemy_projectile_root: Node3D = null
 var _enemy_root: Node3D = null
@@ -243,6 +245,7 @@ var _destination_world_marker_surface_resolve_count := 0
 var _inspection_resolver = null
 var _last_laser_designator_result: Dictionary = {}
 var _last_laser_designator_clipboard_text := ""
+var _last_missile_explosion_result: Dictionary = {}
 var _building_scene_exporter = null
 var _building_override_registry = null
 var _building_export_thread: Thread = null
@@ -958,7 +961,7 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 			"Shift sprint  Space jump",
 			"Mouse rotates player camera  Esc releases cursor",
 			"Press C to toggle normal / inspection speed",
-			"0 laser  1 rifle  2 grenade  Left click fires / throws / inspects  Right click ADS / hold grenade",
+			"0 laser  1 rifle  2 grenade  8 missile  Left click fires / throws / inspects  Right click ADS / hold grenade",
 			"Numpad / spawns trauma squad enemy",
 			"Numpad * toggles pedestrians  Numpad - toggles FPS overlay",
 			"control_mode=%s" % _control_mode,
@@ -972,9 +975,10 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 			],
 			"current_chunk_lod=%s" % str(snapshot.get("current_chunk_lod_mode", "")),
 			"visual_variant=%s" % str(snapshot.get("current_chunk_visual_variant_id", "")),
-			"combat=player_projectiles:%d grenades:%d enemy_projectiles:%d enemies:%d" % [
+			"combat=player_projectiles:%d grenades:%d missiles:%d enemy_projectiles:%d enemies:%d" % [
 				get_active_projectile_count(),
 				get_active_grenade_count(),
+				get_active_missile_count(),
 				get_active_enemy_projectile_count(),
 				get_active_enemy_count()
 			],
@@ -1098,6 +1102,9 @@ func get_active_projectile_count() -> int:
 func get_active_grenade_count() -> int:
 	return 0 if _grenade_root == null else _grenade_root.get_child_count()
 
+func get_active_missile_count() -> int:
+	return 0 if _missile_root == null else _missile_root.get_child_count()
+
 func get_active_laser_beam_count() -> int:
 	return 0 if _laser_beam_root == null else _laser_beam_root.get_child_count()
 
@@ -1106,6 +1113,9 @@ func get_last_laser_designator_result() -> Dictionary:
 
 func get_last_laser_designator_clipboard_text() -> String:
 	return _last_laser_designator_clipboard_text
+
+func get_last_missile_explosion_result() -> Dictionary:
+	return _last_missile_explosion_result.duplicate(true)
 
 func get_building_generation_contract(building_id: String) -> Dictionary:
 	if chunk_renderer == null or not chunk_renderer.has_method("get_building_generation_contract"):
@@ -1212,6 +1222,12 @@ func throw_player_grenade() -> Node3D:
 		return null
 	var spawn_transform: Transform3D = player.get_grenade_spawn_transform()
 	return _spawn_grenade(spawn_transform.origin, player.get_grenade_launch_velocity())
+
+func fire_player_missile_launcher() -> Node3D:
+	if player == null or not player.has_method("get_projectile_spawn_transform") or not player.has_method("get_projectile_direction"):
+		return null
+	var spawn_transform: Transform3D = player.get_projectile_spawn_transform()
+	return _spawn_missile(spawn_transform.origin, player.get_projectile_direction())
 
 func fire_player_laser_designator() -> Dictionary:
 	if player == null or not player.has_method("get_aim_trace_segment"):
@@ -1465,6 +1481,12 @@ func _ensure_combat_roots() -> void:
 			_grenade_root = Node3D.new()
 			_grenade_root.name = "Grenades"
 			_combat_root.add_child(_grenade_root)
+	if _missile_root == null:
+		_missile_root = _combat_root.get_node_or_null("Missiles") as Node3D
+		if _missile_root == null:
+			_missile_root = Node3D.new()
+			_missile_root.name = "Missiles"
+			_combat_root.add_child(_missile_root)
 	if _laser_beam_root == null:
 		_laser_beam_root = _combat_root.get_node_or_null("LaserBeams") as Node3D
 		if _laser_beam_root == null:
@@ -1499,6 +1521,10 @@ func _connect_player_combat() -> void:
 		var laser_callable := Callable(self, "_on_player_laser_designator_requested")
 		if not player.laser_designator_requested.is_connected(laser_callable):
 			player.laser_designator_requested.connect(laser_callable)
+	if player.has_signal("missile_launcher_requested"):
+		var missile_callable := Callable(self, "_on_player_missile_launcher_requested")
+		if not player.missile_launcher_requested.is_connected(missile_callable):
+			player.missile_launcher_requested.connect(missile_callable)
 	if player.has_signal("weapon_mode_changed"):
 		var weapon_mode_callable := Callable(self, "_on_player_weapon_mode_changed")
 		if not player.weapon_mode_changed.is_connected(weapon_mode_callable):
@@ -1516,6 +1542,9 @@ func _on_player_grenade_throw_requested() -> void:
 
 func _on_player_laser_designator_requested() -> void:
 	fire_player_laser_designator()
+
+func _on_player_missile_launcher_requested() -> void:
+	fire_player_missile_launcher()
 
 func _on_player_weapon_mode_changed(_weapon_mode: String) -> void:
 	_refresh_hud_status({}, true)
@@ -1556,9 +1585,35 @@ func _spawn_grenade(origin: Vector3, launch_velocity: Vector3) -> Node3D:
 	_grenade_root.add_child(grenade)
 	return grenade
 
+func _spawn_missile(origin: Vector3, direction: Vector3) -> Node3D:
+	_ensure_combat_roots()
+	if _missile_root == null:
+		return null
+	var missile_scene := CityMissileScene
+	if missile_scene == null:
+		return null
+	var missile := missile_scene.instantiate() as Node3D
+	if missile == null:
+		return null
+	_missile_root.add_child(missile)
+	if missile.has_method("configure"):
+		missile.configure(origin, direction, player, player)
+	if missile.has_signal("exploded"):
+		missile.exploded.connect(_on_player_missile_exploded)
+	return missile
+
 func _on_player_grenade_exploded(world_position: Vector3, radius_m: float) -> void:
 	if chunk_renderer != null and chunk_renderer.has_method("resolve_explosion_impact"):
 		chunk_renderer.resolve_explosion_impact(world_position, maxf(radius_m * 0.35, 4.0), radius_m)
+	if chunk_renderer != null and chunk_renderer.has_method("resolve_vehicle_explosion"):
+		chunk_renderer.resolve_vehicle_explosion(world_position, radius_m)
+
+func _on_player_missile_exploded(result: Dictionary) -> void:
+	_last_missile_explosion_result = result.duplicate(true)
+	var world_position := result.get("world_position", Vector3.ZERO) as Vector3
+	var radius_m := float(result.get("radius_m", 18.0))
+	if chunk_renderer != null and chunk_renderer.has_method("resolve_explosion_impact"):
+		chunk_renderer.resolve_explosion_impact(world_position, maxf(radius_m * 0.42, 5.0), radius_m)
 	if chunk_renderer != null and chunk_renderer.has_method("resolve_vehicle_explosion"):
 		chunk_renderer.resolve_vehicle_explosion(world_position, radius_m)
 

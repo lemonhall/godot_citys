@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://city_game/scripts/CityPrototype.gd" id="1"]
 [ext_resource type="Script" path="res://city_game/scripts/CityBlockGrid.gd" id="2"]
@@ -7,6 +7,7 @@
 [ext_resource type="Script" path="res://city_game/world/debug/CityDebugOverlay.gd" id="5"]
 [ext_resource type="Script" path="res://city_game/world/rendering/CityChunkRenderer.gd" id="6"]
 [ext_resource type="Script" path="res://city_game/ui/CityMinimapView.gd" id="7"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/launchers/RpgLauncherEquippedVisual.tscn" id="8"]
 
 [sub_resource type="Environment" id="1"]
 background_mode = 2
@@ -50,6 +51,8 @@ shape = SubResource("5")
 [node name="Visual" type="MeshInstance3D" parent="Player"]
 position = Vector3(0, 0.9, 0)
 mesh = SubResource("6")
+
+[node name="RpgLauncherEquippedVisual" parent="Player/Visual" instance=ExtResource("8")]
 
 [node name="CameraRig" type="Node3D" parent="Player"]
 position = Vector3(0, 1.35, 0)

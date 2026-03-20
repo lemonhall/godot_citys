@@ -1,0 +1,86 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://city_game/assets/weapons/launchers/RpgLauncherEquippedVisual.gd" id="1_rpg_visual_script"]
+[ext_resource type="Script" path="res://city_game/assets/weapons/CityWeaponDisplayProp.gd" id="2_weapon_display_script"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/launchers/RPG Launcher.glb" id="3_rpg_launcher_model"]
+
+[sub_resource type="SphereMesh" id="1_flash_core_mesh"]
+radius = 0.08
+height = 0.16
+
+[sub_resource type="CylinderMesh" id="2_flash_cone_mesh"]
+top_radius = 0.03
+bottom_radius = 0.12
+height = 0.38
+radial_segments = 16
+
+[sub_resource type="CylinderMesh" id="3_backblast_cone_mesh"]
+top_radius = 0.05
+bottom_radius = 0.2
+height = 0.62
+radial_segments = 16
+
+[sub_resource type="StandardMaterial3D" id="4_flash_material"]
+shading_mode = 0
+transparency = 1
+albedo_color = Color(1, 0.780392, 0.352941, 0.9)
+emission_enabled = true
+emission = Color(1, 0.658824, 0.243137, 1)
+emission_energy_multiplier = 3.8
+
+[sub_resource type="StandardMaterial3D" id="5_backblast_material"]
+shading_mode = 0
+transparency = 1
+albedo_color = Color(1, 0.603922, 0.219608, 0.82)
+emission_enabled = true
+emission = Color(1, 0.439216, 0.141176, 1)
+emission_energy_multiplier = 3.4
+
+[node name="RpgLauncherEquippedVisual" type="Node3D"]
+script = ExtResource("1_rpg_visual_script")
+
+[node name="MountRoot" type="Node3D" parent="."]
+position = Vector3(0.42, 0.42, -0.18)
+rotation_degrees = Vector3(-12, -92, -16)
+
+[node name="LauncherPivot" type="Node3D" parent="MountRoot"]
+rotation_degrees = Vector3(0, 90, 0)
+
+[node name="LauncherProp" type="Node3D" parent="MountRoot/LauncherPivot"]
+script = ExtResource("2_weapon_display_script")
+source_scene = ExtResource("3_rpg_launcher_model")
+target_length_m = 1.42
+display_scale_multiplier = 1.0
+weapon_class = "missile_launcher"
+target_axis = "z"
+
+[node name="MuzzleFlash" type="Node3D" parent="MountRoot/LauncherPivot"]
+position = Vector3(-0.02, 0.05, -0.72)
+visible = false
+scale = Vector3(1, 1, 1)
+
+[node name="FlashCore" type="MeshInstance3D" parent="MountRoot/LauncherPivot/MuzzleFlash"]
+mesh = SubResource("1_flash_core_mesh")
+material_override = SubResource("4_flash_material")
+
+[node name="FlashCone" type="MeshInstance3D" parent="MountRoot/LauncherPivot/MuzzleFlash"]
+position = Vector3(0, 0, -0.16)
+rotation_degrees = Vector3(-90, 0, 0)
+mesh = SubResource("2_flash_cone_mesh")
+material_override = SubResource("4_flash_material")
+
+[node name="BackblastFlash" type="Node3D" parent="MountRoot/LauncherPivot"]
+position = Vector3(0.02, 0.06, 0.56)
+rotation_degrees = Vector3(0, 180, 0)
+visible = false
+scale = Vector3(1, 1, 1)
+
+[node name="BackblastCore" type="MeshInstance3D" parent="MountRoot/LauncherPivot/BackblastFlash"]
+mesh = SubResource("1_flash_core_mesh")
+material_override = SubResource("5_backblast_material")
+
+[node name="BackblastCone" type="MeshInstance3D" parent="MountRoot/LauncherPivot/BackblastFlash"]
+position = Vector3(0, 0, -0.22)
+rotation_degrees = Vector3(-90, 0, 0)
+mesh = SubResource("3_backblast_cone_mesh")
+material_override = SubResource("5_backblast_material")

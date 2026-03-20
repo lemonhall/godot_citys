@@ -6,6 +6,7 @@ const TennisRacketVisualRig := preload("res://city_game/world/minigames/TennisRa
 signal primary_fire_requested
 signal grenade_throw_requested
 signal laser_designator_requested
+signal missile_launcher_requested
 signal weapon_mode_changed(weapon_mode: String)
 signal aim_down_sights_changed(is_active: bool)
 
@@ -16,6 +17,7 @@ const TRAVERSAL_MODE_GROUND_SLAM := "ground_slam"
 const WEAPON_MODE_RIFLE := "rifle"
 const WEAPON_MODE_GRENADE := "grenade"
 const WEAPON_MODE_LASER_DESIGNATOR := "laser_designator"
+const WEAPON_MODE_MISSILE_LAUNCHER := "missile_launcher"
 const SPORTS_CAR_MODEL_ID := "sports_car_a"
 const SPORTS_CAR_SPEED_MULTIPLIER := 2.0
 
@@ -139,6 +141,7 @@ var _vehicle_visual_catalog: CityVehicleVisualCatalog = null
 var _drive_vehicle_visual_root: Node3D = null
 var _drive_vehicle_model_root: Node3D = null
 var _tennis_racket_visual: Node3D = null
+var _missile_launcher_visual: Node3D = null
 
 func _ready() -> void:
 	camera_rig.rotation.x = _pitch
@@ -150,9 +153,11 @@ func _ready() -> void:
 	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
 	_ensure_traversal_fx_root()
 	_ensure_tennis_racket_visual()
+	_ensure_missile_launcher_visual()
 	set_tennis_racket_visible(false)
 	_update_grenade_hold_visual()
 	_update_grenade_preview()
+	_update_missile_launcher_visual()
 	floor_snap_length = _current_floor_snap_length()
 	if DisplayServer.get_name() != "headless":
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
@@ -206,6 +211,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				request_grenade_throw()
 			elif _weapon_mode == WEAPON_MODE_LASER_DESIGNATOR and button.pressed:
 				request_laser_designator_fire()
+			elif _weapon_mode == WEAPON_MODE_MISSILE_LAUNCHER and button.pressed:
+				request_missile_launcher_fire()
 		elif button.button_index == MOUSE_BUTTON_RIGHT:
 			if _weapon_mode == WEAPON_MODE_GRENADE:
 				set_grenade_ready_active(button.pressed)
@@ -226,6 +233,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				set_weapon_mode(WEAPON_MODE_RIFLE)
 			elif key_event.keycode == KEY_2:
 				set_weapon_mode(WEAPON_MODE_GRENADE)
+			elif key_event.keycode == KEY_8:
+				set_weapon_mode(WEAPON_MODE_MISSILE_LAUNCHER)
 	elif event.is_action_pressed("ui_cancel"):
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -297,6 +306,7 @@ func set_control_enabled(enabled: bool) -> void:
 		_driving_vehicle_speed_mps = 0.0
 		clear_vehicle_autodrive_input()
 	_clear_transient_weapon_state()
+	_update_missile_launcher_visual()
 
 func is_control_enabled() -> bool:
 	return _control_enabled
@@ -313,13 +323,15 @@ func is_movement_locked() -> bool:
 func set_weapon_mode(mode: String) -> void:
 	if _driving_vehicle:
 		return
-	if mode != WEAPON_MODE_RIFLE and mode != WEAPON_MODE_GRENADE and mode != WEAPON_MODE_LASER_DESIGNATOR:
+	if mode != WEAPON_MODE_RIFLE and mode != WEAPON_MODE_GRENADE and mode != WEAPON_MODE_LASER_DESIGNATOR and mode != WEAPON_MODE_MISSILE_LAUNCHER:
 		return
 	if _weapon_mode == mode:
 		_update_grenade_hold_visual()
+		_update_missile_launcher_visual()
 		return
 	_weapon_mode = mode
 	_clear_transient_weapon_state()
+	_update_missile_launcher_visual()
 	weapon_mode_changed.emit(_weapon_mode)
 
 func get_weapon_mode() -> String:
@@ -358,6 +370,16 @@ func get_tennis_visual_state() -> Dictionary:
 		"swing_count": 0,
 		"swing_sound_count": 0,
 		"last_swing_style": "",
+	}
+
+func get_missile_launcher_visual_state() -> Dictionary:
+	_ensure_missile_launcher_visual()
+	if _missile_launcher_visual != null and is_instance_valid(_missile_launcher_visual) and _missile_launcher_visual.has_method("get_visual_state"):
+		return _missile_launcher_visual.get_visual_state()
+	return {
+		"equipped_visible": false,
+		"fire_fx_active": false,
+		"fire_count": 0,
 	}
 
 func set_speed_profile(profile: String) -> void:
@@ -513,6 +535,7 @@ func enter_vehicle_drive_mode(vehicle_state: Dictionary) -> void:
 	global_position.y += _estimate_standing_height()
 	if player_visual != null:
 		player_visual.visible = false
+	_update_missile_launcher_visual()
 	_mount_drive_vehicle_visual(vehicle_state)
 	if not _stabilize_ground_contact():
 		suspend_ground_stabilization(4)
@@ -542,6 +565,7 @@ func exit_vehicle_drive_mode(exit_lateral_offset_m: float = 2.35) -> Dictionary:
 	_wall_climb_contact_point = Vector3.ZERO
 	if player_visual != null:
 		player_visual.visible = true
+	_update_missile_launcher_visual()
 	if _drive_vehicle_model_root != null and is_instance_valid(_drive_vehicle_model_root):
 		_drive_vehicle_model_root.queue_free()
 	_drive_vehicle_model_root = null
@@ -636,6 +660,17 @@ func request_laser_designator_fire() -> bool:
 	if _weapon_mode != WEAPON_MODE_LASER_DESIGNATOR:
 		return false
 	laser_designator_requested.emit()
+	return true
+
+func request_missile_launcher_fire() -> bool:
+	if not _control_enabled:
+		return false
+	if _driving_vehicle:
+		return false
+	if _weapon_mode != WEAPON_MODE_MISSILE_LAUNCHER:
+		return false
+	_play_missile_launcher_fire_fx()
+	missile_launcher_requested.emit()
 	return true
 
 func request_wall_climb() -> bool:
@@ -1201,6 +1236,29 @@ func _ensure_tennis_racket_visual() -> void:
 			"target_length_m": 0.69,
 			"swing_duration_sec": 0.28,
 		})
+
+func _ensure_missile_launcher_visual() -> void:
+	if _missile_launcher_visual != null and is_instance_valid(_missile_launcher_visual):
+		return
+	var visual_parent := player_visual if player_visual != null and is_instance_valid(player_visual) else self
+	_missile_launcher_visual = visual_parent.get_node_or_null("RpgLauncherEquippedVisual") as Node3D
+
+func _update_missile_launcher_visual() -> void:
+	_ensure_missile_launcher_visual()
+	if _missile_launcher_visual == null or not is_instance_valid(_missile_launcher_visual):
+		return
+	var should_show := _weapon_mode == WEAPON_MODE_MISSILE_LAUNCHER and _control_enabled and not _driving_vehicle
+	if _missile_launcher_visual.has_method("set_equipped_visible"):
+		_missile_launcher_visual.set_equipped_visible(should_show)
+	else:
+		_missile_launcher_visual.visible = should_show
+
+func _play_missile_launcher_fire_fx() -> void:
+	_ensure_missile_launcher_visual()
+	if _missile_launcher_visual == null or not is_instance_valid(_missile_launcher_visual):
+		return
+	if _missile_launcher_visual.has_method("play_fire_fx"):
+		_missile_launcher_visual.play_fire_fx()
 
 func _ensure_grenade_hold_visual() -> void:
 	if get_node_or_null("GrenadeHoldVisual") != null:

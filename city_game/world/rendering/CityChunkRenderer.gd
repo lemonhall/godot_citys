@@ -18,6 +18,8 @@ const PREPARE_BUDGET_PER_TICK := 1
 const MOUNT_BUDGET_PER_TICK := 1
 const RETIRE_BUDGET_PER_TICK := 1
 const MAX_POOLED_CHUNKS := 8
+const PROFILE_CACHE_MAX_CHUNKS := 128
+const RETAINED_CHUNK_SCENE_CACHE_MAX := 48
 const SURFACE_ASYNC_CONCURRENCY_LIMIT := 1
 const TERRAIN_ASYNC_CONCURRENCY_LIMIT := 1
 const PLAYER_CONTEXT_TELEPORT_DISTANCE_M := 32.0
@@ -50,6 +52,10 @@ var _queued_terrain_jobs: Array[Dictionary] = []
 var _pending_mount_ids: Array[String] = []
 var _pending_retire_ids: Array[String] = []
 var _scene_pool: Array[Node3D] = []
+var _retained_chunk_scene_cache: Dictionary = {}
+var _retained_chunk_scene_lru: Array[String] = []
+var _profile_cache_by_chunk_id: Dictionary = {}
+var _profile_cache_lru: Array[String] = []
 var _cached_chunk_ids: Array[String] = []
 var _cached_chunk_ids_dirty := true
 var _has_prewarmed_initial_pages := false
@@ -196,6 +202,9 @@ func setup(config, world_data: Dictionary) -> void:
 	_queued_terrain_jobs.clear()
 	_pending_mount_ids.clear()
 	_pending_retire_ids.clear()
+	_clear_retained_chunk_scene_cache()
+	_profile_cache_by_chunk_id.clear()
+	_profile_cache_lru.clear()
 	_last_active_chunk_entries.clear()
 	_has_prewarmed_initial_pages = false
 	_last_prepare_usec = 0
@@ -238,11 +247,13 @@ func setup(config, world_data: Dictionary) -> void:
 func set_building_override_entries(entries: Dictionary) -> void:
 	# Authored building scenes stay lazy; eager preview instantiation inflated cold-path profiling.
 	_building_override_entries = entries.duplicate(true)
+	_clear_retained_chunk_scene_cache()
 
 func set_scene_landmark_entries(entries: Dictionary) -> void:
 	_scene_landmark_entries_by_chunk_id.clear()
 	_persistent_scene_landmark_entries_by_landmark_id.clear()
 	_scene_landmark_far_proxy_entries_by_landmark_id.clear()
+	_clear_retained_chunk_scene_cache()
 	# Landmark manifests are cached at sync time, but the scene itself only loads on chunk mount.
 	var normalized_entries: Dictionary = entries.duplicate(true)
 	for entry_variant in normalized_entries.values():
@@ -278,6 +289,7 @@ func set_scene_landmark_entries(entries: Dictionary) -> void:
 
 func set_scene_interactive_prop_entries(entries: Dictionary) -> void:
 	_scene_interactive_prop_entries_by_chunk_id.clear()
+	_clear_retained_chunk_scene_cache()
 	var normalized_entries: Dictionary = entries.duplicate(true)
 	for entry_variant in normalized_entries.values():
 		if not (entry_variant is Dictionary):
@@ -292,6 +304,7 @@ func set_scene_interactive_prop_entries(entries: Dictionary) -> void:
 
 func set_scene_minigame_venue_entries(entries: Dictionary) -> void:
 	_scene_minigame_venue_entries_by_chunk_id.clear()
+	_clear_retained_chunk_scene_cache()
 	var normalized_entries: Dictionary = entries.duplicate(true)
 	for entry_variant in normalized_entries.values():
 		if not (entry_variant is Dictionary):
@@ -357,6 +370,7 @@ func _process(delta: float) -> void:
 func _notification(what: int) -> void:
 	if what != NOTIFICATION_PREDELETE:
 		return
+	_clear_retained_chunk_scene_cache()
 	for chunk_scene in _scene_pool:
 		if is_instance_valid(chunk_scene):
 			chunk_scene.free()
@@ -1184,9 +1198,15 @@ func _process_prepare_budget() -> void:
 			break
 		var entry: Dictionary = _pending_prepare[chunk_id]
 		var payload := _build_chunk_payload(entry)
-		var profile_started_usec := Time.get_ticks_usec()
-		payload["prepared_profile"] = CityChunkProfileBuilder.build_profile(payload)
-		_record_prepare_profile_sample(Time.get_ticks_usec() - profile_started_usec)
+		var cached_profile: Dictionary = _get_cached_chunk_profile(chunk_id)
+		if cached_profile.is_empty():
+			var profile_started_usec := Time.get_ticks_usec()
+			payload["prepared_profile"] = CityChunkProfileBuilder.build_profile(payload)
+			_store_chunk_profile(chunk_id, payload["prepared_profile"])
+			_record_prepare_profile_sample(Time.get_ticks_usec() - profile_started_usec)
+		else:
+			payload["prepared_profile"] = cached_profile
+			_record_prepare_profile_sample(0)
 		payload["surface_page_provider"] = _surface_page_provider
 		payload["terrain_page_provider"] = _terrain_page_provider
 		payload["initial_lod_mode"] = _resolve_initial_lod_mode(payload)
@@ -1237,9 +1257,16 @@ func _process_mount_budget() -> void:
 		if not _prepared_payloads.has(chunk_id):
 			continue
 		var payload: Dictionary = _prepared_payloads[chunk_id]
-		var chunk_scene := _take_pooled_scene()
+		var chunk_scene := _take_retained_chunk_scene(chunk_id)
+		var reused_retained_scene := chunk_scene != null
+		if chunk_scene == null:
+			chunk_scene = _take_pooled_scene()
 		var setup_started_usec := Time.get_ticks_usec()
-		chunk_scene.setup(payload)
+		if reused_retained_scene:
+			if chunk_scene.has_method("set_lod_mode"):
+				chunk_scene.set_lod_mode(str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR)))
+		else:
+			chunk_scene.setup(payload)
 		if _pedestrian_tier_controller != null and chunk_scene.has_method("apply_pedestrian_chunk_snapshot"):
 			var chunk_snapshot: Dictionary = _pedestrian_tier_controller.get_chunk_snapshot_ref(chunk_id) if _pedestrian_tier_controller.has_method("get_chunk_snapshot_ref") else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id)
 			chunk_scene.apply_pedestrian_chunk_snapshot(chunk_snapshot)
@@ -1277,7 +1304,9 @@ func _process_retire_budget() -> void:
 		_migrate_chunk_death_visuals(chunk_scene)
 		remove_child(chunk_scene)
 		chunk_scene.visible = false
-		if _scene_pool.size() < MAX_POOLED_CHUNKS:
+		if _store_retained_chunk_scene(chunk_id, chunk_scene):
+			pass
+		elif _scene_pool.size() < MAX_POOLED_CHUNKS:
 			_scene_pool.append(chunk_scene)
 		else:
 			chunk_scene.queue_free()
@@ -1289,6 +1318,73 @@ func _take_pooled_scene() -> Node3D:
 	if _scene_pool.is_empty():
 		return CityChunkScene.new()
 	return _scene_pool.pop_back()
+
+func _get_cached_chunk_profile(chunk_id: String) -> Dictionary:
+	if chunk_id == "" or not _profile_cache_by_chunk_id.has(chunk_id):
+		return {}
+	_touch_profile_cache_lru(chunk_id)
+	return _profile_cache_by_chunk_id.get(chunk_id, {}) as Dictionary
+
+func _take_retained_chunk_scene(chunk_id: String) -> Node3D:
+	if chunk_id == "" or not _retained_chunk_scene_cache.has(chunk_id):
+		return null
+	var chunk_scene := _retained_chunk_scene_cache.get(chunk_id) as Node3D
+	_retained_chunk_scene_cache.erase(chunk_id)
+	var existing_index := _retained_chunk_scene_lru.find(chunk_id)
+	if existing_index >= 0:
+		_retained_chunk_scene_lru.remove_at(existing_index)
+	if chunk_scene == null or not is_instance_valid(chunk_scene):
+		return null
+	return chunk_scene
+
+func _store_retained_chunk_scene(chunk_id: String, chunk_scene: Node3D) -> bool:
+	if chunk_id == "" or chunk_scene == null or not is_instance_valid(chunk_scene):
+		return false
+	if _retained_chunk_scene_cache.has(chunk_id):
+		var existing_scene := _retained_chunk_scene_cache.get(chunk_id) as Node3D
+		if existing_scene != null and is_instance_valid(existing_scene) and existing_scene != chunk_scene:
+			existing_scene.free()
+		_retained_chunk_scene_cache.erase(chunk_id)
+	var existing_index := _retained_chunk_scene_lru.find(chunk_id)
+	if existing_index >= 0:
+		_retained_chunk_scene_lru.remove_at(existing_index)
+	_retained_chunk_scene_cache[chunk_id] = chunk_scene
+	_retained_chunk_scene_lru.append(chunk_id)
+	while _retained_chunk_scene_lru.size() > RETAINED_CHUNK_SCENE_CACHE_MAX:
+		_evict_oldest_retained_chunk_scene()
+	return true
+
+func _store_chunk_profile(chunk_id: String, profile: Dictionary) -> void:
+	if chunk_id == "" or profile.is_empty():
+		return
+	_profile_cache_by_chunk_id[chunk_id] = profile
+	_touch_profile_cache_lru(chunk_id)
+	while _profile_cache_lru.size() > PROFILE_CACHE_MAX_CHUNKS:
+		var evicted_chunk_id: String = _profile_cache_lru.pop_front()
+		_profile_cache_by_chunk_id.erase(evicted_chunk_id)
+
+func _touch_profile_cache_lru(chunk_id: String) -> void:
+	var existing_index := _profile_cache_lru.find(chunk_id)
+	if existing_index >= 0:
+		_profile_cache_lru.remove_at(existing_index)
+	_profile_cache_lru.append(chunk_id)
+
+func _evict_oldest_retained_chunk_scene() -> void:
+	if _retained_chunk_scene_lru.is_empty():
+		return
+	var evicted_chunk_id: String = _retained_chunk_scene_lru.pop_front()
+	var evicted_scene := _retained_chunk_scene_cache.get(evicted_chunk_id) as Node3D
+	_retained_chunk_scene_cache.erase(evicted_chunk_id)
+	if evicted_scene != null and is_instance_valid(evicted_scene):
+		evicted_scene.free()
+
+func _clear_retained_chunk_scene_cache() -> void:
+	for chunk_scene_variant in _retained_chunk_scene_cache.values():
+		var chunk_scene := chunk_scene_variant as Node3D
+		if chunk_scene != null and is_instance_valid(chunk_scene):
+			chunk_scene.free()
+	_retained_chunk_scene_cache.clear()
+	_retained_chunk_scene_lru.clear()
 
 func _spawn_global_pedestrian_death_visual(event: Dictionary) -> void:
 	_spawn_global_pedestrian_death_visual_with_remaining(event, float(event.get("duration_sec", DEFAULT_DEATH_VISUAL_DURATION_SEC)), 0.0)
@@ -1494,7 +1590,7 @@ func _update_pedestrian_crowd(player_position: Vector3, delta: float) -> void:
 func _update_vehicle_traffic(player_position: Vector3, delta: float) -> void:
 	if _vehicle_tier_controller == null:
 		return
-	var traffic_snapshot: Dictionary = _vehicle_tier_controller.update_active_chunks(_last_active_chunk_entries, player_position, delta)
+	var traffic_snapshot: Dictionary = _vehicle_tier_controller.update_active_chunks(_last_active_chunk_entries, player_position, delta, _last_pedestrian_player_context)
 	var traffic_profile_stats: Dictionary = traffic_snapshot.get("profile_stats", {})
 	_record_traffic_spawn_sample(int(traffic_profile_stats.get("traffic_spawn_usec", 0)))
 	_record_traffic_update_sample(int(traffic_profile_stats.get("traffic_update_usec", 0)))

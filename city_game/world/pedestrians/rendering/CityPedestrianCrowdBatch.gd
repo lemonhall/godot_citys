@@ -1,11 +1,12 @@
 extends MultiMeshInstance3D
 
-const PROXY_SCENE_PATH := "res://city_game/assets/pedestrians/proxy/tier1_proxy.tscn"
+const PROXY_SCENE_PATH := "res://city_game/assets/pedestrians/civilians/business_man.glb"
 const PROXY_GROUND_CLEARANCE_M := 0.02
+const PROXY_UNIFORM_SCALE := 2.02
 const PROXY_SCALE_PROFILE := {
-	"height_scale": 1.0,
-	"width_scale": 1.0,
-	"depth_scale": 1.0,
+	"height_scale": PROXY_UNIFORM_SCALE,
+	"width_scale": PROXY_UNIFORM_SCALE,
+	"depth_scale": PROXY_UNIFORM_SCALE,
 }
 
 static var _shared_proxy_mesh: ArrayMesh = null
@@ -58,7 +59,9 @@ func _build_instance_transform(state, chunk_center: Vector3) -> Transform3D:
 		heading = Vector3.FORWARD
 	heading = heading.normalized()
 	var yaw := atan2(heading.x, heading.z)
-	var instance_basis := Basis.from_euler(Vector3(0.0, yaw, 0.0))
+	var instance_basis := Basis.from_euler(Vector3(0.0, yaw, 0.0)).scaled(
+		Vector3(PROXY_UNIFORM_SCALE, PROXY_UNIFORM_SCALE, PROXY_UNIFORM_SCALE)
+	)
 	return Transform3D(
 		instance_basis,
 		Vector3(local_position.x, local_position.y + PROXY_GROUND_CLEARANCE_M, local_position.z)
@@ -186,7 +189,7 @@ static func _get_shared_proxy_material() -> StandardMaterial3D:
 	if _shared_proxy_material != null:
 		return _shared_proxy_material
 	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.86, 0.88, 0.90, 1.0)
+	material.albedo_color = Color(0.48, 0.52, 0.56, 1.0)
 	material.roughness = 1.0
 	_shared_proxy_material = material
 	return _shared_proxy_material

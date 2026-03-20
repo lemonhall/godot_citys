@@ -58,6 +58,8 @@ const HUD_REFRESH_INTERVAL_USEC := 50000
 const HUD_REFRESH_INTERVAL_FAST_USEC := 120000
 const MINIMAP_HUD_REFRESH_INTERVAL_USEC := 120000
 const MINIMAP_HUD_REFRESH_INTERVAL_FAST_USEC := 320000
+const INSPECTION_HUD_REFRESH_INTERVAL_USEC := 160000
+const INSPECTION_MINIMAP_HUD_REFRESH_INTERVAL_USEC := 480000
 const HEADLESS_HUD_REFRESH_INTERVAL_USEC := 200000
 const HEADLESS_HUD_REFRESH_INTERVAL_FAST_USEC := 400000
 const HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_USEC := 400000
@@ -963,9 +965,7 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 	_sync_vehicle_radio_quick_overlay()
 	var is_headless := DisplayServer.get_name() == "headless"
 	if is_headless:
-		var minimap_refresh_interval_usec := _resolve_minimap_refresh_interval_usec(true)
-		var should_refresh_minimap := (_minimap_request_count == 0) or (Time.get_ticks_usec() - _last_minimap_hud_refresh_tick_usec >= minimap_refresh_interval_usec)
-		if should_refresh_minimap:
+		if _should_refresh_hud_minimap(true):
 			build_minimap_snapshot()
 			_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
 		if hud.has_method("set_crosshair_state"):
@@ -1013,7 +1013,7 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 		hud.set_status("\n".join(lines))
 	if hud_debug_expanded and hud.has_method("set_debug_text") and debug_overlay != null and debug_overlay.has_method("get_debug_text"):
 		hud.set_debug_text(debug_overlay.get_debug_text())
-	if hud.has_method("set_minimap_snapshot"):
+	if hud.has_method("set_minimap_snapshot") and _should_refresh_hud_minimap(false):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
 		_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
 	if hud.has_method("set_crosshair_state"):
@@ -2719,12 +2719,15 @@ func get_performance_profile() -> Dictionary:
 		"hud_refresh_sample_count": _hud_refresh_sample_count,
 		"hud_refresh_avg_usec": _average_usec(_hud_refresh_total_usec, _hud_refresh_sample_count),
 		"hud_refresh_max_usec": _hud_refresh_max_usec,
+		"hud_refresh_last_usec": _hud_refresh_last_usec,
 		"frame_step_sample_count": _frame_step_sample_count,
 		"frame_step_avg_usec": _average_usec(_frame_step_total_usec, _frame_step_sample_count),
 		"frame_step_max_usec": _frame_step_max_usec,
+		"frame_step_last_usec": _frame_step_last_usec,
 		"minimap_request_count": _minimap_request_count,
 		"minimap_build_avg_usec": _average_usec(_minimap_build_total_usec, _minimap_rebuild_count),
 		"minimap_build_max_usec": _minimap_build_max_usec,
+		"minimap_build_last_usec": _minimap_build_last_usec,
 		"minimap_cache_hits": _minimap_cache_hits,
 		"minimap_cache_misses": _minimap_cache_misses,
 		"minimap_rebuild_count": _minimap_rebuild_count,
@@ -2733,12 +2736,15 @@ func get_performance_profile() -> Dictionary:
 		"crowd_update_max_usec": int(streaming_profile.get("crowd_update_max_usec", 0)),
 		"crowd_update_avg_usec": int(streaming_profile.get("crowd_update_avg_usec", 0)),
 		"crowd_update_sample_count": int(streaming_profile.get("crowd_update_sample_count", 0)),
+		"crowd_update_last_usec": int(streaming_profile.get("crowd_update_last_usec", 0)),
 		"crowd_spawn_max_usec": int(streaming_profile.get("crowd_spawn_max_usec", 0)),
 		"crowd_spawn_avg_usec": int(streaming_profile.get("crowd_spawn_avg_usec", 0)),
 		"crowd_spawn_sample_count": int(streaming_profile.get("crowd_spawn_sample_count", 0)),
+		"crowd_spawn_last_usec": int(streaming_profile.get("crowd_spawn_last_usec", 0)),
 		"crowd_render_commit_max_usec": int(streaming_profile.get("crowd_render_commit_max_usec", 0)),
 		"crowd_render_commit_avg_usec": int(streaming_profile.get("crowd_render_commit_avg_usec", 0)),
 		"crowd_render_commit_sample_count": int(streaming_profile.get("crowd_render_commit_sample_count", 0)),
+		"crowd_render_commit_last_usec": int(streaming_profile.get("crowd_render_commit_last_usec", 0)),
 		"crowd_active_state_count": int(streaming_profile.get("crowd_active_state_count", 0)),
 		"crowd_step_usec": int(streaming_profile.get("crowd_step_usec", 0)),
 		"crowd_reaction_usec": int(streaming_profile.get("crowd_reaction_usec", 0)),
@@ -2772,12 +2778,15 @@ func get_performance_profile() -> Dictionary:
 		"traffic_update_max_usec": int(streaming_profile.get("traffic_update_max_usec", 0)),
 		"traffic_update_avg_usec": int(streaming_profile.get("traffic_update_avg_usec", 0)),
 		"traffic_update_sample_count": int(streaming_profile.get("traffic_update_sample_count", 0)),
+		"traffic_update_last_usec": int(streaming_profile.get("traffic_update_last_usec", 0)),
 		"traffic_spawn_max_usec": int(streaming_profile.get("traffic_spawn_max_usec", 0)),
 		"traffic_spawn_avg_usec": int(streaming_profile.get("traffic_spawn_avg_usec", 0)),
 		"traffic_spawn_sample_count": int(streaming_profile.get("traffic_spawn_sample_count", 0)),
+		"traffic_spawn_last_usec": int(streaming_profile.get("traffic_spawn_last_usec", 0)),
 		"traffic_render_commit_max_usec": int(streaming_profile.get("traffic_render_commit_max_usec", 0)),
 		"traffic_render_commit_avg_usec": int(streaming_profile.get("traffic_render_commit_avg_usec", 0)),
 		"traffic_render_commit_sample_count": int(streaming_profile.get("traffic_render_commit_sample_count", 0)),
+		"traffic_render_commit_last_usec": int(streaming_profile.get("traffic_render_commit_last_usec", 0)),
 		"traffic_active_state_count": int(streaming_profile.get("traffic_active_state_count", 0)),
 		"traffic_step_usec": int(streaming_profile.get("traffic_step_usec", 0)),
 		"traffic_rank_usec": int(streaming_profile.get("traffic_rank_usec", 0)),
@@ -4668,15 +4677,31 @@ func _should_refresh_hud() -> bool:
 	var refresh_interval_usec := _resolve_hud_refresh_interval_usec(DisplayServer.get_name() == "headless")
 	return _last_hud_refresh_tick_usec < 0 or now_usec - _last_hud_refresh_tick_usec >= refresh_interval_usec
 
+func _should_refresh_hud_minimap(is_headless: bool) -> bool:
+	if _minimap_request_count == 0 or _last_minimap_hud_refresh_tick_usec < 0:
+		return true
+	var now_usec := Time.get_ticks_usec()
+	return now_usec - _last_minimap_hud_refresh_tick_usec >= _resolve_minimap_refresh_interval_usec(is_headless)
+
 func _resolve_hud_refresh_interval_usec(is_headless: bool) -> int:
+	var refresh_interval_usec := 0
 	if _has_streaming_backpressure():
-		return HEADLESS_HUD_REFRESH_INTERVAL_FAST_USEC if is_headless else HUD_REFRESH_INTERVAL_FAST_USEC
-	return HEADLESS_HUD_REFRESH_INTERVAL_USEC if is_headless else HUD_REFRESH_INTERVAL_USEC
+		refresh_interval_usec = HEADLESS_HUD_REFRESH_INTERVAL_FAST_USEC if is_headless else HUD_REFRESH_INTERVAL_FAST_USEC
+	else:
+		refresh_interval_usec = HEADLESS_HUD_REFRESH_INTERVAL_USEC if is_headless else HUD_REFRESH_INTERVAL_USEC
+	if not is_headless and _control_mode == CONTROL_MODE_INSPECTION:
+		refresh_interval_usec = maxi(refresh_interval_usec, INSPECTION_HUD_REFRESH_INTERVAL_USEC)
+	return refresh_interval_usec
 
 func _resolve_minimap_refresh_interval_usec(is_headless: bool) -> int:
+	var refresh_interval_usec := 0
 	if _has_streaming_backpressure():
-		return HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_FAST_USEC if is_headless else MINIMAP_HUD_REFRESH_INTERVAL_FAST_USEC
-	return HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_USEC if is_headless else MINIMAP_HUD_REFRESH_INTERVAL_USEC
+		refresh_interval_usec = HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_FAST_USEC if is_headless else MINIMAP_HUD_REFRESH_INTERVAL_FAST_USEC
+	else:
+		refresh_interval_usec = HEADLESS_MINIMAP_HUD_REFRESH_INTERVAL_USEC if is_headless else MINIMAP_HUD_REFRESH_INTERVAL_USEC
+	if not is_headless and _control_mode == CONTROL_MODE_INSPECTION:
+		refresh_interval_usec = maxi(refresh_interval_usec, INSPECTION_MINIMAP_HUD_REFRESH_INTERVAL_USEC)
+	return refresh_interval_usec
 
 func _has_streaming_backpressure() -> bool:
 	if chunk_renderer == null or not chunk_renderer.has_method("get_streaming_budget_stats"):

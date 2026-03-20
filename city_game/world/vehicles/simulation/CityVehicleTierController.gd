@@ -6,6 +6,8 @@ const CityVehicleState := preload("res://city_game/world/vehicles/simulation/Cit
 
 const ASSIGNMENT_REBUILD_INTERVAL_SEC := 0.18
 const PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M := 96.0
+const INSPECTION_FARFIELD_ONLY_UPDATE_INTERVAL_SEC := 0.18
+const INSPECTION_FARFIELD_ONLY_PLAYER_REUSE_DISTANCE_M := 512.0
 
 var _config = null
 var _budget := CityVehicleBudget.new()
@@ -22,6 +24,8 @@ var _last_assignment_player_position := Vector3.ZERO
 var _assignment_rebuild_elapsed_sec := 0.0
 var _has_assignment_cache := false
 var _simulation_frozen := false
+var _last_player_context: Dictionary = {}
+var _inspection_farfield_only_elapsed_sec := 0.0
 var _last_profile_stats := {
 	"traffic_spawn_usec": 0,
 	"traffic_update_usec": 0,
@@ -52,6 +56,8 @@ func setup(config, world_data: Dictionary) -> void:
 	_assignment_rebuild_elapsed_sec = 0.0
 	_has_assignment_cache = false
 	_simulation_frozen = false
+	_last_player_context.clear()
+	_inspection_farfield_only_elapsed_sec = 0.0
 	_last_profile_stats = {
 		"traffic_spawn_usec": 0,
 		"traffic_update_usec": 0,
@@ -81,8 +87,9 @@ func set_simulation_frozen(enabled: bool) -> void:
 func is_simulation_frozen() -> bool:
 	return _simulation_frozen
 
-func update_active_chunks(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0) -> Dictionary:
+func update_active_chunks(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0, player_context: Dictionary = {}) -> Dictionary:
 	var update_started_usec := Time.get_ticks_usec()
+	_last_player_context = player_context.duplicate(true)
 	var spawn_started_usec := Time.get_ticks_usec()
 	_vehicle_streamer.sync_active_chunks(active_chunk_entries)
 	var traffic_spawn_usec := Time.get_ticks_usec() - spawn_started_usec
@@ -105,6 +112,30 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 		)
 		return get_global_summary()
 
+	var active_chunk_ids: Array[String] = []
+	for entry_variant in active_chunk_entries:
+		active_chunk_ids.append(str((entry_variant as Dictionary).get("chunk_id", "")))
+	active_chunk_ids.sort()
+	_assignment_rebuild_elapsed_sec += maxf(delta, 0.0)
+	_inspection_farfield_only_elapsed_sec += maxf(delta, 0.0)
+	if _can_throttle_inspection_farfield_update(active_chunk_ids, player_position):
+		var throttled_runtime_summary: Dictionary = _vehicle_streamer.get_runtime_summary()
+		_update_runtime_snapshot(
+			active_chunk_ids.size(),
+			active_states.size(),
+			int(_global_snapshot.get("tier0_count", 0)),
+			int(_global_snapshot.get("tier1_count", 0)),
+			int(_global_snapshot.get("tier2_count", 0)),
+			int(_global_snapshot.get("tier3_count", 0)),
+			throttled_runtime_summary,
+			traffic_spawn_usec,
+			0,
+			0,
+			0,
+			update_started_usec
+		)
+		return get_global_summary()
+
 	var step_started_usec := Time.get_ticks_usec()
 	if delta > 0.0:
 		for state_variant in active_states:
@@ -112,12 +143,25 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			state.step(delta)
 	var traffic_step_usec := _duration_or_zero(step_started_usec, active_states.size()) if delta > 0.0 else 0
 
-	var active_chunk_ids: Array[String] = []
-	for entry_variant in active_chunk_entries:
-		active_chunk_ids.append(str((entry_variant as Dictionary).get("chunk_id", "")))
-	active_chunk_ids.sort()
-	_assignment_rebuild_elapsed_sec += maxf(delta, 0.0)
 	if not _should_rebuild_assignments(active_chunk_ids, player_position):
+		if _can_reuse_inspection_farfield_snapshots(active_chunk_ids):
+			var reuse_runtime_summary: Dictionary = _vehicle_streamer.get_runtime_summary()
+			_update_runtime_snapshot(
+				active_chunk_ids.size(),
+				active_states.size(),
+				int(_global_snapshot.get("tier0_count", 0)),
+				int(_global_snapshot.get("tier1_count", 0)),
+				int(_global_snapshot.get("tier2_count", 0)),
+				int(_global_snapshot.get("tier3_count", 0)),
+				reuse_runtime_summary,
+				traffic_spawn_usec,
+				traffic_step_usec,
+				0,
+				0,
+				update_started_usec
+			)
+			_inspection_farfield_only_elapsed_sec = 0.0
+			return get_global_summary()
 		var reuse_result := _rebuild_chunk_snapshots_from_cached_assignments(active_chunk_ids)
 		var reuse_runtime_summary: Dictionary = _vehicle_streamer.get_runtime_summary()
 		_update_runtime_snapshot(
@@ -134,6 +178,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			int(reuse_result.get("traffic_snapshot_rebuild_usec", 0)),
 			update_started_usec
 		)
+		_inspection_farfield_only_elapsed_sec = 0.0
 		return get_global_summary()
 	var ranking_started_usec := Time.get_ticks_usec()
 	var distance_ranked_states: Array[CityVehicleState] = []
@@ -233,6 +278,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	_last_assignment_chunk_ids = active_chunk_ids.duplicate()
 	_last_assignment_player_position = player_position
 	_assignment_rebuild_elapsed_sec = 0.0
+	_inspection_farfield_only_elapsed_sec = 0.0
 	_has_assignment_cache = true
 	return get_global_summary()
 
@@ -403,9 +449,46 @@ func _should_rebuild_assignments(active_chunk_ids: Array[String], player_positio
 		return true
 	if not _string_arrays_equal(_last_assignment_chunk_ids, active_chunk_ids):
 		return true
-	if player_position.distance_to(_last_assignment_player_position) > PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M:
+	var rebuild_distance_m := PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M
+	if _is_inspection_context(_last_player_context) \
+			and int(_global_snapshot.get("tier2_count", 0)) <= 0 \
+			and int(_global_snapshot.get("tier3_count", 0)) <= 0:
+		rebuild_distance_m = maxf(rebuild_distance_m, INSPECTION_FARFIELD_ONLY_PLAYER_REUSE_DISTANCE_M)
+	if player_position.distance_to(_last_assignment_player_position) > rebuild_distance_m:
 		return true
 	return _assignment_rebuild_elapsed_sec >= ASSIGNMENT_REBUILD_INTERVAL_SEC
+
+func _can_reuse_inspection_farfield_snapshots(active_chunk_ids: Array[String]) -> bool:
+	if not _is_inspection_context(_last_player_context):
+		return false
+	if not _has_assignment_cache:
+		return false
+	if not _string_arrays_equal(_last_assignment_chunk_ids, active_chunk_ids):
+		return false
+	return int(_global_snapshot.get("tier2_count", 0)) <= 0 and int(_global_snapshot.get("tier3_count", 0)) <= 0
+
+func _can_throttle_inspection_farfield_update(active_chunk_ids: Array[String], player_position: Vector3) -> bool:
+	if not _is_inspection_context(_last_player_context):
+		return false
+	if not _has_assignment_cache:
+		return false
+	if not _string_arrays_equal(_last_assignment_chunk_ids, active_chunk_ids):
+		return false
+	if int(_global_snapshot.get("tier2_count", 0)) > 0 or int(_global_snapshot.get("tier3_count", 0)) > 0:
+		return false
+	if player_position.distance_to(_last_assignment_player_position) >= INSPECTION_FARFIELD_ONLY_PLAYER_REUSE_DISTANCE_M:
+		return false
+	# Inspection pure-farfield traversal should reuse cached work until the cadence window expires.
+	return _inspection_farfield_only_elapsed_sec < INSPECTION_FARFIELD_ONLY_UPDATE_INTERVAL_SEC
+
+func _is_inspection_context(player_context: Dictionary) -> bool:
+	if player_context.is_empty():
+		return false
+	var control_mode := str(player_context.get("control_mode", ""))
+	if control_mode == "inspection":
+		return true
+	var speed_profile := str(player_context.get("speed_profile", ""))
+	return speed_profile == "inspection"
 
 func _rebuild_chunk_snapshots_from_cached_assignments(active_chunk_ids: Array[String]) -> Dictionary:
 	var snapshot_started_usec := Time.get_ticks_usec()

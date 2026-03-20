@@ -6,7 +6,9 @@ func includes_state(state, player_position: Vector3, budget_contract: Dictionary
 	if nearfield_runtime != null and nearfield_runtime.includes_state(state, player_position, budget_contract):
 		return false
 	var midfield_radius_m := float(budget_contract.get("violent_witness_core_radius_m", 200.0))
-	if not suppress_player_midfield and _planar_distance_to(player_position, state.world_position) <= midfield_radius_m:
+	if suppress_player_midfield:
+		midfield_radius_m = float(budget_contract.get("inspection_midfield_radius_m", 0.0))
+	if midfield_radius_m > 0.0 and _planar_distance_to(player_position, state.world_position) <= midfield_radius_m:
 		return true
 	for threat_region_variant in threat_regions:
 		var threat_region: Dictionary = threat_region_variant

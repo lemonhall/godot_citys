@@ -1,5 +1,7 @@
 extends RefCounted
 
+const GLOBAL_DENSITY_SCALE := 0.5
+
 const DEFAULT_DISTRICT_CLASS_DENSITY := {
 	"core": 0.78,
 	"mixed": 0.62,
@@ -86,19 +88,24 @@ func resolve_density_bucket(density_scalar: float) -> String:
 
 func get_spawn_slots_for_edge(district_density: float, road_density: float) -> int:
 	var combined_density := clampf(district_density * road_density, 0.0, 1.0)
+	var base_slot_count := 0
 	if combined_density <= 0.03:
+		base_slot_count = 0
+	elif combined_density <= 0.07:
+		base_slot_count = 1
+	elif combined_density <= 0.12:
+		base_slot_count = 2
+	elif combined_density <= 0.18:
+		base_slot_count = 3
+	elif combined_density <= 0.26:
+		base_slot_count = 4
+	elif combined_density <= 0.36:
+		base_slot_count = 5
+	else:
+		base_slot_count = 6
+	if base_slot_count <= 0:
 		return 0
-	if combined_density <= 0.07:
-		return 1
-	if combined_density <= 0.12:
-		return 2
-	if combined_density <= 0.18:
-		return 3
-	if combined_density <= 0.26:
-		return 4
-	if combined_density <= 0.36:
-		return 5
-	return 6
+	return maxi(int(ceili(float(base_slot_count) * GLOBAL_DENSITY_SCALE)), 1)
 
 func get_max_spawn_slots_per_chunk() -> int:
 	return max_spawn_slots_per_chunk

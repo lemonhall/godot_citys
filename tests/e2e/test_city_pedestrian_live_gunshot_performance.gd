@@ -6,7 +6,7 @@ const REDLINE_USEC := 16667
 const STREAMING_IDLE_STABLE_FRAMES := 4
 const STREAMING_IDLE_MAX_FRAMES := 180
 const SAMPLE_COUNT := 96
-const MIN_TIER1_COUNT := 160
+const MIN_TIER1_COUNT := 140
 const REACTIVE_MIN_DISTANCE_M := 220.0
 const REACTIVE_MAX_DISTANCE_M := 380.0
 const CALM_MIN_DISTANCE_M := 420.0
@@ -57,7 +57,7 @@ func _run() -> void:
 	if not T.require_true(self, not cluster.is_empty(), "Live gunshot performance needs a sampled witness in the 200m-400m ring plus a calm outsider beyond 400m"):
 		return
 
-	var origin_position: Vector3 = cluster.get("origin_position", Vector3.ZERO)
+	var origin_position: Vector3 = _resolve_grounded_position(world, player, cluster.get("origin_position", Vector3.ZERO))
 	player.teleport_to_world_position(origin_position)
 	player.set_weapon_mode("rifle")
 	world.update_streaming_for_position(player.global_position, 0.1)
@@ -119,7 +119,7 @@ func _run() -> void:
 
 func _find_distance_ring_in_world(world, player) -> Dictionary:
 	for search_position_variant in SEARCH_POSITIONS:
-		var player_position: Vector3 = search_position_variant
+		var player_position := _resolve_grounded_position(world, player, search_position_variant)
 		player.teleport_to_world_position(player_position)
 		world.update_streaming_for_position(player_position, 0.25)
 		await process_frame
@@ -264,3 +264,12 @@ func _wait_for_streaming_idle(world) -> bool:
 		else:
 			idle_frames = 0
 	return false
+
+func _resolve_grounded_position(world, player, world_position: Vector3) -> Vector3:
+	var standing_height := 1.0
+	if player != null and player.has_method("_estimate_standing_height"):
+		standing_height = float(player._estimate_standing_height())
+	if world != null and world.has_method("_resolve_surface_world_position"):
+		var grounded_position: Vector3 = world._resolve_surface_world_position(world_position, standing_height)
+		return grounded_position + Vector3.UP * 0.05
+	return Vector3(world_position.x, world_position.y + standing_height, world_position.z)

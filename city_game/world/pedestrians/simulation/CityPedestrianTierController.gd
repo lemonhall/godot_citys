@@ -11,6 +11,10 @@ const TIER1_STEP_BUCKET_COUNT := 8
 const TIER0_UPDATE_INTERVAL_SEC := 0.5
 const TIER0_STEP_BUCKET_COUNT := 8
 const ASSIGNMENT_REBUILD_INTERVAL_SEC := 0.18
+const INSPECTION_FARFIELD_ONLY_UPDATE_INTERVAL_SEC := 0.24
+const INSPECTION_FARFIELD_ONLY_PLAYER_REUSE_DISTANCE_M := 512.0
+const REACTIVE_STATIONARY_ASSIGNMENT_REBUILD_INTERVAL_SEC := 0.6
+const REACTIVE_STATIONARY_SPEED_EPSILON_MPS := 0.5
 const PLAYER_CONTEXT_TELEPORT_DISTANCE_M := 32.0
 const PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M := 32.0
 const PLAYER_ASSIGNMENT_REBUILD_SPEED_DELTA_MPS := 0.1
@@ -56,6 +60,7 @@ var _last_player_position := Vector3.ZERO
 var _last_player_velocity := Vector3.ZERO
 var _last_player_context: Dictionary = {}
 var _has_player_context := false
+var _inspection_farfield_only_elapsed_sec := 0.0
 var _last_profile_stats := {
 	"crowd_spawn_usec": 0,
 	"crowd_update_usec": 0,
@@ -123,6 +128,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_last_player_velocity = Vector3.ZERO
 	_last_player_context.clear()
 	_has_player_context = false
+	_inspection_farfield_only_elapsed_sec = 0.0
 	_last_profile_stats = {
 		"crowd_spawn_usec": 0,
 		"crowd_update_usec": 0,
@@ -393,11 +399,44 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 		_mark_assignment_rebuild_required()
 	var active_states: Array = _pedestrian_streamer.get_active_states()
 
+	_assignment_rebuild_elapsed_sec += maxf(delta, 0.0)
+	_inspection_farfield_only_elapsed_sec += maxf(delta, 0.0)
+	if _can_throttle_inspection_farfield_update(active_chunk_ids, player_position):
+		var throttled_runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_summary()
+		_update_runtime_snapshot(
+			active_chunk_ids.size(),
+			active_states.size(),
+			int(_global_snapshot.get("tier0_count", 0)),
+			int(_global_snapshot.get("tier1_count", 0)),
+			int(_global_snapshot.get("tier2_count", 0)),
+			int(_global_snapshot.get("tier3_count", 0)),
+			throttled_runtime_snapshot,
+			crowd_spawn_usec,
+			_empty_step_profile(),
+			0,
+			0,
+			0,
+			_build_layer_profile_counts(
+				_farfield_state_refs.size(),
+				_midfield_state_refs.size(),
+				_nearfield_state_refs.size(),
+				_midfield_state_refs.size() + _nearfield_state_refs.size(),
+				_midfield_state_refs.size() + _nearfield_state_refs.size()
+			),
+			update_started_usec,
+			{
+				"decision": "reuse",
+				"reason": "inspection_farfield_throttle",
+				"player_speed_delta_mps": 0.0,
+			},
+			raw_player_velocity,
+			inferred_player_velocity,
+			player_speed_cap_mps
+		)
+		return get_global_summary()
 	var step_profile := _empty_step_profile()
 	if delta > 0.0:
 		step_profile = _step_active_states(active_states, delta)
-
-	_assignment_rebuild_elapsed_sec += maxf(delta, 0.0)
 	var assignment_diagnostic := _resolve_assignment_decision(active_chunk_ids, player_position, inferred_player_velocity)
 	if not bool(assignment_diagnostic.get("should_rebuild", true)):
 		var reused_runtime_snapshot: Dictionary = _pedestrian_streamer.get_runtime_summary()
@@ -427,6 +466,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			inferred_player_velocity,
 			player_speed_cap_mps
 		)
+		_inspection_farfield_only_elapsed_sec = 0.0
 		return get_global_summary()
 
 	var threat_regions: Array = _reaction_model.get_active_threat_regions(_budget_contract)
@@ -452,7 +492,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	var tier1_budget := int(_budget_contract.get("tier1_budget", 768))
 	var tier2_budget := int(_budget_contract.get("tier2_budget", 96))
 	var nearfield_budget := int(_budget_contract.get("nearfield_budget", tier2_budget))
-	var tier2_radius_m := float(_budget_contract.get("tier2_radius_m", 110.0))
+	var tier2_radius_m := _resolve_effective_tier2_radius_m()
 	var tier2_radius_sq := tier2_radius_m * tier2_radius_m
 
 	var tier0_count := 0
@@ -604,6 +644,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	_last_assignment_player_velocity = inferred_player_velocity
 	_last_assignment_player_context = _last_player_context.duplicate(true)
 	_assignment_rebuild_elapsed_sec = 0.0
+	_inspection_farfield_only_elapsed_sec = 0.0
 	_has_assignment_cache = true
 	_force_assignment_rebuild = false
 	return get_global_summary()
@@ -927,10 +968,10 @@ func _resolve_assignment_decision(active_chunk_ids: Array[String], player_positi
 	elif not _string_arrays_equal(_last_assignment_chunk_ids, active_chunk_ids):
 		reason = "chunk_window_changed"
 		should_rebuild = true
-	elif _can_reuse_farfield_assignments(player_position):
+	elif _can_reuse_farfield_assignments(player_position, player_velocity):
 		reason = "reuse_farfield"
 		should_rebuild = false
-	elif _can_reuse_layered_assignments(player_position):
+	elif _can_reuse_layered_assignments(player_position, player_velocity):
 		reason = "reuse_layered"
 		should_rebuild = false
 	elif player_position.distance_to(_last_assignment_player_position) > PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M:
@@ -942,7 +983,7 @@ func _resolve_assignment_decision(active_chunk_ids: Array[String], player_positi
 	elif _last_player_context != _last_assignment_player_context:
 		reason = "player_context_changed"
 		should_rebuild = true
-	elif _assignment_rebuild_elapsed_sec >= ASSIGNMENT_REBUILD_INTERVAL_SEC:
+	elif _assignment_rebuild_elapsed_sec >= _resolve_assignment_rebuild_interval_sec(player_velocity):
 		reason = "interval_elapsed"
 		should_rebuild = true
 	return {
@@ -971,16 +1012,19 @@ func _string_arrays_equal(lhs: Array[String], rhs: Array[String]) -> bool:
 			return false
 	return true
 
-func _can_reuse_farfield_assignments(player_position: Vector3) -> bool:
+func _can_reuse_farfield_assignments(player_position: Vector3, player_velocity: Vector3) -> bool:
 	if _last_player_context != _last_assignment_player_context:
 		return false
 	if int(_global_snapshot.get("tier2_count", 0)) > 0 or int(_global_snapshot.get("tier3_count", 0)) > 0:
 		return false
-	if player_position.distance_to(_last_assignment_player_position) >= FARFIELD_ASSIGNMENT_REBUILD_DISTANCE_M:
+	var reuse_distance_m := FARFIELD_ASSIGNMENT_REBUILD_DISTANCE_M
+	if _is_inspection_context(_last_player_context):
+		reuse_distance_m = maxf(reuse_distance_m, INSPECTION_FARFIELD_ONLY_PLAYER_REUSE_DISTANCE_M)
+	if player_position.distance_to(_last_assignment_player_position) >= reuse_distance_m:
 		return false
-	return _assignment_rebuild_elapsed_sec < ASSIGNMENT_REBUILD_INTERVAL_SEC
+	return _assignment_rebuild_elapsed_sec < _resolve_assignment_rebuild_interval_sec(player_velocity)
 
-func _can_reuse_layered_assignments(player_position: Vector3) -> bool:
+func _can_reuse_layered_assignments(player_position: Vector3, player_velocity: Vector3) -> bool:
 	if _last_player_context != _last_assignment_player_context:
 		return false
 	if int(_global_snapshot.get("tier2_count", 0)) <= 0 \
@@ -989,7 +1033,51 @@ func _can_reuse_layered_assignments(player_position: Vector3) -> bool:
 		return false
 	if player_position.distance_to(_last_assignment_player_position) >= LAYERED_ASSIGNMENT_REBUILD_DISTANCE_M:
 		return false
-	return _assignment_rebuild_elapsed_sec < ASSIGNMENT_REBUILD_INTERVAL_SEC
+	return _assignment_rebuild_elapsed_sec < _resolve_assignment_rebuild_interval_sec(player_velocity)
+
+func _can_throttle_inspection_farfield_update(active_chunk_ids: Array[String], player_position: Vector3) -> bool:
+	if _reaction_model.get_event_count() > 0:
+		return false
+	if not _is_inspection_context(_last_player_context):
+		return false
+	if not _has_assignment_cache:
+		return false
+	if not _string_arrays_equal(_last_assignment_chunk_ids, active_chunk_ids):
+		return false
+	if int(_global_snapshot.get("tier2_count", 0)) > 0 or int(_global_snapshot.get("tier3_count", 0)) > 0:
+		return false
+	if player_position.distance_to(_last_assignment_player_position) >= INSPECTION_FARFIELD_ONLY_PLAYER_REUSE_DISTANCE_M:
+		return false
+	# In inspection pure-farfield traversal we want to keep reusing until the cadence window expires,
+	# then allow exactly one real update pass before restarting the timer.
+	return _inspection_farfield_only_elapsed_sec < INSPECTION_FARFIELD_ONLY_UPDATE_INTERVAL_SEC
+
+func _resolve_assignment_rebuild_interval_sec(player_velocity: Vector3) -> float:
+	if _reaction_model.get_event_count() <= 0:
+		return ASSIGNMENT_REBUILD_INTERVAL_SEC
+	if _last_player_context != _last_assignment_player_context:
+		return ASSIGNMENT_REBUILD_INTERVAL_SEC
+	if player_velocity.length() > REACTIVE_STATIONARY_SPEED_EPSILON_MPS:
+		return ASSIGNMENT_REBUILD_INTERVAL_SEC
+	return REACTIVE_STATIONARY_ASSIGNMENT_REBUILD_INTERVAL_SEC
+
+func _resolve_effective_tier2_radius_m() -> float:
+	var tier2_radius_m := float(_budget_contract.get("tier2_radius_m", 110.0))
+	if _is_inspection_context(_last_player_context):
+		tier2_radius_m = maxf(
+			tier2_radius_m,
+			float(_budget_contract.get("inspection_tier2_radius_m", tier2_radius_m))
+		)
+	return tier2_radius_m
+
+func _is_inspection_context(player_context: Dictionary) -> bool:
+	if player_context.is_empty():
+		return false
+	var control_mode := str(player_context.get("control_mode", ""))
+	if control_mode == "inspection":
+		return true
+	var speed_profile := str(player_context.get("speed_profile", ""))
+	return speed_profile == "inspection"
 
 func _capture_dirty_chunk_ids() -> Dictionary:
 	var dirty_chunk_ids: Dictionary = {}
@@ -1116,7 +1204,7 @@ func _update_runtime_snapshot(
 		"tier2_budget": int(_budget_contract.get("tier2_budget", 96)),
 		"tier3_budget": int(_budget_contract.get("tier3_budget", 24)),
 		"nearfield_budget": int(_budget_contract.get("nearfield_budget", int(_budget_contract.get("tier2_budget", 96)))),
-		"tier2_radius_m": float(_budget_contract.get("tier2_radius_m", 110.0)),
+		"tier2_radius_m": _resolve_effective_tier2_radius_m(),
 		"tier3_radius_m": float(_budget_contract.get("tier3_radius_m", 30.0)),
 		"page_cache_hit_count": int(runtime_snapshot.get("page_cache_hit_count", 0)),
 		"page_cache_miss_count": int(runtime_snapshot.get("page_cache_miss_count", 0)),

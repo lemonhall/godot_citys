@@ -23,12 +23,37 @@ static func build_recipe(request: Dictionary) -> Dictionary:
 		var level_alpha := float(level_index) / maxf(float(level_count - 1), 1.0)
 		var shell_thickness_m := shell_base_thickness_m * lerpf(0.86, 1.22, _normalized_wave(level_index, 7))
 		var center_y := dynamic_bottom_y + level_height_m * (float(level_index) + 0.5)
-		_append_side_chunks(chunks, size_keys, half_extents, level_height_m, center_y, shell_thickness_m, impact_direction, impact_side, "west", level_alpha, level_index, body_size.z)
-		_append_side_chunks(chunks, size_keys, half_extents, level_height_m, center_y, shell_thickness_m, impact_direction, impact_side, "east", level_alpha, level_index, body_size.z)
-		_append_side_chunks(chunks, size_keys, half_extents, level_height_m, center_y, shell_thickness_m, impact_direction, impact_side, "north", level_alpha, level_index, body_size.x)
-		_append_side_chunks(chunks, size_keys, half_extents, level_height_m, center_y, shell_thickness_m, impact_direction, impact_side, "south", level_alpha, level_index, body_size.x)
+		_append_side_chunks(chunks, size_keys, half_extents, level_height_m, center_y, shell_thickness_m, impact_direction, impact_side, "west", level_alpha, level_index, body_size.z, hit_local_position)
+		_append_side_chunks(chunks, size_keys, half_extents, level_height_m, center_y, shell_thickness_m, impact_direction, impact_side, "east", level_alpha, level_index, body_size.z, hit_local_position)
+		_append_side_chunks(chunks, size_keys, half_extents, level_height_m, center_y, shell_thickness_m, impact_direction, impact_side, "north", level_alpha, level_index, body_size.x, hit_local_position)
+		_append_side_chunks(chunks, size_keys, half_extents, level_height_m, center_y, shell_thickness_m, impact_direction, impact_side, "south", level_alpha, level_index, body_size.x, hit_local_position)
 
-	_append_roof_chunks(chunks, size_keys, body_size, half_extents, level_height_m, impact_direction, impact_side, shell_base_thickness_m)
+	_append_roof_chunks(chunks, size_keys, body_size, half_extents, level_height_m, impact_direction, impact_side, shell_base_thickness_m, hit_local_position)
+
+	var impact_zone_smallest_volume_m3 := INF
+	var far_zone_volume_sum := 0.0
+	var far_zone_count := 0
+	var chunk_face_count_min := 6
+	var chunk_face_count_max := 6
+	for chunk_index in range(chunks.size()):
+		var chunk: Dictionary = chunks[chunk_index]
+		var center: Vector3 = chunk.get("center", Vector3.ZERO)
+		var size: Vector3 = chunk.get("size", Vector3.ONE)
+		var volume_m3 := maxf(size.x * size.y * size.z, 0.001)
+		var impact_distance_norm := _distance_to_chunk_bounds(hit_local_position, center, size) / maxf(body_size.length(), 0.001)
+		var center_distance_norm := center.distance_to(hit_local_position) / maxf(body_size.length(), 0.001)
+		chunk["volume_m3"] = volume_m3
+		chunk["impact_distance_norm"] = impact_distance_norm
+		chunk["face_count_target"] = 6
+		chunks[chunk_index] = chunk
+		if impact_distance_norm <= 0.18:
+			impact_zone_smallest_volume_m3 = minf(impact_zone_smallest_volume_m3, volume_m3)
+		if center_distance_norm >= 0.28:
+			far_zone_volume_sum += volume_m3
+			far_zone_count += 1
+	if impact_zone_smallest_volume_m3 == INF:
+		impact_zone_smallest_volume_m3 = 0.0
+	var far_zone_average_volume_m3 := far_zone_volume_sum / float(far_zone_count) if far_zone_count > 0 else 0.0
 
 	return {
 		"success": true,
@@ -42,6 +67,11 @@ static func build_recipe(request: Dictionary) -> Dictionary:
 		"dynamic_chunk_count": chunks.size(),
 		"unique_size_count": size_keys.size(),
 		"base_height_m": base_height_m,
+		"chunk_face_count_min": chunk_face_count_min,
+		"chunk_face_count_max": chunk_face_count_max,
+		"preserves_building_envelope": true,
+		"impact_zone_smallest_volume_m3": impact_zone_smallest_volume_m3,
+		"far_zone_average_volume_m3": far_zone_average_volume_m3,
 	}
 
 static func _build_chunk(center: Vector3, size: Vector3, face_direction: Vector3, impact_direction: Vector3, impact_side: String, side_id: String, level_alpha: float) -> Dictionary:
@@ -88,39 +118,61 @@ static func _resolve_impact_direction(impact_side: String) -> Vector3:
 		_:
 			return Vector3.UP
 
-static func _append_side_chunks(chunks: Array[Dictionary], size_keys: Dictionary, half_extents: Vector3, level_height_m: float, center_y: float, shell_thickness_m: float, impact_direction: Vector3, impact_side: String, side_id: String, level_alpha: float, level_index: int, span_total_m: float) -> void:
-	var segment_count := 3 if side_id == impact_side else (2 + (level_index % 2))
-	var span_segments := _build_span_segments(span_total_m, segment_count, level_index * 17 + side_id.length() * 11)
-	var cursor := -span_total_m * 0.5
+static func _append_side_chunks(chunks: Array[Dictionary], size_keys: Dictionary, half_extents: Vector3, level_height_m: float, center_y: float, shell_thickness_m: float, impact_direction: Vector3, impact_side: String, side_id: String, level_alpha: float, level_index: int, span_total_m: float, hit_local_position: Vector3) -> void:
+	var impact_signal := _resolve_side_impact_signal(side_id, center_y, level_height_m, hit_local_position, impact_side)
+	var base_segment_count := clampi(2 + int(round(impact_signal * 3.8)), 2, 6)
+	if side_id != impact_side:
+		base_segment_count = mini(base_segment_count, 3 + (level_index % 2))
+	var vertical_split_count := clampi(1 + int(round(impact_signal * 2.2)), 1, 3)
+	if side_id != impact_side:
+		vertical_split_count = mini(vertical_split_count, 2)
+	var vertical_segments := _build_span_segments(level_height_m, vertical_split_count, level_index * 29 + side_id.length() * 13)
+	var vertical_cursor := center_y - level_height_m * 0.5
 	var face_direction := _resolve_impact_direction(side_id)
-	for segment_index in range(span_segments.size()):
-		var segment_length := span_segments[segment_index]
-		var center_along_span := cursor + segment_length * 0.5
-		cursor += segment_length
-		var center := Vector3.ZERO
-		var size := Vector3.ONE
-		match side_id:
-			"west":
-				center = Vector3(-half_extents.x + shell_thickness_m * 0.5, center_y, center_along_span)
-				size = Vector3(shell_thickness_m, level_height_m, maxf(segment_length * 0.96, 0.8))
-			"east":
-				center = Vector3(half_extents.x - shell_thickness_m * 0.5, center_y, center_along_span)
-				size = Vector3(shell_thickness_m, level_height_m, maxf(segment_length * 0.96, 0.8))
-			"north":
-				center = Vector3(center_along_span, center_y, -half_extents.z + shell_thickness_m * 0.5)
-				size = Vector3(maxf(segment_length * 0.96, 0.8), level_height_m, shell_thickness_m)
-			_:
-				center = Vector3(center_along_span, center_y, half_extents.z - shell_thickness_m * 0.5)
-				size = Vector3(maxf(segment_length * 0.96, 0.8), level_height_m, shell_thickness_m)
-		_track_size_key(size_keys, size)
-		chunks.append(_build_chunk(center, size, face_direction, impact_direction, impact_side, side_id, level_alpha))
+	for vertical_index in range(vertical_segments.size()):
+		var segment_height := vertical_segments[vertical_index]
+		var segment_center_y := vertical_cursor + segment_height * 0.5
+		vertical_cursor += segment_height
+		var row_signal := clampf(
+			impact_signal * 0.74
+			+ (1.0 - clampf(absf(segment_center_y - hit_local_position.y) / maxf(segment_height * 1.75, 0.001), 0.0, 1.0)) * 0.26,
+			0.0,
+			1.0
+		)
+		var segment_count := clampi(base_segment_count + int(round(row_signal * 1.6)), 2, 7)
+		if side_id != impact_side:
+			segment_count = mini(segment_count, 4)
+		var span_segments := _build_span_segments(span_total_m, segment_count, level_index * 17 + side_id.length() * 11 + vertical_index * 23)
+		var cursor := -span_total_m * 0.5
+		for segment_index in range(span_segments.size()):
+			var segment_length := span_segments[segment_index]
+			var center_along_span := cursor + segment_length * 0.5
+			cursor += segment_length
+			var center := Vector3.ZERO
+			var size := Vector3.ONE
+			match side_id:
+				"west":
+					center = Vector3(-half_extents.x + shell_thickness_m * 0.5, segment_center_y, center_along_span)
+					size = Vector3(shell_thickness_m, maxf(segment_height * 0.96, 0.8), maxf(segment_length * 0.96, 0.8))
+				"east":
+					center = Vector3(half_extents.x - shell_thickness_m * 0.5, segment_center_y, center_along_span)
+					size = Vector3(shell_thickness_m, maxf(segment_height * 0.96, 0.8), maxf(segment_length * 0.96, 0.8))
+				"north":
+					center = Vector3(center_along_span, segment_center_y, -half_extents.z + shell_thickness_m * 0.5)
+					size = Vector3(maxf(segment_length * 0.96, 0.8), maxf(segment_height * 0.96, 0.8), shell_thickness_m)
+				_:
+					center = Vector3(center_along_span, segment_center_y, half_extents.z - shell_thickness_m * 0.5)
+					size = Vector3(maxf(segment_length * 0.96, 0.8), maxf(segment_height * 0.96, 0.8), shell_thickness_m)
+			_track_size_key(size_keys, size)
+			chunks.append(_build_chunk(center, size, face_direction, impact_direction, impact_side, side_id, level_alpha))
 
-static func _append_roof_chunks(chunks: Array[Dictionary], size_keys: Dictionary, body_size: Vector3, half_extents: Vector3, level_height_m: float, impact_direction: Vector3, impact_side: String, shell_base_thickness_m: float) -> void:
+static func _append_roof_chunks(chunks: Array[Dictionary], size_keys: Dictionary, body_size: Vector3, half_extents: Vector3, level_height_m: float, impact_direction: Vector3, impact_side: String, shell_base_thickness_m: float, hit_local_position: Vector3) -> void:
 	var roof_height_m := maxf(level_height_m * 0.48, 1.8)
 	var roof_width_m := maxf(body_size.x * 0.72, shell_base_thickness_m * 2.2)
 	var roof_depth_m := maxf(body_size.z * 0.72, shell_base_thickness_m * 2.2)
-	var roof_segments_x := _build_span_segments(roof_width_m, 2, 97)
-	var roof_segments_z := _build_span_segments(roof_depth_m, 2, 131)
+	var roof_signal := clampf((hit_local_position.y + half_extents.y) / maxf(body_size.y, 0.001), 0.0, 1.0)
+	var roof_segments_x := _build_span_segments(roof_width_m, 2 + int(round(roof_signal)), 97)
+	var roof_segments_z := _build_span_segments(roof_depth_m, 2 + int(round(roof_signal)), 131)
 	var start_x := -roof_width_m * 0.5
 	for x_index in range(roof_segments_x.size()):
 		var width_m := roof_segments_x[x_index]
@@ -163,3 +215,18 @@ static func _normalized_wave(index_value: int, seed_value: int) -> float:
 static func _track_size_key(size_keys: Dictionary, size: Vector3) -> void:
 	var size_key := "%.3f|%.3f|%.3f" % [size.x, size.y, size.z]
 	size_keys[size_key] = true
+
+static func _resolve_side_impact_signal(side_id: String, center_y: float, level_height_m: float, hit_local_position: Vector3, impact_side: String) -> float:
+	var vertical_signal := 1.0 - clampf(absf(center_y - hit_local_position.y) / maxf(level_height_m * 2.2, 0.001), 0.0, 1.0)
+	if side_id == impact_side:
+		return clampf(0.62 + vertical_signal * 0.38, 0.0, 1.0)
+	return clampf(vertical_signal * 0.28, 0.0, 0.42)
+
+static func _distance_to_chunk_bounds(point: Vector3, center: Vector3, size: Vector3) -> float:
+	var half_extents := size * 0.5
+	var closest_point := Vector3(
+		clampf(point.x, center.x - half_extents.x, center.x + half_extents.x),
+		clampf(point.y, center.y - half_extents.y, center.y + half_extents.y),
+		clampf(point.z, center.z - half_extents.z, center.z + half_extents.z)
+	)
+	return point.distance_to(closest_point)

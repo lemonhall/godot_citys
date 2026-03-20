@@ -64,6 +64,11 @@ func get_debug_state() -> Dictionary:
 		"cleanup_delay_sec": float(collapse_state.get("cleanup_delay_sec", 0.0)),
 		"recipe_unique_size_count": int(collapse_state.get("recipe_unique_size_count", 0)),
 		"residual_base_height_m": float(collapse_state.get("residual_base_height_m", 0.0)),
+		"chunk_face_count_min": int(collapse_state.get("chunk_face_count_min", 0)),
+		"chunk_face_count_max": int(collapse_state.get("chunk_face_count_max", 0)),
+		"recipe_preserves_building_envelope": bool(collapse_state.get("recipe_preserves_building_envelope", false)),
+		"impact_zone_smallest_volume_m3": float(collapse_state.get("impact_zone_smallest_volume_m3", 0.0)),
+		"far_zone_average_volume_m3": float(collapse_state.get("far_zone_average_volume_m3", 0.0)),
 	}
 
 func get_primary_target_world_position() -> Vector3:

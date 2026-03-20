@@ -64,13 +64,13 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(collapsed_debug_state.get("recipe_unique_size_count", 0)) >= 6, "Collapse recipe must expose multiple distinct chunk sizes to avoid a too-regular fracture silhouette"):
 		return
-	if not T.require_true(self, int(collapsed_debug_state.get("chunk_face_count_min", 0)) >= 16, "Collapse chunks must graduate beyond plain boxes into 16+ face shard silhouettes"):
+	if not T.require_true(self, int(collapsed_debug_state.get("chunk_face_count_min", 0)) == 6, "Box-fracture mode must keep cubic six-face debris instead of irregular shard geometry"):
 		return
-	if not T.require_true(self, int(collapsed_debug_state.get("chunk_face_count_max", 0)) <= 32, "Collapse shard complexity must stay bounded instead of exploding into an unbounded mesh soup"):
+	if not T.require_true(self, int(collapsed_debug_state.get("chunk_face_count_max", 0)) == 6, "Box-fracture mode must report six-face debris consistently across all spawned chunks"):
 		return
-	if not T.require_true(self, bool(collapsed_debug_state.get("recipe_preserves_building_envelope", false)), "Shard recipe must still reassemble into the original building envelope instead of drifting away from the tower silhouette"):
+	if not T.require_true(self, bool(collapsed_debug_state.get("recipe_preserves_building_envelope", false)), "Box-fracture recipe must still reassemble into the original building envelope instead of drifting away from the tower silhouette"):
 		return
-	if not T.require_true(self, float(collapsed_debug_state.get("impact_zone_smallest_volume_m3", 0.0)) < float(collapsed_debug_state.get("far_zone_average_volume_m3", 0.0)), "Chunks near the impact point must be the smallest, with shard size expanding away from the blast origin"):
+	if not T.require_true(self, float(collapsed_debug_state.get("impact_zone_smallest_volume_m3", 0.0)) < float(collapsed_debug_state.get("far_zone_average_volume_m3", 0.0)), "Box chunks near the impact point must still be the smallest, with box size expanding away from the blast origin"):
 		return
 	if not T.require_true(self, float(collapsed_debug_state.get("residual_base_height_m", 0.0)) >= 14.0, "Upper-half impacts must preserve a substantial lower ruin instead of erasing the whole tower to the ground"):
 		return

@@ -78,6 +78,11 @@ func get_debug_state() -> Dictionary:
 		"cleanup_delay_sec": debris_cleanup_delay_sec,
 		"recipe_unique_size_count": int(_fracture_recipe.get("unique_size_count", 0)),
 		"residual_base_height_m": float((_fracture_recipe.get("base_size", Vector3.ZERO) as Vector3).y),
+		"chunk_face_count_min": int(_fracture_recipe.get("chunk_face_count_min", 0)),
+		"chunk_face_count_max": int(_fracture_recipe.get("chunk_face_count_max", 0)),
+		"recipe_preserves_building_envelope": bool(_fracture_recipe.get("preserves_building_envelope", false)),
+		"impact_zone_smallest_volume_m3": float(_fracture_recipe.get("impact_zone_smallest_volume_m3", 0.0)),
+		"far_zone_average_volume_m3": float(_fracture_recipe.get("far_zone_average_volume_m3", 0.0)),
 	}
 
 func start_collapse() -> Dictionary:

@@ -136,6 +136,12 @@ func _apply_explosion_damage() -> void:
 		if enemy.has_method("apply_projectile_hit"):
 			var impulse := (enemy.global_position - global_position).normalized() * 22.0
 			enemy.apply_projectile_hit(explosion_damage, global_position, impulse)
+	for building_node in get_tree().get_nodes_in_group("city_destructible_building"):
+		if building_node == null or not is_instance_valid(building_node):
+			continue
+		if not building_node.has_method("apply_explosion_damage"):
+			continue
+		building_node.apply_explosion_damage(global_position, explosion_damage, explosion_radius_m)
 
 func _trigger_camera_shake() -> void:
 	if _player_target == null or not is_instance_valid(_player_target):

@@ -11,6 +11,7 @@ const CityRoadMeshBuilder := preload("res://city_game/world/rendering/CityRoadMe
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
 const CityGroundRoadOverlayShader := preload("res://city_game/world/rendering/CityGroundRoadOverlay.gdshader")
 const CityBuildingSceneBuilder := preload("res://city_game/world/serviceability/CityBuildingSceneBuilder.gd")
+const CityDestructibleBuildingRuntime := preload("res://city_game/combat/buildings/CityDestructibleBuildingRuntime.gd")
 
 const LOD_NEAR := "near"
 const LOD_MID := "mid"
@@ -686,10 +687,18 @@ func _build_building(building: Dictionary) -> Node3D:
 	if not override_entry.is_empty():
 		var override_node := _build_building_override(building, override_entry)
 		if override_node != null:
+			_attach_destructible_building_runtime(override_node)
 			return override_node
-	var generated_building := CityBuildingSceneBuilder.build_runtime_building(building)
-	_register_building_collision_shapes(generated_building)
-	return generated_building
+	var service_root := CityBuildingSceneBuilder.build_service_scene_root(building)
+	service_root.position = CityBuildingSceneBuilder.resolve_ground_anchor(building)
+	service_root.rotation.y = float(building.get("yaw_rad", 0.0))
+	var inspection_payload: Dictionary = (building.get("inspection_payload", {}) as Dictionary).duplicate(true)
+	if not inspection_payload.is_empty():
+		service_root.set_meta("city_inspection_payload", inspection_payload.duplicate(true))
+		CityBuildingSceneBuilder.apply_inspection_payload_recursive(service_root, inspection_payload)
+	_register_building_collision_shapes(service_root)
+	_attach_destructible_building_runtime(service_root)
+	return service_root
 
 func _build_building_override(building: Dictionary, override_entry: Dictionary) -> Node3D:
 	var scene_path := str(override_entry.get("scene_path", ""))
@@ -719,6 +728,7 @@ func _build_building_override(building: Dictionary, override_entry: Dictionary) 
 		override_root.set_meta("city_inspection_payload", inspection_payload.duplicate(true))
 		CityBuildingSceneBuilder.apply_inspection_payload_recursive(override_root, inspection_payload)
 	_register_building_collision_shapes(override_root)
+	_attach_destructible_building_runtime(override_root)
 	return override_root
 
 func _resolve_building_override_entry(building: Dictionary) -> Dictionary:
@@ -839,6 +849,16 @@ func _register_building_collision_shapes(root: Node) -> void:
 	for collision_shape in shapes:
 		collision_shape.disabled = not _building_collisions_enabled
 		_building_collision_shapes.append(collision_shape)
+
+func _attach_destructible_building_runtime(root: Node3D) -> void:
+	if root == null:
+		return
+	var existing_runtime := root.get_node_or_null("DestructibleBuildingRuntime") as Node3D
+	if existing_runtime != null:
+		return
+	var runtime := CityDestructibleBuildingRuntime.new()
+	runtime.name = "DestructibleBuildingRuntime"
+	root.add_child(runtime)
 
 func _find_building_override_node_recursive(root: Node, building_id: String) -> Node:
 	if root == null:

@@ -76,6 +76,7 @@
 - Create: `tests/world/test_building_collapse_lab_scene_contract.gd`
 - Create: `tests/world/test_building_collapse_lab_damage_contract.gd`
 - Create: `tests/world/test_building_collapse_lab_flow.gd`
+- Create: `tests/world/test_city_main_world_building_collapse.gd`
 - Modify: `city_game/scripts/CityPrototype.gd`
 - Modify: `city_game/world/rendering/CityChunkScene.gd`
 - Modify: `city_game/world/rendering/CityChunkRenderer.gd`

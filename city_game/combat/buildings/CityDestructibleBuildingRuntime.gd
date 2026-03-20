@@ -120,8 +120,14 @@ func apply_damage(amount: float, hit_world_position: Vector3) -> Dictionary:
 func _resolve_building_nodes() -> void:
 	_service_scene_root = _find_service_scene_root(self)
 	if _service_scene_root == null:
+		_service_scene_root = _find_service_scene_root_upwards(get_parent())
+	if _service_scene_root == null:
 		_service_scene_root = get_node_or_null("ServiceBuildingRoot") as Node3D
 	_generated_building = _find_generated_building(_service_scene_root)
+	if _generated_building == null:
+		_generated_building = _find_generated_building(self)
+	if _generated_building == null:
+		_generated_building = _find_generated_building_upwards(get_parent())
 	_body_collision_shapes.clear()
 	if _generated_building == null:
 		return
@@ -264,6 +270,15 @@ func _find_service_scene_root(root: Node) -> Node3D:
 			return resolved
 	return null
 
+func _find_service_scene_root_upwards(node: Node) -> Node3D:
+	var cursor := node
+	while cursor != null:
+		var candidate := cursor as Node3D
+		if candidate != null and candidate.has_meta("city_service_scene_root"):
+			return candidate
+		cursor = cursor.get_parent()
+	return null
+
 func _find_generated_building(root: Node) -> StaticBody3D:
 	if root == null:
 		return null
@@ -276,4 +291,13 @@ func _find_generated_building(root: Node) -> StaticBody3D:
 		var resolved := _find_generated_building(child_node)
 		if resolved != null:
 			return resolved
+	return null
+
+func _find_generated_building_upwards(node: Node) -> StaticBody3D:
+	var cursor := node
+	while cursor != null:
+		var candidate := cursor as StaticBody3D
+		if candidate != null and candidate.has_meta("city_generated_building"):
+			return candidate
+		cursor = cursor.get_parent()
 	return null

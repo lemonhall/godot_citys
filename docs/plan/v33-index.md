@@ -37,7 +37,7 @@ PRD 入口：[PRD-0023 Building Collapse Destruction Lab](../prd/PRD-0023-buildi
 | M1 实验场景落地 | 独立 `F6` 实验场、平地、环境、玩家、目标建筑、战斗根节点 | `F6` 即可进入实验场并攻击目标建筑 | focused world test + scene smoke + F6 手测 | todo |
 | M2 建筑伤害与裂纹 | building health、hit point、damage state、crack visual | 火箭弹命中后建筑掉血；中度受损时出现命中点裂纹 | `tests/world/test_building_collapse_lab_damage_contract.gd` | todo |
 | M3 预碎裂与坍塌 | fracture prepare、临界替换、碎块清理 | 建筑可从完好进入预准备，再进入坍塌，最终留下底座/残骸并清理大部分碎块 | `tests/world/test_building_collapse_lab_flow.gd` | todo |
-| M4 主世界移植 | 同一 runtime 接入主世界近景建筑 | 主世界建筑被火箭弹命中后能走伤害/坍塌链 | focused world/e2e 主世界建筑测试 | todo |
+| M4 主世界移植 | 同一 runtime 接入主世界近景建筑 | 主世界建筑被火箭弹命中后能走伤害/坍塌链 | `tests/world/test_city_main_world_building_collapse.gd` | todo |
 
 ## 计划索引
 
@@ -52,7 +52,7 @@ PRD 入口：[PRD-0023 Building Collapse Destruction Lab](../prd/PRD-0023-buildi
 | REQ-0023-003 | `v33-building-collapse-destruction-lab.md` | `tests/world/test_building_collapse_lab_damage_contract.gd` | `F6` 裂纹手测 + contract test | — | todo |
 | REQ-0023-004 | `v33-building-collapse-destruction-lab.md` | `tests/world/test_building_collapse_lab_flow.gd` | `--script res://tests/world/test_building_collapse_lab_flow.gd` | — | todo |
 | REQ-0023-005 | `v33-building-collapse-destruction-lab.md` | `tests/world/test_building_collapse_lab_flow.gd` | `F6` 坍塌手测 + contract test | — | todo |
-| REQ-0023-006 | `v33-building-collapse-destruction-lab.md` | 主世界 focused building collapse test | 主世界 focused world/e2e | — | todo |
+| REQ-0023-006 | `v33-building-collapse-destruction-lab.md` | `tests/world/test_city_main_world_building_collapse.gd` | `--script res://tests/world/test_city_main_world_building_collapse.gd` | — | todo |
 
 ## Closeout 证据口径
 

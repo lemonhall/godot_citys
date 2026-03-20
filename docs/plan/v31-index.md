@@ -21,10 +21,10 @@ PRD 入口：[PRD-0021 Scene Preview Editor Plugin](../prd/PRD-0021-scene-previe
 | 里程碑 | 范围 | DoD | 验证命令/测试 | 状态 |
 |---|---|---|---|---|
 | M0 docs freeze | PRD-0021 / design / v31-index / v31-plan | 文档链完整，`REQ-0021-*` 可追溯 | `rg -n "REQ-0021" docs/prd/PRD-0021-scene-preview-editor-plugin.md docs/plan/v31-index.md docs/plan/v31-scene-preview-editor-plugin.md` | done |
-| M1 session builder | eligibility / snapshot / wrapper request 服务 | 当前编辑场景可被解析成正式 preview request | `tests/world/test_scene_preview_editor_session_builder_contract.gd` | todo |
-| M2 plugin shell | `addons/scene_preview` plugin manifest + toolbar button shell | Godot editor 内具备正式 Preview 按钮入口 | `tests/world/test_scene_preview_editor_plugin_manifest_contract.gd` | todo |
-| M3 editor play flow | 插件按钮驱动 preview 播放链 | 点按钮能进入基于 `v30` harness 的 preview | `tests/world/test_scene_preview_editor_preview_request_contract.gd` | todo |
-| M4 regression | `v30` / missile 回归 | editor plugin 不破坏既有 preview 与正式玩法链 | `tests/world/test_scene_preview_harness_contract.gd`、`tests/world/test_scene_preview_wrapper_generator_contract.gd`、`tests/world/test_scene_preview_subject_activation_contract.gd`、`tests/world/test_city_missile_command_battery_contract.gd`、`tests/e2e/test_city_missile_command_wave_flow.gd` | todo |
+| M1 session builder | eligibility / snapshot / wrapper request 服务 | 当前编辑场景可被解析成正式 preview request | `tests/world/test_scene_preview_editor_session_builder_contract.gd` | done |
+| M2 plugin shell | `addons/scene_preview` plugin manifest + toolbar button shell | Godot editor 内具备正式 Preview 按钮入口 | `tests/world/test_scene_preview_editor_plugin_manifest_contract.gd` | done |
+| M3 editor play flow | 插件按钮驱动 preview 播放链 | 点按钮能进入基于 `v30` harness 的 preview | `tests/world/test_scene_preview_editor_preview_request_contract.gd` | done |
+| M4 regression | `v30` / missile 回归 | editor plugin 不破坏既有 preview 与正式玩法链 | `tests/world/test_scene_preview_harness_contract.gd`、`tests/world/test_scene_preview_wrapper_generator_contract.gd`、`tests/world/test_scene_preview_subject_activation_contract.gd`、`tests/world/test_city_missile_command_battery_contract.gd`、`tests/e2e/test_city_missile_command_wave_flow.gd` | done |
 
 ## 计划索引
 
@@ -34,11 +34,11 @@ PRD 入口：[PRD-0021 Scene Preview Editor Plugin](../prd/PRD-0021-scene-previe
 
 | Req ID | v31 Plan | 单元/集成测试 | E2E / 验证命令 | 证据 | 状态 |
 |---|---|---|---|---|---|
-| REQ-0021-001 | `v31-scene-preview-editor-plugin.md` | `tests/world/test_scene_preview_editor_plugin_manifest_contract.gd` | `--script res://tests/world/test_scene_preview_editor_plugin_manifest_contract.gd` | — | todo |
-| REQ-0021-002 | `v31-scene-preview-editor-plugin.md` | `tests/world/test_scene_preview_editor_session_builder_contract.gd` | `--script res://tests/world/test_scene_preview_editor_session_builder_contract.gd` | — | todo |
-| REQ-0021-003 | `v31-scene-preview-editor-plugin.md` | `tests/world/test_scene_preview_editor_preview_request_contract.gd` | `--script res://tests/world/test_scene_preview_editor_preview_request_contract.gd` | — | todo |
-| REQ-0021-004 | `v31-scene-preview-editor-plugin.md` | `tests/world/test_scene_preview_editor_session_builder_contract.gd` | `--script res://tests/world/test_scene_preview_editor_session_builder_contract.gd` | — | todo |
-| REQ-0021-005 | `v31-scene-preview-editor-plugin.md` | `tests/world/test_scene_preview_harness_contract.gd`、`tests/world/test_city_missile_command_battery_contract.gd` | `--script res://tests/e2e/test_city_missile_command_wave_flow.gd` | — | todo |
+| REQ-0021-001 | `v31-scene-preview-editor-plugin.md` | `tests/world/test_scene_preview_editor_plugin_manifest_contract.gd` | `--script res://tests/world/test_scene_preview_editor_plugin_manifest_contract.gd` | [v31-m4-verification-2026-03-20.md](./v31-m4-verification-2026-03-20.md) | done |
+| REQ-0021-002 | `v31-scene-preview-editor-plugin.md` | `tests/world/test_scene_preview_editor_session_builder_contract.gd` | `--script res://tests/world/test_scene_preview_editor_session_builder_contract.gd` | [v31-m4-verification-2026-03-20.md](./v31-m4-verification-2026-03-20.md) | done |
+| REQ-0021-003 | `v31-scene-preview-editor-plugin.md` | `tests/world/test_scene_preview_editor_preview_request_contract.gd` | `--script res://tests/world/test_scene_preview_editor_preview_request_contract.gd` | [v31-m4-verification-2026-03-20.md](./v31-m4-verification-2026-03-20.md) | done |
+| REQ-0021-004 | `v31-scene-preview-editor-plugin.md` | `tests/world/test_scene_preview_editor_session_builder_contract.gd` | `--script res://tests/world/test_scene_preview_editor_session_builder_contract.gd` | [v31-m4-verification-2026-03-20.md](./v31-m4-verification-2026-03-20.md) | done |
+| REQ-0021-005 | `v31-scene-preview-editor-plugin.md` | `tests/world/test_scene_preview_harness_contract.gd`、`tests/world/test_city_missile_command_battery_contract.gd` | `--script res://tests/e2e/test_city_missile_command_wave_flow.gd` | [v31-m4-verification-2026-03-20.md](./v31-m4-verification-2026-03-20.md) | done |
 
 ## ECN 索引
 
@@ -48,3 +48,4 @@ PRD 入口：[PRD-0021 Scene Preview Editor Plugin](../prd/PRD-0021-scene-previe
 
 - `v31` 首版不承诺 2D/Control scene preview
 - `v31` 首版不承诺 dock 面板、历史列表或 screenshot capture
+- headless dummy renderer 下，真实 missile editor preview request 仍有资源泄漏告警噪音，但当前 exit code 为 `0`，功能合同已通过

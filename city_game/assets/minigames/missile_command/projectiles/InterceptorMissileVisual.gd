@@ -205,14 +205,16 @@ func _measure_model_back_extent() -> float:
 	var model_root := get_node_or_null("ModelRoot") as Node3D
 	if model_root == null:
 		return 0.58
-	var self_inverse := global_transform.affine_inverse()
+	var self_transform := global_transform if is_inside_tree() else transform
+	var self_inverse := self_transform.affine_inverse()
 	var min_local_z := INF
 	var visual_count := 0
 	for child in model_root.find_children("*", "VisualInstance3D", true, false):
 		var visual := child as VisualInstance3D
 		if visual == null or not visual.visible:
 			continue
-		var local_transform := self_inverse * visual.global_transform
+		var visual_transform := visual.global_transform if visual.is_inside_tree() else visual.transform
+		var local_transform := self_inverse * visual_transform
 		var aabb := visual.get_aabb()
 		for corner in _aabb_corners(aabb):
 			var local_corner := local_transform * corner

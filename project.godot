@@ -20,6 +20,10 @@ window/size/viewport_width=1600
 window/size/viewport_height=900
 window/stretch/mode="canvas_items"
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/scene_preview/plugin.cfg")
+
 [input]
 
 vehicle_radio_quick_open={

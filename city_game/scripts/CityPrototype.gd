@@ -2092,7 +2092,6 @@ func _build_default_missile_command_hud_state() -> Dictionary:
 		"wave_total": 3,
 		"wave_state": "idle",
 		"selected_silo_id": "",
-		"selected_silo_missiles_remaining": 0,
 		"cities_alive_count": 0,
 		"enemy_remaining_count": 0,
 		"zoom_active": false,

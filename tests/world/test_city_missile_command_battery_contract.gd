@@ -5,6 +5,8 @@ const T := preload("res://tests/_test_util.gd")
 const VENUE_ID := "venue:v29:missile_command_battery:chunk_183_152"
 const CHUNK_ID := "chunk_183_152"
 const WORLD_POSITION := Vector3(11925.63, -4.74, 4126.84)
+const INTERCEPTOR_MISSILE_MODEL_PATH := "res://city_game/assets/minigames/missile_command/projectiles/Missile.glb"
+const INTERCEPTOR_MISSILE_VISUAL_SCENE_PATH := "res://city_game/assets/minigames/missile_command/projectiles/InterceptorMissileVisual.tscn"
 
 func _init() -> void:
 	call_deferred("_run")
@@ -21,6 +23,10 @@ func _run() -> void:
 
 	var player := world.get_node_or_null("Player")
 	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "Missile Command battery contract requires Player teleport API"):
+		return
+	if not T.require_true(self, FileAccess.file_exists(INTERCEPTOR_MISSILE_MODEL_PATH), "Missile Command battery contract must store the imported missile GLB in the formal minigame projectile asset directory"):
+		return
+	if not T.require_true(self, ResourceLoader.exists(INTERCEPTOR_MISSILE_VISUAL_SCENE_PATH, "PackedScene"), "Missile Command battery contract must expose an authored interceptor visual scene that wraps the missile GLB"):
 		return
 
 	player.teleport_to_world_position(WORLD_POSITION + Vector3(0.0, 2.0, 12.0))

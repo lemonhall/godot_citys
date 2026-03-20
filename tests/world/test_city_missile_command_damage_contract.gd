@@ -53,6 +53,13 @@ func _run() -> void:
 			break
 	if not T.require_true(self, any_destroyed, "Missile Command damage contract must formally mark the hit city as destroyed instead of only decrementing a counter"):
 		return
+	var silo_states_variant: Variant = runtime_state.get("silo_states", {})
+	if not T.require_true(self, silo_states_variant is Dictionary, "Missile Command damage contract must expose silo_states as a Dictionary runtime snapshot"):
+		return
+	for silo_state_variant in (silo_states_variant as Dictionary).values():
+		var silo_state: Dictionary = silo_state_variant
+		if not T.require_true(self, not bool(silo_state.get("destroyed", false)), "Missile Command damage contract must keep launch silos intact because enemy missiles may only target cities"):
+			return
 
 	world.queue_free()
 	T.pass_and_quit(self)
@@ -72,7 +79,7 @@ func _wait_for_mounted_venue(world) -> Variant:
 	return null
 
 func _wait_for_city_damage(world, expected_cities_alive_max: int) -> Dictionary:
-	for _frame in range(420):
+	for _frame in range(1500):
 		await physics_frame
 		await process_frame
 		var runtime_state: Dictionary = world.get_missile_command_runtime_state()

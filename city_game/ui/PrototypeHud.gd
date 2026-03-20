@@ -122,7 +122,6 @@ var _missile_command_hud_state: Dictionary = {
 	"wave_total": 3,
 	"wave_state": "idle",
 	"selected_silo_id": "",
-	"selected_silo_missiles_remaining": 0,
 	"cities_alive_count": 0,
 	"enemy_remaining_count": 0,
 	"zoom_active": false,
@@ -368,7 +367,6 @@ func set_missile_command_hud_state(state: Dictionary) -> void:
 		"wave_total": int(state.get("wave_total", 3)),
 		"wave_state": str(state.get("wave_state", "idle")),
 		"selected_silo_id": str(state.get("selected_silo_id", "")),
-		"selected_silo_missiles_remaining": int(state.get("selected_silo_missiles_remaining", 0)),
 		"cities_alive_count": int(state.get("cities_alive_count", 0)),
 		"enemy_remaining_count": int(state.get("enemy_remaining_count", 0)),
 		"zoom_active": bool(state.get("zoom_active", false)),
@@ -600,10 +598,10 @@ func _apply_missile_command_hud_state() -> void:
 			"ON" if bool(_missile_command_hud_state.get("zoom_active", false)) else "OFF"
 		]
 	if silo_label != null:
-		silo_label.text = "%s  MISSILES %d" % [
-			str(_missile_command_hud_state.get("selected_silo_id", "")).to_upper(),
-			int(_missile_command_hud_state.get("selected_silo_missiles_remaining", 0))
-		]
+		var selected_silo_label := str(_missile_command_hud_state.get("selected_silo_id", "")).replace("_", " ").to_upper()
+		if selected_silo_label == "":
+			selected_silo_label = "BATTERY"
+		silo_label.text = "%s  READY" % selected_silo_label
 	if feedback_label != null:
 		var feedback_text := str(_missile_command_hud_state.get("feedback_event_text", ""))
 		feedback_label.text = feedback_text if feedback_text != "" else "左键发射  右键放大  Q 切井  Esc 退出"

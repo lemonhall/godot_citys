@@ -50,7 +50,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, hud_state.has("selected_silo_id"), "Missile Command HUD contract must expose selected_silo_id"):
 		return
-	if not T.require_true(self, hud_state.has("selected_silo_missiles_remaining"), "Missile Command HUD contract must expose selected silo missile inventory"):
+	if not T.require_true(self, not hud_state.has("selected_silo_missiles_remaining"), "Missile Command HUD contract must not expose a silo missile inventory once Missile Command uses unlimited interceptor launches"):
 		return
 	if not T.require_true(self, hud_state.has("cities_alive_count"), "Missile Command HUD contract must expose cities_alive_count"):
 		return

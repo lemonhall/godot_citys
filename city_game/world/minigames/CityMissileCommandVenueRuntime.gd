@@ -10,15 +10,14 @@ const BATTERY_CAMERA_PITCH_MAX_RAD := deg_to_rad(68.0)
 const INTERCEPTOR_SPEED_MPS := 60.0
 const INTERCEPTOR_VISUAL_RADIUS_M := 0.42
 const ENEMY_VISUAL_RADIUS_M := 0.85
-const EXPLOSION_RADIUS_M := 10.5
+const EXPLOSION_RADIUS_M := 14.0
 const EXPLOSION_DURATION_SEC := 1.8
 const WAVE_INTERMISSION_SEC := 1.8
-const MISSILES_PER_SILO := 8
 
 const WAVE_CONFIGS := [
-	{"enemy_count": 4, "spawn_interval_sec": 1.25, "enemy_speed_mps": 18.0},
-	{"enemy_count": 6, "spawn_interval_sec": 0.96, "enemy_speed_mps": 20.0},
-	{"enemy_count": 8, "spawn_interval_sec": 0.78, "enemy_speed_mps": 22.0},
+	{"enemy_count": 2, "spawn_interval_sec": 1.65, "enemy_speed_mps": 6.5},
+	{"enemy_count": 3, "spawn_interval_sec": 1.4, "enemy_speed_mps": 7.2},
+	{"enemy_count": 4, "spawn_interval_sec": 1.18, "enemy_speed_mps": 8.0},
 ]
 
 var _entries_by_venue_id: Dictionary = {}
@@ -169,9 +168,6 @@ func request_fire_at_world_position(world_position: Vector3) -> Dictionary:
 	var silo_state: Dictionary = (_silo_states.get(selected_silo_id, {}) as Dictionary).duplicate(true)
 	if bool(silo_state.get("destroyed", false)):
 		return {"success": false, "error": "silo_destroyed"}
-	var missiles_remaining := int(silo_state.get("missiles_remaining", 0))
-	if missiles_remaining <= 0:
-		return {"success": false, "error": "silo_empty"}
 	var contract := _resolve_missile_command_contract()
 	if contract.is_empty():
 		return {"success": false, "error": "missing_contract"}
@@ -188,15 +184,12 @@ func request_fire_at_world_position(world_position: Vector3) -> Dictionary:
 		"elapsed_sec": 0.0,
 		"visual_radius_m": INTERCEPTOR_VISUAL_RADIUS_M,
 	})
-	silo_state["missiles_remaining"] = missiles_remaining - 1
-	_silo_states[selected_silo_id] = silo_state
 	_emit_feedback("发射 %s" % selected_silo_id.to_upper(), "action")
 	_ensure_selected_silo_is_valid()
 	_refresh_hud_state()
 	return {
 		"success": true,
 		"selected_silo_id": selected_silo_id,
-		"missiles_remaining": int(silo_state.get("missiles_remaining", 0)),
 		"target_world_position": clamped_world_position,
 	}
 
@@ -212,8 +205,6 @@ func cycle_silo() -> Dictionary:
 		var silo_id := str(silo_ids[next_index])
 		var silo_state: Dictionary = _silo_states.get(silo_id, {})
 		if bool(silo_state.get("destroyed", false)):
-			continue
-		if int(silo_state.get("missiles_remaining", 0)) <= 0:
 			continue
 		_selected_silo_index = next_index
 		_update_battery_camera_pose(_last_mounted_venue)
@@ -336,7 +327,6 @@ func _initialize_target_states(mounted_venue: Node3D) -> void:
 			"world_position": silo_contract.get("world_position", Vector3.ZERO),
 			"launch_world_position": silo_contract.get("launch_world_position", silo_contract.get("world_position", Vector3.ZERO)),
 			"destroyed": false,
-			"missiles_remaining": MISSILES_PER_SILO,
 		}
 	var silo_ids := _get_silo_ids()
 	_selected_silo_index = maxi(silo_ids.find("silo_center"), 0)
@@ -403,7 +393,7 @@ func _process_enemy_spawn_queue(delta: float) -> void:
 func _spawn_enemy_track(queued: Dictionary) -> void:
 	var target_world_position := _resolve_track_target_world_position(str(queued.get("target_kind", "city")), str(queued.get("target_id", "")))
 	var start_world_position := queued.get("start_position", Vector3.ZERO) as Vector3
-	var speed_mps := float(queued.get("speed_mps", 22.0))
+	var speed_mps := float(queued.get("speed_mps", 8.0))
 	var duration_sec := maxf(start_world_position.distance_to(target_world_position) / maxf(speed_mps, 0.1), 0.2)
 	_enemy_tracks.append({
 		"track_id": str(queued.get("track_id", "")),
@@ -501,22 +491,13 @@ func _spawn_explosion(interceptor_track: Dictionary) -> void:
 func _apply_enemy_impact(track: Dictionary) -> void:
 	var target_kind := str(track.get("target_kind", "city"))
 	var target_id := str(track.get("target_id", ""))
-	if target_kind == "city":
-		var city_state: Dictionary = (_city_states.get(target_id, {}) as Dictionary).duplicate(true)
-		if not city_state.is_empty() and not bool(city_state.get("destroyed", false)):
-			city_state["destroyed"] = true
-			_city_states[target_id] = city_state
-			_emit_feedback("%s 失守" % target_id.to_upper(), "warning")
+	if target_kind != "city":
 		return
-	var silo_state: Dictionary = (_silo_states.get(target_id, {}) as Dictionary).duplicate(true)
-	if silo_state.is_empty():
-		return
-	if not bool(silo_state.get("destroyed", false)):
-		silo_state["destroyed"] = true
-		silo_state["missiles_remaining"] = 0
-		_silo_states[target_id] = silo_state
-		_emit_feedback("%s 被毁" % target_id.to_upper(), "warning")
-		_ensure_selected_silo_is_valid()
+	var city_state: Dictionary = (_city_states.get(target_id, {}) as Dictionary).duplicate(true)
+	if not city_state.is_empty() and not bool(city_state.get("destroyed", false)):
+		city_state["destroyed"] = true
+		_city_states[target_id] = city_state
+		_emit_feedback("%s 失守" % target_id.to_upper(), "warning")
 
 func _resolve_wave_completion() -> void:
 	if _wave_state == "victory" or _wave_state == "defeat":
@@ -539,35 +520,23 @@ func _build_wave_spawn_queue(target_wave_index: int) -> Array:
 	var half_width_m := float(contract.get("gameplay_plane_half_width_m", 24.0))
 	var plane_height_m := float(contract.get("gameplay_plane_height_m", 42.0))
 	var city_ids := _get_city_ids()
-	var silo_ids := _get_silo_ids()
+	if city_ids.is_empty():
+		return []
 	var config: Dictionary = WAVE_CONFIGS[target_wave_index - 1]
-	var targets: Array[String] = []
-	if target_wave_index == 1:
-		targets.append_array(city_ids)
-		targets.append("silo_center")
-	elif target_wave_index == 2:
-		targets.append_array(city_ids)
-		targets.append_array(["silo_left", "silo_center", "city_center"])
-	else:
-		targets.append_array(city_ids)
-		targets.append_array(["silo_left", "silo_center", "silo_right", "city_left", "city_right"])
-	var pool: Array[String] = []
-	pool.append_array(city_ids)
-	if target_wave_index >= 2:
-		pool.append_array(silo_ids)
 	var queue: Array = []
 	for index in range(int(config.get("enemy_count", 0))):
-		var target_id := targets[index] if index < targets.size() else str(pool[_wave_rng.randi_range(0, pool.size() - 1)])
-		var target_kind := "silo" if target_id.begins_with("silo_") else "city"
+		var target_id := str(city_ids[index % city_ids.size()])
+		if index >= city_ids.size():
+			target_id = str(city_ids[(index + _wave_rng.randi_range(0, city_ids.size() - 1)) % city_ids.size()])
 		var x_offset_m := _wave_rng.randf_range(-half_width_m * 0.92, half_width_m * 0.92)
 		var y_offset_m := _wave_rng.randf_range(-2.6, 2.6)
 		var start_world_position := plane_origin + plane_right * x_offset_m + plane_up * (plane_height_m * 0.5 + y_offset_m)
 		queue.append({
 			"track_id": "enemy_%d_%d" % [target_wave_index, index],
-			"target_kind": target_kind,
+			"target_kind": "city",
 			"target_id": target_id,
 			"start_position": start_world_position,
-			"speed_mps": float(config.get("enemy_speed_mps", 22.0)),
+			"speed_mps": float(config.get("enemy_speed_mps", 8.0)),
 			"spawn_after_sec": float(config.get("spawn_interval_sec", 0.4)) * index,
 		})
 	return queue
@@ -743,7 +712,6 @@ func _sync_venue_state(mounted_venue: Node3D) -> void:
 		"wave_total": WAVE_CONFIGS.size(),
 		"wave_state": _wave_state,
 		"selected_silo_id": _resolve_selected_silo_id(),
-		"selected_silo_missiles_remaining": _resolve_selected_silo_missiles_remaining(),
 		"cities_alive_count": _count_alive_cities(),
 		"enemy_remaining_count": _enemy_tracks.size() + _enemy_spawn_queue.size(),
 		"feedback_event_text": _feedback_event_text,
@@ -761,7 +729,6 @@ func _refresh_hud_state() -> void:
 		"wave_total": WAVE_CONFIGS.size(),
 		"wave_state": _wave_state,
 		"selected_silo_id": _resolve_selected_silo_id(),
-		"selected_silo_missiles_remaining": _resolve_selected_silo_missiles_remaining(),
 		"cities_alive_count": _count_alive_cities(),
 		"enemy_remaining_count": _enemy_tracks.size() + _enemy_spawn_queue.size(),
 		"zoom_active": _zoom_active,
@@ -804,14 +771,12 @@ func _ensure_selected_silo_is_valid() -> void:
 	var selected_silo_id := _resolve_selected_silo_id()
 	if selected_silo_id != "":
 		var state: Dictionary = _silo_states.get(selected_silo_id, {})
-		if not bool(state.get("destroyed", false)) and int(state.get("missiles_remaining", 0)) > 0:
+		if not bool(state.get("destroyed", false)):
 			return
 	for index in range(silo_ids.size()):
 		var candidate_id := str(silo_ids[index])
 		var candidate_state: Dictionary = _silo_states.get(candidate_id, {})
 		if bool(candidate_state.get("destroyed", false)):
-			continue
-		if int(candidate_state.get("missiles_remaining", 0)) <= 0:
 			continue
 		_selected_silo_index = index
 		return
@@ -822,12 +787,6 @@ func _resolve_selected_silo_id() -> String:
 		return ""
 	var clamped_index := clampi(_selected_silo_index, 0, silo_ids.size() - 1)
 	return str(silo_ids[clamped_index])
-
-func _resolve_selected_silo_missiles_remaining() -> int:
-	var selected_silo_id := _resolve_selected_silo_id()
-	if selected_silo_id == "":
-		return 0
-	return int((_silo_states.get(selected_silo_id, {}) as Dictionary).get("missiles_remaining", 0))
 
 func _count_alive_cities() -> int:
 	var alive_count := 0

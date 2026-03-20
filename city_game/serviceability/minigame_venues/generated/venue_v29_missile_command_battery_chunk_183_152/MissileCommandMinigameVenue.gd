@@ -1,6 +1,7 @@
 extends Node3D
 
 const CityWorldRingMarker := preload("res://city_game/world/navigation/CityWorldRingMarker.gd")
+const InterceptorMissileVisualScene := preload("res://city_game/assets/minigames/missile_command/projectiles/InterceptorMissileVisual.tscn")
 
 const GAMEPLAY_PLANE_HALF_WIDTH_M := 84.0
 const GAMEPLAY_PLANE_HEIGHT_M := 82.0
@@ -47,7 +48,6 @@ var _scoreboard_state := {
 	"wave_total": 3,
 	"wave_state": "idle",
 	"selected_silo_id": "",
-	"selected_silo_missiles_remaining": 0,
 	"cities_alive_count": 3,
 	"enemy_remaining_count": 0,
 	"feedback_event_text": "",
@@ -142,7 +142,6 @@ func sync_battery_state(state: Dictionary) -> void:
 		"wave_total": int(state.get("wave_total", 3)),
 		"wave_state": str(state.get("wave_state", "idle")),
 		"selected_silo_id": str(state.get("selected_silo_id", "")),
-		"selected_silo_missiles_remaining": int(state.get("selected_silo_missiles_remaining", 0)),
 		"cities_alive_count": int(state.get("cities_alive_count", 0)),
 		"enemy_remaining_count": int(state.get("enemy_remaining_count", 0)),
 		"feedback_event_text": str(state.get("feedback_event_text", "")),
@@ -413,10 +412,10 @@ func _apply_scoreboard_state() -> void:
 		]
 	var silo_label := root.get_node_or_null("SiloLabel") as Label3D
 	if silo_label != null:
-		silo_label.text = "%s  MISSILES %d" % [
-			str(_scoreboard_state.get("selected_silo_id", "")).to_upper(),
-			int(_scoreboard_state.get("selected_silo_missiles_remaining", 0))
-		]
+		var selected_silo_label := str(_scoreboard_state.get("selected_silo_id", "")).replace("_", " ").to_upper()
+		if selected_silo_label == "":
+			selected_silo_label = "BATTERY"
+		silo_label.text = "%s  READY" % selected_silo_label
 	var feedback_label := root.get_node_or_null("FeedbackLabel") as Label3D
 	if feedback_label != null:
 		var feedback_text := str(_scoreboard_state.get("feedback_event_text", ""))
@@ -457,14 +456,38 @@ func _sync_enemy_visuals(enemy_tracks: Array) -> void:
 	)
 
 func _sync_interceptor_visuals(interceptor_tracks: Array) -> void:
-	_sync_orb_group(
-		get_node_or_null("RuntimeVisuals/InterceptorTracks") as Node3D,
-		interceptor_tracks,
-		_interceptor_track_nodes,
-		Color(0.26, 0.82, 0.96, 1.0),
-		INTERCEPTOR_VISUAL_RADIUS_M,
-		"current_position"
-	)
+	var root := get_node_or_null("RuntimeVisuals/InterceptorTracks") as Node3D
+	if root == null:
+		return
+	var live_ids: Dictionary = {}
+	for track_variant in interceptor_tracks:
+		var track: Dictionary = track_variant
+		var track_id := str(track.get("track_id", ""))
+		if track_id == "":
+			continue
+		live_ids[track_id] = true
+		var node := _interceptor_track_nodes.get(track_id, null) as Node3D
+		if node == null or not is_instance_valid(node):
+			node = _instantiate_interceptor_visual(track_id)
+			root.add_child(node)
+			_interceptor_track_nodes[track_id] = node
+		var current_position := track.get("current_position", global_position) as Vector3
+		var target_position := track.get("target_position", current_position) as Vector3
+		var start_position := track.get("start_position", current_position) as Vector3
+		node.global_position = current_position
+		var forward := target_position - current_position
+		if forward.length_squared() <= 0.0001:
+			forward = current_position - start_position
+		if forward.length_squared() > 0.0001:
+			node.look_at(current_position + forward.normalized(), Vector3.UP, true)
+	for node_id_variant in _interceptor_track_nodes.keys():
+		var node_id := str(node_id_variant)
+		if live_ids.has(node_id):
+			continue
+		var old_node := _interceptor_track_nodes.get(node_id) as Node
+		if old_node != null and is_instance_valid(old_node):
+			old_node.queue_free()
+		_interceptor_track_nodes.erase(node_id)
 
 func _sync_explosion_visuals(explosion_tracks: Array) -> void:
 	var root := get_node_or_null("RuntimeVisuals/ExplosionTracks") as Node3D
@@ -526,6 +549,20 @@ func _sync_orb_group(root: Node3D, tracks: Array, cache: Dictionary, color: Colo
 		if old_node != null and is_instance_valid(old_node):
 			old_node.queue_free()
 		cache.erase(node_id)
+
+func _instantiate_interceptor_visual(track_id: String) -> Node3D:
+	if InterceptorMissileVisualScene != null:
+		var instance := InterceptorMissileVisualScene.instantiate() as Node3D
+		if instance != null:
+			instance.name = track_id
+			return instance
+	var fallback := Node3D.new()
+	fallback.name = track_id
+	var mesh_instance := MeshInstance3D.new()
+	mesh_instance.mesh = _get_shared_sphere_mesh(INTERCEPTOR_VISUAL_RADIUS_M)
+	mesh_instance.material_override = _get_shared_material(Color(0.26, 0.82, 0.96, 1.0), 0.18)
+	fallback.add_child(mesh_instance)
+	return fallback
 
 func _ensure_static_body(node_name: String) -> StaticBody3D:
 	var existing := get_node_or_null(node_name)

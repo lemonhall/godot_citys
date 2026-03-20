@@ -69,7 +69,6 @@
   - `wave_index`
   - `wave_state`
   - `selected_silo_id`
-  - `selected_silo_missiles_remaining`
   - `cities_alive_count`
   - `enemy_remaining_count`
   - `zoom_active`

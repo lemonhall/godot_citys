@@ -37,7 +37,7 @@
 
 ## Combat / HUD / Tests
 
-波次脚本首版固定为 deterministic 三波防守。每波按预设节奏从 `EnemySpawnLane` 顶部生成若干 enemy tracks，目标从城市与发射井里按稳定脚本挑选。敌方弹头抵达目标即结算毁伤；拦截弹从当前 silo 以恒定速度飞向指定落点，抵达后生成扩张爆炸圈；任一敌方轨迹进入爆炸半径则被击毁。这样能把原版最重要的“指定落点 + 爆炸链”落到正式 contract，而不是偷换成自动锁定导弹。
+波次脚本首版固定为 deterministic 三波防守。每波按预设节奏从 `EnemySpawnLane` 顶部生成若干 enemy tracks，目标只允许从城市集合里按稳定脚本挑选，不打我方发射井。敌方弹头抵达目标即结算毁伤；拦截弹从当前 silo 以恒定速度飞向指定落点，抵达后生成扩张爆炸圈；任一敌方轨迹进入爆炸半径则被击毁。这样能把原版最重要的“指定落点 + 爆炸链”落到正式 contract，而不是偷换成自动锁定导弹。
 
 HUD 层新增 `missile command` block，最小显示 contract 冻结为：
 
@@ -46,7 +46,6 @@ HUD 层新增 `missile command` block，最小显示 contract 冻结为：
 - `wave_index`
 - `wave_state`
 - `selected_silo_id`
-- `selected_silo_missiles_remaining`
 - `cities_alive_count`
 - `enemy_remaining_count`
 - `interceptor_count`

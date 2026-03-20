@@ -58,6 +58,12 @@ func _run() -> void:
 	var collapsed_debug_state: Dictionary = target_runtime.get_debug_state()
 	if not T.require_true(self, int(collapsed_debug_state.get("dynamic_chunk_count", 0)) > 0, "Collapsed buildings must instantiate dynamic debris chunks instead of only hiding the mesh"):
 		return
+	if not T.require_true(self, bool(collapsed_debug_state.get("explosion_impulse_enabled", false)), "Collapse must apply an outward explosion impulse from the hit center instead of only letting boxes peel away with a generic fall vector"):
+		return
+	if not T.require_true(self, float(collapsed_debug_state.get("impact_zone_average_launch_speed_mps", 0.0)) > float(collapsed_debug_state.get("far_zone_average_launch_speed_mps", 0.0)), "Chunks nearest the blast center must receive the strongest launch speed so the collapse reads like an explosion"):
+		return
+	if not T.require_true(self, float(collapsed_debug_state.get("impact_zone_average_blast_alignment", 0.0)) >= 0.55, "Impact-zone chunks must launch outward from the hit center instead of mostly following an unrelated collapse direction"):
+		return
 	if not T.require_true(self, bool(collapsed_debug_state.get("residual_base_visible", false)), "Collapsed buildings must preserve a residual base or rubble stump"):
 		return
 	if not T.require_true(self, int(collapsed_debug_state.get("dynamic_chunk_count", 0)) >= 20, "Collapsed buildings must break into a denser debris field than a handful of long regular bars"):

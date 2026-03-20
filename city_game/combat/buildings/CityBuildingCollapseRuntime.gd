@@ -23,6 +23,10 @@ var _collapse_active := false
 var _collapse_finished_flag := false
 var _cleanup_done := false
 var _collapse_elapsed_sec := 0.0
+var _explosion_impulse_enabled := false
+var _impact_zone_average_launch_speed_mps := 0.0
+var _far_zone_average_launch_speed_mps := 0.0
+var _impact_zone_average_blast_alignment := 0.0
 
 func _ready() -> void:
 	set_process(true)
@@ -78,6 +82,10 @@ func get_debug_state() -> Dictionary:
 		"cleanup_delay_sec": debris_cleanup_delay_sec,
 		"recipe_unique_size_count": int(_fracture_recipe.get("unique_size_count", 0)),
 		"residual_base_height_m": float((_fracture_recipe.get("base_size", Vector3.ZERO) as Vector3).y),
+		"explosion_impulse_enabled": _explosion_impulse_enabled,
+		"impact_zone_average_launch_speed_mps": _impact_zone_average_launch_speed_mps,
+		"far_zone_average_launch_speed_mps": _far_zone_average_launch_speed_mps,
+		"impact_zone_average_blast_alignment": _impact_zone_average_blast_alignment,
 		"chunk_face_count_min": int(_fracture_recipe.get("chunk_face_count_min", 0)),
 		"chunk_face_count_max": int(_fracture_recipe.get("chunk_face_count_max", 0)),
 		"recipe_preserves_building_envelope": bool(_fracture_recipe.get("preserves_building_envelope", false)),
@@ -170,6 +178,19 @@ func _spawn_dynamic_chunks() -> void:
 	add_child(_collapse_root)
 	var chunk_color := Color(_prepare_request.get("main_color", Color(0.72, 0.74, 0.78, 1.0)))
 	var chunk_material := _build_chunk_material(chunk_color)
+	var explosion_center: Vector3 = _fracture_recipe.get("hit_local_position", Vector3.ZERO)
+	var body_size: Vector3 = _fracture_recipe.get("body_size", Vector3.ONE)
+	var half_extents := body_size * 0.5
+	var base_height_m := float(_fracture_recipe.get("base_height_m", 0.0))
+	var impact_launch_speed_sum := 0.0
+	var impact_alignment_sum := 0.0
+	var impact_count := 0
+	var far_launch_speed_sum := 0.0
+	var far_count := 0
+	_explosion_impulse_enabled = false
+	_impact_zone_average_launch_speed_mps = 0.0
+	_far_zone_average_launch_speed_mps = 0.0
+	_impact_zone_average_blast_alignment = 0.0
 	for chunk_variant in _fracture_recipe.get("chunks", []):
 		var chunk: Dictionary = chunk_variant
 		var body := RigidBody3D.new()
@@ -193,9 +214,29 @@ func _spawn_dynamic_chunks() -> void:
 		_collapse_root.add_child(body)
 		var impulse_direction: Vector3 = chunk.get("impulse_direction", Vector3.UP)
 		var impulse_speed := float(chunk.get("impulse_speed", 6.0))
-		body.linear_velocity = impulse_direction * impulse_speed
+		var chunk_center: Vector3 = chunk.get("center", Vector3.ZERO)
+		var impact_distance_norm := float(chunk.get("impact_distance_norm", chunk_center.distance_to(explosion_center) / maxf(body_size.length(), 0.001)))
+		var launch_metrics := _build_explosion_launch_velocity(chunk, explosion_center, impulse_direction * impulse_speed, half_extents, base_height_m, impact_distance_norm)
+		var launch_velocity: Vector3 = launch_metrics.get("launch_velocity", impulse_direction * impulse_speed)
+		var blast_speed := float(launch_metrics.get("blast_speed", 0.0))
+		var blast_alignment := float(launch_metrics.get("blast_alignment", 0.0))
+		body.linear_velocity = launch_velocity
 		body.angular_velocity = (chunk.get("angular_axis", Vector3.UP) as Vector3) * float(chunk.get("angular_speed", 1.2))
 		_dynamic_chunks.append(body)
+		if blast_speed > 0.01:
+			_explosion_impulse_enabled = true
+		if impact_distance_norm <= 0.22:
+			impact_launch_speed_sum += launch_velocity.length()
+			impact_alignment_sum += blast_alignment
+			impact_count += 1
+		elif impact_distance_norm >= 0.35:
+			far_launch_speed_sum += launch_velocity.length()
+			far_count += 1
+	if impact_count > 0:
+		_impact_zone_average_launch_speed_mps = impact_launch_speed_sum / float(impact_count)
+		_impact_zone_average_blast_alignment = impact_alignment_sum / float(impact_count)
+	if far_count > 0:
+		_far_zone_average_launch_speed_mps = far_launch_speed_sum / float(far_count)
 
 func _build_chunk_material(albedo_color: Color) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
@@ -203,11 +244,36 @@ func _build_chunk_material(albedo_color: Color) -> StandardMaterial3D:
 	material.roughness = 1.0
 	return material
 
+func _build_explosion_launch_velocity(chunk: Dictionary, explosion_center: Vector3, base_velocity: Vector3, half_extents: Vector3, base_height_m: float, impact_distance_norm: float) -> Dictionary:
+	var chunk_center: Vector3 = chunk.get("center", Vector3.ZERO)
+	var outward_vector := chunk_center - explosion_center
+	if outward_vector.length_squared() <= 0.0001:
+		outward_vector = chunk.get("impulse_direction", Vector3.UP)
+	var outward_direction := outward_vector.normalized()
+	var near_alpha := pow(1.0 - clampf(impact_distance_norm / 0.62, 0.0, 1.0), 1.35)
+	var height_alpha := clampf((chunk_center.y + half_extents.y) / maxf(half_extents.y * 2.0, 0.001), 0.0, 1.0)
+	var base_line_y := -half_extents.y + base_height_m
+	var base_clearance_alpha := clampf((chunk_center.y - (base_line_y - 1.2)) / maxf(base_height_m * 0.9, 1.0), 0.18, 1.0)
+	var favored_bonus := 1.14 if bool(chunk.get("impact_favored", false)) else 1.0
+	var blast_direction := (outward_direction + Vector3.UP * lerpf(0.18, 0.44, near_alpha)).normalized()
+	var blast_speed := near_alpha * 11.5 * lerpf(0.45, 1.0, height_alpha) * base_clearance_alpha * favored_bonus
+	var launch_velocity := base_velocity + blast_direction * blast_speed
+	var blast_alignment := maxf(launch_velocity.normalized().dot(outward_direction), 0.0) if launch_velocity.length_squared() > 0.0001 else 0.0
+	return {
+		"launch_velocity": launch_velocity,
+		"blast_speed": blast_speed,
+		"blast_alignment": blast_alignment,
+	}
+
 func _cleanup_dynamic_chunks() -> void:
 	for body in _dynamic_chunks:
 		if body != null and is_instance_valid(body):
 			body.queue_free()
 	_dynamic_chunks.clear()
+	_explosion_impulse_enabled = false
+	_impact_zone_average_launch_speed_mps = 0.0
+	_far_zone_average_launch_speed_mps = 0.0
+	_impact_zone_average_blast_alignment = 0.0
 
 func _clear_collapse_nodes() -> void:
 	_cleanup_dynamic_chunks()

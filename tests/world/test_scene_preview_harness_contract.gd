@@ -62,11 +62,17 @@ func _run() -> void:
 
 	var fps_label := harness.get_node("Overlay/FpsLabel") as Label
 	var frame_time_label := harness.get_node("Overlay/FrameTimeLabel") as Label
+	var preview_camera_rig := harness.get_node("PreviewCameraRig") as Node3D
+	var preview_camera := harness.get_node("PreviewCameraRig/PreviewCamera") as Camera3D
 	if not T.require_true(self, fps_label.visible and frame_time_label.visible, "Scene preview harness contract must show both FPS and frame-time labels"):
 		return
 	if not T.require_true(self, fps_label.text.begins_with("FPS "), "Scene preview harness contract must render an FPS-prefixed label"):
 		return
 	if not T.require_true(self, frame_time_label.text.find("ms") >= 0, "Scene preview harness contract must render a frame-time label with ms units"):
+		return
+	if not T.require_true(self, absf(preview_camera_rig.rotation.y) > 0.1, "Scene preview harness contract must store default yaw on PreviewCameraRig to match PlayerController-style look semantics"):
+		return
+	if not T.require_true(self, absf(preview_camera.rotation.y) < 0.001 and absf(preview_camera.rotation.z) < 0.001, "Scene preview harness contract must keep PreviewCamera on pitch-only local rotation instead of carrying its own yaw or roll"):
 		return
 
 	var subject_instance := harness.get_node("PreviewSubjectRoot").get_child(0) as Node3D
@@ -82,10 +88,15 @@ func _run() -> void:
 		return
 
 	var camera_forward_before_look := runtime_state.get("camera_forward", Vector3.FORWARD) as Vector3
+	var rig_yaw_before_look := preview_camera_rig.rotation.y
 	_send_mouse_motion(harness, Vector2(84.0, -32.0))
 	await process_frame
 	runtime_state = harness.get_preview_runtime_state() as Dictionary
 	if not T.require_true(self, ((runtime_state.get("camera_forward", Vector3.FORWARD) as Vector3).distance_to(camera_forward_before_look) > 0.02), "Scene preview harness contract must rotate the preview camera in response to mouse motion"):
+		return
+	if not T.require_true(self, absf(preview_camera_rig.rotation.y - rig_yaw_before_look) > 0.02, "Scene preview harness contract must apply mouse yaw on PreviewCameraRig like PlayerController root yaw"):
+		return
+	if not T.require_true(self, absf(preview_camera.rotation.y) < 0.001 and absf(preview_camera.rotation.z) < 0.001, "Scene preview harness contract must preserve pitch-only local camera rotation after free-look updates"):
 		return
 
 	var camera_world_before_move := runtime_state.get("camera_world_position", Vector3.ZERO) as Vector3
@@ -106,8 +117,19 @@ func _run() -> void:
 	_send_key(harness, KEY_E, false)
 	await process_frame
 	runtime_state = harness.get_preview_runtime_state() as Dictionary
-	var vertical_distance := (runtime_state.get("camera_world_position", Vector3.ZERO) as Vector3).y - camera_world_before_move.y
-	if not T.require_true(self, vertical_distance > 0.12, "Scene preview harness contract must move the camera upward when E is held"):
+	var vertical_distance := absf((runtime_state.get("camera_world_position", Vector3.ZERO) as Vector3).y - camera_world_before_move.y)
+	if not T.require_true(self, vertical_distance < 0.02, "Scene preview harness contract must leave E unbound so preview mode no longer flies upward on that key"):
+		return
+
+	camera_world_before_move = runtime_state.get("camera_world_position", Vector3.ZERO) as Vector3
+	_send_key(harness, KEY_Q, true)
+	for _frame in range(8):
+		await process_frame
+	_send_key(harness, KEY_Q, false)
+	await process_frame
+	runtime_state = harness.get_preview_runtime_state() as Dictionary
+	vertical_distance = absf((runtime_state.get("camera_world_position", Vector3.ZERO) as Vector3).y - camera_world_before_move.y)
+	if not T.require_true(self, vertical_distance < 0.02, "Scene preview harness contract must leave Q unbound so preview mode no longer flies downward on that key"):
 		return
 
 	camera_world_before_move = runtime_state.get("camera_world_position", Vector3.ZERO) as Vector3

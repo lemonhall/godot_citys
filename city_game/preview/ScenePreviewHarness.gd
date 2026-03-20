@@ -1,10 +1,10 @@
 extends Node3D
 
-const PREVIEW_CAMERA_LOOK_SENSITIVITY := 0.0032
+const PREVIEW_CAMERA_LOOK_SENSITIVITY := 0.003
 const PREVIEW_CAMERA_MOVE_SPEED_MPS := 9.0
 const PREVIEW_CAMERA_SPRINT_MULTIPLIER := 2.4
-const PREVIEW_CAMERA_PITCH_MIN_RAD := deg_to_rad(-88.0)
-const PREVIEW_CAMERA_PITCH_MAX_RAD := deg_to_rad(88.0)
+const PREVIEW_CAMERA_PITCH_MIN_RAD := deg_to_rad(-68.0)
+const PREVIEW_CAMERA_PITCH_MAX_RAD := deg_to_rad(35.0)
 
 const FPS_RED_THRESHOLD := 30.0
 const FPS_YELLOW_THRESHOLD := 50.0
@@ -41,8 +41,6 @@ var _move_forward := false
 var _move_backward := false
 var _move_left := false
 var _move_right := false
-var _move_up := false
-var _move_down := false
 var _move_fast := false
 
 var _last_fps_sample := 0.0
@@ -100,7 +98,7 @@ func get_preview_runtime_state() -> Dictionary:
 		"preview_mouse_captured": _preview_mouse_captured,
 		"camera_world_position": _preview_camera.global_position if _preview_camera != null else Vector3.ZERO,
 		"camera_local_position": _camera_local_position,
-		"camera_forward": (-_preview_camera.transform.basis.z).normalized() if _preview_camera != null else Vector3.FORWARD,
+		"camera_forward": (-_preview_camera.global_transform.basis.z).normalized() if _preview_camera != null else Vector3.FORWARD,
 		"preview_camera_current": _preview_camera != null and _preview_camera.current,
 		"fps_overlay_visible": _fps_label != null and _fps_label.visible and _frame_time_label != null and _frame_time_label.visible,
 		"fps_sample": _last_fps_sample,
@@ -116,10 +114,11 @@ func _cache_nodes() -> void:
 	_frame_time_label = get_node_or_null("Overlay/FrameTimeLabel") as Label
 
 func _capture_scene_camera_defaults() -> void:
-	if _preview_camera == null:
+	if _preview_camera == null or _preview_camera_rig == null:
 		return
-	_scene_default_camera_local_position = _preview_camera.position
-	var local_forward := (-_preview_camera.transform.basis.z).normalized()
+	var rig_basis := _preview_camera_rig.transform.basis.orthonormalized()
+	_scene_default_camera_local_position = rig_basis * _preview_camera.position
+	var local_forward := (rig_basis * (-_preview_camera.transform.basis.z)).normalized()
 	_scene_default_camera_pitch_rad = clampf(
 		asin(clampf(local_forward.y, -1.0, 1.0)),
 		PREVIEW_CAMERA_PITCH_MIN_RAD,
@@ -239,7 +238,7 @@ func _update_camera_movement(delta: float) -> void:
 	if _preview_camera == null:
 		return
 	var move_direction := Vector3.ZERO
-	var camera_basis := _preview_camera.transform.basis
+	var camera_basis := _preview_camera.global_transform.basis
 	if _move_forward:
 		move_direction += -camera_basis.z
 	if _move_backward:
@@ -248,10 +247,6 @@ func _update_camera_movement(delta: float) -> void:
 		move_direction += -camera_basis.x
 	if _move_right:
 		move_direction += camera_basis.x
-	if _move_up:
-		move_direction += Vector3.UP
-	if _move_down:
-		move_direction += Vector3.DOWN
 	if move_direction.length_squared() <= 0.0001:
 		return
 	var speed_mps := PREVIEW_CAMERA_MOVE_SPEED_MPS * (PREVIEW_CAMERA_SPRINT_MULTIPLIER if _move_fast else 1.0)
@@ -313,10 +308,14 @@ func _apply_camera_look_at_local_point(local_focus_position: Vector3) -> void:
 func _apply_camera_transform() -> void:
 	if _preview_camera == null:
 		return
-	var basis := Basis.IDENTITY
-	basis = basis.rotated(Vector3.UP, _camera_yaw_rad)
-	basis = basis.rotated(Vector3.RIGHT, _camera_pitch_rad)
-	_preview_camera.transform = Transform3D(basis.orthonormalized(), _camera_local_position)
+	if _preview_camera_rig != null:
+		_preview_camera_rig.rotation = Vector3(0.0, _camera_yaw_rad, 0.0)
+	var rig_local_camera_position := _camera_local_position
+	if _preview_camera_rig != null:
+		var yaw_basis := Basis(Vector3.UP, _camera_yaw_rad).orthonormalized()
+		rig_local_camera_position = yaw_basis.inverse() * _camera_local_position
+	var pitch_basis := Basis.IDENTITY.rotated(Vector3.RIGHT, _camera_pitch_rad).orthonormalized()
+	_preview_camera.transform = Transform3D(pitch_basis, rig_local_camera_position)
 
 func _update_preview_key_state(key_event: InputEventKey) -> void:
 	if key_event.echo:
@@ -332,10 +331,6 @@ func _update_preview_key_state(key_event: InputEventKey) -> void:
 			_move_left = pressed
 		KEY_D:
 			_move_right = pressed
-		KEY_E:
-			_move_up = pressed
-		KEY_Q:
-			_move_down = pressed
 		KEY_SHIFT:
 			_move_fast = pressed
 

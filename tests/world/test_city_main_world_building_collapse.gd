@@ -18,6 +18,11 @@ func _run() -> void:
 	var player := world.get_node_or_null("Player")
 	if not T.require_true(self, player != null, "Main-world building collapse contract requires Player node"):
 		return
+	var generated_city := world.get_node_or_null("GeneratedCity") as Node
+	if not T.require_true(self, generated_city != null, "Main-world building collapse contract requires the legacy GeneratedCity node to remain mounted for compatibility"):
+		return
+	if not T.require_true(self, _count_visible_mesh_instances_in_tree(generated_city) == 0, "Streamed main world must hide legacy GeneratedCity visuals to avoid duplicate towers or road meshes when destructible buildings collapse"):
+		return
 	if not T.require_true(self, world.has_method("get_building_generation_contract"), "CityPrototype must expose building generation contract lookup for main-world collapse tracing"):
 		return
 
@@ -119,3 +124,18 @@ func _find_nearest_destructible_runtime(player) -> Variant:
 			nearest_distance = distance_m
 			nearest_runtime = runtime_node
 	return nearest_runtime
+
+func _count_visible_mesh_instances_in_tree(root_node: Node) -> int:
+	if root_node == null:
+		return 0
+	var visible_count := 0
+	if root_node is MeshInstance3D:
+		var mesh_instance := root_node as MeshInstance3D
+		if mesh_instance.is_visible_in_tree():
+			visible_count += 1
+	for child in root_node.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		visible_count += _count_visible_mesh_instances_in_tree(child_node)
+	return visible_count

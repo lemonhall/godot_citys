@@ -344,6 +344,7 @@ func _ready() -> void:
 		_reload_scene_minigame_venue_registry()
 		if chunk_renderer.has_method("set_pedestrians_visible"):
 			chunk_renderer.set_pedestrians_visible(_pedestrians_visible)
+	_disable_legacy_generated_city_runtime_geometry()
 	if debug_overlay != null:
 		debug_overlay.visible = false
 	_align_player_to_streamed_ground()
@@ -367,6 +368,30 @@ func _ready() -> void:
 	_update_music_road_runtime(0.0)
 	_refresh_hud_status()
 	_update_npc_interaction_system()
+
+func _disable_legacy_generated_city_runtime_geometry() -> void:
+	if generated_city == null:
+		return
+	var generated_city_node := generated_city as Node3D
+	if generated_city_node != null:
+		generated_city_node.visible = false
+	generated_city.process_mode = Node.PROCESS_MODE_DISABLED
+	_disable_legacy_generated_city_collisions_recursive(generated_city)
+
+func _disable_legacy_generated_city_collisions_recursive(root: Node) -> void:
+	if root == null:
+		return
+	var collision_object := root as CollisionObject3D
+	if collision_object != null:
+		collision_object.collision_layer = 0
+		collision_object.collision_mask = 0
+	if root is CollisionShape3D:
+		(root as CollisionShape3D).disabled = true
+	for child in root.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		_disable_legacy_generated_city_collisions_recursive(child_node)
 
 func _create_vehicle_radio_backend() -> RefCounted:
 	var native_backend: RefCounted = CityRadioNativeBackendScript.new()

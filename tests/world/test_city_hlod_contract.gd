@@ -32,6 +32,12 @@ func _run() -> void:
 		return
 	if not T.require_true(self, chunk_scene.has_method("get_profile_signature"), "Chunk scene must expose get_profile_signature()"):
 		return
+	if not T.require_true(self, chunk_scene.get_node("NearGroup").visible, "Initial near LOD must show NearGroup immediately after setup"):
+		return
+	if not T.require_true(self, not chunk_scene.get_node("MidProxy").visible, "Initial near LOD must hide MidProxy immediately after setup instead of drawing two building stacks at once"):
+		return
+	if not T.require_true(self, not chunk_scene.get_node("FarProxy").visible, "Initial near LOD must hide FarProxy immediately after setup instead of leaving distant silhouettes over the near buildings"):
+		return
 
 	var contract: Dictionary = chunk_scene.get_lod_contract()
 	if not T.require_true(self, contract.get("modes", []) == ["near", "mid", "far"], "LOD contract must expose near/mid/far modes"):

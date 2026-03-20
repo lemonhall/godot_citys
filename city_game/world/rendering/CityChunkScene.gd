@@ -129,7 +129,17 @@ func set_lod_mode(mode: String) -> void:
 	var normalized_mode := _normalize_lod_mode(mode)
 	var target_surface_detail_mode := _resolve_surface_detail_mode_for_lod(normalized_mode)
 	var near_group := get_node_or_null("NearGroup") as Node3D
-	if normalized_mode == _current_lod_mode and target_surface_detail_mode == _current_surface_detail_mode and (normalized_mode != LOD_NEAR or near_group != null):
+	var mid_proxy := get_node_or_null("MidProxy") as Node3D
+	var far_proxy := get_node_or_null("FarProxy") as Node3D
+	var near_visibility_matches := near_group == null or near_group.visible == (normalized_mode == LOD_NEAR)
+	var mid_visibility_matches := mid_proxy == null or mid_proxy.visible == (normalized_mode == LOD_MID)
+	var far_visibility_matches := far_proxy == null or far_proxy.visible == (normalized_mode == LOD_FAR)
+	if normalized_mode == _current_lod_mode \
+		and target_surface_detail_mode == _current_surface_detail_mode \
+		and near_visibility_matches \
+		and mid_visibility_matches \
+		and far_visibility_matches \
+		and (normalized_mode != LOD_NEAR or near_group != null):
 		return
 	if normalized_mode == LOD_NEAR and near_group == null:
 		_build_near_group()
@@ -139,8 +149,8 @@ func set_lod_mode(mode: String) -> void:
 	_current_lod_mode = normalized_mode
 	_apply_terrain_lod_mode(normalized_mode)
 	_apply_terrain_collision_mode(normalized_mode)
-	var mid_proxy := get_node_or_null("MidProxy") as Node3D
-	var far_proxy := get_node_or_null("FarProxy") as Node3D
+	mid_proxy = get_node_or_null("MidProxy") as Node3D
+	far_proxy = get_node_or_null("FarProxy") as Node3D
 	if near_group != null:
 		near_group.visible = normalized_mode == LOD_NEAR
 	if _bridge_proxy != null:

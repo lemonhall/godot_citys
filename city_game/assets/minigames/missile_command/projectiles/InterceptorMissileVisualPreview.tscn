@@ -1,0 +1,8 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://city_game/preview/ScenePreviewHarness.tscn" id="1_harness"]
+[ext_resource type="PackedScene" path="res://city_game/assets/minigames/missile_command/projectiles/InterceptorMissileVisual.tscn" id="2_subject"]
+
+[node name="InterceptorMissileVisualPreview" instance=ExtResource("1_harness")]
+subject_scene = ExtResource("2_subject")
+subject_scene_path = "res://city_game/assets/minigames/missile_command/projectiles/InterceptorMissileVisual.tscn"

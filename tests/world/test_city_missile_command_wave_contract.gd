@@ -157,11 +157,15 @@ func _authored_interceptor_preview_helpers_are_runtime_safe(mounted_venue: Node3
 	if interceptor_root == null:
 		return false
 	for child in interceptor_root.get_children():
+		if child.has_method("get_debug_state"):
+			var debug_state := child.get_debug_state() as Dictionary
+			if bool(debug_state.get("preview_active", false)):
+				return false
 		var preview_camera := child.get_node_or_null("PreviewCamera") as Camera3D
-		if preview_camera != null and preview_camera.current:
+		if preview_camera != null:
 			return false
 		var preview_light := child.get_node_or_null("PreviewLight") as Node3D
-		if preview_light != null and preview_light.visible:
+		if preview_light != null:
 			return false
 		if child.get_node_or_null("PreviewEnvironment") != null:
 			return false

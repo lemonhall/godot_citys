@@ -7,6 +7,7 @@ const CHUNK_ID := "chunk_183_152"
 const WORLD_POSITION := Vector3(11925.63, -4.74, 4126.84)
 const INTERCEPTOR_MISSILE_MODEL_PATH := "res://city_game/assets/minigames/missile_command/projectiles/Missile.glb"
 const INTERCEPTOR_MISSILE_VISUAL_SCENE_PATH := "res://city_game/assets/minigames/missile_command/projectiles/InterceptorMissileVisual.tscn"
+const INTERCEPTOR_MISSILE_PREVIEW_WRAPPER_PATH := "res://city_game/assets/minigames/missile_command/projectiles/InterceptorMissileVisualPreview.tscn"
 
 func _init() -> void:
 	call_deferred("_run")
@@ -16,53 +17,40 @@ func _run() -> void:
 		return
 	if not T.require_true(self, ResourceLoader.exists(INTERCEPTOR_MISSILE_VISUAL_SCENE_PATH, "PackedScene"), "Missile Command battery contract must expose an authored interceptor visual scene that wraps the missile GLB"):
 		return
+	if not T.require_true(self, ResourceLoader.exists(INTERCEPTOR_MISSILE_PREVIEW_WRAPPER_PATH, "PackedScene"), "Missile Command battery contract must expose a committed preview wrapper scene for F6 scene preview reuse"):
+		return
 	var interceptor_visual_scene := load(INTERCEPTOR_MISSILE_VISUAL_SCENE_PATH) as PackedScene
 	if not T.require_true(self, interceptor_visual_scene != null, "Missile Command battery contract must load the interceptor visual scene as PackedScene"):
 		return
-	var preview_interceptor_visual := interceptor_visual_scene.instantiate() as Node3D
-	if not T.require_true(self, preview_interceptor_visual != null, "Missile Command battery contract must instantiate the interceptor visual scene for direct-preview verification"):
+	var preview_wrapper_scene := load(INTERCEPTOR_MISSILE_PREVIEW_WRAPPER_PATH) as PackedScene
+	if not T.require_true(self, preview_wrapper_scene != null, "Missile Command battery contract must load the committed missile preview wrapper as PackedScene"):
 		return
-	root.add_child(preview_interceptor_visual)
-	var preview_debug_state := await _wait_for_preview_debug_state(preview_interceptor_visual)
-	if not T.require_true(self, bool(preview_debug_state.get("preview_mode", false)), "Missile Command interceptor visual scene must enter preview_mode when run directly as the current scene"):
+	var preview_wrapper := preview_wrapper_scene.instantiate() as Node3D
+	if not T.require_true(self, preview_wrapper != null, "Missile Command battery contract must instantiate the committed missile preview wrapper scene"):
 		return
-	if not T.require_true(self, bool(preview_debug_state.get("preview_camera_current", false)), "Missile Command interceptor visual scene must activate PreviewCamera in standalone preview mode"):
+	if not T.require_true(self, preview_wrapper.has_method("get_preview_runtime_state"), "Missile Command battery contract requires the preview wrapper to be rooted in the shared ScenePreviewHarness"):
 		return
-	if not T.require_true(self, bool(preview_debug_state.get("preview_light_visible", false)), "Missile Command interceptor visual scene must enable PreviewLight in standalone preview mode"):
-		return
-	if not T.require_true(self, bool(preview_debug_state.get("trail_visible", false)), "Missile Command interceptor visual scene must render a visible tail flame while running directly with F6"):
-		return
-	if not T.require_true(self, bool(preview_debug_state.get("preview_mouse_captured", false)), "Missile Command interceptor visual scene must capture the mouse in standalone preview mode so free-look starts immediately"):
-		return
-	var initial_camera_world_position_variant: Variant = preview_debug_state.get("preview_camera_world_position", null)
-	if not T.require_true(self, initial_camera_world_position_variant is Vector3, "Missile Command interceptor visual scene must expose preview_camera_world_position for direct-preview inspection"):
-		return
-	var initial_camera_local_position_variant: Variant = preview_debug_state.get("preview_camera_local_position", null)
-	if not T.require_true(self, initial_camera_local_position_variant is Vector3, "Missile Command interceptor visual scene must expose preview_camera_local_position for direct-preview fly-camera inspection"):
-		return
-	var initial_camera_forward_variant: Variant = preview_debug_state.get("preview_camera_forward", null)
-	if not T.require_true(self, initial_camera_forward_variant is Vector3, "Missile Command interceptor visual scene must expose preview_camera_forward for direct-preview fly-camera inspection"):
-		return
-	var initial_camera_world_position := initial_camera_world_position_variant as Vector3
-	var initial_camera_local_position := initial_camera_local_position_variant as Vector3
-	var initial_camera_forward := initial_camera_forward_variant as Vector3
-	var traveled_preview_state := await _wait_for_preview_camera_world_travel(preview_interceptor_visual, initial_camera_world_position)
-	if not T.require_true(self, ((traveled_preview_state.get("preview_camera_world_position", Vector3.ZERO) as Vector3).distance_to(initial_camera_world_position) > 0.25), "Missile Command interceptor visual scene must move the preview camera through space together with the flying missile"):
-		return
-	_send_preview_mouse_motion(preview_interceptor_visual, Vector2(96.0, -42.0))
+	root.add_child(preview_wrapper)
 	await process_frame
-	var rotated_preview_state := preview_interceptor_visual.get_debug_state() as Dictionary
-	if not T.require_true(self, ((rotated_preview_state.get("preview_camera_forward", Vector3.FORWARD) as Vector3).distance_to(initial_camera_forward) > 0.02), "Missile Command interceptor visual scene must let mouse motion rotate the preview camera for 360-degree inspection"):
-		return
-	_send_preview_key(preview_interceptor_visual, KEY_W, true)
-	for _frame in range(10):
-		await process_frame
-	_send_preview_key(preview_interceptor_visual, KEY_W, false)
 	await process_frame
-	var moved_preview_state := preview_interceptor_visual.get_debug_state() as Dictionary
-	if not T.require_true(self, ((moved_preview_state.get("preview_camera_local_position", Vector3.ZERO) as Vector3).distance_to(initial_camera_local_position) > 0.18), "Missile Command interceptor visual scene must let W move the preview camera forward in fly mode"):
+	var preview_runtime_state := preview_wrapper.get_preview_runtime_state() as Dictionary
+	if not T.require_true(self, bool(preview_runtime_state.get("subject_loaded", false)), "Missile Command battery contract must mount the missile visual into the shared preview harness wrapper"):
 		return
-	preview_interceptor_visual.queue_free()
+	if not T.require_true(self, str(preview_runtime_state.get("subject_scene_path", "")) == INTERCEPTOR_MISSILE_VISUAL_SCENE_PATH, "Missile Command battery contract must preserve the formal interceptor visual scene path inside the preview wrapper runtime state"):
+		return
+	if not T.require_true(self, bool(preview_runtime_state.get("preview_camera_current", false)), "Missile Command battery contract must activate the shared preview harness camera when running the committed wrapper scene"):
+		return
+	if not T.require_true(self, bool(preview_runtime_state.get("preview_mouse_captured", false)), "Missile Command battery contract must capture the mouse through the shared preview harness so free-look starts immediately"):
+		return
+	var preview_subject := preview_wrapper.get_node_or_null("PreviewSubjectRoot/InterceptorMissileVisual") as Node3D
+	if not T.require_true(self, preview_subject != null, "Missile Command battery contract must mount InterceptorMissileVisual under PreviewSubjectRoot in the wrapper scene"):
+		return
+	var preview_subject_state := await _wait_for_preview_subject_state(preview_subject)
+	if not T.require_true(self, bool(preview_subject_state.get("preview_active", false)), "Missile Command battery contract must activate the interceptor preview behavior through the shared preview harness contract"):
+		return
+	if not T.require_true(self, bool(preview_subject_state.get("trail_visible", false)), "Missile Command battery contract must keep the interceptor tail flame visible in the shared wrapper preview mode"):
+		return
+	preview_wrapper.queue_free()
 	await process_frame
 
 	var scene := load("res://city_game/scenes/CityPrototype.tscn")
@@ -86,6 +74,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, interceptor_visual.has_method("get_debug_state"), "Missile Command interceptor visual scene must expose get_debug_state() for standalone preview debugging"):
 		return
+	if not T.require_true(self, interceptor_visual.has_method("get_scene_preview_contract"), "Missile Command interceptor visual scene must expose get_scene_preview_contract() for the shared wrapper preview harness"):
+		return
+	if not T.require_true(self, interceptor_visual.has_method("set_scene_preview_active"), "Missile Command interceptor visual scene must expose set_scene_preview_active() for the shared wrapper preview harness"):
+		return
 	if not T.require_true(self, interceptor_visual.get_node_or_null("TrailVisual") != null, "Missile Command interceptor visual scene must include a concrete TrailVisual node for authored tail-flame tuning"):
 		return
 	if not T.require_true(self, interceptor_visual.get_node_or_null("TrailVisualCross") != null, "Missile Command interceptor visual scene must include a second crossed tail-flame plane so the flame does not collapse into a single flat sheet"):
@@ -93,9 +85,9 @@ func _run() -> void:
 	var trail_visual := interceptor_visual.get_node_or_null("TrailVisual") as MeshInstance3D
 	if not T.require_true(self, trail_visual != null and trail_visual.material_override is ShaderMaterial, "Missile Command interceptor visual scene must drive the tail flame with a ShaderMaterial instead of a glowing box material"):
 		return
-	if not T.require_true(self, interceptor_visual.get_node_or_null("PreviewCamera") is Camera3D, "Missile Command interceptor visual scene must include a PreviewCamera so the scene can be run directly with F6"):
+	if not T.require_true(self, interceptor_visual.get_node_or_null("PreviewCamera") == null, "Missile Command interceptor visual scene must migrate preview camera ownership into the shared harness instead of embedding PreviewCamera on the subject scene"):
 		return
-	if not T.require_true(self, interceptor_visual.get_node_or_null("PreviewLight") is DirectionalLight3D, "Missile Command interceptor visual scene must include a PreviewLight for direct F6 visual inspection"):
+	if not T.require_true(self, interceptor_visual.get_node_or_null("PreviewLight") == null, "Missile Command interceptor visual scene must migrate preview light ownership into the shared harness instead of embedding PreviewLight on the subject scene"):
 		return
 	interceptor_visual.sync_motion_state(Vector3.ZERO, Vector3.FORWARD, 18.0, true)
 	await process_frame
@@ -223,33 +215,12 @@ func _wait_for_mounted_venue(world) -> Variant:
 			return mounted_venue
 	return null
 
-func _wait_for_preview_debug_state(interceptor_visual: Node3D) -> Dictionary:
-	for _frame in range(45):
+func _wait_for_preview_subject_state(preview_subject: Node3D) -> Dictionary:
+	for _frame in range(90):
 		await process_frame
-		var debug_state := interceptor_visual.get_debug_state() as Dictionary
-		if bool(debug_state.get("preview_mode", false)) and bool(debug_state.get("trail_visible", false)):
+		if not preview_subject.has_method("get_debug_state"):
+			break
+		var debug_state := preview_subject.get_debug_state() as Dictionary
+		if bool(debug_state.get("preview_active", false)) and bool(debug_state.get("trail_visible", false)):
 			return debug_state
-	return interceptor_visual.get_debug_state() as Dictionary
-
-func _wait_for_preview_camera_world_travel(interceptor_visual: Node3D, origin_world_position: Vector3) -> Dictionary:
-	for _frame in range(45):
-		await process_frame
-		var debug_state := interceptor_visual.get_debug_state() as Dictionary
-		var world_position := debug_state.get("preview_camera_world_position", Vector3.ZERO) as Vector3
-		if world_position.distance_to(origin_world_position) > 0.25:
-			return debug_state
-	return interceptor_visual.get_debug_state() as Dictionary
-
-func _send_preview_key(interceptor_visual: Node3D, keycode: Key, pressed: bool) -> void:
-	var event := InputEventKey.new()
-	event.pressed = pressed
-	event.echo = false
-	event.keycode = keycode
-	event.physical_keycode = keycode
-	interceptor_visual._input(event)
-
-func _send_preview_mouse_motion(interceptor_visual: Node3D, relative: Vector2) -> void:
-	var event := InputEventMouseMotion.new()
-	event.relative = relative
-	event.position = Vector2(640.0, 360.0)
-	interceptor_visual._input(event)
+	return preview_subject.get_debug_state() as Dictionary if preview_subject.has_method("get_debug_state") else {}

@@ -1,0 +1,65 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://city_game/preview/ScenePreviewHarness.gd" id="1_preview_script"]
+
+[sub_resource type="Environment" id="1_preview_environment"]
+background_mode = 1
+background_color = Color(0.74902, 0.862745, 0.94902, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.901961, 0.941176, 0.984314, 1)
+ambient_light_energy = 1.0
+fog_enabled = true
+fog_light_color = Color(0.788235, 0.862745, 0.94902, 1)
+fog_light_energy = 0.6
+fog_density = 0.002
+
+[sub_resource type="BoxMesh" id="2_floor_mesh"]
+size = Vector3(180, 0.2, 180)
+
+[sub_resource type="StandardMaterial3D" id="3_floor_material"]
+albedo_color = Color(0.223529, 0.25098, 0.282353, 1)
+roughness = 0.96
+metallic = 0.0
+
+[node name="ScenePreviewHarness" type="Node3D"]
+script = ExtResource("1_preview_script")
+
+[node name="PreviewSubjectRoot" type="Node3D" parent="."]
+
+[node name="PreviewCameraRig" type="Node3D" parent="."]
+
+[node name="PreviewCamera" type="Camera3D" parent="PreviewCameraRig"]
+position = Vector3(0, 2.8, 9.5)
+rotation_degrees = Vector3(-12, 180, 0)
+near = 0.05
+fov = 52.0
+
+[node name="PreviewLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-38, 42, 0)
+light_energy = 1.8
+shadow_enabled = true
+
+[node name="PreviewEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("1_preview_environment")
+
+[node name="PreviewFloor" type="MeshInstance3D" parent="."]
+position = Vector3(0, -0.1, 0)
+mesh = SubResource("2_floor_mesh")
+material_override = SubResource("3_floor_material")
+
+[node name="Overlay" type="CanvasLayer" parent="."]
+layer = 40
+
+[node name="FpsLabel" type="Label" parent="Overlay"]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 220.0
+offset_bottom = 40.0
+text = "FPS 0.0"
+
+[node name="FrameTimeLabel" type="Label" parent="Overlay"]
+offset_left = 16.0
+offset_top = 40.0
+offset_right = 240.0
+offset_bottom = 64.0
+text = "Frame 0.00 ms"

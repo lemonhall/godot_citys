@@ -17,12 +17,3 @@ cast_shadow = 0
 
 [node name="TrailVisualCross" type="MeshInstance3D" parent="." unique_id=1908744633]
 cast_shadow = 0
-
-[node name="PreviewCamera" type="Camera3D" parent="." unique_id=941134551]
-transform = Transform3D(0.019877989, -0.27558252, 0.9610719, 0, 0.96126187, 0.27563697, -0.9998024, -0.005479109, 0.019107953, 5.4749017, 1.2936201, -2.3609767)
-fov = 42.0
-
-[node name="PreviewLight" type="DirectionalLight3D" parent="." unique_id=1700687011]
-transform = Transform3D(0.866025, -0.5, 0, 0.321394, 0.55667, -0.766044, 0.383022, 0.663414, 0.642788, 0, 0, 0)
-light_energy = 1.8
-shadow_enabled = true

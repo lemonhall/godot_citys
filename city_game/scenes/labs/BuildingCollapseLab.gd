@@ -1,6 +1,7 @@
 extends Node3D
 
 const CityMissileScene := preload("res://city_game/combat/CityMissile.tscn")
+const TargetBuildingScene := preload("res://city_game/scenes/labs/BuildingCollapseLabTarget.tscn")
 
 @onready var player = $Player
 @onready var hud = $Hud
@@ -8,8 +9,12 @@ const CityMissileScene := preload("res://city_game/combat/CityMissile.tscn")
 @onready var target_building_runtime = $TargetBuildingRoot
 
 var _last_missile_explosion_result: Dictionary = {}
+var _initial_player_position := Vector3.ZERO
+var _initial_player_rotation := Vector3.ZERO
+var _initial_camera_rig_rotation := Vector3.ZERO
 
 func _ready() -> void:
+	_capture_initial_state()
 	if player != null and player.has_signal("missile_launcher_requested"):
 		var callable := Callable(self, "_on_player_missile_launcher_requested")
 		if not player.missile_launcher_requested.is_connected(callable):
@@ -61,6 +66,13 @@ func get_active_missile_count() -> int:
 func get_last_missile_explosion_result() -> Dictionary:
 	return _last_missile_explosion_result.duplicate(true)
 
+func reset_lab_state() -> void:
+	_last_missile_explosion_result.clear()
+	_clear_missiles()
+	_restore_target_building()
+	_restore_player_state()
+	_refresh_hud()
+
 func aim_player_at_world_position(target_world_position: Vector3) -> void:
 	if player == null:
 		return
@@ -79,6 +91,12 @@ func aim_player_at_world_position(target_world_position: Vector3) -> void:
 		camera_rig.rotation.x = clampf(-atan2(delta.y, planar_length), min_pitch, max_pitch)
 	if camera != null:
 		camera.look_at(target_world_position, Vector3.UP, true)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_F5:
+			reset_lab_state()
 
 func _on_player_missile_launcher_requested() -> void:
 	fire_player_missile_launcher()
@@ -107,10 +125,52 @@ func _refresh_hud() -> void:
 	if hud.has_method("set_status") and target_building_runtime != null and target_building_runtime.has_method("get_state"):
 		var state: Dictionary = target_building_runtime.get_state()
 		hud.set_status(
-			"v33 Building Collapse Lab\n8 RPG  Left Click Fire  Right Click ADS\nbuilding=%s  hp=%.0f / %.0f  state=%s" % [
+			"v33 Building Collapse Lab\n8 RPG  Left Click Fire  Right Click ADS  F5 Reset\nbuilding=%s  hp=%.0f / %.0f  state=%s" % [
 				str(state.get("building_id", "")),
 				float(state.get("current_health", 0.0)),
 				float(state.get("max_health", 0.0)),
 				str(state.get("damage_state", "")),
 			]
 		)
+
+func _capture_initial_state() -> void:
+	if player == null:
+		return
+	_initial_player_position = player.global_position
+	_initial_player_rotation = player.rotation
+	var camera_rig := player.get_node_or_null("CameraRig") as Node3D
+	if camera_rig != null:
+		_initial_camera_rig_rotation = camera_rig.rotation
+
+func _restore_player_state() -> void:
+	if player == null:
+		return
+	player.global_position = _initial_player_position
+	player.rotation = _initial_player_rotation
+	if player is CharacterBody3D:
+		(player as CharacterBody3D).velocity = Vector3.ZERO
+	var camera_rig := player.get_node_or_null("CameraRig") as Node3D
+	if camera_rig != null:
+		camera_rig.rotation = _initial_camera_rig_rotation
+	if player.has_method("set_aim_down_sights_active"):
+		player.set_aim_down_sights_active(false)
+	if player.has_method("set_weapon_mode"):
+		player.set_weapon_mode("missile_launcher")
+
+func _clear_missiles() -> void:
+	if missile_root == null:
+		return
+	for child in missile_root.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		missile_root.remove_child(child_node)
+		child_node.free()
+
+func _restore_target_building() -> void:
+	if target_building_runtime != null and is_instance_valid(target_building_runtime):
+		remove_child(target_building_runtime)
+		target_building_runtime.free()
+	var restored_target := TargetBuildingScene.instantiate() as Node3D
+	add_child(restored_target)
+	target_building_runtime = restored_target

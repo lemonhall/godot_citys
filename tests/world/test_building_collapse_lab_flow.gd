@@ -20,7 +20,7 @@ func _run() -> void:
 	if not T.require_true(self, target_runtime != null, "Flow contract requires the target building runtime"):
 		return
 
-	var hit_world_position: Vector3 = target_runtime.get_primary_target_world_position()
+	var hit_world_position: Vector3 = target_runtime.get_primary_target_world_position() + Vector3.UP * 14.0
 	var prepare_result: Dictionary = target_runtime.apply_damage(4100.0, hit_world_position)
 	if not T.require_true(self, bool(prepare_result.get("accepted", false)), "Flow contract requires the damaged-threshold hit to be accepted"):
 		return
@@ -60,16 +60,34 @@ func _run() -> void:
 		return
 	if not T.require_true(self, bool(collapsed_debug_state.get("residual_base_visible", false)), "Collapsed buildings must preserve a residual base or rubble stump"):
 		return
+	if not T.require_true(self, int(collapsed_debug_state.get("dynamic_chunk_count", 0)) >= 20, "Collapsed buildings must break into a denser debris field than a handful of long regular bars"):
+		return
+	if not T.require_true(self, int(collapsed_debug_state.get("recipe_unique_size_count", 0)) >= 6, "Collapse recipe must expose multiple distinct chunk sizes to avoid a too-regular fracture silhouette"):
+		return
+	if not T.require_true(self, int(collapsed_debug_state.get("chunk_face_count_min", 0)) >= 16, "Collapse chunks must graduate beyond plain boxes into 16+ face shard silhouettes"):
+		return
+	if not T.require_true(self, int(collapsed_debug_state.get("chunk_face_count_max", 0)) <= 32, "Collapse shard complexity must stay bounded instead of exploding into an unbounded mesh soup"):
+		return
+	if not T.require_true(self, bool(collapsed_debug_state.get("recipe_preserves_building_envelope", false)), "Shard recipe must still reassemble into the original building envelope instead of drifting away from the tower silhouette"):
+		return
+	if not T.require_true(self, float(collapsed_debug_state.get("impact_zone_smallest_volume_m3", 0.0)) < float(collapsed_debug_state.get("far_zone_average_volume_m3", 0.0)), "Chunks near the impact point must be the smallest, with shard size expanding away from the blast origin"):
+		return
+	if not T.require_true(self, float(collapsed_debug_state.get("residual_base_height_m", 0.0)) >= 14.0, "Upper-half impacts must preserve a substantial lower ruin instead of erasing the whole tower to the ground"):
+		return
+	if not T.require_true(self, absf(float(collapsed_debug_state.get("cleanup_delay_sec", 0.0)) - 30.0) <= 0.01, "Lab debris cleanup window must be frozen to 30 seconds for manual observation"):
+		return
 
-	var chunk_count_before_cleanup := int(collapsed_debug_state.get("dynamic_chunk_count", 0))
-	for _frame in range(420):
-		await physics_frame
-	var cleaned_debug_state: Dictionary = target_runtime.get_debug_state()
-	if not T.require_true(
-		self,
-		int(cleaned_debug_state.get("dynamic_chunk_count", 0)) < chunk_count_before_cleanup,
-		"Collapse cleanup must remove most debris chunks after the cleanup window"
-	):
+	lab.reset_lab_state()
+	await process_frame
+	target_runtime = lab.call("get_target_building_runtime")
+	if not T.require_true(self, target_runtime != null, "Resetting the lab must remount a fresh target runtime"):
+		return
+	var reset_state: Dictionary = target_runtime.get_state()
+	if not T.require_true(self, str(reset_state.get("damage_state", "")) == "intact", "Lab reset must restore the building to intact state"):
+		return
+	if not T.require_true(self, is_equal_approx(float(reset_state.get("current_health", 0.0)), float(reset_state.get("max_health", 0.0))), "Lab reset must restore full building health"):
+		return
+	if not T.require_true(self, int(lab.get_active_missile_count()) == 0, "Lab reset must clear any residual live missiles"):
 		return
 
 	lab.queue_free()

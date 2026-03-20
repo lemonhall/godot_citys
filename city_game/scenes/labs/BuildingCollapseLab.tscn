@@ -1,12 +1,11 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://city_game/scenes/labs/BuildingCollapseLab.gd" id="1_lab_script"]
 [ext_resource type="Script" path="res://city_game/scripts/PlayerController.gd" id="2_player_script"]
 [ext_resource type="Script" path="res://city_game/ui/PrototypeHud.gd" id="3_hud_script"]
 [ext_resource type="Script" path="res://city_game/ui/CityMinimapView.gd" id="4_minimap_script"]
 [ext_resource type="PackedScene" path="res://city_game/assets/weapons/launchers/RpgLauncherEquippedVisual.tscn" id="5_rpg_visual"]
-[ext_resource type="PackedScene" path="res://city_game/serviceability/buildings/generated/bld_v15-building-id-1_seed424242_chunk_137_136_001/building_scene.tscn" id="6_target_building"]
-[ext_resource type="Script" path="res://city_game/combat/buildings/CityDestructibleBuildingRuntime.gd" id="7_building_runtime"]
+[ext_resource type="PackedScene" path="res://city_game/scenes/labs/BuildingCollapseLabTarget.tscn" id="6_target_building"]
 
 [sub_resource type="Environment" id="Environment_lab"]
 background_mode = 2
@@ -79,10 +78,7 @@ position = Vector3(0, 2.4, 6.8)
 current = true
 fov = 65.0
 
-[node name="TargetBuildingRoot" type="Node3D" parent="."]
-script = ExtResource("7_building_runtime")
-
-[node name="ServiceBuildingRoot" parent="TargetBuildingRoot" instance=ExtResource("6_target_building")]
+[node name="TargetBuildingRoot" parent="." instance=ExtResource("6_target_building")]
 
 [node name="Hud" type="CanvasLayer" parent="."]
 script = ExtResource("3_hud_script")

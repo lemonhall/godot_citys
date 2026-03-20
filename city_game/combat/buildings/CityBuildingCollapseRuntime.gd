@@ -8,7 +8,7 @@ signal cleanup_completed(summary: Dictionary)
 const CityBuildingFractureRecipeBuilder := preload("res://city_game/combat/buildings/CityBuildingFractureRecipeBuilder.gd")
 
 @export var collapse_settle_delay_sec := 1.4
-@export var debris_cleanup_delay_sec := 5.5
+@export var debris_cleanup_delay_sec := 30.0
 
 var _prepare_thread: Thread = null
 var _prepare_in_progress := false
@@ -75,6 +75,9 @@ func get_debug_state() -> Dictionary:
 		"cleanup_done": _cleanup_done,
 		"dynamic_chunk_count": _count_live_dynamic_chunks(),
 		"residual_base_visible": _residual_base != null and is_instance_valid(_residual_base) and _residual_base.visible,
+		"cleanup_delay_sec": debris_cleanup_delay_sec,
+		"recipe_unique_size_count": int(_fracture_recipe.get("unique_size_count", 0)),
+		"residual_base_height_m": float((_fracture_recipe.get("base_size", Vector3.ZERO) as Vector3).y),
 	}
 
 func start_collapse() -> Dictionary:

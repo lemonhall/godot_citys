@@ -28,6 +28,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, lab.has_method("get_last_missile_explosion_result"), "Building collapse lab scene must expose missile explosion inspection"):
 		return
+	if not T.require_true(self, lab.has_method("reset_lab_state"), "Building collapse lab scene must expose reset_lab_state() for rapid iteration"):
+		return
 	if not T.require_true(self, lab.has_method("aim_player_at_world_position"), "Building collapse lab scene must expose deterministic aiming support"):
 		return
 

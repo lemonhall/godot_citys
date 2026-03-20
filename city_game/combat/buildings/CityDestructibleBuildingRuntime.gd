@@ -61,6 +61,9 @@ func get_debug_state() -> Dictionary:
 		"collapse_active": bool(collapse_state.get("collapse_active", false)),
 		"dynamic_chunk_count": int(collapse_state.get("dynamic_chunk_count", 0)),
 		"residual_base_visible": bool(collapse_state.get("residual_base_visible", false)),
+		"cleanup_delay_sec": float(collapse_state.get("cleanup_delay_sec", 0.0)),
+		"recipe_unique_size_count": int(collapse_state.get("recipe_unique_size_count", 0)),
+		"residual_base_height_m": float(collapse_state.get("residual_base_height_m", 0.0)),
 	}
 
 func get_primary_target_world_position() -> Vector3:

@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://city_game/combat/buildings/CityDestructibleBuildingRuntime.gd" id="1_building_runtime"]
+[ext_resource type="PackedScene" path="res://city_game/serviceability/buildings/generated/bld_v15-building-id-1_seed424242_chunk_137_136_001/building_scene.tscn" id="2_target_building"]
+
+[node name="TargetBuildingRoot" type="Node3D"]
+script = ExtResource("1_building_runtime")
+
+[node name="ServiceBuildingRoot" parent="." instance=ExtResource("2_target_building")]

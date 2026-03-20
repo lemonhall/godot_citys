@@ -95,6 +95,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, bool(collapsed_debug_state.get("residual_base_visible", false)), "Collapsed main-world buildings must preserve a residual base in the streamed city"):
 		return
+	if not T.require_true(self, int(collapsed_debug_state.get("dynamic_chunk_airborne_count", 0)) > 0, "Main-world upper-half collapse hits must still leave some debris airborne when the collapse first finishes"):
+		return
+	if not T.require_true(self, int(collapsed_debug_state.get("dynamic_chunk_sleeping_airborne_count", -1)) == 0, "Main-world airborne debris must not be force-slept in midair when the collapse settles"):
+		return
 
 	world.queue_free()
 	T.pass_and_quit(self)

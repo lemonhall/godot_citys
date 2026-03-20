@@ -80,6 +80,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, float(collapsed_debug_state.get("residual_base_height_m", 0.0)) >= 14.0, "Upper-half impacts must preserve a substantial lower ruin instead of erasing the whole tower to the ground"):
 		return
+	if not T.require_true(self, int(collapsed_debug_state.get("dynamic_chunk_airborne_count", 0)) > 0, "Upper-half collapse hits must still leave some debris airborne when the collapse first finishes, otherwise the motion reads unnaturally dead"):
+		return
+	if not T.require_true(self, int(collapsed_debug_state.get("dynamic_chunk_sleeping_airborne_count", -1)) == 0, "Airborne debris must not be force-slept in midair when the collapse settles"):
+		return
 	if not T.require_true(self, absf(float(collapsed_debug_state.get("cleanup_delay_sec", 0.0)) - 30.0) <= 0.01, "Lab debris cleanup window must be frozen to 30 seconds for manual observation"):
 		return
 

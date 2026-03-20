@@ -346,10 +346,10 @@ func get_weapon_state() -> Dictionary:
 		"driving_vehicle": _driving_vehicle,
 	}
 
-func set_tennis_racket_visible(is_visible: bool) -> void:
+func set_tennis_racket_visible(should_show: bool) -> void:
 	_ensure_tennis_racket_visual()
 	if _tennis_racket_visual != null and is_instance_valid(_tennis_racket_visual) and _tennis_racket_visual.has_method("set_equipped_visible"):
-		_tennis_racket_visual.set_equipped_visible(is_visible)
+		_tennis_racket_visual.set_equipped_visible(should_show)
 
 func play_tennis_swing(swing_style: String = "forehand") -> void:
 	_ensure_tennis_racket_visual()

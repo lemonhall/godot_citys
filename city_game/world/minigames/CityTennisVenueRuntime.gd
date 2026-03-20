@@ -592,7 +592,7 @@ func _update_ambient_freeze(player_node: Node3D, mounted_venue: Node3D) -> void:
 	if not in_release_bounds:
 		_ambient_simulation_frozen = false
 
-func _update_player_receive_assist(player_node: Node3D, mounted_venue: Node3D, ball_node: Node3D, delta: float) -> void:
+func _update_player_receive_assist(player_node: Node3D, mounted_venue: Node3D, ball_node: Node3D, _delta: float) -> void:
 	if player_node == null or not is_instance_valid(player_node) or mounted_venue == null or ball_node == null:
 		return
 	var has_receive_slot := _incoming_strike_world_position != Vector3.ZERO
@@ -1124,7 +1124,7 @@ func _resolve_ai_pressure_out_target_world_position(mounted_venue: Node3D, safe_
 	if (_ai_return_pattern_index % 2) == 0:
 		var sideline_sign := signf(error_target_local.x)
 		if is_zero_approx(sideline_sign):
-			sideline_sign = -1.0 if (int(_ai_return_pattern_index / 2) % 2) == 0 else 1.0
+			sideline_sign = -1.0 if (int(_ai_return_pattern_index / 2.0) % 2) == 0 else 1.0
 		error_target_local.x = sideline_sign * (half_width + 8.0)
 		error_target_local.z = clampf(maxf(error_target_local.z, service_line_distance_m + 4.0), service_line_distance_m + 4.0, half_length - 6.0)
 	else:

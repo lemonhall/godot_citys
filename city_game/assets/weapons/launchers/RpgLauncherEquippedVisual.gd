@@ -39,8 +39,8 @@ func _process(delta: float) -> void:
 	var flash_strength := clampf(1.0 - progress, 0.0, 1.0)
 	_set_flash_strength(flash_strength)
 
-func set_equipped_visible(is_visible: bool) -> void:
-	equipped_visible = is_visible
+func set_equipped_visible(should_show: bool) -> void:
+	equipped_visible = should_show
 	_apply_equipped_visibility()
 
 func play_fire_fx() -> void:

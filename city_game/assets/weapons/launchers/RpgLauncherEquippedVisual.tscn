@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://city_game/assets/weapons/launchers/RpgLauncherEquippedVisual.gd" id="1_rpg_visual_script"]
 [ext_resource type="Script" path="res://city_game/assets/weapons/CityWeaponDisplayProp.gd" id="2_weapon_display_script"]
-[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/launchers/RPG Launcher.glb" id="3_rpg_launcher_model"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/source/launchers/RpgLauncherModel.tscn" id="3_rpg_launcher_model"]
 
 [sub_resource type="SphereMesh" id="1_flash_core_mesh"]
 radius = 0.08

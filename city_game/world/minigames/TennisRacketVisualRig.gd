@@ -47,8 +47,8 @@ func configure_rig(config: Dictionary) -> void:
 		_apply_config()
 		_update_pose()
 
-func set_equipped_visible(is_visible: bool) -> void:
-	visible = is_visible
+func set_equipped_visible(should_show: bool) -> void:
+	visible = should_show
 
 func play_swing(style: String = "forehand") -> void:
 	_ensure_mount_root()

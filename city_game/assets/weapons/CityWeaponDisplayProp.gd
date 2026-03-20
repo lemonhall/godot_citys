@@ -120,7 +120,7 @@ func _compute_local_aabb(node: Node, accumulated_transform: Transform3D) -> AABB
 			merged = merged.merge(child_aabb)
 	return merged if has_any else AABB()
 
-func _transform_aabb(transform: Transform3D, aabb: AABB) -> AABB:
+func _transform_aabb(node_transform: Transform3D, aabb: AABB) -> AABB:
 	var corners := [
 		aabb.position,
 		aabb.position + Vector3(aabb.size.x, 0.0, 0.0),
@@ -131,11 +131,11 @@ func _transform_aabb(transform: Transform3D, aabb: AABB) -> AABB:
 		aabb.position + Vector3(0.0, aabb.size.y, aabb.size.z),
 		aabb.position + aabb.size,
 	]
-	var first_corner: Vector3 = transform * corners[0]
+	var first_corner: Vector3 = node_transform * corners[0]
 	var min_corner := first_corner
 	var max_corner := first_corner
 	for corner in corners:
-		var transformed_corner: Vector3 = transform * corner
+		var transformed_corner: Vector3 = node_transform * corner
 		min_corner = Vector3(
 			minf(min_corner.x, transformed_corner.x),
 			minf(min_corner.y, transformed_corner.y),

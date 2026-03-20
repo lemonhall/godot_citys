@@ -72,6 +72,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, _has_authored_interceptor_visual(mounted_venue), "Missile Command wave contract must instance the authored missile visual scene instead of rendering interceptor tracks as placeholder spheres"):
 		return
+	if not T.require_true(self, _has_visible_interceptor_trail(mounted_venue), "Missile Command wave contract must drive a visible TrailVisual behind the live interceptor instead of a bare missile mesh"):
+		return
+	if not T.require_true(self, _authored_interceptor_preview_helpers_are_runtime_safe(mounted_venue), "Missile Command wave contract must keep PreviewCamera/PreviewLight disabled in runtime so the authored debug helpers never hijack the live game scene"):
+		return
 	runtime_state = await _wait_for_destroyed_enemy_count(world, destroyed_enemy_count_before + 1)
 	if not T.require_true(self, int(runtime_state.get("destroyed_enemy_count", 0)) >= destroyed_enemy_count_before + 1, "Missile Command wave contract must increase destroyed_enemy_count after a successful intercept"):
 		return
@@ -137,6 +141,31 @@ func _has_authored_interceptor_visual(mounted_venue: Node3D) -> bool:
 		if node != null and node.get_node_or_null("ModelRoot") != null:
 			return true
 	return false
+
+func _has_visible_interceptor_trail(mounted_venue: Node3D) -> bool:
+	var interceptor_root := mounted_venue.get_node_or_null("RuntimeVisuals/InterceptorTracks") as Node3D
+	if interceptor_root == null:
+		return false
+	for child in interceptor_root.get_children():
+		var trail_visual := child.get_node_or_null("TrailVisual") as VisualInstance3D
+		if trail_visual != null and trail_visual.visible:
+			return true
+	return false
+
+func _authored_interceptor_preview_helpers_are_runtime_safe(mounted_venue: Node3D) -> bool:
+	var interceptor_root := mounted_venue.get_node_or_null("RuntimeVisuals/InterceptorTracks") as Node3D
+	if interceptor_root == null:
+		return false
+	for child in interceptor_root.get_children():
+		var preview_camera := child.get_node_or_null("PreviewCamera") as Camera3D
+		if preview_camera != null and preview_camera.current:
+			return false
+		var preview_light := child.get_node_or_null("PreviewLight") as Node3D
+		if preview_light != null and preview_light.visible:
+			return false
+		if child.get_node_or_null("PreviewEnvironment") != null:
+			return false
+	return true
 
 func _estimate_standing_height(player) -> float:
 	var collision_shape := player.get_node_or_null("CollisionShape3D") as CollisionShape3D

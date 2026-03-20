@@ -180,6 +180,7 @@ func request_fire_at_world_position(world_position: Vector3) -> Dictionary:
 		"start_position": start_world_position,
 		"target_position": clamped_world_position,
 		"current_position": start_world_position,
+		"speed_mps": INTERCEPTOR_SPEED_MPS,
 		"duration_sec": duration_sec,
 		"elapsed_sec": 0.0,
 		"visual_radius_m": INTERCEPTOR_VISUAL_RADIUS_M,

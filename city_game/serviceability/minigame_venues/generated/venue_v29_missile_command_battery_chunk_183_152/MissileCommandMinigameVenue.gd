@@ -474,12 +474,17 @@ func _sync_interceptor_visuals(interceptor_tracks: Array) -> void:
 		var current_position := track.get("current_position", global_position) as Vector3
 		var target_position := track.get("target_position", current_position) as Vector3
 		var start_position := track.get("start_position", current_position) as Vector3
-		node.global_position = current_position
 		var forward := target_position - current_position
 		if forward.length_squared() <= 0.0001:
 			forward = current_position - start_position
-		if forward.length_squared() > 0.0001:
-			node.look_at(current_position + forward.normalized(), Vector3.UP, true)
+		var direction := forward.normalized() if forward.length_squared() > 0.0001 else Vector3.FORWARD
+		var speed_mps := float(track.get("speed_mps", 0.0))
+		if node.has_method("sync_motion_state"):
+			node.sync_motion_state(current_position, direction, speed_mps, true)
+		else:
+			node.global_position = current_position
+			if forward.length_squared() > 0.0001:
+				node.look_at(current_position + direction, Vector3.UP, true)
 	for node_id_variant in _interceptor_track_nodes.keys():
 		var node_id := str(node_id_variant)
 		if live_ids.has(node_id):

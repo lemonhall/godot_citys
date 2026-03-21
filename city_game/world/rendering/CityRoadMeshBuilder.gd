@@ -437,7 +437,7 @@ static func _build_segment_transform(a: Vector3, b: Vector3, thickness: float) -
 	var origin := a.lerp(b, 0.5) - corrected_up * thickness * 0.5
 	return Transform3D(basis, origin)
 
-static func _build_bridge_supports(road_segments: Array, chunk_data: Dictionary, color: Color) -> MultiMeshInstance3D:
+static func _build_bridge_supports(road_segments: Array, _chunk_data: Dictionary, color: Color) -> MultiMeshInstance3D:
 	var transforms: Array[Transform3D] = []
 	for segment in road_segments:
 		var segment_dict: Dictionary = segment

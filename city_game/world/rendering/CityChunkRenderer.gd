@@ -1722,10 +1722,10 @@ func _filter_gameplay_pedestrian_tier1_states(tier1_states: Array, player_positi
 			"distance_sq": distance_sq,
 		})
 	if visible_candidates.size() <= GAMEPLAY_PEDESTRIAN_TIER1_RENDER_MAX_PER_CHUNK:
-		var visible_states: Array = []
+		var all_visible_states: Array = []
 		for candidate_variant in visible_candidates:
-			visible_states.append((candidate_variant as Dictionary).get("state"))
-		return visible_states
+			all_visible_states.append((candidate_variant as Dictionary).get("state"))
+		return all_visible_states
 	visible_candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return float(a.get("distance_sq", INF)) < float(b.get("distance_sq", INF))
 	)

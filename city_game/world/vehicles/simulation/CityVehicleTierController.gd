@@ -150,7 +150,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 
 	if not _should_rebuild_assignments(active_chunk_ids, player_position):
 		if _can_reuse_inspection_farfield_snapshots(active_chunk_ids):
-			var reuse_runtime_summary: Dictionary = _vehicle_streamer.get_runtime_summary()
+			var inspection_reuse_runtime_summary: Dictionary = _vehicle_streamer.get_runtime_summary()
 			_update_runtime_snapshot(
 				active_chunk_ids.size(),
 				active_states.size(),
@@ -158,7 +158,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 				int(_global_snapshot.get("tier1_count", 0)),
 				int(_global_snapshot.get("tier2_count", 0)),
 				int(_global_snapshot.get("tier3_count", 0)),
-				reuse_runtime_summary,
+				inspection_reuse_runtime_summary,
 				traffic_spawn_usec,
 				traffic_step_usec,
 				0,

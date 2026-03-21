@@ -698,7 +698,7 @@ static func _build_road_distance_edges(road_segments: Array) -> Array:
 			})
 	return edges
 
-static func _try_build_building(candidate: Dictionary, archetype: Dictionary, chunk_center: Vector3, half_extent: float, world_seed: int, occupied: Array, building_rng: RandomNumberGenerator, scale_multiplier: float = 1.0) -> Dictionary:
+static func _try_build_building(candidate: Dictionary, archetype: Dictionary, chunk_center: Vector3, half_extent: float, _world_seed: int, occupied: Array, building_rng: RandomNumberGenerator, scale_multiplier: float = 1.0) -> Dictionary:
 	var local_seed := int(candidate.get("seed", 0)) ^ int(archetype.get("id", "").hash())
 	building_rng.seed = local_seed
 	var min_size: Vector2 = archetype.get("min_size", Vector2(18.0, 18.0))
@@ -732,7 +732,6 @@ static func _try_build_building(candidate: Dictionary, archetype: Dictionary, ch
 
 	var road_angle_rad := float(candidate.get("road_angle_rad", 0.0))
 	var yaw_rad := _resolve_building_yaw(road_angle_rad, local_seed, archetype.get("id", "slab"))
-	var world_center: Vector2 = candidate.get("world_center", Vector2(chunk_center.x + center_2d.x, chunk_center.z + center_2d.y))
 	var ground_y := CityTerrainSampler.GROUND_HEIGHT_Y
 	var palette: Dictionary = PALETTES[int(posmod(local_seed, PALETTES.size()))]
 	var road_alignment_delta_deg := _measure_street_alignment_delta_deg(yaw_rad, road_angle_rad)

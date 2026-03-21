@@ -2,10 +2,10 @@ extends RefCounted
 
 const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
 
-static func sample_height(local_point: Vector2, chunk_data: Dictionary, profile: Dictionary) -> float:
+static func sample_height(_local_point: Vector2, _chunk_data: Dictionary, _profile: Dictionary) -> float:
 	return CityTerrainSampler.GROUND_HEIGHT_Y
 
-static func sample_drive_height(local_point: Vector2, chunk_data: Dictionary, profile: Dictionary, road_id: String = "") -> float:
+static func sample_drive_height(local_point: Vector2, _chunk_data: Dictionary, profile: Dictionary, road_id: String = "") -> float:
 	var base_height := CityTerrainSampler.GROUND_HEIGHT_Y
 	var matched_surface := _find_best_surface_sample(local_point, profile, road_id, true)
 	if matched_surface.is_empty():

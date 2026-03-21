@@ -79,9 +79,6 @@ func _ready() -> void:
 	_destroyed_signal_emitted = false
 	add_to_group("city_enemy")
 	add_to_group("city_helicopter_gunship")
-	var wav := rotor_audio.stream as AudioStreamWAV
-	#if wav != null:
-		#wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
 	_set_death_fx_visible(false)
 
 
@@ -356,11 +353,11 @@ func _finalize_destroyed_state() -> void:
 	_set_death_fx_visible(false)
 	destroyed.emit()
 
-func _set_death_fx_visible(visible: bool) -> void:
-	_death_fx_visible = visible
+func _set_death_fx_visible(is_visible: bool) -> void:
+	_death_fx_visible = is_visible
 	if _death_fx_root != null:
-		_death_fx_root.visible = visible
+		_death_fx_root.visible = is_visible
 	if _death_explosion_ring != null:
-		_death_explosion_ring.visible = visible
+		_death_explosion_ring.visible = is_visible
 	if _death_explosion_sphere != null:
-		_death_explosion_sphere.visible = visible
+		_death_explosion_sphere.visible = is_visible

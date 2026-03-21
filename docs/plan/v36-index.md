@@ -99,6 +99,10 @@ PRD 入口：
 - 经过第二个切片后，fresh headless warm runtime 的 `wall_frame_avg_usec` 已降到 `10204`，但 `test_city_runtime_performance_profile.gd` 目前会卡在 `ped_tier1_count = 108 < 150` 的冻结 density guard；进一步交叉检查 `test_city_pedestrian_lite_density_uplift.gd` 也报 warm `tier1_count = 103 < 150`，说明这是当前工作树里需要单列处理的 baseline 问题，不能把这次 frame-time 改善包装成 closeout。
 - 第二个切片之后，fresh rendered diagnostics 已经出现改善，但 rendered performance guards 仍未通过：inspection 仍卡 `wall_frame_avg_usec` 与 density，live gunshot 仍卡 density / witness 语义，因此 `v36` 还处在“诊断改善、closeout 未达成”的中间态。
 - `2026-03-21` 晚间的 main-world 手测进一步暴露出“车辆飞天”和地形主链复杂度过高的问题，因此 `v36` 已按 [ECN-0027](../ecn/ECN-0027-flat-ground-runtime-simplification.md) 切入 flat-ground runtime simplification：先把普通地面统一为绝对平面，随后又按用户口径把高架桥语义也一并冻结为平路，再继续三化。
+- 同日补充切片又补掉了两个半拉子缺口：`gameplay` 行人 farfield render 不再因高速 traversal 把整条街裁空；retained chunk scene 复用链也不再在 prepare 相位白做 near 组预构。对应 fresh headless 结果见 `v36-m2-verification-2026-03-21.md`：
+  - `test_city_runtime_crowded_diagnostic_snapshot.gd`: `wall_frame_avg_usec = 9666`、`update_streaming_renderer_sync_queue_prepare_avg_usec = 48`
+  - `test_city_runtime_performance_profile.gd`: `wall_frame_avg_usec = 9895`、`update_streaming_renderer_sync_avg_usec = 2654`、`ped_tier1_count = 169`
+  - 这说明前两化在 headless warm runtime 上已经把 shared frame-time 拉回红线内，但 rendered closeout 仍需 fresh rerun，不能跳过。
 - `v36` 仍有两个开放风险需要正面应对：
   - inspection 中距离 visual / tier 语义不能因性能治理而退化成肉眼明显离谱的 proxy 体验
   - 并行化只能作用于纯数据相位，任何 SceneTree / render commit 误上线程都会制造新的不稳定

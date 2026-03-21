@@ -29,6 +29,8 @@ func _run() -> void:
 	var gameplay_visible_tier1 := int(gameplay_stats.get("pedestrian_multimesh_instance_total", 0))
 	var inspection_tier1_total := int(inspection_stats.get("pedestrian_tier1_total", 0))
 	var inspection_visible_tier1 := int(inspection_stats.get("pedestrian_multimesh_instance_total", 0))
+	if not T.require_true(self, gameplay_visible_tier1 > 0, "Gameplay render budget must preserve at least some visible Tier 1 farfield pedestrian proxies instead of blanking the corridor during traversal"):
+		return
 	if not T.require_true(self, gameplay_visible_tier1 <= int(floor(float(gameplay_tier1_total) * 0.85)), "Gameplay render budget must keep visible Tier 1 pedestrian proxies at or below 85% of the controller Tier 1 total"):
 		return
 	if not T.require_true(self, inspection_visible_tier1 >= int(floor(float(inspection_tier1_total) * 0.95)), "Inspection mode must keep at least 95% of the Tier 1 proxy population visible for diagnostics and scene previewing"):

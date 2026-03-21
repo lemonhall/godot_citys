@@ -29,6 +29,7 @@ const FARFIELD_RENDER_DEFER_SPEED_MPS := 8.0
 const DEFAULT_DEATH_VISUAL_DURATION_SEC := 3.0
 const GAMEPLAY_PEDESTRIAN_TIER1_RENDER_RADIUS_M := 128.0
 const GAMEPLAY_PEDESTRIAN_TIER1_RENDER_MAX_PER_CHUNK := 6
+const GAMEPLAY_PEDESTRIAN_RENDER_FILTER_BUCKET_M := 24.0
 const RENDERER_SYNC_QUEUE_PHASES := [
 	"retire",
 	"terrain_collect",
@@ -168,6 +169,8 @@ var _last_pedestrian_player_position := Vector3.ZERO
 var _last_pedestrian_player_velocity := Vector3.ZERO
 var _last_pedestrian_player_context: Dictionary = {}
 var _has_pedestrian_player_context := false
+var _gameplay_pedestrian_render_contracts_by_chunk_id: Dictionary = {}
+var _last_gameplay_pedestrian_render_filter_bucket_key := ""
 var _pedestrian_visibility_enabled := true
 var _global_death_root: Node3D = null
 var _global_death_visuals: Array[Dictionary] = []
@@ -224,6 +227,8 @@ func setup(config, world_data: Dictionary) -> void:
 	_last_pedestrian_player_velocity = Vector3.ZERO
 	_last_pedestrian_player_context.clear()
 	_has_pedestrian_player_context = false
+	_gameplay_pedestrian_render_contracts_by_chunk_id.clear()
+	_last_gameplay_pedestrian_render_filter_bucket_key = ""
 	_pedestrian_visibility_enabled = true
 	_clear_global_death_visuals()
 	_chunk_death_visual_records.clear()
@@ -1204,7 +1209,8 @@ func _process_prepare_budget() -> void:
 			_record_prepare_profile_sample(0)
 		payload["surface_page_provider"] = _surface_page_provider
 		payload["initial_lod_mode"] = _resolve_initial_lod_mode(payload)
-		_prebuild_near_mount_nodes(payload)
+		if not _has_live_retained_chunk_scene(chunk_id):
+			_prebuild_near_mount_nodes(payload)
 		_surface_waiting_payloads[chunk_id] = payload
 		payload = (_surface_waiting_payloads.get(chunk_id, payload) as Dictionary).duplicate(false)
 		var detail_mode := _resolve_surface_detail_mode_for_lod(str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR)))
@@ -1251,6 +1257,12 @@ func _process_mount_budget() -> void:
 			var chunk_snapshot: Dictionary = _pedestrian_tier_controller.get_chunk_snapshot_ref(chunk_id) if _pedestrian_tier_controller.has_method("get_chunk_snapshot_ref") else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id)
 			var render_snapshot := _build_pedestrian_render_snapshot(chunk_snapshot, _last_player_position)
 			chunk_scene.apply_pedestrian_chunk_snapshot(render_snapshot)
+			if _is_inspection_pedestrian_render_context():
+				_gameplay_pedestrian_render_contracts_by_chunk_id.erase(chunk_id)
+				_last_gameplay_pedestrian_render_filter_bucket_key = ""
+			else:
+				_gameplay_pedestrian_render_contracts_by_chunk_id[chunk_id] = _build_gameplay_pedestrian_render_contract(render_snapshot)
+				_last_gameplay_pedestrian_render_filter_bucket_key = _build_gameplay_pedestrian_render_filter_bucket_key(_last_player_position)
 			chunk_snapshot["dirty"] = false
 			chunk_snapshot["farfield_render_dirty"] = false
 		if _vehicle_tier_controller != null and chunk_scene.has_method("apply_vehicle_chunk_snapshot"):
@@ -1279,6 +1291,7 @@ func _process_retire_budget() -> void:
 			continue
 		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
 		_chunk_scenes.erase(chunk_id)
+		_gameplay_pedestrian_render_contracts_by_chunk_id.erase(chunk_id)
 		_cached_chunk_ids_dirty = true
 		_migrate_chunk_death_visuals(chunk_scene)
 		remove_child(chunk_scene)
@@ -1315,6 +1328,18 @@ func _take_retained_chunk_scene(chunk_id: String) -> Node3D:
 	if chunk_scene == null or not is_instance_valid(chunk_scene):
 		return null
 	return chunk_scene
+
+func _has_live_retained_chunk_scene(chunk_id: String) -> bool:
+	if chunk_id == "" or not _retained_chunk_scene_cache.has(chunk_id):
+		return false
+	var chunk_scene := _retained_chunk_scene_cache.get(chunk_id) as Node3D
+	if chunk_scene == null or not is_instance_valid(chunk_scene):
+		_retained_chunk_scene_cache.erase(chunk_id)
+		var existing_index := _retained_chunk_scene_lru.find(chunk_id)
+		if existing_index >= 0:
+			_retained_chunk_scene_lru.remove_at(existing_index)
+		return false
+	return true
 
 func _store_retained_chunk_scene(chunk_id: String, chunk_scene: Node3D) -> bool:
 	if chunk_id == "" or chunk_scene == null or not is_instance_valid(chunk_scene):
@@ -1552,18 +1577,55 @@ func _update_pedestrian_crowd(player_position: Vector3, delta: float) -> void:
 	var applied_chunk_count := 0
 	var defer_farfield_only_commit := _has_pending_streaming_work() or player_velocity.length() >= FARFIELD_RENDER_DEFER_SPEED_MPS
 	var gameplay_render_capping_enabled := not _is_inspection_pedestrian_render_context()
+	var gameplay_render_filter_bucket_key := ""
+	var gameplay_render_filter_bucket_changed := false
+	if gameplay_render_capping_enabled:
+		gameplay_render_filter_bucket_key = _build_gameplay_pedestrian_render_filter_bucket_key(player_position)
+		gameplay_render_filter_bucket_changed = gameplay_render_filter_bucket_key != _last_gameplay_pedestrian_render_filter_bucket_key
+	else:
+		_gameplay_pedestrian_render_contracts_by_chunk_id.clear()
+		_last_gameplay_pedestrian_render_filter_bucket_key = ""
 	for chunk_id in get_chunk_ids():
 		var chunk_scene: Node3D = _chunk_scenes[chunk_id]
 		if chunk_scene.has_method("apply_pedestrian_chunk_snapshot"):
 			var chunk_snapshot: Dictionary = _pedestrian_tier_controller.get_chunk_snapshot_ref(chunk_id) if _pedestrian_tier_controller.has_method("get_chunk_snapshot_ref") else _pedestrian_tier_controller.get_chunk_snapshot(chunk_id)
-			if defer_farfield_only_commit and bool(chunk_snapshot.get("farfield_render_dirty", false)):
+			var chunk_dirty := bool(chunk_snapshot.get("dirty", true))
+			if not chunk_dirty and gameplay_render_capping_enabled and not gameplay_render_filter_bucket_changed:
 				continue
-			if bool(chunk_snapshot.get("dirty", true)) or gameplay_render_capping_enabled:
-				var render_snapshot := _build_pedestrian_render_snapshot(chunk_snapshot, player_position)
+			if not chunk_dirty and not gameplay_render_capping_enabled:
+				continue
+			var render_snapshot := _build_pedestrian_render_snapshot(chunk_snapshot, player_position)
+			if defer_farfield_only_commit and bool(chunk_snapshot.get("farfield_render_dirty", false)):
+				if not gameplay_render_capping_enabled:
+					continue
+				var deferred_render_contract := _build_gameplay_pedestrian_render_contract(render_snapshot)
+				var deferred_cached_contract: Dictionary = _gameplay_pedestrian_render_contracts_by_chunk_id.get(chunk_id, {})
+				var deferred_cached_has_visible_tier1 := _gameplay_pedestrian_render_contract_has_visible_tier1(deferred_cached_contract)
+				var deferred_next_has_visible_tier1 := _gameplay_pedestrian_render_contract_has_visible_tier1(deferred_render_contract)
+				if _gameplay_pedestrian_render_contracts_match(deferred_cached_contract, deferred_render_contract):
+					continue
+				if deferred_cached_has_visible_tier1 or not deferred_next_has_visible_tier1:
+					continue
+				_gameplay_pedestrian_render_contracts_by_chunk_id[chunk_id] = deferred_render_contract
 				tier1_transform_writes += int(chunk_scene.apply_pedestrian_chunk_snapshot(render_snapshot))
 				chunk_snapshot["dirty"] = false
 				chunk_snapshot["farfield_render_dirty"] = false
 				applied_chunk_count += 1
+				continue
+			if gameplay_render_capping_enabled and not chunk_dirty:
+				var next_render_contract := _build_gameplay_pedestrian_render_contract(render_snapshot)
+				var cached_render_contract: Dictionary = _gameplay_pedestrian_render_contracts_by_chunk_id.get(chunk_id, {})
+				if _gameplay_pedestrian_render_contracts_match(cached_render_contract, next_render_contract):
+					continue
+				_gameplay_pedestrian_render_contracts_by_chunk_id[chunk_id] = next_render_contract
+			elif gameplay_render_capping_enabled:
+				_gameplay_pedestrian_render_contracts_by_chunk_id[chunk_id] = _build_gameplay_pedestrian_render_contract(render_snapshot)
+			tier1_transform_writes += int(chunk_scene.apply_pedestrian_chunk_snapshot(render_snapshot))
+			chunk_snapshot["dirty"] = false
+			chunk_snapshot["farfield_render_dirty"] = false
+			applied_chunk_count += 1
+	if gameplay_render_capping_enabled:
+		_last_gameplay_pedestrian_render_filter_bucket_key = gameplay_render_filter_bucket_key
 	_crowd_chunk_commit_last_usec = int(Time.get_ticks_usec() - render_commit_started_usec) if applied_chunk_count > 0 else 0
 	_crowd_tier1_transform_writes = tier1_transform_writes
 	_record_crowd_render_commit_sample(_crowd_chunk_commit_last_usec)
@@ -1629,6 +1691,24 @@ func _build_pedestrian_render_snapshot(chunk_snapshot: Dictionary, player_positi
 	render_snapshot["tier1_count"] = filtered_tier1_states.size()
 	return render_snapshot
 
+func _build_gameplay_pedestrian_render_filter_bucket_key(player_position: Vector3) -> String:
+	var bucket_size_m := maxf(GAMEPLAY_PEDESTRIAN_RENDER_FILTER_BUCKET_M, 1.0)
+	return "%d:%d" % [
+		int(floor(player_position.x / bucket_size_m)),
+		int(floor(player_position.z / bucket_size_m)),
+	]
+
+func _build_gameplay_pedestrian_render_contract(render_snapshot: Dictionary) -> Dictionary:
+	return {
+		"tier1_ids": _pedestrian_render_state_ids(render_snapshot.get("tier1_states", [])),
+	}
+
+func _gameplay_pedestrian_render_contracts_match(lhs: Dictionary, rhs: Dictionary) -> bool:
+	return _stringify_variant_array(lhs.get("tier1_ids", [])) == _stringify_variant_array(rhs.get("tier1_ids", []))
+
+func _gameplay_pedestrian_render_contract_has_visible_tier1(contract: Dictionary) -> bool:
+	return not _stringify_variant_array(contract.get("tier1_ids", [])).is_empty()
+
 func _filter_gameplay_pedestrian_tier1_states(tier1_states: Array, player_position: Vector3) -> Array:
 	var visible_candidates: Array[Dictionary] = []
 	var max_distance_sq := GAMEPLAY_PEDESTRIAN_TIER1_RENDER_RADIUS_M * GAMEPLAY_PEDESTRIAN_TIER1_RENDER_RADIUS_M
@@ -1667,6 +1747,21 @@ func _pedestrian_state_world_position(state) -> Vector3:
 	if state is Dictionary:
 		return (state as Dictionary).get("world_position", Vector3.ZERO)
 	return state.world_position if state != null else Vector3.ZERO
+
+func _pedestrian_render_state_ids(states: Array) -> Array[String]:
+	var state_ids: Array[String] = []
+	for state_variant in states:
+		if state_variant is Dictionary:
+			state_ids.append(str((state_variant as Dictionary).get("pedestrian_id", "")))
+		elif state_variant != null:
+			state_ids.append(str(state_variant.pedestrian_id))
+	return state_ids
+
+func _stringify_variant_array(values: Array) -> Array[String]:
+	var normalized: Array[String] = []
+	for value_variant in values:
+		normalized.append(str(value_variant))
+	return normalized
 
 func _distance_to_entry(player_position: Vector3, entry: Dictionary) -> float:
 	var chunk_key: Vector2i = entry.get("chunk_key", Vector2i.ZERO)

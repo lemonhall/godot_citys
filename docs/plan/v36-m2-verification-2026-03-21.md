@@ -199,3 +199,83 @@ foreach($test in $tests){
    - 已确认：`test_city_pedestrian_lite_density_uplift.gd` 在当前工作树也会以 warm `103 < 150` 失败，这更像是既有 baseline 漂移。
 2. 继续往 crowd snapshot / assignment rebuild 的结构性成本下刀，别只停留在 batch commit。
 3. 再审一轮 `CityPrototype.gd` 的 HUD/minimap 刷新耦合，把 inspection 下的高价刷新继续压低。
+
+## 同日补充切片：gameplay farfield 回填 + retained prepare 去浪费
+
+本轮不是新开方向，而是继续把“前两化”的两个半拉子缺口补齐：
+
+- gameplay 行人 render capping 在高速 traversal 下会把整条街裁空
+  - 根因：chunk 初次挂载时会先提交空的 gameplay Tier 1 contract，随后 `farfield_render_dirty` 在高速 traversal 下又被 defer，导致这些 chunk 长时间保留空 batch
+- retained-scene 复用链虽然已经存在，但 prepare 相位仍会为这些即将复用的 chunk 白做 near 组预构
+  - 根因：`_process_prepare_budget()` 无条件执行 `_prebuild_near_mount_nodes(payload)`，即使 `_take_retained_chunk_scene(chunk_id)` 后续会直接复用缓存 chunk scene
+
+### 本批代码切片
+
+修改文件：
+
+- `city_game/world/rendering/CityChunkRenderer.gd`
+- `tests/world/test_city_pedestrian_gameplay_render_budget.gd`
+
+新增测试：
+
+- `tests/world/test_city_chunk_prepare_retained_scene_reuse.gd`
+
+### TDD 证据
+
+先红后绿：
+
+1. `test_city_pedestrian_gameplay_render_budget.gd`
+   - 红：`pedestrian_tier1_total = 172`，但 `pedestrian_multimesh_instance_total = 0`
+   - 绿：`pedestrian_multimesh_instance_total = 3`
+   - 含义：gameplay 仍保留强力 capping，但不再把 traversal 走廊整片裁成空白
+2. `test_city_chunk_prepare_retained_scene_reuse.gd`
+   - 红：retained chunk 的 waiting payload 里仍包含 `prepared_service_roots`
+   - 绿：retained chunk prepare 不再预构 `prepared_service_roots / prepared_road_overlay / prepared_street_lamps`
+
+### 验证命令
+
+```powershell
+$project='E:\development\godot_citys'
+$godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
+
+$tests=@(
+  'res://tests/world/test_city_chunk_prepare_retained_scene_reuse.gd',
+  'res://tests/world/test_city_pedestrian_gameplay_render_budget.gd',
+  'res://tests/world/test_city_pedestrian_chunk_dirty_skip.gd',
+  'res://tests/world/test_city_pedestrian_batch_rendering.gd',
+  'res://tests/world/test_city_runtime_crowded_diagnostic_snapshot.gd',
+  'res://tests/e2e/test_city_runtime_performance_profile.gd'
+)
+foreach($test in $tests){
+  & $godot --headless --rendering-driver dummy --path $project --script $test
+  if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+}
+```
+
+结果：`PASS`
+
+### 同轮 before / after
+
+以本轮修复前的 fresh headless 结果为 before：
+
+- `test_city_runtime_crowded_diagnostic_snapshot.gd`
+  - `wall_frame_avg_usec: 12442 -> 9666`
+  - `update_streaming_avg_usec: 4445 -> 2854`
+  - `update_streaming_renderer_sync_avg_usec: 4106 -> 2551`
+  - `update_streaming_renderer_sync_queue_avg_usec: 1926 -> 437`
+  - `update_streaming_renderer_sync_queue_prepare_avg_usec: 1564 -> 48`
+  - `crowd_update_avg_usec: 772 -> 764`
+  - `traffic_update_avg_usec: 500 -> 496`
+- `test_city_runtime_performance_profile.gd`
+  - `wall_frame_avg_usec: 13059 -> 9895`
+  - `update_streaming_avg_usec: 5175 -> 3079`
+  - `update_streaming_renderer_sync_avg_usec: 4806 -> 2654`
+  - `crowd_update_avg_usec: 1098 -> 877`
+  - `traffic_update_avg_usec: 541 -> 504`
+  - `ped_tier1_count: 169 -> 169`
+
+### 当前判断
+
+- 这说明“retained-scene prepare 白做 near 组预构”确实是 shared runtime 的大头之一，而且比这一轮 crowd / traffic 本体 update 还更贵。
+- gameplay farfield 回填修复并没有靠砍 density 换性能；`ped_tier1_count` 仍保持在 `169`，`test_city_runtime_performance_profile.gd` 也重新通过了冻结线。
+- 本轮仅补了 headless fresh 证据；rendered inspection / live-gunshot 还没有随这一补充切片重跑，因此这里不能把 `v36` 包装成 closeout。

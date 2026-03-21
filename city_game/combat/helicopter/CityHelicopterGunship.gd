@@ -2,6 +2,7 @@ extends CharacterBody3D
 
 const MODEL_SCENE_PATH := "res://city_game/assets/environment/source/aircraft/helicopter_a.glb"
 const ROTOR_AUDIO_PATH := "res://city_game/combat/helicopter/audio/helicopter.wav"
+const MISSILE_FIRE_AUDIO_PATH := "res://city_game/combat/helicopter/audio/rockt-explosions.wav"
 
 signal missile_fire_requested(origin: Vector3, direction: Vector3)
 signal destroyed
@@ -24,11 +25,13 @@ signal destroyed
 @onready var _missile_muzzle_right := $Anchors/MissileMuzzleRight as Marker3D
 @onready var _damage_smoke_anchor := $Anchors/DamageSmokeAnchor as Marker3D
 @onready var rotor_audio := $RotorAudio as AudioStreamPlayer3D
+@onready var _missile_fire_audio := $MissileFireAudio as AudioStreamPlayer3D
 
 var _health := 0.0
 var _destroyed := false
 var _last_hit_world_position := Vector3.ZERO
 var _completion_count := 0
+var _missile_fire_audio_trigger_count := 0
 var _target: Node3D = null
 var _resolved_hover_height_m := 0.0
 var _resolved_orbit_radius_m := 0.0
@@ -108,6 +111,13 @@ func get_debug_state() -> Dictionary:
 			_missile_muzzle_right.name,
 			_damage_smoke_anchor.name,
 		],
+		"weapon_fire_audio": {
+			"stream_path": _missile_fire_audio.stream.resource_path if _missile_fire_audio != null and _missile_fire_audio.stream != null else "",
+			"stream_bound": _missile_fire_audio != null and _missile_fire_audio.stream != null,
+			"playing": _missile_fire_audio.playing if _missile_fire_audio != null else false,
+			"trigger_count": _missile_fire_audio_trigger_count,
+			"expected_stream_path": MISSILE_FIRE_AUDIO_PATH,
+		},
 		"health_state": get_health_state(),
 		"combat_state": get_combat_state(),
 	}
@@ -177,6 +187,7 @@ func _update_attack(delta: float) -> void:
 		direction = Vector3.FORWARD
 	_missile_fire_index += 1
 	_missile_fire_cooldown_sec = missile_fire_interval_sec
+	_play_missile_fire_audio()
 	missile_fire_requested.emit(origin, direction)
 
 func _face_target() -> void:
@@ -207,3 +218,9 @@ func _compute_altitude_weave_offset_m() -> float:
 		return 0.0
 	var phase := (_altitude_weave_elapsed_sec / altitude_weave_cycle_sec) * TAU
 	return maxf(sin(phase), 0.0) * altitude_weave_amplitude_m
+
+func _play_missile_fire_audio() -> void:
+	if _missile_fire_audio == null or _missile_fire_audio.stream == null:
+		return
+	_missile_fire_audio_trigger_count += 1
+	_missile_fire_audio.play()

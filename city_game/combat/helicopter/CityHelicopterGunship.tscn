@@ -5,6 +5,7 @@
 [ext_resource type="PackedScene" uid="uid://c18dpxo140snx" path="res://city_game/assets/environment/source/aircraft/helicopter_a.glb" id="2_gunship_model"]
 [ext_resource type="Shader" uid="uid://cjfhg4tlk28wb" path="res://city_game/combat/helicopter/CityHelicopterRotorBlur.gdshader" id="3_rotor_blur_shader"]
 [ext_resource type="AudioStream" uid="uid://r2truh18frij" path="res://city_game/combat/helicopter/audio/helicopter.wav" id="4_rotor_audio"]
+[ext_resource type="AudioStream" uid="uid://dispupslvkcrk" path="res://city_game/combat/helicopter/audio/rockt-explosions.wav" id="5_weapon_fire_audio"]
 
 [sub_resource type="BoxShape3D" id="1_hitbox_shape"]
 size = Vector3(10.8, 4.6, 35.8938)
@@ -98,3 +99,9 @@ stream = ExtResource("4_rotor_audio")
 unit_size = 100.0
 autoplay = true
 max_distance = 200.0
+
+[node name="MissileFireAudio" type="AudioStreamPlayer3D" parent="." unique_id=404102611]
+stream = ExtResource("5_weapon_fire_audio")
+unit_size = 80.0
+max_distance = 220.0
+max_polyphony = 4

@@ -2,6 +2,8 @@ extends Node3D
 
 signal exploded(result: Dictionary)
 
+const MISSILE_LAUNCH_AUDIO_PATH := "res://city_game/combat/helicopter/audio/rockt-explosions.wav"
+
 @export var speed_mps := 210.0
 @export var max_distance_m := 500.0
 @export var max_lifetime_sec := 6.0
@@ -14,6 +16,7 @@ signal exploded(result: Dictionary)
 @export var sway_secondary_amplitude_m := 0.18
 @export var sway_primary_frequency := 0.16
 @export var sway_secondary_frequency := 0.23
+@export var launch_audio_enabled := true
 
 var _forward_direction := Vector3.FORWARD
 var _owner_node: Node = null
@@ -28,6 +31,8 @@ var _current_velocity := Vector3.ZERO
 var _visual_root: Node3D = null
 var _explosion_ring: MeshInstance3D = null
 var _explosion_sphere: MeshInstance3D = null
+var _launch_audio: AudioStreamPlayer3D = null
+var _launch_audio_trigger_count := 0
 var _sway_axis_primary := Vector3.RIGHT
 var _sway_axis_secondary := Vector3.UP
 
@@ -50,6 +55,7 @@ func configure(origin: Vector3, direction: Vector3, owner_node: Node = null, pla
 	_explosion_trigger_kind = ""
 	_resolve_sway_axes()
 	_sync_visual(_forward_direction * speed_mps, false)
+	_play_launch_audio()
 
 func get_velocity() -> Vector3:
 	return _current_velocity
@@ -59,6 +65,21 @@ func has_exploded() -> bool:
 
 func get_distance_travelled_m() -> float:
 	return _distance_travelled_m
+
+func get_debug_state() -> Dictionary:
+	return {
+		"launch_audio": {
+			"enabled": launch_audio_enabled,
+			"stream_bound": _launch_audio != null and _launch_audio.stream != null,
+			"stream_path": _launch_audio.stream.resource_path if _launch_audio != null and _launch_audio.stream != null else "",
+			"playing": _launch_audio.playing if _launch_audio != null else false,
+			"trigger_count": _launch_audio_trigger_count,
+			"expected_stream_path": MISSILE_LAUNCH_AUDIO_PATH,
+		},
+		"exploded": _exploded,
+		"explosion_trigger_kind": _explosion_trigger_kind,
+		"distance_travelled_m": _distance_travelled_m,
+	}
 
 func get_last_explosion_result() -> Dictionary:
 	return {
@@ -213,3 +234,10 @@ func _cache_nodes() -> void:
 	_visual_root = get_node_or_null("InterceptorMissileVisual") as Node3D
 	_explosion_ring = get_node_or_null("ExplosionRing") as MeshInstance3D
 	_explosion_sphere = get_node_or_null("ExplosionSphere") as MeshInstance3D
+	_launch_audio = get_node_or_null("LaunchAudio") as AudioStreamPlayer3D
+
+func _play_launch_audio() -> void:
+	if not launch_audio_enabled or _launch_audio == null or _launch_audio.stream == null:
+		return
+	_launch_audio_trigger_count += 1
+	_launch_audio.play()

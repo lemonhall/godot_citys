@@ -1,7 +1,8 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://city_game/combat/CityMissile.gd" id="1_missile_script"]
 [ext_resource type="PackedScene" path="res://city_game/assets/minigames/missile_command/projectiles/InterceptorMissileVisual.tscn" id="2_missile_visual"]
+[ext_resource type="AudioStream" path="res://city_game/combat/helicopter/audio/rockt-explosions.wav" id="3_launch_audio"]
 
 [sub_resource type="CylinderMesh" id="1_ring_mesh"]
 top_radius = 1.0
@@ -33,6 +34,11 @@ emission_energy_multiplier = 2.4
 script = ExtResource("1_missile_script")
 
 [node name="InterceptorMissileVisual" parent="." instance=ExtResource("2_missile_visual")]
+
+[node name="LaunchAudio" type="AudioStreamPlayer3D" parent="."]
+stream = ExtResource("3_launch_audio")
+max_distance = 180.0
+unit_size = 80.0
 
 [node name="ExplosionRing" type="MeshInstance3D" parent="."]
 position = Vector3(0, 0.06, 0)

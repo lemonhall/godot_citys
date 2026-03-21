@@ -12,11 +12,14 @@ signal destroyed
 @export var orbit_radius_m := 18.0
 @export var orbit_angular_speed_deg := 42.0
 @export var orbit_follow_speed_mps := 28.0
-@export var missile_fire_interval_sec := 0.85
+@export var missile_fire_interval_sec := 1.35
 @export var target_aim_height_m := 1.1
 @export var engage_delay_sec := 0.15
 @export var altitude_weave_amplitude_m := 3.6
 @export var altitude_weave_cycle_sec := 4.8
+@export var ambient_camera_shake_radius_m := 72.0
+@export var ambient_camera_shake_duration_sec := 0.16
+@export var ambient_camera_shake_amplitude_m := 0.09
 
 @onready var _model_root := $ModelRoot as Node3D
 @onready var _body_center := $Anchors/BodyCenter as Marker3D
@@ -143,6 +146,7 @@ func _physics_process(delta: float) -> void:
 	if _destroyed:
 		velocity = Vector3.ZERO
 		return
+	_apply_ambient_camera_shake()
 	if _engage_delay_remaining_sec > 0.0:
 		_engage_delay_remaining_sec = maxf(_engage_delay_remaining_sec - delta, 0.0)
 		velocity = Vector3.ZERO
@@ -224,3 +228,22 @@ func _play_missile_fire_audio() -> void:
 		return
 	_missile_fire_audio_trigger_count += 1
 	_missile_fire_audio.play()
+
+func _apply_ambient_camera_shake() -> void:
+	if _target == null or not is_instance_valid(_target):
+		return
+	if ambient_camera_shake_radius_m <= 0.0 or ambient_camera_shake_duration_sec <= 0.0 or ambient_camera_shake_amplitude_m <= 0.0:
+		return
+	if not _target.has_method("trigger_camera_shake"):
+		return
+	var target_body := _target as Node3D
+	if target_body == null:
+		return
+	var distance_to_target := target_body.global_position.distance_to(global_position)
+	if distance_to_target > ambient_camera_shake_radius_m:
+		return
+	var falloff := clampf(1.0 - distance_to_target / ambient_camera_shake_radius_m, 0.35, 1.0)
+	_target.trigger_camera_shake(
+		ambient_camera_shake_duration_sec,
+		ambient_camera_shake_amplitude_m * falloff
+	)

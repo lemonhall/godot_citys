@@ -3,6 +3,7 @@ extends SceneTree
 const T := preload("res://tests/_test_util.gd")
 const LAB_SCENE_PATH := "res://city_game/scenes/labs/HelicopterGunshipLab.tscn"
 const MISSILE_SCENE_PATH := "res://city_game/combat/CityMissile.tscn"
+const MAX_ALLOWED_GUNSHIP_MISSILES_WITHIN_OBSERVATION := 4
 
 func _init() -> void:
 	call_deferred("_run")
@@ -74,12 +75,27 @@ func _run() -> void:
 		return
 	if not T.require_true(self, gunship.has_method("get_combat_state"), "Active helicopter gunships must expose get_combat_state() for focused orbit and fire verification"):
 		return
+	if not T.require_true(self, player.has_method("get_traversal_fx_state"), "Helicopter gunship lab player must expose traversal FX state so close-range wind pressure camera shake can be verified"):
+		return
+
+	var ambient_pressure_shake_seen := false
+	for _frame in range(24):
+		await physics_frame
+		await process_frame
+		var ambient_fx_state: Dictionary = player.get_traversal_fx_state()
+		if float(ambient_fx_state.get("camera_shake_remaining_sec", 0.0)) > 0.0 and float(ambient_fx_state.get("camera_shake_amplitude_m", 0.0)) >= 0.04:
+			ambient_pressure_shake_seen = true
+			break
+	if not T.require_true(self, ambient_pressure_shake_seen, "Helicopter gunships hovering only 28m away must impose an immediate wind-pressure camera shake even before missiles start landing nearby"):
+		return
 
 	var initial_gunship_position := gunship.global_position
 	var moved := false
 	var enemy_missile_seen := false
+	var enemy_explosion_shake_seen := false
 	var min_gunship_height := gunship.global_position.y
 	var max_gunship_height := gunship.global_position.y
+	var max_missile_fire_index := 0
 	for _frame in range(240):
 		await physics_frame
 		await process_frame
@@ -89,14 +105,22 @@ func _run() -> void:
 				moved = true
 			min_gunship_height = minf(min_gunship_height, gunship.global_position.y)
 			max_gunship_height = maxf(max_gunship_height, gunship.global_position.y)
+			var combat_state: Dictionary = gunship.get_combat_state()
+			max_missile_fire_index = maxi(max_missile_fire_index, int(combat_state.get("missile_fire_index", 0)))
 		if int(lab.get_active_enemy_missile_count()) > 0 and moved and max_gunship_height - min_gunship_height > 1.6:
 			enemy_missile_seen = true
-			break
+		var fx_state_during_combat: Dictionary = player.get_traversal_fx_state()
+		if float(fx_state_during_combat.get("camera_shake_remaining_sec", 0.0)) > 0.0 and float(fx_state_during_combat.get("camera_shake_amplitude_m", 0.0)) >= 0.12:
+			enemy_explosion_shake_seen = true
 	if not T.require_true(self, moved, "Active helicopter gunships must move through an orbit/hover path instead of hanging motionless in the sky"):
 		return
 	if not T.require_true(self, max_gunship_height - min_gunship_height > 1.6, "Active helicopter gunships must weave up and back down over time instead of orbiting at one flat height forever"):
 		return
 	if not T.require_true(self, enemy_missile_seen, "Active helicopter gunships must keep firing enemy missiles with no ammo cap"):
+		return
+	if not T.require_true(self, max_missile_fire_index > 0 and max_missile_fire_index <= MAX_ALLOWED_GUNSHIP_MISSILES_WITHIN_OBSERVATION, "Helicopter gunships must attack less aggressively now; the current fire rate is still too spammy for close-range air combat"):
+		return
+	if not T.require_true(self, enemy_explosion_shake_seen, "Helicopter gunship missile explosions must kick visible player camera shake even though the encounter still has no failure state"):
 		return
 
 	var enemy_missile_root := lab.get_node("CombatRoot/EnemyMissiles") as Node3D

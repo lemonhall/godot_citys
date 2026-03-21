@@ -154,14 +154,15 @@ func _spawn_enemy_missile(origin: Vector3, direction: Vector3) -> Node3D:
 		return null
 	if missile.has_method("set"):
 		missile.set("explosion_damage", 0.0)
-		missile.set("explosion_camera_shake_duration_sec", 0.0)
-		missile.set("explosion_camera_shake_amplitude_m", 0.0)
+		missile.set("explosion_camera_shake_duration_sec", 0.28)
+		missile.set("explosion_camera_shake_amplitude_m", 0.18)
+		missile.set("launch_audio_enabled", false)
 		missile.set("speed_mps", 185.0)
 		missile.set("max_distance_m", 280.0)
 		missile.set("max_lifetime_sec", 2.8)
 	_enemy_missile_root.add_child(missile)
 	if missile.has_method("configure"):
-		missile.configure(origin, direction, get_active_gunship(), null)
+		missile.configure(origin, direction, get_active_gunship(), _player)
 	return missile
 
 func _on_gunship_destroyed() -> void:

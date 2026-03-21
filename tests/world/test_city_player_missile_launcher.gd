@@ -1,6 +1,7 @@
 extends SceneTree
 
 const T := preload("res://tests/_test_util.gd")
+const MISSILE_FIRE_AUDIO_PATH := "res://city_game/combat/helicopter/audio/rockt-explosions.wav"
 
 func _init() -> void:
 	call_deferred("_run")
@@ -110,6 +111,17 @@ func _run() -> void:
 	if not T.require_true(self, impact_missile.has_method("has_exploded"), "Missile node must expose has_exploded() for explosion verification"):
 		return
 	if not T.require_true(self, impact_missile.has_method("get_distance_travelled_m"), "Missile node must expose get_distance_travelled_m() for 500m self-destruct verification"):
+		return
+	if not T.require_true(self, impact_missile.has_method("get_debug_state"), "Missile node must expose get_debug_state() so launch-audio wiring can be verified through the formal runtime instead of editor-only assumptions"):
+		return
+
+	var impact_missile_debug_state: Dictionary = impact_missile.get_debug_state()
+	var launch_audio_state: Dictionary = impact_missile_debug_state.get("launch_audio", {})
+	if not T.require_true(self, bool(launch_audio_state.get("stream_bound", false)), "Player weapon 8 missile launches must bind a dedicated launch audio stream instead of staying acoustically silent at fire time"):
+		return
+	if not T.require_true(self, str(launch_audio_state.get("stream_path", "")) == MISSILE_FIRE_AUDIO_PATH, "Player weapon 8 missile launches must reuse rockt-explosions.wav as the formal launch SFX"):
+		return
+	if not T.require_true(self, int(launch_audio_state.get("trigger_count", 0)) >= 1, "Player weapon 8 missile launches must actually trigger the launch SFX when the missile spawns"):
 		return
 
 	var missile_visual := impact_missile.find_child("InterceptorMissileVisual", true, false) as Node3D

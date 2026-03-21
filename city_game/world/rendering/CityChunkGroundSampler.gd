@@ -3,24 +3,15 @@ extends RefCounted
 const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
 
 static func sample_height(local_point: Vector2, chunk_data: Dictionary, profile: Dictionary) -> float:
-	var chunk_center: Vector3 = chunk_data.get("chunk_center", Vector3.ZERO)
-	var world_seed := int(chunk_data.get("world_seed", chunk_data.get("chunk_seed", 0)))
-	var world_x := chunk_center.x + local_point.x
-	var world_z := chunk_center.z + local_point.y
-	var base_height := CityTerrainSampler.sample_height(world_x, world_z, world_seed)
-	return _blend_ground_to_roadbed(local_point, base_height, profile)
+	return CityTerrainSampler.GROUND_HEIGHT_Y
 
 static func sample_drive_height(local_point: Vector2, chunk_data: Dictionary, profile: Dictionary, road_id: String = "") -> float:
-	var chunk_center: Vector3 = chunk_data.get("chunk_center", Vector3.ZERO)
-	var world_seed := int(chunk_data.get("world_seed", chunk_data.get("chunk_seed", 0)))
-	var world_x := chunk_center.x + local_point.x
-	var world_z := chunk_center.z + local_point.y
-	var base_height := CityTerrainSampler.sample_height(world_x, world_z, world_seed)
+	var base_height := CityTerrainSampler.GROUND_HEIGHT_Y
 	var matched_surface := _find_best_surface_sample(local_point, profile, road_id, true)
 	if matched_surface.is_empty():
 		matched_surface = _find_best_surface_sample(local_point, profile, "", true)
 	if matched_surface.is_empty():
-		return _blend_ground_to_roadbed(local_point, base_height, profile)
+		return base_height
 	return float(matched_surface.get("surface_y", base_height))
 
 static func _blend_ground_to_roadbed(local_point: Vector2, base_height: float, profile: Dictionary) -> float:
@@ -34,7 +25,7 @@ static func _blend_ground_to_roadbed(local_point: Vector2, base_height: float, p
 		var influence_radius := float(sample.get("influence_radius_m", 0.0))
 		if distance >= influence_radius:
 			continue
-		var road_height := float(sample.get("surface_y", base_height)) - 0.02
+		var road_height := float(sample.get("surface_y", base_height))
 		var weight := pow(1.0 - distance / influence_radius, 1.35)
 		var blended_height := lerpf(base_height, road_height, clampf(weight * 0.96, 0.0, 1.0))
 		if distance < best_distance:

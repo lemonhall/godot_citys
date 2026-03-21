@@ -68,6 +68,11 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(target_state.get("damage_state", "")) == "intact", "Target building runtime must boot in the intact state"):
 		return
+	var target_debug_state: Dictionary = target_runtime.get_debug_state()
+	if not T.require_true(self, not bool(target_debug_state.get("crack_runtime_installed", true)), "Intact target buildings must not eagerly mount CrackRuntime before any damage occurs"):
+		return
+	if not T.require_true(self, not bool(target_debug_state.get("collapse_runtime_installed", true)), "Intact target buildings must not eagerly mount CollapseRuntime before any damage occurs"):
+		return
 
 	lab.queue_free()
 	T.pass_and_quit(self)

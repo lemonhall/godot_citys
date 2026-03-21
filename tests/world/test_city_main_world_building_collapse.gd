@@ -37,6 +37,11 @@ func _run() -> void:
 		return
 	if not T.require_true(self, target_runtime.has_method("get_primary_target_world_position"), "Main-world destructible building runtime must expose a target world position"):
 		return
+	var initial_debug_state: Dictionary = target_runtime.get_debug_state()
+	if not T.require_true(self, not bool(initial_debug_state.get("crack_runtime_installed", true)), "Fresh streamed buildings must not eagerly mount CrackRuntime before any damage occurs"):
+		return
+	if not T.require_true(self, not bool(initial_debug_state.get("collapse_runtime_installed", true)), "Fresh streamed buildings must not eagerly mount CollapseRuntime before any damage occurs"):
+		return
 
 	var initial_state: Dictionary = target_runtime.get_state()
 	var building_id := str(initial_state.get("building_id", ""))

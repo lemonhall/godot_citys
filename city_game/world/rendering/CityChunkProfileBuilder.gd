@@ -733,7 +733,7 @@ static func _try_build_building(candidate: Dictionary, archetype: Dictionary, ch
 	var road_angle_rad := float(candidate.get("road_angle_rad", 0.0))
 	var yaw_rad := _resolve_building_yaw(road_angle_rad, local_seed, archetype.get("id", "slab"))
 	var world_center: Vector2 = candidate.get("world_center", Vector2(chunk_center.x + center_2d.x, chunk_center.z + center_2d.y))
-	var ground_y := CityTerrainSampler.sample_height(world_center.x, world_center.y, world_seed)
+	var ground_y := CityTerrainSampler.GROUND_HEIGHT_Y
 	var palette: Dictionary = PALETTES[int(posmod(local_seed, PALETTES.size()))]
 	var road_alignment_delta_deg := _measure_street_alignment_delta_deg(yaw_rad, road_angle_rad)
 	return {
@@ -939,20 +939,8 @@ static func _clamp_to_chunk(point: Vector2, half_extent: float) -> Vector2:
 static func _slot_seed(chunk_seed: int, x_step: int, z_step: int) -> int:
 	return int((chunk_seed * 31 + x_step * 73856093 + z_step * 19349663) & 0x7fffffff)
 
-static func _measure_terrain_relief(chunk_center: Vector3, chunk_size_m: float, world_seed: int) -> float:
-	var half_size := chunk_size_m * 0.5
-	var min_height := INF
-	var max_height := -INF
-	for x_index in range(4):
-		for z_index in range(4):
-			var position := Vector2(
-				lerpf(-half_size, half_size, float(x_index) / 3.0),
-				lerpf(-half_size, half_size, float(z_index) / 3.0)
-			)
-			var height := CityTerrainSampler.sample_height(chunk_center.x + position.x, chunk_center.z + position.y, world_seed)
-			min_height = minf(min_height, height)
-			max_height = maxf(max_height, height)
-	return maxf(max_height - min_height, 0.0)
+static func _measure_terrain_relief(_chunk_center: Vector3, _chunk_size_m: float, _world_seed: int) -> float:
+	return 0.0
 
 static func _build_signature(profile: Dictionary, road_signature: String) -> String:
 	var signature_parts := PackedStringArray([road_signature])

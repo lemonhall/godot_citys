@@ -45,13 +45,17 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(setup_profile.get("ground_usec", 0)) > 0, "Chunk setup profile must expose ground build cost"):
 		return
-	if not T.require_true(self, int(setup_profile.get("ground_mesh_usec", 0)) > 0, "Chunk setup profile must expose terrain mesh build cost"):
+	if not T.require_true(self, int(setup_profile.get("ground_mesh_usec", 0)) > 0, "Chunk setup profile must expose flat-ground mesh build cost"):
 		return
-	if not T.require_true(self, int(setup_profile.get("ground_mesh_usec", 0)) <= 9000, "Chunk setup profile must keep terrain mesh build cost at or below 9000 usec after v5 M1"):
+	if not T.require_true(self, int(setup_profile.get("ground_mesh_usec", 0)) <= 3000, "Flat-ground chunk setup must keep ground mesh build cost at or below 3000 usec"):
 		return
 	if not T.require_true(self, int(setup_profile.get("ground_collision_usec", 0)) > 0, "Chunk setup profile must expose ground collision build cost"):
 		return
-	if not T.require_true(self, int(setup_profile.get("ground_collision_face_count", 0)) > 0, "Chunk setup profile must expose cached terrain collision face counts"):
+	if not T.require_true(self, int(setup_profile.get("ground_collision_face_count", 0)) > 0, "Chunk setup profile must expose flat-ground collision face counts"):
+		return
+	if not T.require_true(self, int(setup_profile.get("ground_collision_face_count", 0)) <= 4, "Flat-ground chunk setup must keep collision faces at plane scale instead of terrain-scale tessellation"):
+		return
+	if not T.require_true(self, int(setup_profile.get("ground_vertex_sample_count", 0)) <= 8, "Flat-ground chunk setup must keep ground vertex sample count at plane scale"):
 		return
 	if not T.require_true(self, int(setup_profile.get("ground_material_usec", 0)) > 0, "Chunk setup profile must expose ground material build cost"):
 		return
@@ -67,7 +71,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(setup_profile.get("road_overlay_usec", 0)) <= 1400, "M4 chunk setup profile must keep road overlay cost at or below 1400 usec"):
 		return
-	if not T.require_true(self, int(setup_profile.get("ground_usec", 0)) <= 1800, "M4 chunk setup profile must keep ground build cost at or below 1800 usec"):
+	if not T.require_true(self, int(setup_profile.get("ground_usec", 0)) <= 1800, "Flat-ground chunk setup must keep ground build cost at or below 1800 usec"):
 		return
 	if not T.require_true(self, int(setup_profile.get("props_usec", 0)) > 0, "Chunk setup profile must expose prop build cost"):
 		return

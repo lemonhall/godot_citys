@@ -438,8 +438,6 @@ static func _build_segment_transform(a: Vector3, b: Vector3, thickness: float) -
 	return Transform3D(basis, origin)
 
 static func _build_bridge_supports(road_segments: Array, chunk_data: Dictionary, color: Color) -> MultiMeshInstance3D:
-	var chunk_center: Vector3 = chunk_data.get("chunk_center", Vector3.ZERO)
-	var world_seed := int(chunk_data.get("world_seed", 0))
 	var transforms: Array[Transform3D] = []
 	for segment in road_segments:
 		var segment_dict: Dictionary = segment
@@ -449,9 +447,7 @@ static func _build_bridge_supports(road_segments: Array, chunk_data: Dictionary,
 		var bridge_range: Vector2 = segment_dict.get("bridge_range", Vector2(0.2, 0.8))
 		for sample in _sample_bridge_support_positions(points, bridge_range):
 			var support_position: Vector3 = sample
-			var world_x := chunk_center.x + support_position.x
-			var world_z := chunk_center.z + support_position.z
-			var ground_y := CityTerrainSampler.sample_height(world_x, world_z, world_seed)
+			var ground_y := CityTerrainSampler.GROUND_HEIGHT_Y
 			var support_height := maxf(support_position.y - float(segment_dict.get("deck_thickness_m", 0.8)) - ground_y, 0.0)
 			if support_height < 3.0:
 				continue

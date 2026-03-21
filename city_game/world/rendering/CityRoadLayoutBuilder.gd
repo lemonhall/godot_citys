@@ -89,7 +89,7 @@ static func build_chunk_roads(chunk_data: Dictionary) -> Dictionary:
 		"curved_segment_count": curved_segment_count,
 		"non_axis_road_segment_count": non_axis_road_segment_count,
 		"bridge_count": bridge_count,
-		"road_mesh_mode": "terrain_overlay_bridges",
+		"road_mesh_mode": "flat_surface_mask",
 		"road_template_counts": template_counts,
 		"bridge_min_clearance_m": 0.0 if min_bridge_clearance == INF else min_bridge_clearance,
 		"bridge_deck_thickness_m": max_bridge_deck_thickness,
@@ -172,7 +172,7 @@ static func _build_local_cell_roads(expanded_rect: Rect2, chunk_center: Vector3,
 					segments.append(service_segment)
 	return segments
 
-static func _make_segment_from_world_polyline(edge_data: Dictionary, chunk_center: Vector3, world_seed: int, segment_seed: int) -> Dictionary:
+static func _make_segment_from_world_polyline(edge_data: Dictionary, chunk_center: Vector3, world_seed: int, _segment_seed: int) -> Dictionary:
 	var road_class := str(edge_data.get("class", "arterial"))
 	var road_id := str(edge_data.get("road_id", edge_data.get("edge_id", "")))
 	var edge_id := str(edge_data.get("edge_id", road_id))
@@ -198,28 +198,7 @@ static func _make_segment_from_world_polyline(edge_data: Dictionary, chunk_cente
 		return {}
 	var max_grade := float(template.get("max_grade", 0.08))
 	local_points = _smooth_ground_profile(local_points, max_grade)
-	var bridge := template_id == "expressway_elevated" or _should_raise_bridge(road_class, points_2d, segment_seed)
-	var bridge_clearance := 0.0
-	var bridge_range := Vector2.ZERO
 	var deck_thickness := float(template.get("deck_thickness_m", 0.4))
-	if bridge:
-		bridge_clearance = _resolve_bridge_clearance(template_id, segment_seed)
-		var bridge_profile := _build_bridge_profile(
-			local_points,
-			points_2d,
-			world_seed,
-			bridge_clearance,
-			max_grade,
-			resolved_width_m,
-			template_id
-		)
-		if bridge_profile.is_empty():
-			bridge = false
-			bridge_clearance = 0.0
-		else:
-			bridge_range = bridge_profile.get("bridge_range", Vector2.ZERO)
-			local_points = bridge_profile.get("points", local_points)
-			deck_thickness = maxf(deck_thickness, 1.0)
 	return {
 		"road_id": road_id,
 		"edge_id": edge_id,
@@ -235,9 +214,9 @@ static func _make_segment_from_world_polyline(edge_data: Dictionary, chunk_cente
 		"section_semantics": section_semantics.duplicate(true),
 		"deck_thickness_m": deck_thickness,
 		"points": local_points,
-		"bridge": bridge,
-		"bridge_clearance_m": bridge_clearance,
-		"bridge_range": bridge_range,
+		"bridge": false,
+		"bridge_clearance_m": 0.0,
+		"bridge_range": Vector2.ZERO,
 	}
 
 static func _resolve_segment_section_semantics(edge_data: Dictionary, template: Dictionary) -> Dictionary:
@@ -390,13 +369,13 @@ static func _polyline_midpoint_2d(points: Array) -> Vector2:
 		traversed += segment_length
 	return points[-1]
 
-static func _world_polyline_to_local_points(points_2d: Array, chunk_center: Vector3, world_seed: int) -> Array[Vector3]:
+static func _world_polyline_to_local_points(points_2d: Array, chunk_center: Vector3, _world_seed: int) -> Array[Vector3]:
 	var local_points: Array[Vector3] = []
 	for point in points_2d:
 		var world_point: Vector2 = point
 		local_points.append(Vector3(
 			world_point.x - chunk_center.x,
-			CityTerrainSampler.sample_height(world_point.x, world_point.y, world_seed),
+			CityTerrainSampler.GROUND_HEIGHT_Y,
 			world_point.y - chunk_center.z
 		))
 	return local_points
@@ -474,11 +453,8 @@ static func _build_bridge_profile(local_points: Array, points_2d: Array, world_s
 		"bridge_range": Vector2(flat_start_distance / total_length, flat_end_distance / total_length),
 	}
 
-static func _resolve_bridge_deck_level(points_2d: Array, local_points: Array, world_seed: int, bridge_clearance: float) -> float:
-	var max_ground := -INF
-	for ratio in [0.22, 0.35, 0.5, 0.65, 0.78]:
-		var sample_point := _sample_polyline_2d(points_2d, float(ratio))
-		max_ground = maxf(max_ground, CityTerrainSampler.sample_height(sample_point.x, sample_point.y, world_seed))
+static func _resolve_bridge_deck_level(_points_2d: Array, local_points: Array, _world_seed: int, bridge_clearance: float) -> float:
+	var max_ground := CityTerrainSampler.GROUND_HEIGHT_Y
 	var endpoint_height := maxf((local_points[0] as Vector3).y, (local_points[-1] as Vector3).y)
 	return maxf(max_ground + bridge_clearance, endpoint_height + bridge_clearance * 0.72)
 

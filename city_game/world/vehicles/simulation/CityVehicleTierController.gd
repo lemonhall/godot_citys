@@ -140,7 +140,12 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 	if delta > 0.0:
 		for state_variant in active_states:
 			var state: CityVehicleState = state_variant
+			var previous_position := state.world_position
+			var previous_heading := state.heading
 			state.step(delta)
+			if state.tier != CityVehicleState.TIER_0 \
+					and (not state.world_position.is_equal_approx(previous_position) or not state.heading.is_equal_approx(previous_heading)):
+				_mark_state_chunk_dirty(state)
 	var traffic_step_usec := _duration_or_zero(step_started_usec, active_states.size()) if delta > 0.0 else 0
 
 	if not _should_rebuild_assignments(active_chunk_ids, player_position):
@@ -162,20 +167,19 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			)
 			_inspection_farfield_only_elapsed_sec = 0.0
 			return get_global_summary()
-		var reuse_result := _rebuild_chunk_snapshots_from_cached_assignments(active_chunk_ids)
 		var reuse_runtime_summary: Dictionary = _vehicle_streamer.get_runtime_summary()
 		_update_runtime_snapshot(
 			active_chunk_ids.size(),
 			active_states.size(),
-			int(reuse_result.get("tier0_count", 0)),
-			int(reuse_result.get("tier1_count", 0)),
-			int(reuse_result.get("tier2_count", 0)),
-			int(reuse_result.get("tier3_count", 0)),
+			int(_global_snapshot.get("tier0_count", 0)),
+			int(_global_snapshot.get("tier1_count", 0)),
+			int(_global_snapshot.get("tier2_count", 0)),
+			int(_global_snapshot.get("tier3_count", 0)),
 			reuse_runtime_summary,
 			traffic_spawn_usec,
 			traffic_step_usec,
 			0,
-			int(reuse_result.get("traffic_snapshot_rebuild_usec", 0)),
+			0,
 			update_started_usec
 		)
 		_inspection_farfield_only_elapsed_sec = 0.0
@@ -221,7 +225,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			_vehicle_streamer.ground_state(state)
 			_tier3_state_refs.append(state)
 			var tier3_states: Array = chunk_snapshot.get("tier3_states", [])
-			tier3_states.append(state.to_render_snapshot())
+			tier3_states.append(state)
 			chunk_snapshot["tier3_states"] = tier3_states
 			tier3_count += 1
 			chunk_snapshot["tier3_count"] = int(chunk_snapshot.get("tier3_count", 0)) + 1
@@ -230,7 +234,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			_vehicle_streamer.ground_state(state)
 			_tier2_state_refs.append(state)
 			var tier2_states: Array = chunk_snapshot.get("tier2_states", [])
-			tier2_states.append(state.to_render_snapshot())
+			tier2_states.append(state)
 			chunk_snapshot["tier2_states"] = tier2_states
 			tier2_count += 1
 			chunk_snapshot["tier2_count"] = int(chunk_snapshot.get("tier2_count", 0)) + 1
@@ -239,7 +243,7 @@ func update_active_chunks(active_chunk_entries: Array, player_position: Vector3,
 			_vehicle_streamer.ground_state(state)
 			_tier1_state_refs.append(state)
 			var tier1_states: Array = chunk_snapshot.get("tier1_states", [])
-			tier1_states.append(state.to_render_snapshot())
+			tier1_states.append(state)
 			chunk_snapshot["tier1_states"] = tier1_states
 			tier1_count += 1
 			chunk_snapshot["tier1_count"] = int(chunk_snapshot.get("tier1_count", 0)) + 1
@@ -512,7 +516,7 @@ func _rebuild_chunk_snapshots_from_cached_assignments(active_chunk_ids: Array[St
 		_vehicle_streamer.ground_state(state)
 		var chunk_snapshot: Dictionary = next_chunk_render_snapshots[state.chunk_id]
 		var tier1_states: Array = chunk_snapshot.get("tier1_states", [])
-		tier1_states.append(state.to_render_snapshot())
+		tier1_states.append(state)
 		chunk_snapshot["tier1_states"] = tier1_states
 		chunk_snapshot["tier1_count"] = int(chunk_snapshot.get("tier1_count", 0)) + 1
 		next_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
@@ -523,7 +527,7 @@ func _rebuild_chunk_snapshots_from_cached_assignments(active_chunk_ids: Array[St
 		_vehicle_streamer.ground_state(state)
 		var chunk_snapshot: Dictionary = next_chunk_render_snapshots[state.chunk_id]
 		var tier2_states: Array = chunk_snapshot.get("tier2_states", [])
-		tier2_states.append(state.to_render_snapshot())
+		tier2_states.append(state)
 		chunk_snapshot["tier2_states"] = tier2_states
 		chunk_snapshot["tier2_count"] = int(chunk_snapshot.get("tier2_count", 0)) + 1
 		next_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
@@ -534,7 +538,7 @@ func _rebuild_chunk_snapshots_from_cached_assignments(active_chunk_ids: Array[St
 		_vehicle_streamer.ground_state(state)
 		var chunk_snapshot: Dictionary = next_chunk_render_snapshots[state.chunk_id]
 		var tier3_states: Array = chunk_snapshot.get("tier3_states", [])
-		tier3_states.append(state.to_render_snapshot())
+		tier3_states.append(state)
 		chunk_snapshot["tier3_states"] = tier3_states
 		chunk_snapshot["tier3_count"] = int(chunk_snapshot.get("tier3_count", 0)) + 1
 		next_chunk_render_snapshots[state.chunk_id] = chunk_snapshot
@@ -578,15 +582,30 @@ func _state_snapshot_arrays_match(previous_states: Array, next_states: Array) ->
 	if previous_states.size() != next_states.size():
 		return false
 	for state_index in range(previous_states.size()):
-		var previous_state: Dictionary = previous_states[state_index]
-		var next_state: Dictionary = next_states[state_index]
-		if str(previous_state.get("vehicle_id", "")) != str(next_state.get("vehicle_id", "")):
+		var previous_state = previous_states[state_index]
+		var next_state = next_states[state_index]
+		if _snapshot_state_vehicle_id(previous_state) != _snapshot_state_vehicle_id(next_state):
 			return false
-		if not (previous_state.get("world_position", Vector3.ZERO) as Vector3).is_equal_approx(next_state.get("world_position", Vector3.ZERO)):
+		if not _snapshot_state_world_position(previous_state).is_equal_approx(_snapshot_state_world_position(next_state)):
 			return false
-		if not (previous_state.get("heading", Vector3.FORWARD) as Vector3).is_equal_approx(next_state.get("heading", Vector3.FORWARD)):
+		if not _snapshot_state_heading(previous_state).is_equal_approx(_snapshot_state_heading(next_state)):
 			return false
 	return true
+
+func _snapshot_state_vehicle_id(state) -> String:
+	if state is Dictionary:
+		return str((state as Dictionary).get("vehicle_id", ""))
+	return str(state.vehicle_id) if state != null else ""
+
+func _snapshot_state_world_position(state) -> Vector3:
+	if state is Dictionary:
+		return (state as Dictionary).get("world_position", Vector3.ZERO)
+	return state.world_position if state != null else Vector3.ZERO
+
+func _snapshot_state_heading(state) -> Vector3:
+	if state is Dictionary:
+		return (state as Dictionary).get("heading", Vector3.FORWARD)
+	return state.heading if state != null else Vector3.FORWARD
 
 func _update_runtime_snapshot(
 	active_chunk_count: int,
@@ -697,8 +716,7 @@ func _filter_out_vehicle(states: Array[CityVehicleState], vehicle_id: String) ->
 func _filter_snapshot_states(states: Array, vehicle_id: String) -> Array:
 	var filtered: Array = []
 	for state_variant in states:
-		var state: Dictionary = state_variant
-		if str(state.get("vehicle_id", "")) == vehicle_id:
+		if _snapshot_state_vehicle_id(state_variant) == vehicle_id:
 			continue
-		filtered.append(state)
+		filtered.append(state_variant)
 	return filtered

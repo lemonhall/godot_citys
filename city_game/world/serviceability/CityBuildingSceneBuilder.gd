@@ -64,7 +64,7 @@ static func build_runtime_building(building: Dictionary, apply_inspection_payloa
 			_add_roof_box(building_root, "SawToothB", size, Vector2(size.x * 0.18, 0.0), sawtooth_b_size, accent)
 	return building_root
 
-static func build_service_scene_root(building: Dictionary) -> Node3D:
+static func build_service_scene_root(building: Dictionary, assign_owner_recursive: bool = false) -> Node3D:
 	var building_id := str(building.get("building_id", ""))
 	var display_name := str(building.get("display_name", ""))
 	var service_root := Node3D.new()
@@ -78,7 +78,8 @@ static func build_service_scene_root(building: Dictionary) -> Node3D:
 	var generated_building := build_runtime_building(local_contract)
 	generated_building.name = "GeneratedBuilding"
 	service_root.add_child(generated_building)
-	_assign_owner_recursive(service_root, service_root)
+	if assign_owner_recursive:
+		_assign_owner_recursive(service_root, service_root)
 	return service_root
 
 static func to_service_local_building_contract(building: Dictionary) -> Dictionary:

@@ -166,6 +166,7 @@ DoD：
 
 - `tests/world/test_city_pedestrian_chunk_snapshot_cache.gd`
 - `tests/world/test_city_pedestrian_tier1_dirty_commit.gd`
+- `tests/world/test_city_pedestrian_tier1_reorder_stable_commit.gd`
 - `tests/world/test_city_pedestrian_traversal_assignment_scheduler.gd`
 - `tests/world/test_city_pedestrian_nearfield_traversal_assignment_scheduler.gd`
 - `tests/world/test_city_pedestrian_lite_density_uplift.gd`
@@ -190,6 +191,7 @@ DoD：
 - `tests/world/test_city_vehicle_profile_stats.gd`
 - `tests/world/test_city_vehicle_batch_rendering.gd`
 - `tests/world/test_city_vehicle_renderer_initial_snapshot.gd`
+- `tests/world/test_city_vehicle_tier1_reorder_stable_commit.gd`
 - `tests/world/test_city_vehicle_streaming_budget.gd`
 - `tests/world/test_city_vehicle_lod_contract.gd`
 - `tests/e2e/test_city_vehicle_performance_profile.gd`

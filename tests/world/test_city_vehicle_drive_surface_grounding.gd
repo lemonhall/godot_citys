@@ -9,8 +9,6 @@ const CityRoadLayoutBuilder := preload("res://city_game/world/rendering/CityRoad
 const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
 
 const HEIGHT_EPSILON_M := 0.18
-const BRIDGE_CLEARANCE_MIN_M := 4.0
-
 func _init() -> void:
 	call_deferred("_run")
 
@@ -26,36 +24,42 @@ func _run() -> void:
 		return
 
 	var road_sample: Dictionary = sample_result.get("road_sample", {})
-	var bridge_sample: Dictionary = sample_result.get("bridge_sample", {})
+	var expressway_sample: Dictionary = sample_result.get("expressway_sample", {})
 	if not T.require_true(self, not road_sample.is_empty(), "Drive-surface grounding validation requires at least one non-bridge vehicle sample"):
 		return
-	if not T.require_true(self, not bridge_sample.is_empty(), "Drive-surface grounding validation requires at least one bridge vehicle sample"):
+	if not T.require_true(self, not expressway_sample.is_empty(), "Drive-surface grounding validation requires at least one expressway vehicle sample"):
 		return
 
 	var streamer := CityVehicleStreamer.new()
 	streamer.setup(config, world_data, {})
 
 	var grounded_road_state := _ground_sample(streamer, road_sample)
-	var grounded_bridge_state := _ground_sample(streamer, bridge_sample)
+	var grounded_expressway_state := _ground_sample(streamer, expressway_sample)
 
 	var expected_road_y := float(road_sample.get("expected_surface_y", 0.0))
-	var expected_bridge_y := float(bridge_sample.get("expected_surface_y", 0.0))
-	if not T.require_true(self, absf(grounded_road_state.world_position.y - expected_road_y) <= HEIGHT_EPSILON_M, "Vehicle ground_state must stay aligned to sampled road surface height on normal roads"):
+	var expected_expressway_y := float(expressway_sample.get("expected_surface_y", 0.0))
+	if not T.require_true(self, absf(expected_road_y) <= HEIGHT_EPSILON_M, "Flat-ground runtime requires non-bridge road surface height to collapse to y=0"):
 		return
-	if not T.require_true(self, absf(grounded_bridge_state.world_position.y - expected_bridge_y) <= HEIGHT_EPSILON_M, "Vehicle ground_state must stay aligned to sampled road surface height on bridge decks"):
+	if not T.require_true(self, absf(grounded_road_state.world_position.y - expected_road_y) <= HEIGHT_EPSILON_M, "Vehicle ground_state must stay aligned to the flat road surface on normal roads"):
+		return
+	if not T.require_true(self, absf(expected_expressway_y) <= HEIGHT_EPSILON_M, "Flat-ground runtime also requires expressway road surface height to collapse to y=0"):
+		return
+	if not T.require_true(self, absf(grounded_expressway_state.world_position.y - expected_expressway_y) <= HEIGHT_EPSILON_M, "Expressway vehicles must also stay aligned to the shared flat road plane"):
 		return
 
-	var bridge_world_position: Vector3 = bridge_sample.get("world_position", Vector3.ZERO)
-	var terrain_y := CityTerrainSampler.sample_height(bridge_world_position.x, bridge_world_position.z, int(config.base_seed))
-	if not T.require_true(self, grounded_bridge_state.world_position.y - terrain_y >= BRIDGE_CLEARANCE_MIN_M, "Bridge vehicles must stay clearly above terrain instead of collapsing back onto the ground mesh"):
+	var expressway_world_position: Vector3 = expressway_sample.get("world_position", Vector3.ZERO)
+	var terrain_y := CityTerrainSampler.sample_height(expressway_world_position.x, expressway_world_position.z, int(config.base_seed))
+	if not T.require_true(self, absf(terrain_y) <= HEIGHT_EPSILON_M, "Flat-ground runtime requires terrain sampler to keep the expressway underlay at y=0"):
+		return
+	if not T.require_true(self, absf(grounded_expressway_state.world_position.y - terrain_y) <= HEIGHT_EPSILON_M, "Expressway vehicles must no longer rely on elevated bridge clearance above terrain"):
 		return
 
 	print("CITY_VEHICLE_DRIVE_SURFACE_GROUNDING %s" % JSON.stringify({
 		"road_expected_y": expected_road_y,
 		"road_grounded_y": grounded_road_state.world_position.y,
-		"bridge_expected_y": expected_bridge_y,
-		"bridge_grounded_y": grounded_bridge_state.world_position.y,
-		"bridge_terrain_y": terrain_y,
+		"expressway_expected_y": expected_expressway_y,
+		"expressway_grounded_y": grounded_expressway_state.world_position.y,
+		"expressway_terrain_y": terrain_y,
 	}))
 
 	T.pass_and_quit(self)
@@ -64,7 +68,7 @@ func _find_grounding_samples(config: CityWorldConfig, world_data: Dictionary, ve
 	var chunk_grid: Vector2i = config.get_chunk_grid_size()
 	var center_chunk := Vector2i(chunk_grid.x / 2, chunk_grid.y / 2)
 	var road_sample: Dictionary = {}
-	var bridge_sample: Dictionary = {}
+	var expressway_sample: Dictionary = {}
 	for offset_y in range(-6, 7):
 		for offset_x in range(-6, 7):
 			var chunk_key := center_chunk + Vector2i(offset_x, offset_y)
@@ -87,18 +91,18 @@ func _find_grounding_samples(config: CityWorldConfig, world_data: Dictionary, ve
 					"expected_surface_y": expected_surface_y,
 					"world_position": slot.get("world_position", Vector3.ZERO),
 				}
-				if bool(matched_segment.get("bridge", false)) and bridge_sample.is_empty():
-					bridge_sample = sample
-				elif not bool(matched_segment.get("bridge", false)) and road_sample.is_empty():
+				if str(slot.get("road_class", "")) == "expressway_elevated" and expressway_sample.is_empty():
+					expressway_sample = sample
+				elif str(slot.get("road_class", "")) != "expressway_elevated" and road_sample.is_empty():
 					road_sample = sample
-				if not road_sample.is_empty() and not bridge_sample.is_empty():
+				if not road_sample.is_empty() and not expressway_sample.is_empty():
 					return {
 						"road_sample": road_sample,
-						"bridge_sample": bridge_sample,
+						"expressway_sample": expressway_sample,
 					}
 	return {
 		"road_sample": road_sample,
-		"bridge_sample": bridge_sample,
+		"expressway_sample": expressway_sample,
 	}
 
 func _ground_sample(streamer: CityVehicleStreamer, sample: Dictionary) -> CityVehicleState:

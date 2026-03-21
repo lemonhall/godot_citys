@@ -8,6 +8,8 @@ const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTer
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
 const CityChunkMultimeshBuilder := preload("res://city_game/world/rendering/CityChunkMultimeshBuilder.gd")
 const CityRoadMeshBuilder := preload("res://city_game/world/rendering/CityRoadMeshBuilder.gd")
+const CityBuildingSceneBuilder := preload("res://city_game/world/serviceability/CityBuildingSceneBuilder.gd")
+const CityDestructibleBuildingRuntime := preload("res://city_game/combat/buildings/CityDestructibleBuildingRuntime.gd")
 const CityPedestrianTierController := preload("res://city_game/world/pedestrians/simulation/CityPedestrianTierController.gd")
 const CityPedestrianVisualCatalog := preload("res://city_game/world/pedestrians/rendering/CityPedestrianVisualCatalog.gd")
 const CityPedestrianVisualInstance := preload("res://city_game/world/pedestrians/rendering/CityPedestrianVisualInstance.gd")
@@ -594,21 +596,12 @@ func prewarm_actor_pages(chunk_entries: Array) -> void:
 	if _vehicle_tier_controller != null and _vehicle_tier_controller.has_method("prewarm_chunk_entries"):
 		_vehicle_tier_controller.prewarm_chunk_entries(chunk_entries)
 
-func prewarm_chunk_pages(chunk_entries: Array, prewarm_terrain: bool = true, prewarm_surface: bool = true) -> void:
+func prewarm_chunk_pages(chunk_entries: Array, _prewarm_terrain: bool = true, prewarm_surface: bool = true) -> void:
 	var warmed_surface_keys: Dictionary = {}
-	var warmed_terrain_keys: Dictionary = {}
 	for entry_variant in chunk_entries:
 		var entry: Dictionary = entry_variant
 		var payload := _build_chunk_payload(entry)
 		payload["initial_lod_mode"] = _resolve_initial_lod_mode(payload)
-		if prewarm_terrain:
-			var terrain_page_header: Dictionary = _terrain_page_provider.build_chunk_page_header(payload, int(CityChunkScene.TERRAIN_GRID_STEPS))
-			var terrain_runtime_key := str(terrain_page_header.get("runtime_key", ""))
-			if terrain_runtime_key != "" and not warmed_terrain_keys.has(terrain_runtime_key) and not _terrain_page_provider.has_runtime_bundle(terrain_runtime_key):
-				var terrain_page_request := _terrain_page_provider.build_page_request(payload, int(CityChunkScene.TERRAIN_GRID_STEPS), terrain_page_header)
-				var terrain_runtime_bundle := CityTerrainPageProvider.prepare_page_bundle(terrain_page_request)
-				_terrain_page_provider.store_runtime_bundle(terrain_runtime_key, terrain_runtime_bundle)
-				warmed_terrain_keys[terrain_runtime_key] = true
 		if prewarm_surface:
 			for detail_mode in [CityChunkScene.SURFACE_DETAIL_COARSE, CityChunkScene.SURFACE_DETAIL_FULL]:
 				var surface_page_header: Dictionary = _surface_page_provider.build_chunk_page_header(payload, detail_mode)
@@ -1208,24 +1201,9 @@ func _process_prepare_budget() -> void:
 			payload["prepared_profile"] = cached_profile
 			_record_prepare_profile_sample(0)
 		payload["surface_page_provider"] = _surface_page_provider
-		payload["terrain_page_provider"] = _terrain_page_provider
 		payload["initial_lod_mode"] = _resolve_initial_lod_mode(payload)
 		_prebuild_near_mount_nodes(payload)
 		_surface_waiting_payloads[chunk_id] = payload
-		var terrain_page_header: Dictionary = _terrain_page_provider.build_chunk_page_header(payload, int(CityChunkScene.TERRAIN_GRID_STEPS))
-		payload["terrain_page_header"] = terrain_page_header
-		_surface_waiting_payloads[chunk_id] = payload
-		var terrain_runtime_key := str(terrain_page_header.get("runtime_key", ""))
-		if _terrain_page_provider.has_runtime_bundle(terrain_runtime_key):
-			var terrain_runtime_bundle := _terrain_page_provider.get_runtime_bundle(terrain_runtime_key)
-			var terrain_page_binding := CityTerrainPageProvider.build_chunk_binding_from_bundle(terrain_page_header, terrain_runtime_bundle, true)
-			payload["terrain_page_binding"] = terrain_page_binding
-			payload["terrain_lod_mesh_results"] = {
-				str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR)): _build_terrain_mesh_result_for_payload(payload, terrain_page_binding),
-			}
-			_surface_waiting_payloads[chunk_id] = payload
-		else:
-			_queue_terrain_job(chunk_id, payload, terrain_page_header, int(CityChunkScene.TERRAIN_GRID_STEPS), _terrain_lod_grid_steps_by_mode())
 		payload = (_surface_waiting_payloads.get(chunk_id, payload) as Dictionary).duplicate(false)
 		var detail_mode := _resolve_surface_detail_mode_for_lod(str(payload.get("initial_lod_mode", CityChunkScene.LOD_NEAR)))
 		var page_header: Dictionary = _surface_page_provider.build_chunk_page_header(payload, detail_mode)
@@ -1280,8 +1258,6 @@ func _process_mount_budget() -> void:
 		if chunk_scene.has_method("set_pedestrian_visibility"):
 			chunk_scene.set_pedestrian_visibility(_pedestrian_visibility_enabled)
 		_record_mount_setup_sample(Time.get_ticks_usec() - setup_started_usec)
-		var setup_profile: Dictionary = chunk_scene.get_setup_profile()
-		_record_terrain_commit_sample(int(setup_profile.get("ground_mesh_usec", 0)))
 		chunk_scene.visible = true
 		add_child(chunk_scene)
 		_chunk_scenes[chunk_id] = chunk_scene
@@ -1937,6 +1913,27 @@ func _prebuild_near_mount_nodes(payload: Dictionary) -> void:
 	var profile: Dictionary = payload.get("prepared_profile", {})
 	if profile.is_empty():
 		return
+	var prepared_service_roots := {}
+	var override_entries: Dictionary = payload.get("building_override_entries", {})
+	for building_variant in profile.get("buildings", []):
+		var building: Dictionary = building_variant
+		var building_id := str(building.get("building_id", ""))
+		if building_id == "" or override_entries.has(building_id):
+			continue
+		var service_root := CityBuildingSceneBuilder.build_service_scene_root(building)
+		service_root.position = CityBuildingSceneBuilder.resolve_ground_anchor(building)
+		service_root.rotation.y = float(building.get("yaw_rad", 0.0))
+		var inspection_payload: Dictionary = (building.get("inspection_payload", {}) as Dictionary).duplicate(true)
+		if not inspection_payload.is_empty():
+			service_root.set_meta("city_inspection_payload", inspection_payload.duplicate(true))
+			CityBuildingSceneBuilder.apply_inspection_payload_recursive(service_root, inspection_payload)
+		var runtime := CityDestructibleBuildingRuntime.new()
+		runtime.name = "DestructibleBuildingRuntime"
+		if runtime.has_method("prime_runtime_context"):
+			runtime.prime_runtime_context(service_root, service_root.get_node_or_null("GeneratedBuilding") as StaticBody3D, building)
+		service_root.add_child(runtime)
+		prepared_service_roots[building_id] = service_root
+	payload["prepared_service_roots"] = prepared_service_roots
 	payload["prepared_road_overlay"] = CityRoadMeshBuilder.build_road_overlay(profile, payload)
 	payload["prepared_street_lamps"] = CityChunkMultimeshBuilder.build_street_lamps(profile)
 
@@ -1960,6 +1957,9 @@ func _free_payload_nodes(payload_variant) -> void:
 	if not payload_variant is Dictionary:
 		return
 	var payload: Dictionary = payload_variant
+	var prepared_service_roots: Dictionary = payload.get("prepared_service_roots", {})
+	for service_root_variant in prepared_service_roots.values():
+		_free_payload_node_if_detached(service_root_variant)
 	_free_payload_node_if_detached(payload.get("prepared_road_overlay"))
 	_free_payload_node_if_detached(payload.get("prepared_street_lamps"))
 
@@ -2206,8 +2206,7 @@ func _try_enqueue_waiting_payload(chunk_id: String) -> void:
 		return
 	var payload: Dictionary = _surface_waiting_payloads[chunk_id]
 	var surface_binding: Dictionary = payload.get("surface_page_binding", {})
-	var terrain_lod_mesh_results: Dictionary = payload.get("terrain_lod_mesh_results", {})
-	if surface_binding.is_empty() or terrain_lod_mesh_results.is_empty():
+	if surface_binding.is_empty():
 		_surface_waiting_payloads[chunk_id] = payload
 		return
 	_surface_waiting_payloads.erase(chunk_id)

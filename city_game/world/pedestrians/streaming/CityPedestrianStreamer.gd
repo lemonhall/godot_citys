@@ -2,7 +2,7 @@ extends RefCounted
 
 const CityPedestrianArchetypeCatalog := preload("res://city_game/world/pedestrians/rendering/CityPedestrianArchetypeCatalog.gd")
 const CityPedestrianState := preload("res://city_game/world/pedestrians/simulation/CityPedestrianState.gd")
-const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
+const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
 const CityRoadLayoutBuilder := preload("res://city_game/world/rendering/CityRoadLayoutBuilder.gd")
 const CityChunkKey := preload("res://city_game/world/streaming/CityChunkKey.gd")
 
@@ -145,14 +145,7 @@ func get_states_for_chunk(chunk_id: String) -> Array:
 	return states
 
 func ground_state(state: CityPedestrianState) -> void:
-	var ground_context: Dictionary = _resolve_ground_context_for_state(state)
-	if ground_context.is_empty():
-		return
-	var chunk_payload: Dictionary = ground_context.get("chunk_payload", {})
-	var profile: Dictionary = ground_context.get("profile", {})
-	var chunk_center: Vector3 = chunk_payload.get("chunk_center", Vector3.ZERO)
-	var local_point := Vector2(state.world_position.x - chunk_center.x, state.world_position.z - chunk_center.z)
-	state.apply_ground_height(CityChunkGroundSampler.sample_height(local_point, chunk_payload, profile))
+	state.apply_ground_height(CityTerrainSampler.GROUND_HEIGHT_Y)
 
 func get_runtime_snapshot() -> Dictionary:
 	return _build_runtime_snapshot(true)

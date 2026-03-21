@@ -93,8 +93,9 @@ func _snapshot_has_visible_states(snapshot: Dictionary) -> bool:
 func _sync_agents(states: Array, target_root: Node3D, agent_map: Dictionary) -> void:
 	var keep_ids: Dictionary = {}
 	for state_variant in states:
-		var state: Dictionary = state_variant
-		var vehicle_id := str(state.get("vehicle_id", ""))
+		var vehicle_id := _state_vehicle_id(state_variant)
+		if vehicle_id == "":
+			continue
 		keep_ids[vehicle_id] = true
 		var agent_root: CityVehicleVisualInstance = agent_map.get(vehicle_id)
 		if agent_root == null:
@@ -103,7 +104,7 @@ func _sync_agents(states: Array, target_root: Node3D, agent_map: Dictionary) -> 
 			agent_root.setup(_visual_catalog)
 			agent_map[vehicle_id] = agent_root
 			target_root.add_child(agent_root)
-		agent_root.apply_state(state, _chunk_center)
+		agent_root.apply_state(state_variant, _chunk_center)
 	for vehicle_id_variant in agent_map.keys():
 		var vehicle_id := str(vehicle_id_variant)
 		if keep_ids.has(vehicle_id):
@@ -135,3 +136,8 @@ func _normalize_snapshot(snapshot: Dictionary) -> Dictionary:
 		"tier2_states": snapshot.get("tier2_states", []),
 		"tier3_states": snapshot.get("tier3_states", []),
 	}
+
+func _state_vehicle_id(state) -> String:
+	if state is Dictionary:
+		return str((state as Dictionary).get("vehicle_id", ""))
+	return str(state.vehicle_id) if state != null else ""

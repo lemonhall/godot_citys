@@ -34,6 +34,7 @@ static var _shared_vehicle_mesh_source := ""
 
 var _cached_instance_transforms: Array = []
 var _cached_instance_colors: Array = []
+var _cached_instance_state_ids: Array[String] = []
 
 func _init() -> void:
 	name = "VehicleBatch"
@@ -54,18 +55,29 @@ static func prewarm_shared_proxy_resources() -> void:
 func configure_from_states(states: Array, chunk_center: Vector3, visual_catalog: CityVehicleVisualCatalog = null) -> int:
 	if multimesh == null:
 		return 0
-	var instance_count_changed := multimesh.instance_count != states.size()
-	if instance_count_changed:
-		multimesh.instance_count = states.size()
-	var previous_transform_cache_size := _cached_instance_transforms.size()
-	if previous_transform_cache_size < states.size():
-		_cached_instance_transforms.resize(states.size())
-	var previous_color_cache_size := _cached_instance_colors.size()
-	if previous_color_cache_size < states.size():
-		_cached_instance_colors.resize(states.size())
-	var transform_write_count := 0
+	var state_by_id: Dictionary = {}
+	var incoming_state_ids: Array[String] = []
 	for state_index in range(states.size()):
 		var state = states[state_index]
+		var state_id := _state_slot_id(state, state_index)
+		if state_by_id.has(state_id):
+			continue
+		state_by_id[state_id] = state
+		incoming_state_ids.append(state_id)
+	var next_slot_state_ids := _build_next_slot_state_ids(incoming_state_ids, state_by_id)
+	var instance_count_changed := multimesh.instance_count != next_slot_state_ids.size()
+	if instance_count_changed:
+		multimesh.instance_count = next_slot_state_ids.size()
+	var previous_transform_cache_size := _cached_instance_transforms.size()
+	if previous_transform_cache_size < next_slot_state_ids.size():
+		_cached_instance_transforms.resize(next_slot_state_ids.size())
+	var previous_color_cache_size := _cached_instance_colors.size()
+	if previous_color_cache_size < next_slot_state_ids.size():
+		_cached_instance_colors.resize(next_slot_state_ids.size())
+	var transform_write_count := 0
+	for state_index in range(next_slot_state_ids.size()):
+		var state_id := next_slot_state_ids[state_index]
+		var state = state_by_id.get(state_id)
 		var instance_transform := _build_instance_transform(state, chunk_center, visual_catalog)
 		var cached_transform = _cached_instance_transforms[state_index]
 		var transform_requires_write := instance_count_changed or state_index >= previous_transform_cache_size or not _transforms_equal(cached_transform, instance_transform)
@@ -79,13 +91,35 @@ func configure_from_states(states: Array, chunk_center: Vector3, visual_catalog:
 		if color_requires_write:
 			multimesh.set_instance_color(state_index, instance_color)
 			_cached_instance_colors[state_index] = instance_color
-	set_meta("vehicle_tier1_count", states.size())
+	set_meta("vehicle_tier1_count", next_slot_state_ids.size())
 	set_meta("vehicle_tier1_transform_write_count", transform_write_count)
-	if _cached_instance_transforms.size() > states.size():
-		_cached_instance_transforms.resize(states.size())
-	if _cached_instance_colors.size() > states.size():
-		_cached_instance_colors.resize(states.size())
+	if _cached_instance_transforms.size() > next_slot_state_ids.size():
+		_cached_instance_transforms.resize(next_slot_state_ids.size())
+	if _cached_instance_colors.size() > next_slot_state_ids.size():
+		_cached_instance_colors.resize(next_slot_state_ids.size())
+	_cached_instance_state_ids = next_slot_state_ids
 	return transform_write_count
+
+func _build_next_slot_state_ids(incoming_state_ids: Array[String], state_by_id: Dictionary) -> Array[String]:
+	var next_slot_state_ids: Array[String] = []
+	var included_ids: Dictionary = {}
+	for cached_id in _cached_instance_state_ids:
+		if not state_by_id.has(cached_id) or included_ids.has(cached_id):
+			continue
+		next_slot_state_ids.append(cached_id)
+		included_ids[cached_id] = true
+	for state_id in incoming_state_ids:
+		if included_ids.has(state_id):
+			continue
+		next_slot_state_ids.append(state_id)
+		included_ids[state_id] = true
+	return next_slot_state_ids
+
+func _state_slot_id(state, state_index: int) -> String:
+	var vehicle_id := _state_vehicle_id(state)
+	if vehicle_id != "":
+		return vehicle_id
+	return "__slot_%d" % state_index
 
 func _build_instance_transform(state, chunk_center: Vector3, _visual_catalog: CityVehicleVisualCatalog) -> Transform3D:
 	var world_position := _state_world_position(state)
@@ -124,6 +158,11 @@ func _state_heading(state) -> Vector3:
 	if state is Dictionary:
 		return (state as Dictionary).get("heading", Vector3.FORWARD)
 	return state.heading if state != null else Vector3.FORWARD
+
+func _state_vehicle_id(state) -> String:
+	if state is Dictionary:
+		return str((state as Dictionary).get("vehicle_id", ""))
+	return str(state.vehicle_id) if state != null else ""
 
 func _state_role(state) -> String:
 	if state is Dictionary:

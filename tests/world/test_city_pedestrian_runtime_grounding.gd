@@ -24,8 +24,7 @@ func _run() -> void:
 	pedestrian_streamer.setup(config, world_data, budget.get_contract())
 
 	var probe_chunk_keys := _build_probe_chunk_keys(config)
-	var best_roadbed_candidate := {}
-	var best_slope_candidate := {}
+	var sampled_states: Array = []
 	for probe_chunk_key in probe_chunk_keys:
 		pedestrian_streamer.sync_active_chunks([{
 			"chunk_id": config.format_chunk_id(probe_chunk_key),
@@ -34,25 +33,42 @@ func _run() -> void:
 		var active_states: Array = pedestrian_streamer.get_active_states()
 		if active_states.is_empty():
 			continue
-		if best_roadbed_candidate.is_empty():
-			best_roadbed_candidate = _find_best_roadbed_candidate(config, world_data, active_states)
-		if best_slope_candidate.is_empty():
-			best_slope_candidate = _find_best_slope_candidate(config, world_data, pedestrian_streamer, active_states)
-		if not best_roadbed_candidate.is_empty() and not best_slope_candidate.is_empty():
+		sampled_states = active_states.slice(0, mini(active_states.size(), 12))
+		if not sampled_states.is_empty():
 			break
 
-	if not T.require_true(self, not best_roadbed_candidate.is_empty(), "Runtime grounding test requires a roadbed-influenced pedestrian candidate"):
+	if not T.require_true(self, not sampled_states.is_empty(), "Flat-ground runtime grounding test requires at least one active pedestrian state"):
 		return
-	if not T.require_true(self, float(best_roadbed_candidate.get("ground_error_m", INF)) <= 0.05, "Roadbed-influenced pedestrian height must stay within 0.05m of runtime chunk ground"):
+
+	var peak_abs_ground_y := 0.0
+	var peak_abs_state_y := 0.0
+	var peak_ground_error_m := 0.0
+	for state in sampled_states:
+		var runtime_ground_y := _sample_runtime_ground_height(config, world_data, state.world_position)
+		peak_abs_ground_y = maxf(peak_abs_ground_y, absf(runtime_ground_y))
+		peak_abs_state_y = maxf(peak_abs_state_y, absf(state.world_position.y))
+		peak_ground_error_m = maxf(peak_ground_error_m, absf(runtime_ground_y - state.world_position.y))
+		for _step_index in range(6):
+			state.queue_step(0.2)
+			state.step(state.flush_queued_step())
+			pedestrian_streamer.ground_state(state)
+			runtime_ground_y = _sample_runtime_ground_height(config, world_data, state.world_position)
+			peak_abs_ground_y = maxf(peak_abs_ground_y, absf(runtime_ground_y))
+			peak_abs_state_y = maxf(peak_abs_state_y, absf(state.world_position.y))
+			peak_ground_error_m = maxf(peak_ground_error_m, absf(runtime_ground_y - state.world_position.y))
+
+	if not T.require_true(self, peak_abs_ground_y <= 0.05, "Flat-ground runtime must keep pedestrian ground close to y=0 across active sidewalk updates"):
 		return
-	if not T.require_true(self, not best_slope_candidate.is_empty(), "Runtime grounding test requires a sloped sidewalk pedestrian candidate"):
+	if not T.require_true(self, peak_abs_state_y <= 0.05, "Flat-ground runtime must keep pedestrian world_position.y close to the shared y=0 plane"):
 		return
-	if not T.require_true(self, float(best_slope_candidate.get("peak_ground_error_m", INF)) <= 0.05, "Moving pedestrian height must stay within 0.05m of runtime chunk ground on sloped sidewalks"):
+	if not T.require_true(self, peak_ground_error_m <= 0.05, "Pedestrian height must stay glued to flat runtime ground"):
 		return
 
 	print("CITY_PEDESTRIAN_RUNTIME_GROUNDING %s" % JSON.stringify({
-		"roadbed_candidate": best_roadbed_candidate,
-		"slope_candidate": best_slope_candidate,
+		"sampled_state_count": sampled_states.size(),
+		"peak_abs_ground_y": peak_abs_ground_y,
+		"peak_abs_state_y": peak_abs_state_y,
+		"peak_ground_error_m": peak_ground_error_m,
 	}))
 	T.pass_and_quit(self)
 
@@ -73,51 +89,6 @@ func _build_probe_chunk_keys(config: CityWorldConfig) -> Array[Vector2i]:
 					continue
 				probe_chunk_keys.append(chunk_key)
 	return probe_chunk_keys
-
-func _find_best_roadbed_candidate(config: CityWorldConfig, world_data: Dictionary, active_states: Array) -> Dictionary:
-	var best_candidate := {}
-	var best_surface_delta := -INF
-	for state_variant in active_states:
-		var state = state_variant
-		var runtime_ground_y := _sample_runtime_ground_height(config, world_data, state.world_position)
-		var base_ground_y := CityTerrainSampler.sample_height(state.world_position.x, state.world_position.z, int(config.base_seed))
-		var surface_delta_m := absf(runtime_ground_y - base_ground_y)
-		if surface_delta_m < 0.08:
-			continue
-		if surface_delta_m > best_surface_delta:
-			best_surface_delta = surface_delta_m
-			best_candidate = {
-				"pedestrian_id": state.pedestrian_id,
-				"surface_delta_m": surface_delta_m,
-				"ground_error_m": absf(runtime_ground_y - state.world_position.y),
-			}
-	return best_candidate
-
-func _find_best_slope_candidate(config: CityWorldConfig, world_data: Dictionary, pedestrian_streamer: CityPedestrianStreamer, active_states: Array) -> Dictionary:
-	var best_candidate := {}
-	var best_expected_height_delta := -INF
-	for state_variant in active_states:
-		var state = state_variant
-		var start_runtime_ground_y := _sample_runtime_ground_height(config, world_data, state.world_position)
-		var peak_ground_error_m := absf(start_runtime_ground_y - state.world_position.y)
-		var peak_expected_height_delta := 0.0
-		for _step_index in range(10):
-			state.queue_step(0.2)
-			state.step(state.flush_queued_step())
-			pedestrian_streamer.ground_state(state)
-			var runtime_ground_y := _sample_runtime_ground_height(config, world_data, state.world_position)
-			peak_ground_error_m = maxf(peak_ground_error_m, absf(runtime_ground_y - state.world_position.y))
-			peak_expected_height_delta = maxf(peak_expected_height_delta, absf(runtime_ground_y - start_runtime_ground_y))
-		if peak_expected_height_delta < 0.12:
-			continue
-		if peak_expected_height_delta > best_expected_height_delta:
-			best_expected_height_delta = peak_expected_height_delta
-			best_candidate = {
-				"pedestrian_id": state.pedestrian_id,
-				"expected_height_delta_m": peak_expected_height_delta,
-				"peak_ground_error_m": peak_ground_error_m,
-			}
-	return best_candidate
 
 func _sample_runtime_ground_height(config: CityWorldConfig, world_data: Dictionary, world_position: Vector3) -> float:
 	var chunk_key := CityChunkKey.world_to_chunk_key(config, world_position)

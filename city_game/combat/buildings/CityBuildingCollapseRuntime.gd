@@ -31,7 +31,7 @@ var _far_zone_average_launch_speed_mps := 0.0
 var _impact_zone_average_blast_alignment := 0.0
 
 func _ready() -> void:
-	set_process(true)
+	_update_processing_state()
 
 func _exit_tree() -> void:
 	if _prepare_thread != null:
@@ -54,6 +54,7 @@ func begin_prepare(request: Dictionary) -> Dictionary:
 	else:
 		_prepare_thread = thread
 		_prepare_in_progress = true
+	_update_processing_state()
 	return {
 		"accepted": true,
 		"started_async": start_error == OK,
@@ -119,6 +120,7 @@ func start_collapse() -> Dictionary:
 	_cleanup_done = false
 	_collapse_elapsed_sec = 0.0
 	_dynamic_chunks_stabilized = false
+	_update_processing_state()
 	var summary := {
 		"accepted": true,
 		"dynamic_chunk_count": _count_live_dynamic_chunks(),
@@ -142,6 +144,8 @@ func _process(delta: float) -> void:
 	if not _cleanup_done and _collapse_elapsed_sec >= collapse_settle_delay_sec + debris_cleanup_delay_sec:
 		_cleanup_dynamic_chunks()
 		_cleanup_done = true
+		_collapse_active = false
+		_update_processing_state()
 		cleanup_completed.emit({
 			"dynamic_chunk_count": _count_live_dynamic_chunks(),
 		})
@@ -160,10 +164,19 @@ func _collect_prepare_result() -> void:
 	_prepare_pending_result.clear()
 	_prepare_in_progress = false
 	if not bool(result.get("success", false)):
+		_update_processing_state()
 		return
 	_fracture_recipe = result.duplicate(true)
 	_recipe_ready = true
+	_update_processing_state()
 	fracture_prepared.emit(get_recipe_summary())
+
+func _update_processing_state() -> void:
+	var should_process := _prepare_in_progress \
+		or _prepare_thread != null \
+		or not _prepare_pending_result.is_empty() \
+		or _collapse_active
+	set_process(should_process)
 
 func _run_prepare_thread(request: Dictionary) -> Dictionary:
 	return CityBuildingFractureRecipeBuilder.build_recipe(request)

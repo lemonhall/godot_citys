@@ -12,8 +12,6 @@ func _init() -> void:
 func _run() -> void:
 	var config := CityWorldConfig.new()
 	var world_data: Dictionary = CityWorldGenerator.new().generate_world(config)
-	var found_bridge := false
-
 	for chunk_x in range(134, 139):
 		for chunk_y in range(134, 139):
 			var chunk_key := Vector2i(chunk_x, chunk_y)
@@ -29,17 +27,13 @@ func _run() -> void:
 
 			for segment in layout.get("segments", []):
 				var segment_dict: Dictionary = segment
-				if not bool(segment_dict.get("bridge", false)):
-					continue
-				found_bridge = true
+				if not T.require_true(self, not bool(segment_dict.get("bridge", false)), "Flat-ground pivot must disable bridge flags in sampled road segments"):
+					return
 				var template := CityRoadTemplateCatalog.get_template(str(segment_dict.get("template_id", "local")))
 				var allowed_grade := float(template.get("max_grade", 0.1)) + 0.005
 				var measured_grade := _measure_max_grade(segment_dict.get("points", []))
-				if not T.require_true(self, measured_grade <= allowed_grade, "Bridge approaches must respect template max_grade so the player can walk or drive onto them naturally"):
+				if not T.require_true(self, measured_grade <= allowed_grade, "Flat expressway and arterial geometry must still respect template max_grade"):
 					return
-
-	if not T.require_true(self, found_bridge, "Center-city sample window must include at least one bridge segment for grade validation"):
-		return
 
 	T.pass_and_quit(self)
 

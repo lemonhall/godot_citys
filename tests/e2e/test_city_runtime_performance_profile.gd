@@ -79,7 +79,11 @@ func _run() -> void:
 		return
 	if not T.require_true(self, profile.has("streaming_terrain_async_complete_sample_count"), "Performance profile must include terrain async completion sample field"):
 		return
-	if not T.require_true(self, int(profile.get("streaming_terrain_commit_sample_count", 0)) > 0, "Performance profile must include terrain commit samples"):
+	if not T.require_true(self, int(profile.get("streaming_terrain_async_dispatch_sample_count", 0)) == 0, "Flat-ground runtime must not dispatch terrain async work"):
+		return
+	if not T.require_true(self, int(profile.get("streaming_terrain_async_complete_sample_count", 0)) == 0, "Flat-ground runtime must not complete terrain async work"):
+		return
+	if not T.require_true(self, int(profile.get("streaming_terrain_commit_sample_count", 0)) == 0, "Flat-ground runtime must not record terrain commit samples"):
 		return
 	for required_key in [
 		"crowd_active_state_count",

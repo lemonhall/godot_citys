@@ -1,6 +1,6 @@
 extends RefCounted
 
-const GLOBAL_DENSITY_SCALE := 0.5
+const GLOBAL_DENSITY_SCALE := 1.0
 
 const DEFAULT_DISTRICT_CLASS_DENSITY := {
 	"core": 0.78,
@@ -15,7 +15,7 @@ const DEFAULT_ROAD_CLASS_DENSITY := {
 	"arterial": 0.50,
 	"secondary": 0.36,
 	"collector": 0.24,
-	"local": 0.14,
+	"local": 0.155,
 }
 
 const DEFAULT_DISTRICT_CLASS_ARCHETYPE_WEIGHTS := {

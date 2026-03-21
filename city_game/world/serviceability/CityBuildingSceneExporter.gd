@@ -74,7 +74,7 @@ func commit_export(prepared: Dictionary) -> Dictionary:
 	var dir_error := DirAccess.make_dir_recursive_absolute(_globalize_path(scene_directory))
 	if dir_error != OK and dir_error != ERR_ALREADY_EXISTS:
 		return _build_failure_result(prepared, "dir_create_failed:%s" % scene_directory)
-	var service_root := CityBuildingSceneBuilder.build_service_scene_root(building_contract)
+	var service_root := CityBuildingSceneBuilder.build_service_scene_root(building_contract, true)
 	var packed_scene := PackedScene.new()
 	var pack_error := packed_scene.pack(service_root)
 	if pack_error != OK:

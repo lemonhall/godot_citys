@@ -22,6 +22,9 @@ var _body_collision_shapes: Array[CollisionShape3D] = []
 var _primary_body_size := Vector3(14.0, 66.0, 14.0)
 var _primary_half_extents := Vector3(7.0, 33.0, 7.0)
 var _main_color := Color(0.72, 0.74, 0.78, 1.0)
+var _building_nodes_primed := false
+var _identity_primed := false
+var _visual_profile_primed := false
 var _crack_runtime: Node3D = null
 var _collapse_runtime: Node3D = null
 var _fracture_requested := false
@@ -29,12 +32,35 @@ var _collapse_pending := false
 
 func _ready() -> void:
 	_current_health = max_health
-	_resolve_building_nodes()
-	_resolve_building_identity()
-	_resolve_building_visual_profile()
-	_install_runtime_helpers()
+	if not _building_nodes_primed or _generated_building == null or not is_instance_valid(_generated_building):
+		_resolve_building_nodes()
+	elif _body_collision_shapes.is_empty():
+		_refresh_generated_building_body_cache()
+	if not _identity_primed or _building_id == "":
+		_resolve_building_identity()
+	if not _visual_profile_primed:
+		_resolve_building_visual_profile()
+	_discover_runtime_helpers()
 	add_to_group("city_destructible_building")
 	set_meta("city_building_id", _building_id)
+
+func prime_runtime_context(service_scene_root: Node3D, generated_building: StaticBody3D, building_contract: Dictionary = {}) -> void:
+	_service_scene_root = service_scene_root
+	_generated_building = generated_building
+	_building_nodes_primed = _service_scene_root != null or _generated_building != null
+	if _generated_building != null and is_instance_valid(_generated_building):
+		_refresh_generated_building_body_cache()
+	var primed_building_id := str(building_contract.get("building_id", ""))
+	if primed_building_id == "" and _service_scene_root != null and _service_scene_root.has_meta("city_building_id"):
+		primed_building_id = str(_service_scene_root.get_meta("city_building_id", ""))
+	if primed_building_id == "" and _generated_building != null and _generated_building.has_meta("city_building_id"):
+		primed_building_id = str(_generated_building.get_meta("city_building_id", ""))
+	if primed_building_id != "":
+		_building_id = primed_building_id
+		_identity_primed = true
+	if building_contract.get("main_color", null) is Color:
+		_main_color = building_contract.get("main_color", _main_color) as Color
+		_visual_profile_primed = true
 
 func get_state() -> Dictionary:
 	return {
@@ -55,6 +81,8 @@ func get_debug_state() -> Dictionary:
 		collapse_state = (_collapse_runtime.call("get_debug_state") as Dictionary).duplicate(true)
 	return {
 		"building_visible": _generated_building != null and is_instance_valid(_generated_building) and _generated_building.visible,
+		"crack_runtime_installed": _crack_runtime != null and is_instance_valid(_crack_runtime),
+		"collapse_runtime_installed": _collapse_runtime != null and is_instance_valid(_collapse_runtime),
 		"crack_visual_active": bool(crack_state.get("visual_active", false)),
 		"fracture_recipe_ready": bool(collapse_state.get("recipe_ready", false)),
 		"fracture_prepare_in_progress": bool(collapse_state.get("prepare_in_progress", false)),
@@ -138,8 +166,12 @@ func _resolve_building_nodes() -> void:
 		_generated_building = _find_generated_building(self)
 	if _generated_building == null:
 		_generated_building = _find_generated_building_upwards(get_parent())
+	_refresh_generated_building_body_cache()
+	_building_nodes_primed = _service_scene_root != null or _generated_building != null
+
+func _refresh_generated_building_body_cache() -> void:
 	_body_collision_shapes.clear()
-	if _generated_building == null:
+	if _generated_building == null or not is_instance_valid(_generated_building):
 		return
 	for child in _generated_building.get_children():
 		var collision := child as CollisionShape3D
@@ -155,6 +187,7 @@ func _resolve_building_identity() -> void:
 		_building_id = str(_service_scene_root.get_meta("city_building_id", ""))
 	if _building_id == "" and _generated_building != null and _generated_building.has_meta("city_building_id"):
 		_building_id = str(_generated_building.get_meta("city_building_id", ""))
+	_identity_primed = _building_id != ""
 
 func _resolve_building_visual_profile() -> void:
 	if _generated_building == null:
@@ -166,22 +199,43 @@ func _resolve_building_visual_profile() -> void:
 		var material := mesh_instance.material_override as StandardMaterial3D
 		if material != null:
 			_main_color = material.albedo_color
+			_visual_profile_primed = true
 			return
+	_visual_profile_primed = false
 
-func _install_runtime_helpers() -> void:
+func _discover_runtime_helpers() -> void:
 	_crack_runtime = get_node_or_null("CrackRuntime") as Node3D
+	_collapse_runtime = get_node_or_null("CollapseRuntime") as Node3D
+	_configure_crack_runtime()
+	_connect_collapse_runtime_signals()
+
+func _ensure_crack_runtime() -> bool:
+	if _crack_runtime == null or not is_instance_valid(_crack_runtime):
+		_crack_runtime = get_node_or_null("CrackRuntime") as Node3D
 	if _crack_runtime == null:
 		_crack_runtime = CityBuildingCrackRuntime.new()
 		_crack_runtime.name = "CrackRuntime"
 		add_child(_crack_runtime)
+	_configure_crack_runtime()
+	return _crack_runtime != null and is_instance_valid(_crack_runtime)
+
+func _configure_crack_runtime() -> void:
+	if _crack_runtime == null or not is_instance_valid(_crack_runtime):
+		return
 	if _generated_building != null and _crack_runtime.has_method("configure"):
 		_crack_runtime.call("configure", _generated_building.transform)
 
-	_collapse_runtime = get_node_or_null("CollapseRuntime") as Node3D
+func _ensure_collapse_runtime() -> bool:
+	if _collapse_runtime == null or not is_instance_valid(_collapse_runtime):
+		_collapse_runtime = get_node_or_null("CollapseRuntime") as Node3D
 	if _collapse_runtime == null:
 		_collapse_runtime = CityBuildingCollapseRuntime.new()
 		_collapse_runtime.name = "CollapseRuntime"
 		add_child(_collapse_runtime)
+	_connect_collapse_runtime_signals()
+	return _collapse_runtime != null and is_instance_valid(_collapse_runtime)
+
+func _connect_collapse_runtime_signals() -> void:
 	if _collapse_runtime == null:
 		return
 	if _collapse_runtime.has_signal("fracture_prepared"):
@@ -198,12 +252,18 @@ func _install_runtime_helpers() -> void:
 			_collapse_runtime.cleanup_completed.connect(cleanup_callable)
 
 func _show_crack() -> void:
+	if not _ensure_crack_runtime():
+		return
 	if _crack_runtime == null or not _crack_runtime.has_method("show_crack"):
 		return
 	_crack_runtime.call("show_crack", _last_hit_local_position, _primary_half_extents)
 
 func _begin_fracture_prepare() -> void:
-	if _fracture_requested or _collapse_runtime == null or not _collapse_runtime.has_method("begin_prepare"):
+	if _fracture_requested:
+		return
+	if not _ensure_collapse_runtime():
+		return
+	if _collapse_runtime == null or not _collapse_runtime.has_method("begin_prepare"):
 		return
 	_fracture_requested = true
 	_damage_state = "fracture_preparing"
@@ -216,6 +276,8 @@ func _begin_fracture_prepare() -> void:
 	})
 
 func _try_start_collapse() -> void:
+	if not _ensure_collapse_runtime():
+		return
 	if _collapse_runtime == null or not _collapse_runtime.has_method("has_recipe_ready"):
 		return
 	if not bool(_collapse_runtime.call("has_recipe_ready")):

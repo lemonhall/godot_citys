@@ -30,7 +30,7 @@ func _build_contract(preset: String) -> Dictionary:
 		"player_fast_speed_mps": 10.0,
 		"violent_witness_core_radius_m": 120.0,
 		"violent_witness_outer_response_ratio": 0.32,
-		"gunshot_radius_m": 220.0,
+		"gunshot_radius_m": 400.0,
 		"projectile_reaction_radius_m": 4.5,
 		"projectile_range_m": 36.0,
 		"explosion_reaction_radius_m": 220.0,

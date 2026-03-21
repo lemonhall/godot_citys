@@ -974,7 +974,9 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 		_record_hud_refresh_sample(Time.get_ticks_usec() - refresh_started_usec)
 		return
 	var hud_debug_expanded := hud.has_method("is_debug_expanded") and bool(hud.is_debug_expanded())
-	var snapshot: Dictionary = snapshot_override.duplicate(false) if not snapshot_override.is_empty() else _build_hud_snapshot(not hud_debug_expanded)
+	var snapshot: Dictionary = {}
+	if hud_debug_expanded:
+		snapshot = snapshot_override.duplicate(false) if not snapshot_override.is_empty() else _build_hud_snapshot(false)
 	if hud_debug_expanded and hud.has_method("set_status"):
 		var world_summary := str(_world_data.get("summary", "World data unavailable"))
 		var active_speed_text := ""
@@ -1960,7 +1962,12 @@ func update_streaming_for_position(world_position: Vector3, delta: float = 0.0) 
 		not is_headless
 		or not _has_streaming_backpressure()
 	)
-	var needs_snapshot := debug_expanded or (allow_headless_hud_refresh and not is_headless)
+	var needs_snapshot := _should_build_hud_snapshot_refresh(
+		is_headless,
+		allow_headless_hud_refresh,
+		hud_debug_expanded,
+		debug_expanded
+	)
 	var hud_snapshot := {}
 	if needs_snapshot:
 		hud_snapshot = _build_hud_snapshot(not hud_debug_expanded and not debug_expanded)
@@ -4676,6 +4683,13 @@ func _should_refresh_hud() -> bool:
 	var now_usec := Time.get_ticks_usec()
 	var refresh_interval_usec := _resolve_hud_refresh_interval_usec(DisplayServer.get_name() == "headless")
 	return _last_hud_refresh_tick_usec < 0 or now_usec - _last_hud_refresh_tick_usec >= refresh_interval_usec
+
+func _should_build_hud_snapshot_refresh(is_headless: bool, hud_refresh_allowed: bool, hud_debug_expanded: bool, debug_expanded: bool) -> bool:
+	if debug_expanded:
+		return true
+	if is_headless:
+		return false
+	return hud_refresh_allowed and hud_debug_expanded
 
 func _should_refresh_hud_minimap(is_headless: bool) -> bool:
 	if _minimap_request_count == 0 or _last_minimap_hud_refresh_tick_usec < 0:

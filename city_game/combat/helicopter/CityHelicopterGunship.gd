@@ -15,7 +15,7 @@ signal destroyed
 @export var missile_fire_interval_sec := 1.35
 @export var target_aim_height_m := 1.1
 @export var engage_delay_sec := 0.15
-@export var altitude_weave_amplitude_m := 10.5
+@export var altitude_weave_amplitude_m := 30
 @export var altitude_weave_cycle_sec := 6.2
 @export var ambient_camera_shake_radius_m := 72.0
 @export var ambient_camera_shake_duration_sec := 0.16

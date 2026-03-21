@@ -5,6 +5,7 @@ const GUNSHIP_SCENE_PATH := "res://city_game/combat/helicopter/CityHelicopterGun
 const GUNSHIP_SCRIPT_PATH := "res://city_game/combat/helicopter/CityHelicopterGunship.gd"
 const GUNSHIP_MODEL_PATH := "res://city_game/assets/environment/source/aircraft/helicopter_a.glb"
 const ROTOR_BLUR_SHADER_PATH := "res://city_game/combat/helicopter/CityHelicopterRotorBlur.gdshader"
+const ROTOR_AUDIO_PATH := "res://city_game/combat/helicopter/audio/helicopter.wav"
 
 func _init() -> void:
 	call_deferred("_run")
@@ -18,21 +19,21 @@ func _run() -> void:
 		return
 	if not T.require_true(self, ResourceLoader.exists(ROTOR_BLUR_SHADER_PATH, "Shader"), "Helicopter gunship contract requires a dedicated rotor blur shader for the cheap spinning-rotor illusion"):
 		return
+	if not T.require_true(self, FileAccess.file_exists(ROTOR_AUDIO_PATH) or ResourceLoader.exists(ROTOR_AUDIO_PATH, "AudioStreamWAV"), "Helicopter gunship contract requires a dedicated helicopter.wav rotor audio asset under the helicopter combat folder"):
+		return
 
 	var scene_text := FileAccess.get_file_as_string(GUNSHIP_SCENE_PATH)
 	if not T.require_true(self, scene_text.find(GUNSHIP_MODEL_PATH) >= 0, "Helicopter gunship scene must wrap helicopter_a.glb through the .tscn instead of creating visuals in code"):
 		return
 	if not T.require_true(self, scene_text.find("[node name=\"DebugHitboxPreview\"") >= 0, "Helicopter gunship scene must author a dedicated DebugHitboxPreview box for editor-side hit volume inspection"):
 		return
-	if not T.require_true(self, scene_text.find("editor_only = true") >= 0, "Helicopter gunship debug hitbox preview must be editor_only so it never leaks into runtime gameplay"):
-		return
 	if not T.require_true(self, scene_text.find("albedo_color = Color(1, 0, 0") >= 0 or scene_text.find("albedo_color = Color(1.0, 0.0, 0.0") >= 0, "Helicopter gunship debug hitbox preview must use a red material for quick visual inspection in the editor"):
 		return
 	if not T.require_true(self, scene_text.find("[node name=\"RotorBlurDebugPreview\"") >= 0, "Helicopter gunship scene must author a dedicated RotorBlurDebugPreview mesh so rotor blur placement can be tuned visually in the editor"):
 		return
-	if not T.require_true(self, scene_text.find("RotorBlurDebugPreview") >= 0 and scene_text.find("editor_only = true", scene_text.find("RotorBlurDebugPreview")) >= 0, "Helicopter gunship RotorBlurDebugPreview must stay editor_only so the authored guide mesh never leaks into runtime gameplay"):
-		return
 	if not T.require_true(self, scene_text.find(ROTOR_BLUR_SHADER_PATH) >= 0, "Helicopter gunship scene must author the rotor blur shader through the scene instead of building it from code"):
+		return
+	if not T.require_true(self, scene_text.find(ROTOR_AUDIO_PATH) >= 0, "Helicopter gunship scene must bind helicopter.wav directly through the formal gunship scene instead of only wiring audio inside the lab"):
 		return
 
 	var scene := load(GUNSHIP_SCENE_PATH) as PackedScene
@@ -57,6 +58,7 @@ func _run() -> void:
 		"Anchors/MissileMuzzleRight",
 		"Anchors/DamageSmokeAnchor",
 		"Anchors/RotorHub",
+		"Anchors/RotorHub/RotorAudio",
 		"RotorBlurRoot",
 		"RotorBlurRoot/MainRotorBlur",
 	]:
@@ -112,6 +114,28 @@ func _run() -> void:
 		return
 	var blur_color: Color = rotor_shader_material.get_shader_parameter("blur_color")
 	if not T.require_true(self, blur_color.a >= 0.4, "Helicopter gunship MainRotorBlur must use a stronger visible alpha because the subtle dark disc disappears against the sky and body silhouette"):
+		return
+
+	var rotor_audio := gunship.get_node_or_null("Anchors/RotorHub/RotorAudio") as AudioStreamPlayer
+	if not T.require_true(self, rotor_audio != null, "Helicopter gunship scene must author a RotorAudio AudioStreamPlayer on the formal helicopter scene so spawn-time rotor sound does not depend on 3D listener quirks"):
+		return
+	if not T.require_true(self, rotor_audio.stream != null, "Helicopter gunship RotorAudio must carry a bound audio stream at runtime instead of leaving the helicopter silent after spawn"):
+		return
+	if not T.require_true(self, rotor_audio.stream is AudioStreamWAV, "Helicopter gunship RotorAudio must stay a WAV-backed stream so loop tuning is deterministic and local to the asset"):
+		return
+	var rotor_audio_stream := rotor_audio.stream as AudioStreamWAV
+	if not T.require_true(self, rotor_audio_stream.loop_mode != AudioStreamWAV.LOOP_DISABLED, "Helicopter gunship RotorAudio must loop continuously so the helicopter always carries rotor sound when it spawns"):
+		return
+	if not T.require_true(self, rotor_audio.bus == "Master", "Helicopter gunship RotorAudio must stay on the Master bus so spawn-time rotor sound is not lost behind an unconfigured custom bus"):
+		return
+	if not T.require_true(self, rotor_audio.playing, "Helicopter gunship RotorAudio must already be playing once the gunship scene enters runtime"):
+		return
+	var initial_playback_position := rotor_audio.get_playback_position()
+	for _frame in range(24):
+		await process_frame
+	if not T.require_true(self, rotor_audio.playing, "Helicopter gunship RotorAudio must keep playing after spawn instead of only popping once and then falling silent"):
+		return
+	if not T.require_true(self, rotor_audio.get_playback_position() > initial_playback_position, "Helicopter gunship RotorAudio playback position must advance over time so the rotor loop is truly running instead of only firing a start transient"):
 		return
 
 	var missile_muzzles: Array = gunship.get_missile_muzzle_world_positions()

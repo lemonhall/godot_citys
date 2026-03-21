@@ -1,6 +1,7 @@
 extends CharacterBody3D
 
 const MODEL_SCENE_PATH := "res://city_game/assets/environment/source/aircraft/helicopter_a.glb"
+const ROTOR_AUDIO_PATH := "res://city_game/combat/helicopter/audio/helicopter.wav"
 
 signal missile_fire_requested(origin: Vector3, direction: Vector3)
 signal destroyed
@@ -22,7 +23,7 @@ signal destroyed
 @onready var _missile_muzzle_left := $Anchors/MissileMuzzleLeft as Marker3D
 @onready var _missile_muzzle_right := $Anchors/MissileMuzzleRight as Marker3D
 @onready var _damage_smoke_anchor := $Anchors/DamageSmokeAnchor as Marker3D
-@onready var _rotor_hub := $Anchors/RotorHub as Marker3D
+@onready var rotor_audio := $RotorAudio as AudioStreamPlayer3D
 
 var _health := 0.0
 var _destroyed := false
@@ -47,6 +48,10 @@ func _ready() -> void:
 	_altitude_weave_elapsed_sec = 0.0
 	add_to_group("city_enemy")
 	add_to_group("city_helicopter_gunship")
+	var wav := rotor_audio.stream as AudioStreamWAV
+	#if wav != null:
+		#wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+
 
 func configure_combat(target_node: Node3D, orbit_reference_world_position: Vector3 = Vector3.ZERO) -> void:
 	_target = target_node
@@ -102,7 +107,6 @@ func get_debug_state() -> Dictionary:
 			_missile_muzzle_left.name,
 			_missile_muzzle_right.name,
 			_damage_smoke_anchor.name,
-			_rotor_hub.name,
 		],
 		"health_state": get_health_state(),
 		"combat_state": get_combat_state(),

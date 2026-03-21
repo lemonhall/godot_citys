@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://cw8eya5aqe0ma" path="res://city_game/combat/helicopter/CityHelicopterGunship.gd" id="1_gunship_script"]
 [ext_resource type="PackedScene" uid="uid://c18dpxo140snx" path="res://city_game/assets/environment/source/aircraft/helicopter_a.glb" id="2_gunship_model"]
 [ext_resource type="Shader" uid="uid://cjfhg4tlk28wb" path="res://city_game/combat/helicopter/CityHelicopterRotorBlur.gdshader" id="3_rotor_blur_shader"]
+[ext_resource type="AudioStream" uid="uid://r2truh18frij" path="res://city_game/combat/helicopter/audio/helicopter.wav" id="4_rotor_audio"]
 
 [sub_resource type="BoxShape3D" id="1_hitbox_shape"]
 size = Vector3(10.8, 4.6, 35.8938)
@@ -76,9 +77,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.8, -0.15, -1.4)
 [node name="DamageSmokeAnchor" type="Marker3D" parent="Anchors" unique_id=92977480]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0.25)
 
-[node name="RotorHub" type="Marker3D" parent="Anchors" unique_id=1483422457]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.95, 0)
-
 [node name="RotorBlurRoot" type="Node3D" parent="." unique_id=283590710]
 transform = Transform3D(3.3871417, 0, 0, 0, 1, 0, 0, 0, 3.3871417, 0, 3.2324986, 1.7408848)
 
@@ -94,3 +92,9 @@ material_override = SubResource("6_debug_rotor_preview_material")
 cast_shadow = 0
 mesh = SubResource("7_debug_rotor_preview_mesh")
 script = ExtResource("1_editor_debug_preview")
+
+[node name="RotorAudio" type="AudioStreamPlayer3D" parent="." unique_id=9400477]
+stream = ExtResource("4_rotor_audio")
+unit_size = 100.0
+autoplay = true
+max_distance = 200.0

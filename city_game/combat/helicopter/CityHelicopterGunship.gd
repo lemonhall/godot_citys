@@ -13,6 +13,8 @@ signal destroyed
 @export var missile_fire_interval_sec := 0.85
 @export var target_aim_height_m := 1.1
 @export var engage_delay_sec := 0.15
+@export var altitude_weave_amplitude_m := 3.6
+@export var altitude_weave_cycle_sec := 4.8
 
 @onready var _model_root := $ModelRoot as Node3D
 @onready var _body_center := $Anchors/BodyCenter as Marker3D
@@ -33,6 +35,7 @@ var _orbit_angle_rad := 0.0
 var _missile_fire_cooldown_sec := 0.0
 var _missile_fire_index := 0
 var _engage_delay_remaining_sec := 0.0
+var _altitude_weave_elapsed_sec := 0.0
 
 func _ready() -> void:
 	_health = maxf(max_health, 1.0)
@@ -41,6 +44,7 @@ func _ready() -> void:
 	_resolved_orbit_radius_m = orbit_radius_m
 	_missile_fire_cooldown_sec = missile_fire_interval_sec * 0.45
 	_engage_delay_remaining_sec = 0.0
+	_altitude_weave_elapsed_sec = 0.0
 	add_to_group("city_enemy")
 	add_to_group("city_helicopter_gunship")
 
@@ -60,6 +64,7 @@ func configure_combat(target_node: Node3D, orbit_reference_world_position: Vecto
 	_resolved_hover_height_m = maxf(reference_position.y - target_position.y, hover_height_m)
 	_engage_delay_remaining_sec = maxf(engage_delay_sec, 0.0)
 	_missile_fire_cooldown_sec = minf(_missile_fire_cooldown_sec, missile_fire_interval_sec * 0.45)
+	_altitude_weave_elapsed_sec = 0.0
 
 func get_visual_root() -> Node3D:
 	return _model_root
@@ -83,6 +88,7 @@ func get_combat_state() -> Dictionary:
 		"orbit_angle_rad": _orbit_angle_rad,
 		"missile_fire_cooldown_sec": _missile_fire_cooldown_sec,
 		"missile_fire_index": _missile_fire_index,
+		"altitude_weave_offset_m": _compute_altitude_weave_offset_m(),
 		"destroyed": _destroyed,
 		"speed_mps": velocity.length(),
 	}
@@ -136,10 +142,11 @@ func _update_orbit(delta: float) -> void:
 		velocity = Vector3.ZERO
 		return
 	_orbit_angle_rad = wrapf(_orbit_angle_rad + deg_to_rad(orbit_angular_speed_deg) * delta, -PI, PI)
+	_altitude_weave_elapsed_sec += maxf(delta, 0.0)
 	var target_position := _target.global_position
 	var desired_position := target_position + Vector3(
 		cos(_orbit_angle_rad) * _resolved_orbit_radius_m,
-		_resolved_hover_height_m,
+		_resolved_hover_height_m + _compute_altitude_weave_offset_m(),
 		sin(_orbit_angle_rad) * _resolved_orbit_radius_m
 	)
 	var previous_position := global_position
@@ -190,3 +197,9 @@ func _enter_destroyed_state() -> void:
 	if collision_shape != null:
 		collision_shape.set_deferred("disabled", true)
 	destroyed.emit()
+
+func _compute_altitude_weave_offset_m() -> float:
+	if altitude_weave_amplitude_m <= 0.0 or altitude_weave_cycle_sec <= 0.001:
+		return 0.0
+	var phase := (_altitude_weave_elapsed_sec / altitude_weave_cycle_sec) * TAU
+	return maxf(sin(phase), 0.0) * altitude_weave_amplitude_m

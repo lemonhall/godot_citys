@@ -19,6 +19,12 @@ func _run() -> void:
 	var scene_text := FileAccess.get_file_as_string(GUNSHIP_SCENE_PATH)
 	if not T.require_true(self, scene_text.find(GUNSHIP_MODEL_PATH) >= 0, "Helicopter gunship scene must wrap helicopter_a.glb through the .tscn instead of creating visuals in code"):
 		return
+	if not T.require_true(self, scene_text.find("[node name=\"DebugHitboxPreview\"") >= 0, "Helicopter gunship scene must author a dedicated DebugHitboxPreview box for editor-side hit volume inspection"):
+		return
+	if not T.require_true(self, scene_text.find("editor_only = true") >= 0, "Helicopter gunship debug hitbox preview must be editor_only so it never leaks into runtime gameplay"):
+		return
+	if not T.require_true(self, scene_text.find("albedo_color = Color(1, 0, 0") >= 0 or scene_text.find("albedo_color = Color(1.0, 0.0, 0.0") >= 0, "Helicopter gunship debug hitbox preview must use a red material for quick visual inspection in the editor"):
+		return
 
 	var scene := load(GUNSHIP_SCENE_PATH) as PackedScene
 	if not T.require_true(self, scene != null, "Helicopter gunship scene contract must load CityHelicopterGunship.tscn as PackedScene"):
@@ -45,6 +51,21 @@ func _run() -> void:
 	]:
 		if not T.require_true(self, gunship.get_node_or_null(required_node_path) != null, "Helicopter gunship scene must author %s in the scene hierarchy" % required_node_path):
 			return
+
+	var collision_shape := gunship.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if not T.require_true(self, collision_shape != null and collision_shape.shape is BoxShape3D, "Helicopter gunship scene contract requires a BoxShape3D hit volume on the root collision shape"):
+		return
+	if not T.require_true(self, gunship.get_node_or_null("DebugHitboxPreview") == null, "Helicopter gunship debug hitbox preview must stay absent at runtime because it is editor-only inspection geometry"):
+		return
+	var hitbox := collision_shape.shape as BoxShape3D
+	if not T.require_true(self, hitbox.size.z >= 30.0, "Helicopter gunship hit volume must sync to the larger whole-body rectangular envelope tuned in the editor preview"):
+		return
+	if not T.require_true(self, hitbox.size.x >= 10.0, "Helicopter gunship hit volume must be wide enough to box in the full body and both side pylons"):
+		return
+	if not T.require_true(self, hitbox.size.y >= 4.0, "Helicopter gunship hit volume must be tall enough to box in the whole helicopter body rather than only a thin midline slice"):
+		return
+	if not T.require_true(self, collision_shape.position.z <= -2.0, "Helicopter gunship hit volume center must also sync to the tuned preview offset instead of keeping the old runtime position"):
+		return
 
 	for required_method in [
 		"get_visual_root",

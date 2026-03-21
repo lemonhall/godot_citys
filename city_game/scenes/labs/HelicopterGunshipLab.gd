@@ -3,6 +3,7 @@ extends Node3D
 const CityMissileScene := preload("res://city_game/combat/CityMissile.tscn")
 
 @onready var player := $Player
+@onready var hud := $Hud
 @onready var missile_root := $CombatRoot/Missiles as Node3D
 @onready var enemy_missile_root := $CombatRoot/EnemyMissiles as Node3D
 @onready var encounter_root := $EncounterRoot
@@ -19,6 +20,9 @@ func _ready() -> void:
 			player.missile_launcher_requested.connect(callable)
 	if player != null and player.has_method("set_weapon_mode"):
 		player.set_weapon_mode("missile_launcher")
+
+func _process(_delta: float) -> void:
+	_refresh_hud()
 
 func get_active_gunship() -> Node3D:
 	if encounter_root == null or not encounter_root.has_method("get_active_gunship"):
@@ -83,6 +87,7 @@ func reset_lab_state() -> void:
 	if encounter_root != null and encounter_root.has_method("reset_encounter"):
 		encounter_root.reset_encounter()
 	_restore_player_state()
+	_refresh_hud()
 
 func _capture_initial_state() -> void:
 	if player == null:
@@ -131,3 +136,37 @@ func _spawn_player_missile(origin: Vector3, direction: Vector3) -> Node3D:
 
 func _on_player_missile_launcher_requested() -> void:
 	fire_player_missile_launcher()
+
+func _refresh_hud() -> void:
+	if hud == null:
+		return
+	if hud.has_method("set_fps_overlay_visible"):
+		hud.set_fps_overlay_visible(true)
+	if hud.has_method("set_fps_overlay_sample"):
+		hud.set_fps_overlay_sample(Engine.get_frames_per_second())
+	if hud.has_method("set_crosshair_state"):
+		var viewport_size := get_viewport().get_visible_rect().size
+		var aim_target: Vector3 = player.get_aim_target_world_position() if player != null and player.has_method("get_aim_target_world_position") else Vector3.ZERO
+		var ads_active: bool = player.is_aim_down_sights_active() if player != null and player.has_method("is_aim_down_sights_active") else false
+		hud.set_crosshair_state({
+			"visible": true,
+			"screen_position": viewport_size * 0.5,
+			"viewport_size": viewport_size,
+			"world_target": aim_target,
+			"aim_down_sights_active": ads_active,
+		})
+	if hud.has_method("set_status"):
+		var encounter_state := get_encounter_state()
+		var gunship_state := {}
+		var gunship := get_active_gunship()
+		if gunship != null and gunship.has_method("get_health_state"):
+			gunship_state = gunship.get_health_state()
+		hud.set_status(
+			"v37 Helicopter Gunship Lab\n8 RPG  Left Click Fire  Right Click ADS  F5 Reset\nphase=%s  completions=%d  enemy_missiles=%d  gunship_hp=%.0f / %.0f" % [
+				str(encounter_state.get("phase", "idle")),
+				int(encounter_state.get("completion_count", 0)),
+				int(get_active_enemy_missile_count()),
+				float(gunship_state.get("current", 0.0)),
+				float(gunship_state.get("max", 0.0)),
+			]
+		)

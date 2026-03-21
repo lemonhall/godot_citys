@@ -1,37 +1,55 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene format=3 uid="uid://cxoivw24renjs"]
 
-[ext_resource type="Script" path="res://city_game/combat/helicopter/CityHelicopterGunship.gd" id="1_gunship_script"]
-[ext_resource type="PackedScene" path="res://city_game/assets/environment/source/aircraft/helicopter_a.glb" id="2_gunship_model"]
+[ext_resource type="Script" path="res://city_game/combat/helicopter/CityHelicopterEditorDebugPreview.gd" id="1_editor_debug_preview"]
+[ext_resource type="Script" uid="uid://cw8eya5aqe0ma" path="res://city_game/combat/helicopter/CityHelicopterGunship.gd" id="1_gunship_script"]
+[ext_resource type="PackedScene" uid="uid://c18dpxo140snx" path="res://city_game/assets/environment/source/aircraft/helicopter_a.glb" id="2_gunship_model"]
 
 [sub_resource type="BoxShape3D" id="1_hitbox_shape"]
-size = Vector3(7, 2.4, 8.5)
+size = Vector3(10.8, 4.6, 35.893798)
 
-[node name="CityHelicopterGunship" type="CharacterBody3D"]
+[sub_resource type="StandardMaterial3D" id="3_debug_hitbox_material"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 0, 0, 0.16)
+
+[sub_resource type="BoxMesh" id="2_debug_hitbox_mesh"]
+size = Vector3(10.8, 4.6, 35.893798)
+
+[node name="CityHelicopterGunship" type="CharacterBody3D" unique_id=1664671167]
 script = ExtResource("1_gunship_script")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=877644144]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, -4.125808)
 shape = SubResource("1_hitbox_shape")
 
-[node name="ModelRoot" type="Node3D" parent="."]
+[node name="DebugHitboxPreview" type="MeshInstance3D" parent="." unique_id=1586819902]
+editor_only = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, -4.125808)
+material_override = SubResource("3_debug_hitbox_material")
+cast_shadow = 0
+mesh = SubResource("2_debug_hitbox_mesh")
+script = ExtResource("1_editor_debug_preview")
 
-[node name="HelicopterModel" parent="ModelRoot" instance=ExtResource("2_gunship_model")]
+[node name="ModelRoot" type="Node3D" parent="." unique_id=441656272]
 
-[node name="Anchors" type="Node3D" parent="."]
+[node name="HelicopterModel" parent="ModelRoot" unique_id=422302025 instance=ExtResource("2_gunship_model")]
 
-[node name="BodyCenter" type="Marker3D" parent="Anchors"]
-position = Vector3(0, 0.6, 0)
+[node name="Anchors" type="Node3D" parent="." unique_id=938021730]
 
-[node name="GunMuzzle" type="Marker3D" parent="Anchors"]
-position = Vector3(0, 0.1, -3.4)
+[node name="BodyCenter" type="Marker3D" parent="Anchors" unique_id=194457354]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
 
-[node name="MissileMuzzleLeft" type="Marker3D" parent="Anchors"]
-position = Vector3(-1.8, -0.15, -1.4)
+[node name="GunMuzzle" type="Marker3D" parent="Anchors" unique_id=582911337]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, -3.4)
 
-[node name="MissileMuzzleRight" type="Marker3D" parent="Anchors"]
-position = Vector3(1.8, -0.15, -1.4)
+[node name="MissileMuzzleLeft" type="Marker3D" parent="Anchors" unique_id=161497881]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.8, -0.15, -1.4)
 
-[node name="DamageSmokeAnchor" type="Marker3D" parent="Anchors"]
-position = Vector3(0, 1.1, 0.25)
+[node name="MissileMuzzleRight" type="Marker3D" parent="Anchors" unique_id=451395869]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.8, -0.15, -1.4)
 
-[node name="RotorHub" type="Marker3D" parent="Anchors"]
-position = Vector3(0, 1.95, 0)
+[node name="DamageSmokeAnchor" type="Marker3D" parent="Anchors" unique_id=92977480]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0.25)
+
+[node name="RotorHub" type="Marker3D" parent="Anchors" unique_id=1483422457]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.95, 0)

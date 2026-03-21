@@ -7,7 +7,7 @@
 ### 项目摘要
 
 - 本项目是一个 Godot `4.6` 的 `70km x 70km` low poly 城市运行时原型，目标是稳定的大世界流式体验，不是高模展示工程。
-- 当前主线已经不只是 `v7` 的道路基础设施：仓库里已有 `v12` 的 `place_index / resolved_target / route_result / full map / minimap / fast travel / autodrive`，`v13` 的多中心城市形态与 PNG 验收链，`v11` 的玩家驾车撞击行人 contract，以及 `v14` 的任务 catalog/runtime/map pin/world ring/trigger 主链代码与测试。
+- 当前主线已经不只是 `v7` 的道路基础设施：仓库里已有 `v12` 的 `place_index / resolved_target / route_result / full map / minimap / fast travel / autodrive`，`v13` 的多中心城市形态与 PNG 验收链，`v14` 的任务 catalog/runtime/map pin/world ring/trigger 主链，以及后续的 `service building / scene landmark / interactive prop / authored minigame venue / radio / missile launcher / building collapse / v37 helicopter gunship encounter` 等正式增量。
 - `v12`、`v13` 的 verification artifacts 已落在 `docs/plan/` 与 `reports/v13/`；`v14` 虽然代码和测试已经进仓库，但是否 closeout 仍必须以 fresh rerun 证据和新的 `docs/plan/v14-mN-verification-YYYY-MM-DD.md` 为准，不能只看旧文档的 `todo/done` 文字。
 
 ### 沟通约定
@@ -125,6 +125,24 @@ foreach($test in $tests){
 & $godot --headless --rendering-driver dummy --path $project --script 'res://tests/world/test_city_overview_png_export.gd'
 ```
 
+- `v37` 直升机炮艇主世界 + lab 快速回归：
+
+```powershell
+$tests=@(
+  'res://tests/world/test_city_task_helicopter_gunship_event_completion.gd',
+  'res://tests/world/test_city_task_helicopter_gunship_repeatable_reset.gd',
+  'res://tests/world/test_city_task_helicopter_gunship_pin_contract.gd',
+  'res://tests/e2e/test_city_task_helicopter_gunship_flow.gd',
+  'res://tests/world/test_city_helicopter_gunship_lab_scene_contract.gd',
+  'res://tests/world/test_city_helicopter_gunship_lab_completion_cleanup_contract.gd',
+  'res://tests/world/test_city_helicopter_gunship_lab_repeatable_combat_contract.gd'
+)
+foreach($test in $tests){
+  & $godot --headless --rendering-driver dummy --path $project --script $test
+  if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+}
+```
+
 - 性能护栏三件套，必须隔离顺序执行：
 
 ```powershell
@@ -197,6 +215,17 @@ rg --files tests -g *.gd | ForEach-Object {
 - 战斗与玩家交互：
   - 投射物：`res://city_game/combat/CityProjectile.gd`、`CityGrenade.gd`
   - 敌对目标：`res://city_game/combat/CityTraumaEnemy.gd`
+  - 直升机炮艇：`res://city_game/combat/helicopter/CityHelicopterGunship.tscn`、`CityHelicopterGunshipEncounterRuntime.gd`、`CityHelicopterGunshipWorldEncounter.tscn`
+- 电台系统：
+  - runtime：`res://city_game/world/radio/*`
+  - 消费入口：`CityPrototype.gd`、HUD、电台 browser/quick overlay
+- 服务建筑与作者场景覆盖：
+  - 建筑功能化：`res://city_game/world/serviceability/*`
+  - authored world features：`res://city_game/world/features/*`
+  - exporter / override registry：`res://city_game/world/serviceability/CityBuildingSceneExporter.gd`、`CityBuildingOverrideRegistry.gd`
+- 小游戏 runtime：
+  - authored venue runtime：`res://city_game/world/features/CitySceneMinigameVenueRuntime.gd`
+  - 玩法 runtime：`res://city_game/world/minigames/CitySoccerVenueRuntime.gd`、`CityTennisVenueRuntime.gd`、`CityMissileCommandVenueRuntime.gd`
 - 参考仓库：
   - `refs/` 只用于比对/借鉴，默认视为只读参考区。
 
@@ -445,6 +474,20 @@ CityPrototype
   - `tests/e2e/test_city_vehicle_pedestrian_impact_flow.gd`
   - `tests/e2e/test_city_vehicle_hijack_drive_flow.gd`
 
+### 作者场景 / 小游戏 / 炮艇遭遇战
+
+- 修改 `service building / scene landmark / interactive prop / authored minigame venue / helicopter gunship` 时，默认至少重跑受影响的 focused contract：
+  - `test_city_service_building_full_map_pin_contract.gd`
+  - `test_city_world_feature_full_map_pin_contract.gd`
+  - `test_city_missile_command_full_map_pin_contract.gd`
+  - `test_city_helicopter_gunship_lab_scene_contract.gd`
+  - `test_city_helicopter_gunship_lab_completion_cleanup_contract.gd`
+  - `test_city_helicopter_gunship_lab_repeatable_combat_contract.gd`
+  - `test_city_task_helicopter_gunship_event_completion.gd`
+  - `test_city_task_helicopter_gunship_repeatable_reset.gd`
+  - `test_city_task_helicopter_gunship_pin_contract.gd`
+  - `tests/e2e/test_city_task_helicopter_gunship_flow.gd`
+
 ### 性能护栏
 
 - 修改 `world generation / place index / route planner / task runtime / streaming / chunk rendering / terrain / road surface / HUD / minimap / pedestrians / vehicles` 时，默认至少重跑：
@@ -466,11 +509,15 @@ CityPrototype
 - 保住 `v12` 的位置语义主链：`place_query / resolved_target / route_result / full map / minimap / HUD / fast travel / autodrive` 不允许回退成各自一套临时状态
 - 保住 `v13` 的世界级形态与 PNG 验收链：任何 road/building morphology 变更，都要能重新导出 deterministic overview artifact
 - 继续把 `v14` 任务系统稳定在 shared pin / route / marker / trigger contract 上；不要再分叉出 task-only 地图状态或 route 逻辑
+- 保住作者场景覆盖主链：`service building / landmark / interactive prop / minigame venue / helicopter encounter` 优先沿共享 registry / pin / task/runtime 主链扩展，不要回退成各自的私有旁路
+- `v37` 炮艇遭遇战当前已正式接入主世界；后续改动默认保持 `lab runtime == main-world runtime`、`event completion != 立即返绿圈`、`空爆坠落 closeout 完成后再返绿圈`
 - 后续默认增量方向仍是：`交通标识系统`、`车辆系统`、`更丰富的行人系统`，但前提始终是 tests + profiling guard 全部可复核
 
 ## 作用域与优先级
 
 - 根目录 `AGENTS.md` 默认作用于整个仓库
+- 当前已有更具体的子目录规约：
+  - `city_game/combat/helicopter/AGENTS.md`
 - 如果同目录存在 `AGENTS.override.md`，则它优先于 `AGENTS.md`
 - 如果未来某个子目录新增自己的 `AGENTS.md`，以更靠近目标文件的那份为准
 - 全局 `~/.codex/AGENTS.md` 提供跨项目默认值；本仓库内更具体的规则优先

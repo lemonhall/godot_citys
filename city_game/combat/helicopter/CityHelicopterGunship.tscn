@@ -6,7 +6,7 @@
 [sub_resource type="BoxShape3D" id="1_hitbox_shape"]
 size = Vector3(7, 2.4, 8.5)
 
-[node name="CityHelicopterGunship" type="AnimatableBody3D"]
+[node name="CityHelicopterGunship" type="CharacterBody3D"]
 script = ExtResource("1_gunship_script")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]

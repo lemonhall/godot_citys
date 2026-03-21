@@ -1,0 +1,104 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://city_game/scenes/labs/HelicopterGunshipLab.gd" id="1_lab_script"]
+[ext_resource type="Script" path="res://city_game/scripts/PlayerController.gd" id="2_player_script"]
+[ext_resource type="PackedScene" path="res://city_game/assets/weapons/launchers/RpgLauncherEquippedVisual.tscn" id="3_rpg_visual"]
+[ext_resource type="Script" path="res://city_game/combat/helicopter/CityHelicopterGunshipEncounterRuntime.gd" id="4_encounter_script"]
+[ext_resource type="Script" path="res://city_game/world/navigation/CityWorldRingMarker.gd" id="5_ring_script"]
+
+[sub_resource type="Environment" id="1_lab_environment"]
+background_mode = 2
+background_color = Color(0.5647059, 0.73333335, 0.9411765, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.96, 0.97, 1, 1)
+ambient_light_energy = 0.7
+
+[sub_resource type="CapsuleShape3D" id="2_player_shape"]
+radius = 0.45
+height = 1.1
+
+[sub_resource type="CapsuleMesh" id="3_player_mesh"]
+radius = 0.45
+mid_height = 1.1
+
+[sub_resource type="BoxShape3D" id="4_ground_shape"]
+size = Vector3(900, 6, 900)
+
+[sub_resource type="BoxMesh" id="5_ground_mesh"]
+size = Vector3(900, 6, 900)
+
+[sub_resource type="StandardMaterial3D" id="6_ground_material"]
+albedo_color = Color(0.246, 0.318, 0.212, 1)
+roughness = 1.0
+
+[sub_resource type="CylinderShape3D" id="7_start_trigger_shape"]
+height = 4.0
+radius = 12.0
+
+[node name="HelicopterGunshipLab" type="Node3D"]
+script = ExtResource("1_lab_script")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("1_lab_environment")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-46, -34, 0)
+light_energy = 1.7
+shadow_enabled = true
+
+[node name="GroundBody" type="StaticBody3D" parent="."]
+position = Vector3(0, -3, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="GroundBody"]
+shape = SubResource("4_ground_shape")
+
+[node name="GroundMesh" type="MeshInstance3D" parent="GroundBody"]
+material_override = SubResource("6_ground_material")
+mesh = SubResource("5_ground_mesh")
+
+[node name="CombatRoot" type="Node3D" parent="."]
+
+[node name="Missiles" type="Node3D" parent="CombatRoot"]
+
+[node name="EnemyMissiles" type="Node3D" parent="CombatRoot"]
+
+[node name="Player" type="CharacterBody3D" parent="."]
+position = Vector3(0, 1.1, 96)
+script = ExtResource("2_player_script")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Player"]
+shape = SubResource("2_player_shape")
+
+[node name="Visual" type="MeshInstance3D" parent="Player"]
+position = Vector3(0, 0.9, 0)
+mesh = SubResource("3_player_mesh")
+
+[node name="RpgLauncherEquippedVisual" parent="Player/Visual" instance=ExtResource("3_rpg_visual")]
+
+[node name="CameraRig" type="Node3D" parent="Player"]
+position = Vector3(0, 1.35, 0)
+
+[node name="Camera3D" type="Camera3D" parent="Player/CameraRig"]
+position = Vector3(0, 2.4, 6.8)
+current = true
+fov = 65.0
+
+[node name="EncounterRoot" type="Node3D" parent="."]
+script = ExtResource("4_encounter_script")
+player_path = NodePath("../Player")
+enemy_missile_root_path = NodePath("../CombatRoot/EnemyMissiles")
+
+[node name="StartTrigger" type="Area3D" parent="EncounterRoot"]
+position = Vector3(0, 0, 8)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="EncounterRoot/StartTrigger"]
+shape = SubResource("7_start_trigger_shape")
+
+[node name="StartRing" type="Node3D" parent="EncounterRoot"]
+position = Vector3(0, 0, 8)
+script = ExtResource("5_ring_script")
+
+[node name="GunshipSpawnAnchor" type="Marker3D" parent="EncounterRoot"]
+position = Vector3(0, 28, -10)
+
+[node name="ActiveGunshipRoot" type="Node3D" parent="EncounterRoot"]

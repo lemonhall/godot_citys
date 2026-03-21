@@ -24,8 +24,8 @@ func _run() -> void:
 	if not T.require_true(self, scene != null, "Helicopter gunship scene contract must load CityHelicopterGunship.tscn as PackedScene"):
 		return
 
-	var gunship := scene.instantiate() as AnimatableBody3D
-	if not T.require_true(self, gunship != null, "Helicopter gunship scene contract must instantiate as AnimatableBody3D so future hit detection and air movement share one root"):
+	var gunship := scene.instantiate() as CharacterBody3D
+	if not T.require_true(self, gunship != null, "Helicopter gunship scene contract must instantiate as CharacterBody3D so future hit detection and air movement share one root"):
 		return
 
 	root.add_child(gunship)

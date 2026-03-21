@@ -43,6 +43,32 @@ albedo_color = Color(1, 0.2, 0.2, 0.28)
 [sub_resource type="QuadMesh" id="7_debug_rotor_preview_mesh"]
 size = Vector2(12.6, 12.6)
 
+[sub_resource type="CylinderMesh" id="8_death_ring_mesh"]
+top_radius = 1.0
+bottom_radius = 1.0
+height = 0.16
+radial_segments = 28
+
+[sub_resource type="StandardMaterial3D" id="9_death_ring_material"]
+shading_mode = 0
+transparency = 1
+albedo_color = Color(1, 0.533333, 0.203922, 0.78)
+emission_enabled = true
+emission = Color(1, 0.690196, 0.301961, 1)
+emission_energy_multiplier = 3.0
+
+[sub_resource type="SphereMesh" id="10_death_sphere_mesh"]
+radius = 1.0
+height = 2.0
+
+[sub_resource type="StandardMaterial3D" id="11_death_sphere_material"]
+shading_mode = 0
+transparency = 1
+albedo_color = Color(1, 0.427451, 0.168627, 0.5)
+emission_enabled = true
+emission = Color(1, 0.780392, 0.352941, 1)
+emission_energy_multiplier = 3.4
+
 [node name="CityHelicopterGunship" type="CharacterBody3D" unique_id=1664671167]
 script = ExtResource("1_gunship_script")
 
@@ -93,6 +119,22 @@ material_override = SubResource("6_debug_rotor_preview_material")
 cast_shadow = 0
 mesh = SubResource("7_debug_rotor_preview_mesh")
 script = ExtResource("1_editor_debug_preview")
+
+[node name="DeathFxRoot" type="Node3D" parent="." unique_id=1034672754]
+visible = false
+
+[node name="ExplosionRing" type="MeshInstance3D" parent="DeathFxRoot" unique_id=132828817]
+position = Vector3(0, 0.2, 0)
+visible = false
+mesh = SubResource("8_death_ring_mesh")
+material_override = SubResource("9_death_ring_material")
+cast_shadow = 0
+
+[node name="ExplosionSphere" type="MeshInstance3D" parent="DeathFxRoot" unique_id=1759382003]
+visible = false
+mesh = SubResource("10_death_sphere_mesh")
+material_override = SubResource("11_death_sphere_material")
+cast_shadow = 0
 
 [node name="RotorAudio" type="AudioStreamPlayer3D" parent="." unique_id=9400477]
 stream = ExtResource("4_rotor_audio")

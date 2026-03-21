@@ -118,6 +118,11 @@ var _active_shockwaves: Array[Dictionary] = []
 var _camera_shake_remaining_sec := 0.0
 var _camera_shake_total_duration_sec := 0.0
 var _camera_shake_amplitude_m := 0.0
+var _aim_disturbance_remaining_sec := 0.0
+var _aim_disturbance_total_duration_sec := 0.0
+var _aim_disturbance_amplitude_deg := 0.0
+var _aim_disturbance_elapsed_sec := 0.0
+var _aim_disturbance_phase_seed := 0.0
 var _slam_impact_count := 0
 var _last_slam_impact_speed := 0.0
 var _rng := RandomNumberGenerator.new()
@@ -439,6 +444,9 @@ func get_traversal_fx_state() -> Dictionary:
 		"camera_shake_remaining_sec": _camera_shake_remaining_sec,
 		"camera_shake_total_duration_sec": _camera_shake_total_duration_sec,
 		"camera_shake_amplitude_m": _camera_shake_amplitude_m,
+		"aim_disturbance_remaining_sec": _aim_disturbance_remaining_sec,
+		"aim_disturbance_total_duration_sec": _aim_disturbance_total_duration_sec,
+		"aim_disturbance_amplitude_deg": _aim_disturbance_amplitude_deg,
 	}
 
 func is_driving_vehicle() -> bool:
@@ -725,7 +733,7 @@ func request_ground_slam() -> bool:
 	return true
 
 func get_projectile_spawn_transform() -> Transform3D:
-	var aim_basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
+	var aim_basis := _resolve_aim_basis()
 	var right := global_transform.basis.x.normalized()
 	var up := Vector3.UP
 	var player_forward := (-global_transform.basis.z).normalized()
@@ -741,7 +749,7 @@ func get_projectile_direction() -> Vector3:
 	return (aim_target - spawn_origin).normalized()
 
 func get_grenade_spawn_transform() -> Transform3D:
-	var aim_basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
+	var aim_basis := _resolve_aim_basis()
 	var right := global_transform.basis.x.normalized()
 	var up := Vector3.UP
 	var player_forward := (-global_transform.basis.z).normalized()
@@ -830,7 +838,7 @@ func get_aim_target_world_position() -> Vector3:
 	return _resolve_aim_target_world_position()
 
 func get_aim_trace_segment() -> Dictionary:
-	var aim_basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
+	var aim_basis := _resolve_aim_basis()
 	var origin: Vector3 = camera.global_position if camera != null else global_position + Vector3.UP * 1.4
 	var forward := (-aim_basis.z).normalized()
 	return {
@@ -856,10 +864,18 @@ func _resolve_aim_target_world_position() -> Vector3:
 func suspend_ground_stabilization(frame_count: int) -> void:
 	_stabilization_suspend_frames = maxi(_stabilization_suspend_frames, frame_count)
 
-func trigger_camera_shake(duration_sec: float, amplitude_m: float) -> void:
+func trigger_camera_shake(duration_sec: float, amplitude_m: float, aim_disturbance_deg: float = 0.0) -> void:
 	_camera_shake_total_duration_sec = maxf(duration_sec, 0.0)
 	_camera_shake_remaining_sec = maxf(_camera_shake_remaining_sec, _camera_shake_total_duration_sec)
 	_camera_shake_amplitude_m = maxf(_camera_shake_amplitude_m, amplitude_m)
+	if aim_disturbance_deg <= 0.0:
+		return
+	if _aim_disturbance_remaining_sec <= 0.0:
+		_aim_disturbance_elapsed_sec = 0.0
+		_aim_disturbance_phase_seed = _rng.randf_range(0.0, TAU)
+	_aim_disturbance_total_duration_sec = maxf(duration_sec, 0.0)
+	_aim_disturbance_remaining_sec = maxf(_aim_disturbance_remaining_sec, _aim_disturbance_total_duration_sec)
+	_aim_disturbance_amplitude_deg = maxf(_aim_disturbance_amplitude_deg, aim_disturbance_deg)
 
 func _restore_grenade_ready_from_hold() -> void:
 	if not _control_enabled:
@@ -1461,7 +1477,43 @@ func _build_ground_slam_shockwave_mesh() -> CylinderMesh:
 
 func _update_traversal_fx(delta: float) -> void:
 	_update_active_shockwaves(delta)
+	_update_aim_disturbance(delta)
 	_update_camera_shake(delta)
+
+func _update_aim_disturbance(delta: float) -> void:
+	if _aim_disturbance_remaining_sec <= 0.0:
+		_aim_disturbance_remaining_sec = 0.0
+		_aim_disturbance_total_duration_sec = 0.0
+		_aim_disturbance_amplitude_deg = 0.0
+		return
+	_aim_disturbance_elapsed_sec += maxf(delta, 0.0)
+	_aim_disturbance_remaining_sec = maxf(_aim_disturbance_remaining_sec - delta, 0.0)
+
+func _resolve_aim_basis() -> Basis:
+	var aim_basis: Basis = camera.global_transform.basis if camera != null else global_transform.basis
+	var disturbance_angles := _get_aim_disturbance_angles_rad()
+	if disturbance_angles.length_squared() <= 0.0000001:
+		return aim_basis
+	var yaw_basis := Basis(Vector3.UP, disturbance_angles.x)
+	aim_basis = yaw_basis * aim_basis
+	var pitch_axis := aim_basis.x.normalized()
+	if pitch_axis.length_squared() > 0.0001:
+		aim_basis = Basis(pitch_axis, disturbance_angles.y) * aim_basis
+	return aim_basis.orthonormalized()
+
+func _get_aim_disturbance_angles_rad() -> Vector2:
+	if _aim_disturbance_remaining_sec <= 0.0 or _aim_disturbance_amplitude_deg <= 0.0:
+		return Vector2.ZERO
+	var normalized_remaining := 1.0
+	if _aim_disturbance_total_duration_sec > 0.0001:
+		normalized_remaining = clampf(_aim_disturbance_remaining_sec / _aim_disturbance_total_duration_sec, 0.0, 1.0)
+	var envelope := clampf(0.42 + normalized_remaining * 0.58, 0.0, 1.0)
+	var yaw_wave := sin(_aim_disturbance_elapsed_sec * 8.6 + _aim_disturbance_phase_seed)
+	var pitch_wave := cos(_aim_disturbance_elapsed_sec * 11.4 + _aim_disturbance_phase_seed * 1.37)
+	return Vector2(
+		deg_to_rad(yaw_wave * _aim_disturbance_amplitude_deg * envelope),
+		deg_to_rad(pitch_wave * _aim_disturbance_amplitude_deg * 0.82 * envelope)
+	)
 
 func _update_active_shockwaves(delta: float) -> void:
 	if _active_shockwaves.is_empty():

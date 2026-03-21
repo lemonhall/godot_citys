@@ -156,6 +156,7 @@ func _spawn_enemy_missile(origin: Vector3, direction: Vector3) -> Node3D:
 		missile.set("explosion_damage", 0.0)
 		missile.set("explosion_camera_shake_duration_sec", 0.28)
 		missile.set("explosion_camera_shake_amplitude_m", 0.18)
+		missile.set("explosion_aim_disturbance_deg", 1.45)
 		missile.set("launch_audio_enabled", false)
 		missile.set("speed_mps", 185.0)
 		missile.set("max_distance_m", 280.0)

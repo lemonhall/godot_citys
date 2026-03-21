@@ -15,18 +15,30 @@ signal destroyed
 @export var missile_fire_interval_sec := 1.35
 @export var target_aim_height_m := 1.1
 @export var engage_delay_sec := 0.15
-@export var altitude_weave_amplitude_m := 3.6
-@export var altitude_weave_cycle_sec := 4.8
+@export var altitude_weave_amplitude_m := 10.5
+@export var altitude_weave_cycle_sec := 6.2
 @export var ambient_camera_shake_radius_m := 72.0
 @export var ambient_camera_shake_duration_sec := 0.16
 @export var ambient_camera_shake_amplitude_m := 0.09
+@export var ambient_aim_disturbance_deg := 1.05
+@export var death_airburst_duration_sec := 0.24
+@export var death_fx_duration_sec := 0.92
+@export var death_fall_duration_sec := 2.4
+@export var death_fall_initial_speed_mps := 5.0
+@export var death_fall_accel_mps2 := 19.0
+@export var death_spin_rate_deg := 140.0
+@export var death_target_pitch_deg := -58.0
 
 @onready var _model_root := $ModelRoot as Node3D
+@onready var _rotor_blur_root := $RotorBlurRoot as Node3D
 @onready var _body_center := $Anchors/BodyCenter as Marker3D
 @onready var _gun_muzzle := $Anchors/GunMuzzle as Marker3D
 @onready var _missile_muzzle_left := $Anchors/MissileMuzzleLeft as Marker3D
 @onready var _missile_muzzle_right := $Anchors/MissileMuzzleRight as Marker3D
 @onready var _damage_smoke_anchor := $Anchors/DamageSmokeAnchor as Marker3D
+@onready var _death_fx_root := $DeathFxRoot as Node3D
+@onready var _death_explosion_ring := $DeathFxRoot/ExplosionRing as MeshInstance3D
+@onready var _death_explosion_sphere := $DeathFxRoot/ExplosionSphere as MeshInstance3D
 @onready var rotor_audio := $RotorAudio as AudioStreamPlayer3D
 @onready var _missile_fire_audio := $MissileFireAudio as AudioStreamPlayer3D
 
@@ -43,6 +55,12 @@ var _missile_fire_cooldown_sec := 0.0
 var _missile_fire_index := 0
 var _engage_delay_remaining_sec := 0.0
 var _altitude_weave_elapsed_sec := 0.0
+var _crash_state := ""
+var _crash_elapsed_sec := 0.0
+var _crash_fall_speed_mps := 0.0
+var _crash_horizontal_velocity := Vector3.ZERO
+var _death_fx_visible := false
+var _destroyed_signal_emitted := false
 
 func _ready() -> void:
 	_health = maxf(max_health, 1.0)
@@ -52,11 +70,18 @@ func _ready() -> void:
 	_missile_fire_cooldown_sec = missile_fire_interval_sec * 0.45
 	_engage_delay_remaining_sec = 0.0
 	_altitude_weave_elapsed_sec = 0.0
+	_crash_state = ""
+	_crash_elapsed_sec = 0.0
+	_crash_fall_speed_mps = 0.0
+	_crash_horizontal_velocity = Vector3.ZERO
+	_death_fx_visible = false
+	_destroyed_signal_emitted = false
 	add_to_group("city_enemy")
 	add_to_group("city_helicopter_gunship")
 	var wav := rotor_audio.stream as AudioStreamWAV
 	#if wav != null:
 		#wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	_set_death_fx_visible(false)
 
 
 func configure_combat(target_node: Node3D, orbit_reference_world_position: Vector3 = Vector3.ZERO) -> void:
@@ -101,6 +126,8 @@ func get_combat_state() -> Dictionary:
 		"missile_fire_index": _missile_fire_index,
 		"altitude_weave_offset_m": _compute_altitude_weave_offset_m(),
 		"destroyed": _destroyed,
+		"crash_state": _crash_state,
+		"death_fx_visible": _death_fx_visible,
 		"speed_mps": velocity.length(),
 	}
 
@@ -144,7 +171,7 @@ func get_missile_muzzle_world_positions() -> Array:
 
 func _physics_process(delta: float) -> void:
 	if _destroyed:
-		velocity = Vector3.ZERO
+		_update_crash_sequence(delta)
 		return
 	_apply_ambient_camera_shake()
 	if _engage_delay_remaining_sec > 0.0:
@@ -215,13 +242,14 @@ func _enter_destroyed_state() -> void:
 	var collision_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
 	if collision_shape != null:
 		collision_shape.set_deferred("disabled", true)
-	destroyed.emit()
+	_start_crash_sequence()
 
 func _compute_altitude_weave_offset_m() -> float:
 	if altitude_weave_amplitude_m <= 0.0 or altitude_weave_cycle_sec <= 0.001:
 		return 0.0
-	var phase := (_altitude_weave_elapsed_sec / altitude_weave_cycle_sec) * TAU
-	return maxf(sin(phase), 0.0) * altitude_weave_amplitude_m
+	var cycle_progress := fposmod(_altitude_weave_elapsed_sec / altitude_weave_cycle_sec, 1.0)
+	var pulse := 0.5 - 0.5 * cos(cycle_progress * TAU)
+	return pulse * altitude_weave_amplitude_m
 
 func _play_missile_fire_audio() -> void:
 	if _missile_fire_audio == null or _missile_fire_audio.stream == null:
@@ -245,5 +273,92 @@ func _apply_ambient_camera_shake() -> void:
 	var falloff := clampf(1.0 - distance_to_target / ambient_camera_shake_radius_m, 0.35, 1.0)
 	_target.trigger_camera_shake(
 		ambient_camera_shake_duration_sec,
-		ambient_camera_shake_amplitude_m * falloff
+		ambient_camera_shake_amplitude_m * falloff,
+		ambient_aim_disturbance_deg * falloff
 	)
+
+func _start_crash_sequence() -> void:
+	_crash_state = "airburst"
+	_crash_elapsed_sec = 0.0
+	_crash_fall_speed_mps = maxf(death_fall_initial_speed_mps, 0.0)
+	_crash_horizontal_velocity = velocity * 0.42
+	_crash_horizontal_velocity.y = 0.0
+	_death_fx_visible = true
+	if rotor_audio != null and rotor_audio.playing:
+		rotor_audio.stop()
+	if _rotor_blur_root != null:
+		_rotor_blur_root.visible = false
+	_set_death_fx_visible(true)
+	if _death_explosion_ring != null:
+		_death_explosion_ring.scale = Vector3(0.8, 1.0, 0.8)
+	if _death_explosion_sphere != null:
+		_death_explosion_sphere.scale = Vector3.ONE * 0.8
+
+func _update_crash_sequence(delta: float) -> void:
+	velocity = Vector3.ZERO
+	_crash_elapsed_sec += maxf(delta, 0.0)
+	_update_death_fx()
+	if _crash_state == "airburst":
+		if _crash_elapsed_sec >= death_airburst_duration_sec:
+			_crash_state = "falling"
+		return
+	if _crash_state != "falling":
+		_finalize_destroyed_state()
+		return
+	_crash_fall_speed_mps += death_fall_accel_mps2 * maxf(delta, 0.0)
+	global_position += _crash_horizontal_velocity * maxf(delta, 0.0)
+	global_position += Vector3.DOWN * _crash_fall_speed_mps * maxf(delta, 0.0)
+	rotation.x = move_toward(rotation.x, deg_to_rad(death_target_pitch_deg), maxf(delta, 0.0) * 1.85)
+	rotation.z += deg_to_rad(death_spin_rate_deg) * maxf(delta, 0.0)
+	if _crash_elapsed_sec >= death_fall_duration_sec or _has_reached_crash_ground():
+		_finalize_destroyed_state()
+
+func _update_death_fx() -> void:
+	if not _death_fx_visible:
+		return
+	var fx_progress := clampf(_crash_elapsed_sec / maxf(death_fx_duration_sec, 0.001), 0.0, 1.0)
+	if _death_explosion_ring != null:
+		var ring_scale := lerpf(0.8, 10.5, fx_progress)
+		_death_explosion_ring.scale = Vector3(ring_scale, 1.0, ring_scale)
+		var ring_material := _death_explosion_ring.material_override as StandardMaterial3D
+		if ring_material != null:
+			ring_material.albedo_color.a = lerpf(0.78, 0.0, fx_progress)
+			ring_material.emission_energy_multiplier = lerpf(3.0, 0.0, fx_progress)
+	if _death_explosion_sphere != null:
+		var sphere_scale := lerpf(0.8, 5.2, fx_progress)
+		_death_explosion_sphere.scale = Vector3.ONE * sphere_scale
+		var sphere_material := _death_explosion_sphere.material_override as StandardMaterial3D
+		if sphere_material != null:
+			sphere_material.albedo_color.a = lerpf(0.5, 0.0, fx_progress)
+			sphere_material.emission_energy_multiplier = lerpf(3.4, 0.0, fx_progress)
+	if fx_progress >= 1.0:
+		_set_death_fx_visible(false)
+
+func _has_reached_crash_ground() -> bool:
+	if get_world_3d() == null or get_world_3d().direct_space_state == null:
+		return false
+	var query := PhysicsRayQueryParameters3D.create(
+		global_position + Vector3.UP * 0.4,
+		global_position + Vector3.DOWN * 2.2
+	)
+	query.collide_with_areas = false
+	query.exclude = [get_rid()]
+	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+	return not hit.is_empty()
+
+func _finalize_destroyed_state() -> void:
+	if _destroyed_signal_emitted:
+		return
+	_destroyed_signal_emitted = true
+	_crash_state = "resolved"
+	_set_death_fx_visible(false)
+	destroyed.emit()
+
+func _set_death_fx_visible(visible: bool) -> void:
+	_death_fx_visible = visible
+	if _death_fx_root != null:
+		_death_fx_root.visible = visible
+	if _death_explosion_ring != null:
+		_death_explosion_ring.visible = visible
+	if _death_explosion_sphere != null:
+		_death_explosion_sphere.visible = visible

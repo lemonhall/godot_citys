@@ -12,6 +12,7 @@ const MISSILE_LAUNCH_AUDIO_PATH := "res://city_game/combat/helicopter/audio/rock
 @export var explosion_effect_duration_sec := 0.72
 @export var explosion_camera_shake_duration_sec := 0.52
 @export var explosion_camera_shake_amplitude_m := 0.56
+@export var explosion_aim_disturbance_deg := 0.0
 @export var sway_primary_amplitude_m := 0.34
 @export var sway_secondary_amplitude_m := 0.18
 @export var sway_primary_frequency := 0.16
@@ -175,7 +176,8 @@ func _trigger_camera_shake() -> void:
 	var falloff := clampf(1.0 - distance_to_player / 48.0, 0.7, 1.0)
 	_player_target.trigger_camera_shake(
 		explosion_camera_shake_duration_sec,
-		explosion_camera_shake_amplitude_m * falloff
+		explosion_camera_shake_amplitude_m * falloff,
+		explosion_aim_disturbance_deg * falloff
 	)
 
 func _update_explosion_fx(delta: float) -> void:

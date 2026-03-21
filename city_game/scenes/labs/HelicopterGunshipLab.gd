@@ -148,9 +148,13 @@ func _refresh_hud() -> void:
 		var viewport_size := get_viewport().get_visible_rect().size
 		var aim_target: Vector3 = player.get_aim_target_world_position() if player != null and player.has_method("get_aim_target_world_position") else Vector3.ZERO
 		var ads_active: bool = player.is_aim_down_sights_active() if player != null and player.has_method("is_aim_down_sights_active") else false
+		var camera := player.get_node_or_null("CameraRig/Camera3D") as Camera3D if player != null else null
+		var screen_position := viewport_size * 0.5
+		if camera != null:
+			screen_position = camera.unproject_position(aim_target)
 		hud.set_crosshair_state({
 			"visible": true,
-			"screen_position": viewport_size * 0.5,
+			"screen_position": screen_position,
 			"viewport_size": viewport_size,
 			"world_target": aim_target,
 			"aim_down_sights_active": ads_active,

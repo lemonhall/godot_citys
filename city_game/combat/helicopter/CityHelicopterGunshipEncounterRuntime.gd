@@ -2,6 +2,7 @@ extends Node3D
 
 @export var gunship_scene: PackedScene = preload("res://city_game/combat/helicopter/CityHelicopterGunship.tscn")
 @export_node_path("Node3D") var player_path: NodePath
+@export_node_path("Node3D") var player_missile_root_path: NodePath
 @export_node_path("Node3D") var enemy_missile_root_path: NodePath
 @export var enemy_missile_scene: PackedScene = preload("res://city_game/combat/CityMissile.tscn")
 
@@ -11,6 +12,7 @@ extends Node3D
 @onready var _active_gunship_root := $ActiveGunshipRoot as Node3D
 
 var _player: Node3D = null
+var _player_missile_root: Node3D = null
 var _enemy_missile_root: Node3D = null
 var _phase := "idle"
 var _activation_count := 0
@@ -18,6 +20,7 @@ var _completion_count := 0
 
 func _ready() -> void:
 	_player = get_node_or_null(player_path) as Node3D if player_path != NodePath("") else null
+	_player_missile_root = get_node_or_null(player_missile_root_path) as Node3D if player_missile_root_path != NodePath("") else null
 	_enemy_missile_root = get_node_or_null(enemy_missile_root_path) as Node3D if enemy_missile_root_path != NodePath("") else null
 	if _start_trigger != null:
 		var callable := Callable(self, "_on_start_trigger_body_entered")
@@ -48,6 +51,7 @@ func start_encounter() -> Node3D:
 
 func reset_encounter() -> void:
 	_clear_active_gunship()
+	_clear_player_missiles()
 	_clear_enemy_missiles()
 	_phase = "idle"
 	_set_start_ring_visible(true)
@@ -65,6 +69,7 @@ func get_state() -> Dictionary:
 		"active_gunship_present": get_active_gunship() != null,
 		"trigger_radius_m": _resolve_trigger_radius_m(),
 		"start_ring_visible": _start_ring != null and _start_ring.visible,
+		"player_missile_count": 0 if _player_missile_root == null else _player_missile_root.get_child_count(),
 		"enemy_missile_count": 0 if _enemy_missile_root == null else _enemy_missile_root.get_child_count(),
 	}
 
@@ -169,6 +174,7 @@ func _complete_active_encounter() -> void:
 		return
 	_completion_count += 1
 	_clear_active_gunship()
+	_clear_player_missiles()
 	_clear_enemy_missiles()
 	_phase = "idle"
 	_set_start_ring_visible(true)
@@ -191,4 +197,14 @@ func _clear_enemy_missiles() -> void:
 		if child_node == null:
 			continue
 		_enemy_missile_root.remove_child(child_node)
+		child_node.free()
+
+func _clear_player_missiles() -> void:
+	if _player_missile_root == null:
+		return
+	for child in _player_missile_root.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		_player_missile_root.remove_child(child_node)
 		child_node.free()

@@ -126,6 +126,7 @@ autowrap_mode = 3
 [node name="EncounterRoot" type="Node3D" parent="."]
 script = ExtResource("4_encounter_script")
 player_path = NodePath("../Player")
+player_missile_root_path = NodePath("../CombatRoot/Missiles")
 enemy_missile_root_path = NodePath("../CombatRoot/EnemyMissiles")
 
 [node name="StartTrigger" type="Area3D" parent="EncounterRoot"]

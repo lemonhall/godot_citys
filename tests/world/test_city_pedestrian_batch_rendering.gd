@@ -65,7 +65,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, pedestrian_batch.has_meta("pedestrian_tier1_visual_source"), "Tier 1 pedestrian batch must expose its visual source contract"):
 		return
-	if not T.require_true(self, String(pedestrian_batch.get_meta("pedestrian_tier1_visual_source", "")).begins_with("proxy_scene:"), "Tier 1 pedestrian batch must reuse a dedicated proxy scene instead of a stretched BoxMesh"):
+	if not T.require_true(self, String(pedestrian_batch.get_meta("pedestrian_tier1_visual_source", "")).begins_with("primitive_proxy:"), "Tier 1 pedestrian batch must use a static primitive proxy so far pedestrians do not expose skinned bind-pose T-poses"):
 		return
 	if not T.require_true(self, pedestrian_batch.has_meta("pedestrian_tier1_proxy_scale_profile"), "Tier 1 pedestrian batch must expose a proxy scale profile contract"):
 		return
@@ -76,7 +76,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, is_equal_approx(float(proxy_scale_profile.get("depth_scale", 0.0)), 1.0), "Tier 1 pedestrian proxy depth scale must stay at 1.0 so the fixed proxy is not stretched at runtime"):
 		return
-	if not T.require_true(self, _mesh_aabb_size(batch_mesh).y > 2.5, "Tier 1 pedestrian batch must keep a human-height volumetric mesh instead of a short placeholder box"):
+	var proxy_mesh_size := _mesh_aabb_size(batch_mesh)
+	if not T.require_true(self, proxy_mesh_size.y > 1.6, "Tier 1 pedestrian batch must keep a human-height volumetric mesh instead of a short placeholder box"):
+		return
+	if not T.require_true(self, proxy_mesh_size.x < proxy_mesh_size.y * 0.6, "Tier 1 pedestrian batch must keep a relaxed arms-down silhouette instead of a wide T-pose proxy"):
 		return
 	if not T.require_true(self, _collect_unique_axis_levels(batch_mesh, "y").size() >= 5, "Tier 1 pedestrian proxy mesh must expose a readable head-torso-leg silhouette instead of a single rod"):
 		return

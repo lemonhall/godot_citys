@@ -4,6 +4,7 @@ const T := preload("res://tests/_test_util.gd")
 const GUNSHIP_SCENE_PATH := "res://city_game/combat/helicopter/CityHelicopterGunship.tscn"
 const GUNSHIP_SCRIPT_PATH := "res://city_game/combat/helicopter/CityHelicopterGunship.gd"
 const GUNSHIP_MODEL_PATH := "res://city_game/assets/environment/source/aircraft/helicopter_a.glb"
+const ROTOR_BLUR_SHADER_PATH := "res://city_game/combat/helicopter/CityHelicopterRotorBlur.gdshader"
 
 func _init() -> void:
 	call_deferred("_run")
@@ -15,6 +16,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, ResourceLoader.exists(GUNSHIP_MODEL_PATH, "PackedScene"), "Helicopter gunship contract requires the formal helicopter_a.glb source asset"):
 		return
+	if not T.require_true(self, ResourceLoader.exists(ROTOR_BLUR_SHADER_PATH, "Shader"), "Helicopter gunship contract requires a dedicated rotor blur shader for the cheap spinning-rotor illusion"):
+		return
 
 	var scene_text := FileAccess.get_file_as_string(GUNSHIP_SCENE_PATH)
 	if not T.require_true(self, scene_text.find(GUNSHIP_MODEL_PATH) >= 0, "Helicopter gunship scene must wrap helicopter_a.glb through the .tscn instead of creating visuals in code"):
@@ -24,6 +27,12 @@ func _run() -> void:
 	if not T.require_true(self, scene_text.find("editor_only = true") >= 0, "Helicopter gunship debug hitbox preview must be editor_only so it never leaks into runtime gameplay"):
 		return
 	if not T.require_true(self, scene_text.find("albedo_color = Color(1, 0, 0") >= 0 or scene_text.find("albedo_color = Color(1.0, 0.0, 0.0") >= 0, "Helicopter gunship debug hitbox preview must use a red material for quick visual inspection in the editor"):
+		return
+	if not T.require_true(self, scene_text.find("[node name=\"RotorBlurDebugPreview\"") >= 0, "Helicopter gunship scene must author a dedicated RotorBlurDebugPreview mesh so rotor blur placement can be tuned visually in the editor"):
+		return
+	if not T.require_true(self, scene_text.find("RotorBlurDebugPreview") >= 0 and scene_text.find("editor_only = true", scene_text.find("RotorBlurDebugPreview")) >= 0, "Helicopter gunship RotorBlurDebugPreview must stay editor_only so the authored guide mesh never leaks into runtime gameplay"):
+		return
+	if not T.require_true(self, scene_text.find(ROTOR_BLUR_SHADER_PATH) >= 0, "Helicopter gunship scene must author the rotor blur shader through the scene instead of building it from code"):
 		return
 
 	var scene := load(GUNSHIP_SCENE_PATH) as PackedScene
@@ -48,6 +57,8 @@ func _run() -> void:
 		"Anchors/MissileMuzzleRight",
 		"Anchors/DamageSmokeAnchor",
 		"Anchors/RotorHub",
+		"RotorBlurRoot",
+		"RotorBlurRoot/MainRotorBlur",
 	]:
 		if not T.require_true(self, gunship.get_node_or_null(required_node_path) != null, "Helicopter gunship scene must author %s in the scene hierarchy" % required_node_path):
 			return
@@ -56,6 +67,8 @@ func _run() -> void:
 	if not T.require_true(self, collision_shape != null and collision_shape.shape is BoxShape3D, "Helicopter gunship scene contract requires a BoxShape3D hit volume on the root collision shape"):
 		return
 	if not T.require_true(self, gunship.get_node_or_null("DebugHitboxPreview") == null, "Helicopter gunship debug hitbox preview must stay absent at runtime because it is editor-only inspection geometry"):
+		return
+	if not T.require_true(self, gunship.get_node_or_null("RotorBlurRoot/RotorBlurDebugPreview") == null, "Helicopter gunship rotor blur debug preview must stay absent at runtime because it is editor-only inspection geometry"):
 		return
 	var hitbox := collision_shape.shape as BoxShape3D
 	if not T.require_true(self, hitbox.size.z >= 30.0, "Helicopter gunship hit volume must sync to the larger whole-body rectangular envelope tuned in the editor preview"):
@@ -80,6 +93,25 @@ func _run() -> void:
 
 	var visual_root := gunship.get_visual_root() as Node3D
 	if not T.require_true(self, visual_root != null and visual_root.name == "ModelRoot", "Helicopter gunship contract must expose the authored ModelRoot as the visual root"):
+		return
+
+	var main_rotor_blur := gunship.get_node_or_null("RotorBlurRoot/MainRotorBlur") as MeshInstance3D
+	if not T.require_true(self, main_rotor_blur != null, "Helicopter gunship scene must mount a dedicated MainRotorBlur mesh instance for the cheap spinning illusion"):
+		return
+	if not T.require_true(self, main_rotor_blur.material_override is ShaderMaterial, "Helicopter gunship MainRotorBlur must use a ShaderMaterial instead of static opaque geometry"):
+		return
+	if not T.require_true(self, main_rotor_blur.mesh is QuadMesh, "Helicopter gunship MainRotorBlur must stay a cheap QuadMesh disc instead of heavier geometry"):
+		return
+	var rotor_blur_mesh := main_rotor_blur.mesh as QuadMesh
+	if not T.require_true(self, rotor_blur_mesh.size.x >= 11.0 and rotor_blur_mesh.size.y >= 11.0, "Helicopter gunship MainRotorBlur must be large enough to visibly cover the rotor sweep in gameplay, not just a tiny disc at the hub"):
+		return
+	if not T.require_true(self, main_rotor_blur.position.y >= 2.05, "Helicopter gunship MainRotorBlur must sit slightly above the static rotor plane to avoid disappearing into the source mesh"):
+		return
+	var rotor_shader_material := main_rotor_blur.material_override as ShaderMaterial
+	if not T.require_true(self, rotor_shader_material.shader != null and rotor_shader_material.shader.resource_path == ROTOR_BLUR_SHADER_PATH, "Helicopter gunship MainRotorBlur must point at the dedicated rotor blur shader resource"):
+		return
+	var blur_color: Color = rotor_shader_material.get_shader_parameter("blur_color")
+	if not T.require_true(self, blur_color.a >= 0.4, "Helicopter gunship MainRotorBlur must use a stronger visible alpha because the subtle dark disc disappears against the sky and body silhouette"):
 		return
 
 	var missile_muzzles: Array = gunship.get_missile_muzzle_world_positions()

@@ -1,11 +1,12 @@
 [gd_scene format=3 uid="uid://cxoivw24renjs"]
 
-[ext_resource type="Script" path="res://city_game/combat/helicopter/CityHelicopterEditorDebugPreview.gd" id="1_editor_debug_preview"]
+[ext_resource type="Script" uid="uid://dwiuj3akqvdio" path="res://city_game/combat/helicopter/CityHelicopterEditorDebugPreview.gd" id="1_editor_debug_preview"]
 [ext_resource type="Script" uid="uid://cw8eya5aqe0ma" path="res://city_game/combat/helicopter/CityHelicopterGunship.gd" id="1_gunship_script"]
 [ext_resource type="PackedScene" uid="uid://c18dpxo140snx" path="res://city_game/assets/environment/source/aircraft/helicopter_a.glb" id="2_gunship_model"]
+[ext_resource type="Shader" uid="uid://cjfhg4tlk28wb" path="res://city_game/combat/helicopter/CityHelicopterRotorBlur.gdshader" id="3_rotor_blur_shader"]
 
 [sub_resource type="BoxShape3D" id="1_hitbox_shape"]
-size = Vector3(10.8, 4.6, 35.893798)
+size = Vector3(10.8, 4.6, 35.8938)
 
 [sub_resource type="StandardMaterial3D" id="3_debug_hitbox_material"]
 transparency = 1
@@ -13,7 +14,32 @@ shading_mode = 0
 albedo_color = Color(1, 0, 0, 0.16)
 
 [sub_resource type="BoxMesh" id="2_debug_hitbox_mesh"]
-size = Vector3(10.8, 4.6, 35.893798)
+size = Vector3(10.8, 4.6, 35.8938)
+
+[sub_resource type="ShaderMaterial" id="5_main_rotor_blur_material"]
+render_priority = 0
+shader = ExtResource("3_rotor_blur_shader")
+shader_parameter/blur_color = Color(0.78, 0.8, 0.84, 0.5)
+shader_parameter/disc_radius = 0.94
+shader_parameter/hub_radius = 0.12
+shader_parameter/edge_softness = 0.08
+shader_parameter/streak_count = 4.0
+shader_parameter/streak_speed = 34.0
+shader_parameter/streak_strength = 0.34
+shader_parameter/ring_glow = 0.18
+
+[sub_resource type="QuadMesh" id="4_main_rotor_blur_mesh"]
+size = Vector2(12.6, 12.6)
+
+[sub_resource type="StandardMaterial3D" id="6_debug_rotor_preview_material"]
+transparency = 1
+cull_mode = 2
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(1, 0.2, 0.2, 0.28)
+
+[sub_resource type="QuadMesh" id="7_debug_rotor_preview_mesh"]
+size = Vector2(12.6, 12.6)
 
 [node name="CityHelicopterGunship" type="CharacterBody3D" unique_id=1664671167]
 script = ExtResource("1_gunship_script")
@@ -23,7 +49,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, -4.125808)
 shape = SubResource("1_hitbox_shape")
 
 [node name="DebugHitboxPreview" type="MeshInstance3D" parent="." unique_id=1586819902]
-editor_only = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, -4.125808)
 material_override = SubResource("3_debug_hitbox_material")
 cast_shadow = 0
@@ -53,3 +78,19 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0.25)
 
 [node name="RotorHub" type="Marker3D" parent="Anchors" unique_id=1483422457]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.95, 0)
+
+[node name="RotorBlurRoot" type="Node3D" parent="." unique_id=283590710]
+transform = Transform3D(3.3871417, 0, 0, 0, 1, 0, 0, 0, 3.3871417, 0, 3.2324986, 1.7408848)
+
+[node name="MainRotorBlur" type="MeshInstance3D" parent="RotorBlurRoot" unique_id=126523656]
+transform = Transform3D(1, 0, 0, 0, 7.54979e-08, 1, 0, -1, 7.54979e-08, 0, 2.18, 0)
+material_override = SubResource("5_main_rotor_blur_material")
+cast_shadow = 0
+mesh = SubResource("4_main_rotor_blur_mesh")
+
+[node name="RotorBlurDebugPreview" type="MeshInstance3D" parent="RotorBlurRoot" unique_id=672084554]
+transform = Transform3D(1, 0, 0, 0, 7.54979e-08, 1, 0, -1, 7.54979e-08, 0, 2.18, 0)
+material_override = SubResource("6_debug_rotor_preview_material")
+cast_shadow = 0
+mesh = SubResource("7_debug_rotor_preview_mesh")
+script = ExtResource("1_editor_debug_preview")

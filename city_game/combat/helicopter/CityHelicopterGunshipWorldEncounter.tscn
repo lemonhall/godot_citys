@@ -1,0 +1,32 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://city_game/combat/helicopter/CityHelicopterGunshipEncounterRuntime.gd" id="1_encounter_script"]
+
+[sub_resource type="CylinderShape3D" id="1_disabled_start_shape"]
+height = 2.0
+radius = 1.0
+
+[node name="CityHelicopterGunshipWorldEncounter" type="Node3D"]
+script = ExtResource("1_encounter_script")
+player_path = NodePath("../Player")
+player_missile_root_path = NodePath("../CombatRoot/Missiles")
+enemy_missile_root_path = NodePath("../CombatRoot/EnemyProjectiles")
+use_internal_start_trigger = false
+use_internal_start_ring = false
+
+[node name="StartTrigger" type="Area3D" parent="."]
+monitoring = false
+monitorable = false
+position = Vector3(0, -512, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StartTrigger"]
+disabled = true
+shape = SubResource("1_disabled_start_shape")
+
+[node name="StartRing" type="Node3D" parent="."]
+visible = false
+
+[node name="GunshipSpawnAnchor" type="Marker3D" parent="."]
+position = Vector3(0, 28, -10)
+
+[node name="ActiveGunshipRoot" type="Node3D" parent="."]

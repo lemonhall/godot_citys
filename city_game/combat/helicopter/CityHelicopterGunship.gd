@@ -5,6 +5,7 @@ const ROTOR_AUDIO_PATH := "res://city_game/combat/helicopter/audio/helicopter.wa
 const MISSILE_FIRE_AUDIO_PATH := "res://city_game/combat/helicopter/audio/rockt-explosions.wav"
 
 signal missile_fire_requested(origin: Vector3, direction: Vector3)
+signal defeated
 signal destroyed
 
 @export var max_health := 160.0
@@ -239,6 +240,7 @@ func _enter_destroyed_state() -> void:
 	velocity = Vector3.ZERO
 	collision_layer = 0
 	collision_mask = 0
+	defeated.emit()
 	var collision_shape := get_node_or_null("CollisionShape3D") as CollisionShape3D
 	if collision_shape != null:
 		collision_shape.set_deferred("disabled", true)

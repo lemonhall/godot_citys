@@ -1,10 +1,14 @@
 extends Node3D
 
+signal encounter_completed(result: Dictionary)
+
 @export var gunship_scene: PackedScene = preload("res://city_game/combat/helicopter/CityHelicopterGunship.tscn")
 @export_node_path("Node3D") var player_path: NodePath
 @export_node_path("Node3D") var player_missile_root_path: NodePath
 @export_node_path("Node3D") var enemy_missile_root_path: NodePath
 @export var enemy_missile_scene: PackedScene = preload("res://city_game/combat/CityMissile.tscn")
+@export var use_internal_start_trigger := true
+@export var use_internal_start_ring := true
 
 @onready var _start_trigger := $StartTrigger as Area3D
 @onready var _start_ring := $StartRing as Node3D
@@ -17,16 +21,20 @@ var _enemy_missile_root: Node3D = null
 var _phase := "idle"
 var _activation_count := 0
 var _completion_count := 0
+var _active_completion_emitted := false
 
 func _ready() -> void:
 	_player = get_node_or_null(player_path) as Node3D if player_path != NodePath("") else null
 	_player_missile_root = get_node_or_null(player_missile_root_path) as Node3D if player_missile_root_path != NodePath("") else null
 	_enemy_missile_root = get_node_or_null(enemy_missile_root_path) as Node3D if enemy_missile_root_path != NodePath("") else null
-	if _start_trigger != null:
+	if use_internal_start_trigger and _start_trigger != null:
 		var callable := Callable(self, "_on_start_trigger_body_entered")
 		if not _start_trigger.body_entered.is_connected(callable):
 			_start_trigger.body_entered.connect(callable)
-	_configure_start_ring()
+	if use_internal_start_ring:
+		_configure_start_ring()
+	else:
+		_set_start_ring_visible(false)
 
 func start_encounter() -> Node3D:
 	var existing := get_active_gunship()
@@ -46,6 +54,7 @@ func start_encounter() -> Node3D:
 	call_deferred("_finalize_gunship_spawn", gunship)
 	_phase = "active"
 	_activation_count += 1
+	_active_completion_emitted = false
 	_set_start_ring_visible(false)
 	return gunship
 
@@ -54,7 +63,8 @@ func reset_encounter() -> void:
 	_clear_player_missiles()
 	_clear_enemy_missiles()
 	_phase = "idle"
-	_set_start_ring_visible(true)
+	_active_completion_emitted = false
+	_set_start_ring_visible(use_internal_start_ring)
 
 func get_active_gunship() -> Node3D:
 	if _active_gunship_root == null or _active_gunship_root.get_child_count() <= 0:
@@ -74,7 +84,7 @@ func get_state() -> Dictionary:
 	}
 
 func _configure_start_ring() -> void:
-	if _start_ring == null:
+	if not use_internal_start_ring or _start_ring == null:
 		return
 	if _start_ring.has_method("set_marker_theme"):
 		_start_ring.set_marker_theme("task_available_start")
@@ -108,6 +118,8 @@ func _resolve_trigger_radius_m() -> float:
 	return 10.0
 
 func _on_start_trigger_body_entered(body: Node3D) -> void:
+	if not use_internal_start_trigger:
+		return
 	if body == null or body != _player:
 		return
 	if _phase != "idle":
@@ -138,6 +150,10 @@ func _connect_gunship(gunship: Node3D) -> void:
 		var missile_callable := Callable(self, "_on_gunship_missile_fire_requested")
 		if not gunship.missile_fire_requested.is_connected(missile_callable):
 			gunship.missile_fire_requested.connect(missile_callable)
+	if gunship.has_signal("defeated"):
+		var defeated_callable := Callable(self, "_on_gunship_defeated")
+		if not gunship.defeated.is_connected(defeated_callable):
+			gunship.defeated.connect(defeated_callable)
 	if gunship.has_signal("destroyed"):
 		var destroyed_callable := Callable(self, "_on_gunship_destroyed")
 		if not gunship.destroyed.is_connected(destroyed_callable):
@@ -165,6 +181,19 @@ func _spawn_enemy_missile(origin: Vector3, direction: Vector3) -> Node3D:
 	if missile.has_method("configure"):
 		missile.configure(origin, direction, get_active_gunship(), _player)
 	return missile
+
+func _on_gunship_defeated() -> void:
+	if _phase != "active":
+		return
+	if _active_completion_emitted:
+		return
+	_active_completion_emitted = true
+	encounter_completed.emit({
+		"phase": "completed",
+		"activation_count": _activation_count,
+		"completion_count": _completion_count + 1,
+		"active_gunship_present": get_active_gunship() != null,
+	})
 
 func _on_gunship_destroyed() -> void:
 	if _phase != "active":

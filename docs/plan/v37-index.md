@@ -42,17 +42,21 @@ PRD 入口：[PRD-0024 Helicopter Gunship Encounter](../prd/PRD-0024-helicopter-
   - 至少 `10` 发玩家导弹 direct hit 不死
 - repeatable contract 冻结为：
   - 击落后恢复初始 `available`
+  - 空爆 + 坠落 closeout 完成后才重新出现绿圈
   - 再次进入绿圈开启下一轮
   - 保留 `completion_count` 或等价 run 计数
+- 炮艇任务 pin contract 冻结为：
+  - `icon_id = helicopter`
+  - full-map UI glyph = `🚁`
 
 ## 里程碑
 
 | 里程碑 | 范围 | DoD | 验证命令/测试 | 状态 |
 |---|---|---|---|---|
-| M1 Lab 场景落地 | 独立 `F6` 场景、玩家、地面、起始圈、encounter root、炮艇 scene | 进入 lab 起始圈后能正式生成炮艇并进入 encounter | `tests/world/test_city_helicopter_gunship_lab_scene_contract.gd` + F6 手测 | todo |
-| M2 炮艇 runtime 与 survivability | orbit、机炮、无限导弹、受击、击落 | 炮艇能攻击，且 10 发玩家导弹 direct hit 不死 | `tests/world/test_city_helicopter_gunship_attack_contract.gd`、`tests/world/test_city_helicopter_gunship_survivability_contract.gd` | todo |
-| M3 Task event completion + repeatable reset | 在不引入 failed 的前提下，让 active task 可通过 encounter event 完成，并在 closeout 后恢复可接 | `available -> active -> completed -> available` 的 repeatable encounter contract 跑通，且下一轮需重新进圈 | `tests/world/test_city_task_helicopter_gunship_event_completion.gd`、`tests/world/test_city_task_helicopter_gunship_repeatable_reset.gd` | todo |
-| M4 主世界移植与流程验证 | `chunk_101_178` 的正式任务圈接入同一 encounter | 进入主世界起始圈后触发 encounter，击落炮艇后完成本轮并可再次触发第二轮 | `tests/e2e/test_city_task_helicopter_gunship_flow.gd` | todo |
+| M1 Lab 场景落地 | 独立 `F6` 场景、玩家、地面、起始圈、encounter root、炮艇 scene | 进入 lab 起始圈后能正式生成炮艇并进入 encounter | `tests/world/test_city_helicopter_gunship_lab_scene_contract.gd` + F6 手测 | done |
+| M2 炮艇 runtime 与 survivability | orbit、无限导弹、受击、空爆坠落、closeout cleanup | 炮艇能攻击，10 发玩家导弹 direct hit 不死，且击落后保留空爆 + 坠落再清场 | `tests/world/test_city_helicopter_gunship_lab_repeatable_combat_contract.gd`、`tests/world/test_city_helicopter_gunship_lab_completion_cleanup_contract.gd` | done |
+| M3 Task event completion + repeatable reset | 在不引入 failed 的前提下，让 active task 可通过 encounter event 完成，并在 closeout 后恢复可接 | `available -> active -> completed -> available` 的 repeatable encounter contract 跑通，且下一轮需重新进圈 | `tests/world/test_city_task_helicopter_gunship_event_completion.gd`、`tests/world/test_city_task_helicopter_gunship_repeatable_reset.gd` | done |
+| M4 主世界移植与流程验证 | `chunk_101_178` 的正式任务圈接入同一 encounter、full-map 炮艇 pin 接入 | 进入主世界起始圈后触发 encounter；击落后主世界也保留空爆坠落并在 closeout 后返绿圈；full map 出现直升机 pin | `tests/e2e/test_city_task_helicopter_gunship_flow.gd`、`tests/world/test_city_task_helicopter_gunship_pin_contract.gd` | done |
 
 ## 计划索引
 
@@ -62,12 +66,12 @@ PRD 入口：[PRD-0024 Helicopter Gunship Encounter](../prd/PRD-0024-helicopter-
 
 | Req ID | v37 Plan | 单元/集成测试 | E2E / 验证命令 | 证据 | 状态 |
 |---|---|---|---|---|---|
-| REQ-0024-001 | `v37-helicopter-gunship-encounter-lab.md` | `tests/world/test_city_helicopter_gunship_lab_scene_contract.gd` | `F6` lab 场景 + headless scene contract | — | todo |
-| REQ-0024-002 | `v37-helicopter-gunship-encounter-lab.md` | `tests/world/test_city_helicopter_gunship_attack_contract.gd` | `--script res://tests/world/test_city_helicopter_gunship_attack_contract.gd` | — | todo |
-| REQ-0024-003 | `v37-helicopter-gunship-encounter-lab.md` | `tests/world/test_city_helicopter_gunship_survivability_contract.gd` | `--script res://tests/world/test_city_helicopter_gunship_survivability_contract.gd` | — | todo |
-| REQ-0024-004 | `v37-helicopter-gunship-encounter-lab.md` | `tests/world/test_city_task_helicopter_gunship_event_completion.gd` | `--script res://tests/world/test_city_task_helicopter_gunship_event_completion.gd` | — | todo |
-| REQ-0024-005 | `v37-helicopter-gunship-encounter-lab.md` | `tests/world/test_city_helicopter_gunship_attack_contract.gd` | `tests/e2e/test_city_task_helicopter_gunship_flow.gd` | — | todo |
-| REQ-0024-006 | `v37-helicopter-gunship-encounter-lab.md` | `tests/world/test_city_task_helicopter_gunship_repeatable_reset.gd` | `tests/e2e/test_city_task_helicopter_gunship_flow.gd` 二次触发段 | — | todo |
+| REQ-0024-001 | `v37-helicopter-gunship-encounter-lab.md` | `tests/world/test_city_helicopter_gunship_lab_scene_contract.gd` | `F6` lab 场景 + headless scene contract | `docs/plan/v37-m4-verification-2026-03-21.md` | done |
+| REQ-0024-002 | `v37-helicopter-gunship-encounter-lab.md` | `tests/world/test_city_helicopter_gunship_lab_repeatable_combat_contract.gd` | `--script res://tests/world/test_city_helicopter_gunship_lab_repeatable_combat_contract.gd` | `docs/plan/v37-m4-verification-2026-03-21.md` | done |
+| REQ-0024-003 | `v37-helicopter-gunship-encounter-lab.md` | `tests/world/test_city_helicopter_gunship_lab_repeatable_combat_contract.gd`、`tests/world/test_city_helicopter_gunship_lab_completion_cleanup_contract.gd` | `--script res://tests/world/test_city_helicopter_gunship_lab_completion_cleanup_contract.gd` | `docs/plan/v37-m4-verification-2026-03-21.md` | done |
+| REQ-0024-004 | `v37-helicopter-gunship-encounter-lab.md` | `tests/world/test_city_task_helicopter_gunship_event_completion.gd`、`tests/world/test_city_task_helicopter_gunship_repeatable_reset.gd`、`tests/world/test_city_task_helicopter_gunship_pin_contract.gd` | `tests/e2e/test_city_task_helicopter_gunship_flow.gd` | `docs/plan/v37-m4-verification-2026-03-21.md` | done |
+| REQ-0024-005 | `v37-helicopter-gunship-encounter-lab.md` | `tests/world/test_city_helicopter_gunship_lab_repeatable_combat_contract.gd` | `tests/e2e/test_city_task_helicopter_gunship_flow.gd` | `docs/plan/v37-m4-verification-2026-03-21.md` | done |
+| REQ-0024-006 | `v37-helicopter-gunship-encounter-lab.md` | `tests/world/test_city_task_helicopter_gunship_repeatable_reset.gd`、`tests/world/test_city_helicopter_gunship_lab_completion_cleanup_contract.gd` | `tests/e2e/test_city_task_helicopter_gunship_flow.gd` 二次触发段 | `docs/plan/v37-m4-verification-2026-03-21.md` | done |
 
 ## Closeout 证据口径
 

@@ -57,6 +57,12 @@
   - `repeatable = true`
   - `completion_count`
   - `reset_to_available_after_closeout = true`
+- 主世界与 lab 的 closeout 一致性冻结为：
+  - 炮艇先空爆并进入坠落
+  - 只有 crash cleanup 完成后，绿圈才重新出现
+- 炮艇任务 pin contract 冻结为：
+  - `icon_id = helicopter`
+  - full-map UI glyph = `🚁`
 
 ## Scope
 
@@ -89,7 +95,8 @@
 6. 自动化测试必须证明：主世界 `chunk_101_178` 的起始圈会启动同一 encounter，且击落炮艇后任务进入 `completed`。
 7. 自动化测试必须证明：本轮没有引入 `failed`，也没有因为炮艇攻击修改玩家生命值。
 8. 自动化测试必须证明：击落 closeout 结束后，任务会恢复到 `available`，绿圈重新出现，再次进入绿圈能开启第二次 run。
-9. 反作弊条款：不得只让模型出现在天上却没有正式攻击；不得通过 lab-only 私有逻辑假装主世界可复用；不得把“击落完成”偷换成“进入第二个圈完成”；不得靠重载整个场景来冒充可重复任务。
+9. 自动化测试必须证明：主世界 full map 上的该任务 pin 走共享 task pin 主链，且正式使用直升机图标。
+10. 反作弊条款：不得只让模型出现在天上却没有正式攻击；不得通过 lab-only 私有逻辑假装主世界可复用；不得把“击落完成”偷换成“进入第二个圈完成”；不得靠重载整个场景来冒充可重复任务。
 
 ## Files
 
@@ -102,6 +109,7 @@
 - Create: `city_game/combat/helicopter/CityHelicopterGunship.tscn`
 - Create: `city_game/combat/helicopter/CityHelicopterGunship.gd`
 - Create: `city_game/combat/helicopter/CityHelicopterGunshipEncounterRuntime.gd`
+- Create: `city_game/combat/helicopter/CityHelicopterGunshipWorldEncounter.tscn`
 - Modify: `city_game/combat/CityMissile.gd`
 - Optional Modify: `city_game/combat/CityMissile.tscn`
 - Modify: `city_game/world/tasks/generation/CityTaskCatalogBuilder.gd`
@@ -115,6 +123,7 @@
 - Create: `tests/world/test_city_helicopter_gunship_survivability_contract.gd`
 - Create: `tests/world/test_city_task_helicopter_gunship_event_completion.gd`
 - Create: `tests/world/test_city_task_helicopter_gunship_repeatable_reset.gd`
+- Create: `tests/world/test_city_task_helicopter_gunship_pin_contract.gd`
 - Create: `tests/e2e/test_city_task_helicopter_gunship_flow.gd`
 
 ## Steps
@@ -152,10 +161,13 @@
 11. Port to Main World
    - 在 `CityTaskCatalogBuilder` 为 `chunk_101_178` 新增正式 start/objective definition。
    - 在 `CityPrototype` 中挂接 encounter runtime，把击落事件回流给 task runtime。
+   - 让主世界 closeout 与 lab 保持一致：空爆坠落完成后再返绿圈。
+   - 给 full map task pin 接上正式 `helicopter` 图标。
 12. E2E / Focused Verification
    - 跑 lab focused tests。
    - 跑 main-world task encounter flow。
    - 跑 repeatable second-run verification。
+   - 跑 full-map helicopter pin contract。
    - 补跑受影响的 task/runtime/missile focused 回归。
 13. Review
    - 更新 `v37-index` 追溯矩阵与验证证据。

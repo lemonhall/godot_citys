@@ -40,6 +40,11 @@ const SAMPLE_TASK_BLUEPRINTS := [
 	},
 ]
 
+const HELICOPTER_GUNSHIP_TASK_ID := "task_helicopter_gunship_v37"
+const HELICOPTER_GUNSHIP_COMPLETION_EVENT_ID := "encounter:helicopter_gunship_v37"
+const HELICOPTER_GUNSHIP_START_WORLD_ANCHOR := Vector3(-8981.45, 0.0, 10796.22)
+const HELICOPTER_GUNSHIP_OBJECTIVE_WORLD_ANCHOR := Vector3(-8981.45, 0.0, 10796.22)
+
 func build(config, block_layout, vehicle_query, name_candidate_catalog: Dictionary = {}) -> Dictionary:
 	var definitions: Array[Dictionary] = []
 	var slots: Array[Dictionary] = []
@@ -52,6 +57,10 @@ func build(config, block_layout, vehicle_query, name_candidate_catalog: Dictiona
 			continue
 		definitions.append(built.get("definition", {}))
 		slots.append_array(built.get("slots", []))
+	var helicopter_built := _build_helicopter_gunship_task(vehicle_query)
+	if not helicopter_built.is_empty():
+		definitions.append(helicopter_built.get("definition", {}))
+		slots.append_array(helicopter_built.get("slots", []))
 	return {
 		"definitions": definitions,
 		"slots": slots,
@@ -179,6 +188,61 @@ func _build_slot_route_target(slot_id: String, display_name: String, world_ancho
 		world_anchor,
 		"task_slot"
 	)
+
+func _build_helicopter_gunship_task(vehicle_query) -> Dictionary:
+	var start_slot := _build_fixed_slot(
+		vehicle_query,
+		HELICOPTER_GUNSHIP_TASK_ID,
+		"start",
+		HELICOPTER_GUNSHIP_START_WORLD_ANCHOR,
+		"Gunship Start Ring",
+		"task_available_start",
+		18.0
+	)
+	var objective_slot := _build_fixed_slot(
+		vehicle_query,
+		HELICOPTER_GUNSHIP_TASK_ID,
+		"objective",
+		HELICOPTER_GUNSHIP_OBJECTIVE_WORLD_ANCHOR,
+		"Gunship Combat Zone",
+		"task_active_objective",
+		18.0
+	)
+	if start_slot.is_empty() or objective_slot.is_empty():
+		return {}
+	return {
+		"definition": {
+			"task_id": HELICOPTER_GUNSHIP_TASK_ID,
+			"title": "Gunship Ambush",
+			"summary": "Enter the green ring in chunk_101_178, then shoot down the gunship.",
+			"icon_id": "helicopter",
+			"initial_status": "available",
+			"start_slot": str(start_slot.get("slot_id", "")),
+			"objective_slots": [str(objective_slot.get("slot_id", ""))],
+			"auto_track_on_start": true,
+			"completion_mode": "event",
+			"completion_event_id": HELICOPTER_GUNSHIP_COMPLETION_EVENT_ID,
+			"repeatable": true,
+			"reset_to_available_after_closeout": true,
+		},
+		"slots": [start_slot, objective_slot],
+	}
+
+func _build_fixed_slot(vehicle_query, task_id: String, slot_kind: String, world_anchor: Vector3, display_name: String, marker_theme: String, trigger_radius_m: float) -> Dictionary:
+	var routable_anchor := CityPlaceIndexBuilder.snap_world_anchor_to_driving_lane(vehicle_query, world_anchor)
+	var slot_id := "%s:%s" % [task_id, slot_kind]
+	var route_target := _build_slot_route_target(slot_id, display_name, world_anchor, routable_anchor, "")
+	return {
+		"slot_id": slot_id,
+		"task_id": task_id,
+		"slot_kind": slot_kind,
+		"world_anchor": world_anchor,
+		"trigger_radius_m": trigger_radius_m,
+		"marker_theme": marker_theme,
+		"route_target_override": route_target,
+		"display_name": display_name,
+		"district_id": "",
+	}
 
 func _resolve_name_pool(name_candidate_catalog: Dictionary) -> Array:
 	var pool: Array = name_candidate_catalog.get("landmark_proper_name_pool", [])

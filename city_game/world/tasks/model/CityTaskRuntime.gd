@@ -24,6 +24,7 @@ func setup(task_catalog, task_slot_index) -> void:
 			"task_id": task_id,
 			"status": status,
 			"current_objective_index": 0,
+			"completion_count": 0,
 		}
 		if status == "active" and _active_task_id == "":
 			_active_task_id = task_id
@@ -53,6 +54,10 @@ func get_task_snapshot(task_id: String) -> Dictionary:
 	snapshot["status"] = status
 	snapshot["active"] = task_id == _active_task_id
 	snapshot["tracked"] = task_id == _tracked_task_id
+	snapshot["completion_count"] = int(state.get("completion_count", 0))
+	snapshot["completion_mode"] = _get_completion_mode(definition)
+	snapshot["completion_event_id"] = str(definition.get("completion_event_id", ""))
+	snapshot["repeatable"] = bool(definition.get("repeatable", false))
 	snapshot["current_objective_slot"] = get_current_objective_slot(task_id)
 	snapshot["route_target"] = get_route_target_for_task(task_id)
 	return snapshot
@@ -106,6 +111,11 @@ func start_task_from_slot(slot_id: String) -> Dictionary:
 		return {}
 	return start_task(str(slot.get("task_id", "")))
 
+func get_slot_by_id(slot_id: String) -> Dictionary:
+	if _task_slot_index == null or not _task_slot_index.has_method("get_slot_by_id"):
+		return {}
+	return _task_slot_index.get_slot_by_id(slot_id)
+
 func get_current_objective_slot(task_id: String = "") -> Dictionary:
 	var resolved_task_id := task_id if task_id != "" else _active_task_id
 	if resolved_task_id == "" or _task_catalog == null or not _task_catalog.has_method("get_task_definition"):
@@ -129,20 +139,42 @@ func complete_objective_slot(slot_id: String) -> Dictionary:
 	if current_slot.is_empty() or str(current_slot.get("slot_id", "")) != slot_id:
 		return {}
 	var definition: Dictionary = _task_catalog.get_task_definition(_active_task_id)
+	if _get_completion_mode(definition) == "event":
+		return {}
 	var state: Dictionary = _task_states_by_id[_active_task_id]
 	var next_index := int(state.get("current_objective_index", 0)) + 1
 	var objective_slots: Array = definition.get("objective_slots", [])
 	if next_index >= objective_slots.size():
-		state["status"] = "completed"
-		state["current_objective_index"] = objective_slots.size()
-		_task_states_by_id[_active_task_id] = state
-		var completed_task_id := _active_task_id
-		_active_task_id = ""
-		return get_task_snapshot(completed_task_id)
+		return _complete_task(_active_task_id, objective_slots.size())
 	state["status"] = "active"
 	state["current_objective_index"] = next_index
 	_task_states_by_id[_active_task_id] = state
 	return get_task_snapshot(_active_task_id)
+
+func complete_active_task_by_event(event_id: String) -> Dictionary:
+	if _active_task_id == "" or _task_catalog == null or not _task_catalog.has_method("get_task_definition"):
+		return {}
+	var definition: Dictionary = _task_catalog.get_task_definition(_active_task_id)
+	if _get_completion_mode(definition) != "event":
+		return {}
+	if str(definition.get("completion_event_id", "")) != event_id:
+		return {}
+	var objective_slots: Array = definition.get("objective_slots", [])
+	return _complete_task(_active_task_id, objective_slots.size())
+
+func reset_repeatable_task(task_id: String) -> Dictionary:
+	if task_id == "" or not _task_states_by_id.has(task_id) or _task_catalog == null or not _task_catalog.has_method("get_task_definition"):
+		return {}
+	var definition: Dictionary = _task_catalog.get_task_definition(task_id)
+	var state: Dictionary = _task_states_by_id[task_id]
+	if _sanitize_status(str(state.get("status", ""))) != "completed":
+		return {}
+	if not bool(definition.get("repeatable", false)):
+		return {}
+	state["status"] = "available"
+	state["current_objective_index"] = 0
+	_task_states_by_id[task_id] = state
+	return get_task_snapshot(task_id)
 
 func get_slots_for_rect(rect: Rect2, statuses: Array = [], slot_kinds: Array = []) -> Array[Dictionary]:
 	if _task_slot_index == null or not _task_slot_index.has_method("get_slots_intersecting_rect"):
@@ -185,6 +217,9 @@ func get_task_status(task_id: String) -> String:
 	return _sanitize_status(str((_task_states_by_id[task_id] as Dictionary).get("status", "available")))
 
 func get_state_snapshot() -> Dictionary:
+	var total_completion_count := 0
+	for state_variant in _task_states_by_id.values():
+		total_completion_count += int((state_variant as Dictionary).get("completion_count", 0))
 	return {
 		"task_count": _task_states_by_id.size(),
 		"available_count": get_tasks_for_status("available").size(),
@@ -192,7 +227,23 @@ func get_state_snapshot() -> Dictionary:
 		"completed_count": get_tasks_for_status("completed").size(),
 		"active_task_id": _active_task_id,
 		"tracked_task_id": _tracked_task_id,
+		"total_completion_count": total_completion_count,
 	}
+
+func _complete_task(task_id: String, completed_objective_index: int) -> Dictionary:
+	if task_id == "" or not _task_states_by_id.has(task_id):
+		return {}
+	var state: Dictionary = _task_states_by_id[task_id]
+	state["status"] = "completed"
+	state["current_objective_index"] = maxi(completed_objective_index, 0)
+	state["completion_count"] = int(state.get("completion_count", 0)) + 1
+	_task_states_by_id[task_id] = state
+	if _active_task_id == task_id:
+		_active_task_id = ""
+	return get_task_snapshot(task_id)
+
+func _get_completion_mode(definition: Dictionary) -> String:
+	return "event" if str(definition.get("completion_mode", "")) == "event" else "slot"
 
 func _sanitize_status(status: String) -> String:
 	if status == "active" or status == "completed":

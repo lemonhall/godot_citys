@@ -33,6 +33,7 @@ const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
 const CityMissileScene := preload("res://city_game/combat/CityMissile.tscn")
 const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesignatorBeam.gd")
 const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
+const CityHelicopterGunshipWorldEncounterScene := preload("res://city_game/combat/helicopter/CityHelicopterGunshipWorldEncounter.tscn")
 const CityWorldInspectionResolver := preload("res://city_game/world/inspection/CityWorldInspectionResolver.gd")
 const CityBuildingSceneExporter := preload("res://city_game/world/serviceability/CityBuildingSceneExporter.gd")
 const CityBuildingOverrideRegistry := preload("res://city_game/world/serviceability/CityBuildingOverrideRegistry.gd")
@@ -115,6 +116,9 @@ const SCENE_MINIGAME_VENUE_REGISTRY_PATH := "res://city_game/serviceability/mini
 const SERVICE_BUILDING_MAP_PIN_STARTUP_DELAY_FRAMES := 120
 const SERVICE_BUILDING_MAP_PIN_BATCH_SIZE := 1
 const SERVICE_BUILDING_MAP_PIN_BATCH_BUDGET_USEC := 1200
+const HELICOPTER_GUNSHIP_TASK_ID := "task_helicopter_gunship_v37"
+const HELICOPTER_GUNSHIP_COMPLETION_EVENT_ID := "encounter:helicopter_gunship_v37"
+const HELICOPTER_GUNSHIP_REPEATABLE_RESET_DELAY_SEC := 0.35
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -149,6 +153,9 @@ var _task_brief_view_model = null
 var _task_pin_projection = null
 var _task_trigger_runtime = null
 var _task_world_marker_runtime: Node3D = null
+var _helicopter_gunship_encounter_runtime: Node3D = null
+var _helicopter_gunship_pending_reset_task_id := ""
+var _helicopter_gunship_pending_reset_delay_sec := 0.0
 var _npc_interaction_runtime: Node = null
 var _interactive_prop_runtime: Node = null
 var _dialogue_runtime = null
@@ -338,6 +345,7 @@ func _ready() -> void:
 	_ensure_interaction_runtimes()
 	_ensure_destination_world_marker()
 	_ensure_task_system_runtimes()
+	_ensure_helicopter_gunship_encounter_runtime()
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
 		_reload_building_override_registry()
@@ -1099,6 +1107,16 @@ func get_task_world_marker_state() -> Dictionary:
 	if _task_world_marker_runtime == null or not _task_world_marker_runtime.has_method("get_state"):
 		return {}
 	return _task_world_marker_runtime.get_state()
+
+func get_helicopter_gunship_encounter_state() -> Dictionary:
+	if _helicopter_gunship_encounter_runtime == null or not _helicopter_gunship_encounter_runtime.has_method("get_state"):
+		return {}
+	return _helicopter_gunship_encounter_runtime.get_state()
+
+func get_active_helicopter_gunship() -> Node3D:
+	if _helicopter_gunship_encounter_runtime == null or not _helicopter_gunship_encounter_runtime.has_method("get_active_gunship"):
+		return null
+	return _helicopter_gunship_encounter_runtime.get_active_gunship()
 
 func is_player_driving_vehicle() -> bool:
 	return player != null and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle())
@@ -3198,6 +3216,7 @@ func _on_vehicle_radio_quick_overlay_slot_pressed(slot_index: int) -> void:
 
 func _sync_navigation_consumers(force_minimap_refresh: bool = false) -> void:
 	_sync_task_presentation_state()
+	_refresh_task_world_markers()
 	if _map_screen != null:
 		if _map_screen.has_method("set_map_open"):
 			_map_screen.set_map_open(_full_map_open)
@@ -3216,6 +3235,13 @@ func _sync_navigation_consumers(force_minimap_refresh: bool = false) -> void:
 	if force_minimap_refresh and hud != null and hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
 		_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
+
+func _refresh_task_world_markers() -> void:
+	if _task_world_marker_runtime == null or not is_instance_valid(_task_world_marker_runtime):
+		return
+	if _world_config == null or not _task_world_marker_runtime.has_method("refresh"):
+		return
+	_task_world_marker_runtime.refresh(_get_route_refresh_anchor_position(), float(_world_config.chunk_size_m) * 1.6)
 
 func _sync_controls_help_overlay() -> void:
 	if hud != null and hud.has_method("set_controls_help_state"):
@@ -3378,6 +3404,21 @@ func _ensure_task_system_runtimes() -> void:
 	if _task_world_marker_runtime.has_method("setup"):
 		_task_world_marker_runtime.setup(_task_runtime, Callable(self, "_resolve_task_marker_world_position"))
 
+func _ensure_helicopter_gunship_encounter_runtime() -> void:
+	if _helicopter_gunship_encounter_runtime != null and is_instance_valid(_helicopter_gunship_encounter_runtime):
+		return
+	_helicopter_gunship_encounter_runtime = get_node_or_null("HelicopterGunshipEncounterRuntime") as Node3D
+	if _helicopter_gunship_encounter_runtime == null and CityHelicopterGunshipWorldEncounterScene != null:
+		_helicopter_gunship_encounter_runtime = CityHelicopterGunshipWorldEncounterScene.instantiate() as Node3D
+		if _helicopter_gunship_encounter_runtime != null:
+			_helicopter_gunship_encounter_runtime.name = "HelicopterGunshipEncounterRuntime"
+			add_child(_helicopter_gunship_encounter_runtime)
+	if _helicopter_gunship_encounter_runtime == null or not _helicopter_gunship_encounter_runtime.has_signal("encounter_completed"):
+		return
+	var completion_callable := Callable(self, "_on_helicopter_gunship_encounter_completed")
+	if not _helicopter_gunship_encounter_runtime.encounter_completed.is_connected(completion_callable):
+		_helicopter_gunship_encounter_runtime.encounter_completed.connect(completion_callable)
+
 func _ensure_interaction_runtimes() -> void:
 	if _dialogue_runtime == null:
 		_dialogue_runtime = CityDialogueRuntime.new()
@@ -3492,9 +3533,11 @@ func _update_task_system(delta: float) -> void:
 	if player == null or _task_runtime == null:
 		return
 	_ensure_task_system_runtimes()
+	_ensure_helicopter_gunship_encounter_runtime()
 	if _task_trigger_runtime != null and _task_trigger_runtime.has_method("update"):
 		var trigger_result: Dictionary = _task_trigger_runtime.update(_get_active_anchor_position(), get_player_vehicle_state(), float(_world_config.chunk_size_m) * 1.5)
 		_handle_task_trigger_result(trigger_result)
+	_update_helicopter_gunship_task_runtime(delta)
 	if _task_world_marker_runtime != null and _task_world_marker_runtime.has_method("refresh"):
 		_task_world_marker_runtime.refresh(_get_route_refresh_anchor_position(), float(_world_config.chunk_size_m) * 1.6)
 		if _task_world_marker_runtime.has_method("tick"):
@@ -3516,6 +3559,67 @@ func _resolve_task_marker_world_position(anchor: Vector3) -> Vector3:
 	var surface_position := _resolve_surface_world_position(anchor, DESTINATION_WORLD_MARKER_SURFACE_OFFSET_M)
 	surface_position.y += 0.03
 	return surface_position
+
+func _update_helicopter_gunship_task_runtime(delta: float) -> void:
+	if _task_runtime == null or _task_slot_index == null:
+		return
+	_ensure_helicopter_gunship_encounter_runtime()
+	if _helicopter_gunship_encounter_runtime == null:
+		return
+	_sync_helicopter_gunship_encounter_anchor()
+	var task_snapshot: Dictionary = _task_runtime.get_task_snapshot(HELICOPTER_GUNSHIP_TASK_ID)
+	if task_snapshot.is_empty():
+		return
+	var status := str(task_snapshot.get("status", "available"))
+	var encounter_state := get_helicopter_gunship_encounter_state()
+	var phase := str(encounter_state.get("phase", "idle"))
+	if status == "active":
+		if phase == "idle" and _helicopter_gunship_encounter_runtime.has_method("start_encounter"):
+			_helicopter_gunship_encounter_runtime.start_encounter()
+	elif status != "completed" and phase != "idle" and _helicopter_gunship_encounter_runtime.has_method("reset_encounter"):
+		_helicopter_gunship_encounter_runtime.reset_encounter()
+	if _helicopter_gunship_pending_reset_task_id == "":
+		return
+	_helicopter_gunship_pending_reset_delay_sec = maxf(_helicopter_gunship_pending_reset_delay_sec - maxf(delta, 0.0), 0.0)
+	if _helicopter_gunship_pending_reset_delay_sec > 0.0:
+		return
+	if phase != "idle":
+		return
+	if not _task_runtime.has_method("reset_repeatable_task"):
+		return
+	var reset_snapshot: Dictionary = _task_runtime.reset_repeatable_task(_helicopter_gunship_pending_reset_task_id)
+	if reset_snapshot.is_empty():
+		return
+	var reset_task_id := str(reset_snapshot.get("task_id", ""))
+	var tracked_task_id := get_tracked_task_id()
+	_helicopter_gunship_pending_reset_task_id = ""
+	_helicopter_gunship_pending_reset_delay_sec = 0.0
+	if reset_task_id != "" and tracked_task_id == reset_task_id:
+		var selection_mode := str(_last_map_selection_contract.get("selection_mode", "task_panel"))
+		select_task_for_tracking(reset_task_id, selection_mode)
+	else:
+		_sync_navigation_consumers(true)
+
+func _sync_helicopter_gunship_encounter_anchor() -> void:
+	if _helicopter_gunship_encounter_runtime == null or _task_runtime == null or _task_slot_index == null:
+		return
+	var task_snapshot: Dictionary = _task_runtime.get_task_snapshot(HELICOPTER_GUNSHIP_TASK_ID)
+	if task_snapshot.is_empty():
+		return
+	var start_slot: Dictionary = _task_slot_index.get_slot_by_id(str(task_snapshot.get("start_slot", "")))
+	if start_slot.is_empty():
+		return
+	_helicopter_gunship_encounter_runtime.global_position = start_slot.get("world_anchor", Vector3.ZERO)
+
+func _on_helicopter_gunship_encounter_completed(_result: Dictionary) -> void:
+	if _task_runtime == null or not _task_runtime.has_method("complete_active_task_by_event"):
+		return
+	var completed: Dictionary = _task_runtime.complete_active_task_by_event(HELICOPTER_GUNSHIP_COMPLETION_EVENT_ID)
+	if completed.is_empty():
+		return
+	_helicopter_gunship_pending_reset_task_id = str(completed.get("task_id", ""))
+	_helicopter_gunship_pending_reset_delay_sec = HELICOPTER_GUNSHIP_REPEATABLE_RESET_DELAY_SEC
+	_clear_active_navigation_state(false)
 
 func _handle_npc_interaction_shortcut() -> bool:
 	var interaction_result: Dictionary = _handle_npc_primary_interaction()

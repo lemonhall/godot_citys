@@ -22,6 +22,12 @@ func refresh(focus_world_position: Vector3, nearby_radius_m: float = 320.0) -> v
 		for slot_variant in _task_runtime.get_slots_for_rect(nearby_rect, ["available"], ["start"]):
 			var slot: Dictionary = slot_variant
 			desired_markers[str(slot.get("slot_id", ""))] = _build_marker_contract(slot, "task_available_start")
+		if _task_runtime.has_method("get_tracked_task_snapshot") and _task_runtime.has_method("get_slot_by_id"):
+			var tracked_task: Dictionary = _task_runtime.get_tracked_task_snapshot()
+			if str(tracked_task.get("status", "")) == "available":
+				var tracked_start_slot: Dictionary = _task_runtime.get_slot_by_id(str(tracked_task.get("start_slot", "")))
+				if not tracked_start_slot.is_empty():
+					desired_markers[str(tracked_start_slot.get("slot_id", ""))] = _build_marker_contract(tracked_start_slot, "task_available_start")
 		if _task_runtime.has_method("get_current_objective_slot"):
 			var objective_slot: Dictionary = _task_runtime.get_current_objective_slot()
 			if not objective_slot.is_empty():

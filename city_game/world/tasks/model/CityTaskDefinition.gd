@@ -27,6 +27,10 @@ func setup(definition_data: Dictionary) -> void:
 		"start_slot": str(definition_data.get("start_slot", "")),
 		"objective_slots": objective_slots,
 		"auto_track_on_start": bool(definition_data.get("auto_track_on_start", true)),
+		"completion_mode": "event" if str(definition_data.get("completion_mode", "")) == "event" else "slot",
+		"completion_event_id": str(definition_data.get("completion_event_id", "")),
+		"repeatable": bool(definition_data.get("repeatable", false)),
+		"reset_to_available_after_closeout": bool(definition_data.get("reset_to_available_after_closeout", false)),
 	}
 
 func is_valid() -> bool:

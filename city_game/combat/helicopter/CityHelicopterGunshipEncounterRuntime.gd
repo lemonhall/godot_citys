@@ -94,13 +94,13 @@ func _configure_start_ring() -> void:
 		_start_ring.set_marker_world_position(_start_trigger.global_position if _start_trigger != null else global_position)
 	_set_start_ring_visible(true)
 
-func _set_start_ring_visible(is_visible: bool) -> void:
+func _set_start_ring_visible(should_show: bool) -> void:
 	if _start_ring == null:
 		return
 	if _start_ring.has_method("set_marker_visible"):
-		_start_ring.set_marker_visible(is_visible)
+		_start_ring.set_marker_visible(should_show)
 	else:
-		_start_ring.visible = is_visible
+		_start_ring.visible = should_show
 
 func _resolve_trigger_radius_m() -> float:
 	if _start_trigger == null:

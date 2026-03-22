@@ -353,11 +353,11 @@ func _finalize_destroyed_state() -> void:
 	_set_death_fx_visible(false)
 	destroyed.emit()
 
-func _set_death_fx_visible(is_visible: bool) -> void:
-	_death_fx_visible = is_visible
+func _set_death_fx_visible(should_show: bool) -> void:
+	_death_fx_visible = should_show
 	if _death_fx_root != null:
-		_death_fx_root.visible = is_visible
+		_death_fx_root.visible = should_show
 	if _death_explosion_ring != null:
-		_death_explosion_ring.visible = is_visible
+		_death_explosion_ring.visible = should_show
 	if _death_explosion_sphere != null:
-		_death_explosion_sphere.visible = is_visible
+		_death_explosion_sphere.visible = should_show

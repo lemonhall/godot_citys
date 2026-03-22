@@ -7,7 +7,6 @@ extends Node3D
 @export var line_target_pitch_weight := 0.0
 @export var line_target_yaw_weight := 0.0
 
-@onready var _line_hold_pose_anchor := $LineHoldPoseAnchor as Node3D
 @onready var _mount_root := $MountRoot as Node3D
 @onready var _pole_root := $MountRoot/Pole as Node3D
 @onready var _line_origin_anchor := $MountRoot/Pole/LineOriginAnchor as Marker3D
@@ -121,13 +120,13 @@ func _resolve_carry_pose() -> Dictionary:
 	}
 
 func _resolve_cast_endpoint_pose() -> Dictionary:
-	var position := _authored_mount_position + cast_position_offset
+	var mount_position := _authored_mount_position + cast_position_offset
 	var rotation_deg := _authored_mount_rotation_deg + cast_rotation_offset_deg
 	var target_adjustment := _resolve_line_target_adjustment_deg()
 	rotation_deg.x += target_adjustment.x
 	rotation_deg.y += target_adjustment.y
 	return {
-		"position": position,
+		"position": mount_position,
 		"rotation_degrees": rotation_deg,
 	}
 

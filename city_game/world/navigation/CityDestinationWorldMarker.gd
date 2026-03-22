@@ -1,3 +1,4 @@
+@tool
 extends "res://city_game/world/navigation/CityWorldRingMarker.gd"
 
 func _ready() -> void:

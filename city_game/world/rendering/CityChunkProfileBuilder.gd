@@ -698,7 +698,7 @@ static func _build_road_distance_edges(road_segments: Array) -> Array:
 			})
 	return edges
 
-static func _try_build_building(candidate: Dictionary, archetype: Dictionary, chunk_center: Vector3, half_extent: float, _world_seed: int, occupied: Array, building_rng: RandomNumberGenerator, scale_multiplier: float = 1.0) -> Dictionary:
+static func _try_build_building(candidate: Dictionary, archetype: Dictionary, _chunk_center: Vector3, half_extent: float, _world_seed: int, occupied: Array, building_rng: RandomNumberGenerator, scale_multiplier: float = 1.0) -> Dictionary:
 	var local_seed := int(candidate.get("seed", 0)) ^ int(archetype.get("id", "").hash())
 	building_rng.seed = local_seed
 	var min_size: Vector2 = archetype.get("min_size", Vector2(18.0, 18.0))

@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://vntyx1ctf04l"]
+
+[ext_resource type="Script" uid="uid://djja3uyygoek0" path="res://city_game/assets/minigames/fishing/props/FishingPoleVisual.gd" id="1_pole_visual_script"]
+[ext_resource type="PackedScene" uid="uid://deikny4nk4pvo" path="res://city_game/assets/minigames/fishing/props/FishingPole.glb" id="2_pole_model"]
+
+[node name="FishingPoleVisual" type="Node3D" unique_id=1888575098]
+script = ExtResource("1_pole_visual_script")
+
+[node name="MountRoot" type="Node3D" parent="." unique_id=853789286]
+
+[node name="Model" parent="MountRoot" unique_id=264731917 instance=ExtResource("2_pole_model")]
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 0, 0)

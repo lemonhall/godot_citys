@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://kfni4xbynl8e"
-path="res://.godot/imported/Tennis racket.glb-7117d9bf288a6e56a21138a97072a431.scn"
+uid="uid://neu78pk40wil"
+path="res://.godot/imported/Fish.glb-a22e6f9ab4fd64796da2caa8f0e3e3d3.scn"
 
 [deps]
 
-source_file="res://Tennis racket.glb"
-dest_files=["res://.godot/imported/Tennis racket.glb-7117d9bf288a6e56a21138a97072a431.scn"]
+source_file="res://Fish.glb"
+dest_files=["res://.godot/imported/Fish.glb-a22e6f9ab4fd64796da2caa8f0e3e3d3.scn"]
 
 [params]
 

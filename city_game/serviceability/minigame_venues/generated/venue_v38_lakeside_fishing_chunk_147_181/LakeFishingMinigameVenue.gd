@@ -17,7 +17,8 @@ func _ready() -> void:
 	else:
 		_entry = _merge_entry_with_defaults(_entry)
 	_refresh_contracts()
-	_ensure_match_start_ring()
+	_resolve_match_start_ring()
+	_sync_match_start_ring()
 
 func _process(delta: float) -> void:
 	if _match_start_ring != null and is_instance_valid(_match_start_ring) and _match_start_ring.has_method("tick"):
@@ -27,7 +28,8 @@ func configure_minigame_venue(entry: Dictionary) -> void:
 	_entry = _merge_entry_with_defaults(entry)
 	_refresh_contracts()
 	if is_inside_tree():
-		_ensure_match_start_ring()
+		_resolve_match_start_ring()
+		_sync_match_start_ring()
 
 func get_venue_contract() -> Dictionary:
 	return _entry.duplicate(true)
@@ -69,6 +71,7 @@ func get_bite_zone(zone_id: String = "") -> Dictionary:
 func sync_fishing_state(state: Dictionary) -> void:
 	_runtime_state = state.duplicate(true)
 	_refresh_contracts()
+	_resolve_match_start_ring()
 	if _match_start_ring != null and is_instance_valid(_match_start_ring):
 		_match_start_ring.set_marker_visible(bool(state.get("start_ring_visible", true)))
 		_match_start_ring.set_marker_world_position(_match_start_contract.get("world_position", global_position))
@@ -133,13 +136,17 @@ func _refresh_contracts() -> void:
 		"visible": not bool(_runtime_state.get("fishing_mode_active", false)),
 	}
 
-func _ensure_match_start_ring() -> void:
+func _resolve_match_start_ring() -> void:
+	if _match_start_ring != null and is_instance_valid(_match_start_ring):
+		return
+	_match_start_ring = get_node_or_null("MatchStartRing") as Node3D
+
+func _sync_match_start_ring() -> void:
 	if not is_inside_tree():
 		return
+	_resolve_match_start_ring()
 	if _match_start_ring == null or not is_instance_valid(_match_start_ring):
-		_match_start_ring = CityWorldRingMarker.new()
-		_match_start_ring.name = "MatchStartRing"
-		add_child(_match_start_ring)
+		return
 	_refresh_contracts()
 	_match_start_ring.set_marker_theme(str(_match_start_contract.get("theme_id", "task_available_start")))
 	_match_start_ring.set_marker_radius(float(_match_start_contract.get("trigger_radius_m", 4.5)))

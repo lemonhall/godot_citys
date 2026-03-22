@@ -4,22 +4,46 @@ const CityTerrainRegionFeatureRegistry := preload("res://city_game/world/feature
 const CityTerrainRegionFeatureRuntime := preload("res://city_game/world/features/CityTerrainRegionFeatureRuntime.gd")
 const CityLakeFishSchoolRuntime := preload("res://city_game/world/features/lake/CityLakeFishSchoolRuntime.gd")
 const CityFishingVenueRuntime := preload("res://city_game/world/minigames/CityFishingVenueRuntime.gd")
-const CityLakeBasinCarrierBuilder := preload("res://city_game/world/rendering/CityLakeBasinCarrierBuilder.gd")
 
 const TERRAIN_REGION_REGISTRY_PATH := "res://city_game/serviceability/terrain_regions/generated/terrain_region_registry.json"
 const REGION_ID := "region:v38:fishing_lake:chunk_147_181"
 const VENUE_ID := "venue:v38:lakeside_fishing:chunk_147_181"
+const LAB_WORLD_ORIGIN := Vector3(2834.0, 0.0, 11546.0)
 
-@onready var ground_body := $GroundBody
+class LakeFishSchoolLabAdapter:
+	extends RefCounted
+
+	var _shared_runtime = null
+	var _world_origin := Vector3.ZERO
+
+	func configure(shared_runtime, world_origin: Vector3) -> void:
+		_shared_runtime = shared_runtime if shared_runtime != null and shared_runtime.has_method("get_school_summaries_for_region") else null
+		_world_origin = world_origin
+
+	func get_school_summaries_for_region(region_id: String) -> Array:
+		if _shared_runtime == null:
+			return []
+		var shared_summaries: Array = _shared_runtime.get_school_summaries_for_region(region_id)
+		var localized_summaries: Array = []
+		for summary_variant in shared_summaries:
+			if not (summary_variant is Dictionary):
+				continue
+			var summary: Dictionary = (summary_variant as Dictionary).duplicate(true)
+			var world_position_variant: Variant = summary.get("world_position", Vector3.ZERO)
+			if world_position_variant is Vector3:
+				summary["world_position"] = (world_position_variant as Vector3) - _world_origin
+			localized_summaries.append(summary)
+		return localized_summaries
+
 @onready var player := $Player
 @onready var hud := $Hud
-@onready var water_surface_root := $LakeRoot/WaterSurface
 @onready var fish_schools_root := $LakeRoot/FishSchools
 @onready var venue_root := $VenueRoot
 
 var _terrain_region_feature_runtime = null
 var _lake_runtime = null
 var _fish_school_runtime = null
+var _fish_school_runtime_adapter = null
 var _fishing_runtime = null
 var _initial_player_position := Vector3.ZERO
 var _initial_player_rotation := Vector3.ZERO
@@ -29,7 +53,7 @@ var _fish_school_summaries: Array = []
 func _ready() -> void:
 	_capture_initial_state()
 	_setup_runtimes()
-	_rebuild_lake_visuals()
+	_rebuild_fish_school_visuals()
 	_apply_hud_state()
 
 func _process(delta: float) -> void:
@@ -85,14 +109,16 @@ func _setup_runtimes() -> void:
 		_lake_runtime = _terrain_region_feature_runtime.get_lake_runtime(REGION_ID)
 	_fish_school_runtime = CityLakeFishSchoolRuntime.new()
 	_fish_school_runtime.configure([_lake_runtime])
-	_fish_school_summaries = _fish_school_runtime.get_school_summaries_for_region(REGION_ID)
+	_fish_school_runtime_adapter = LakeFishSchoolLabAdapter.new()
+	_fish_school_runtime_adapter.configure(_fish_school_runtime, LAB_WORLD_ORIGIN)
+	_fish_school_summaries = _fish_school_runtime_adapter.get_school_summaries_for_region(REGION_ID)
 	_fishing_runtime = CityFishingVenueRuntime.new()
 	if venue_root != null and venue_root.has_method("get_fishing_contract"):
 		var venue_contract: Dictionary = venue_root.get_fishing_contract()
 		_fishing_runtime.configure({
 			str(venue_contract.get("venue_id", VENUE_ID)): venue_contract.duplicate(true),
 		})
-	_fishing_runtime.set_lake_context(_terrain_region_feature_runtime, _fish_school_runtime)
+	_fishing_runtime.set_lake_context(_terrain_region_feature_runtime, _fish_school_runtime_adapter)
 	_update_lake_player_water_state()
 
 func _capture_initial_state() -> void:
@@ -110,45 +136,15 @@ func _update_lake_player_water_state() -> void:
 			"world_position": player.global_position if player != null else Vector3.ZERO,
 		}
 		return
-	_water_state = _terrain_region_feature_runtime.query_water_state(player.global_position)
+	var formal_world_position: Vector3 = player.global_position + LAB_WORLD_ORIGIN
+	_water_state = _terrain_region_feature_runtime.query_water_state(formal_world_position)
+	if not _water_state.is_empty():
+		var sampled_world_position_variant: Variant = _water_state.get("world_position", formal_world_position)
+		var sampled_world_position: Vector3 = sampled_world_position_variant as Vector3 if sampled_world_position_variant is Vector3 else formal_world_position
+		_water_state["world_position"] = sampled_world_position - LAB_WORLD_ORIGIN
+		_water_state["formal_world_position"] = formal_world_position
 	if player.has_method("set_lake_water_state"):
 		player.set_lake_water_state(_water_state)
-
-func _rebuild_lake_visuals() -> void:
-	_rebuild_ground_carrier()
-	_rebuild_water_surface()
-	_rebuild_fish_school_visuals()
-
-func _rebuild_ground_carrier() -> void:
-	if _lake_runtime == null:
-		return
-	var next_ground_body := CityLakeBasinCarrierBuilder.build_ground_body(_lake_runtime.get_runtime_contract())
-	if next_ground_body == null:
-		return
-	var current_ground_body := ground_body
-	var parent_node := current_ground_body.get_parent() if current_ground_body != null else self
-	var insert_index := current_ground_body.get_index() if current_ground_body != null else 0
-	if current_ground_body != null:
-		parent_node.remove_child(current_ground_body)
-		current_ground_body.queue_free()
-	ground_body = next_ground_body
-	parent_node.add_child(ground_body)
-	parent_node.move_child(ground_body, insert_index)
-
-func _rebuild_water_surface() -> void:
-	if water_surface_root == null or _lake_runtime == null:
-		return
-	for child in water_surface_root.get_children():
-		child.queue_free()
-	var runtime_contract: Dictionary = _lake_runtime.get_runtime_contract()
-	var mesh_instance := CityLakeBasinCarrierBuilder.build_water_surface_node({
-		"region_id": str(runtime_contract.get("region_id", "")),
-		"water_level_y_m": float(runtime_contract.get("water_level_y_m", 0.0)),
-		"polygon_world_points": (runtime_contract.get("polygon_world_points", []) as Array).duplicate(true),
-	})
-	if mesh_instance != null:
-		mesh_instance.name = "SurfaceMesh"
-		water_surface_root.add_child(mesh_instance)
 
 func _rebuild_fish_school_visuals() -> void:
 	if fish_schools_root == null:

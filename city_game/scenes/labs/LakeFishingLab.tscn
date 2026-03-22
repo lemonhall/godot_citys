@@ -1,9 +1,12 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://city_game/scenes/labs/LakeFishingLab.gd" id="1_lab_script"]
 [ext_resource type="Script" path="res://city_game/scripts/PlayerController.gd" id="2_player_script"]
 [ext_resource type="PackedScene" path="res://city_game/serviceability/minigame_venues/generated/venue_v38_lakeside_fishing_chunk_147_181/lake_fishing_minigame_venue.tscn" id="3_venue_scene"]
 [ext_resource type="Script" path="res://city_game/ui/PrototypeHud.gd" id="4_hud_script"]
+[ext_resource type="ConcavePolygonShape3D" path="res://city_game/scenes/labs/generated/lake_fishing_lab_ground_shape.res" id="5_ground_shape_resource"]
+[ext_resource type="ArrayMesh" path="res://city_game/scenes/labs/generated/lake_fishing_lab_ground_mesh.res" id="6_ground_mesh_resource"]
+[ext_resource type="ArrayMesh" path="res://city_game/scenes/labs/generated/lake_fishing_lab_water_surface_mesh.res" id="7_water_mesh_resource"]
 
 [sub_resource type="Environment" id="1_lab_environment"]
 background_mode = 2
@@ -20,15 +23,17 @@ height = 1.1
 radius = 0.45
 mid_height = 1.1
 
-[sub_resource type="BoxShape3D" id="4_ground_shape"]
-size = Vector3(220, 12, 220)
-
-[sub_resource type="BoxMesh" id="5_ground_mesh"]
-size = Vector3(220, 12, 220)
-
 [sub_resource type="StandardMaterial3D" id="6_ground_material"]
 albedo_color = Color(0.36862746, 0.45490196, 0.28235295, 1)
 roughness = 1.0
+
+[sub_resource type="StandardMaterial3D" id="7_water_material"]
+albedo_color = Color(0.16, 0.44, 0.68, 0.72)
+transparency = 1
+cull_mode = 2
+roughness = 0.08
+metallic = 0.0
+shading_mode = 1
 
 [node name="LakeFishingLab" type="Node3D"]
 script = ExtResource("1_lab_script")
@@ -42,17 +47,17 @@ light_energy = 1.7
 shadow_enabled = true
 
 [node name="GroundBody" type="StaticBody3D" parent="."]
-position = Vector3(2838, -6, 11510)
+position = Vector3(5, 0, -39)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="GroundBody"]
-shape = SubResource("4_ground_shape")
+shape = ExtResource("5_ground_shape_resource")
 
-[node name="GroundMesh" type="MeshInstance3D" parent="GroundBody"]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="GroundBody"]
 material_override = SubResource("6_ground_material")
-mesh = SubResource("5_ground_mesh")
+mesh = ExtResource("6_ground_mesh_resource")
 
 [node name="Player" type="CharacterBody3D" parent="."]
-position = Vector3(2834, 1.1, 11554)
+position = Vector3(0, 1.1, 8)
 script = ExtResource("2_player_script")
 min_pitch_deg = -86.0
 
@@ -113,7 +118,11 @@ autowrap_mode = 3
 
 [node name="WaterSurface" type="Node3D" parent="LakeRoot"]
 
+[node name="SurfaceMesh" type="MeshInstance3D" parent="LakeRoot/WaterSurface"]
+material_override = SubResource("7_water_material")
+mesh = ExtResource("7_water_mesh_resource")
+
 [node name="FishSchools" type="Node3D" parent="LakeRoot"]
 
 [node name="VenueRoot" parent="." instance=ExtResource("3_venue_scene")]
-position = Vector3(2834, 0, 11546)
+position = Vector3(0, 0, 0)

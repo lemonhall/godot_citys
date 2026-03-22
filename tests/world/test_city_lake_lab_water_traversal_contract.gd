@@ -3,7 +3,7 @@ extends SceneTree
 const T := preload("res://tests/_test_util.gd")
 
 const LAB_SCENE_PATH := "res://city_game/scenes/labs/LakeFishingLab.tscn"
-const WATER_ENTRY_POINT := Vector3(2838.0, 3.4, 11510.0)
+const WATER_ENTRY_POINT := Vector3(4.0, 3.4, -36.0)
 
 func _init() -> void:
 	call_deferred("_run")

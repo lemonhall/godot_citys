@@ -1,3 +1,4 @@
+@tool
 extends Node3D
 
 const FAMILY_ID := "city_world_ring_marker"
@@ -184,26 +185,42 @@ var _flame_columns: Array[MeshInstance3D] = []
 var _ring_shader: Shader = null
 var _theme_applied := false
 
+@export var marker_theme_id := "destination":
+	set(value):
+		_theme_id = value if THEME_PALETTES.has(value) else "destination"
+		if _outer_ring != null:
+			_apply_theme()
+	get:
+		return _theme_id
+
+@export var marker_radius_m := DEFAULT_RADIUS_M:
+	set(value):
+		_radius_m = maxf(value, 1.5)
+		if _outer_ring != null:
+			_apply_radius()
+	get:
+		return _radius_m
+
 func _ready() -> void:
-	top_level = true
+	var boot_visible := visible
+	if not Engine.is_editor_hint():
+		top_level = true
 	_ensure_visuals()
+	set_marker_radius(_radius_m)
 	set_marker_theme(_theme_id)
-	visible = false
+	set_marker_visible(boot_visible)
 
 func set_marker_theme(theme_id: String) -> void:
 	var resolved_theme := theme_id if THEME_PALETTES.has(theme_id) else "destination"
 	if _theme_id == resolved_theme and _outer_ring != null and _theme_applied:
 		return
-	_theme_id = resolved_theme
-	if _outer_ring != null:
-		_apply_theme()
+	marker_theme_id = resolved_theme
 
 func set_marker_radius(radius_m: float) -> void:
 	var resolved_radius := maxf(radius_m, 1.5)
 	if is_equal_approx(_radius_m, resolved_radius):
 		return
-	_radius_m = resolved_radius
-	_apply_radius()
+	marker_radius_m = resolved_radius
 
 func set_marker_world_position(world_position: Vector3) -> void:
 	global_position = world_position

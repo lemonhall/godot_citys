@@ -26,6 +26,7 @@ PRD 入口：[PRD-0025 Lake Leisure And Fishing Foundation](../prd/PRD-0025-lake
 post-closeout bugfix evidence：
 
 - [v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md](./v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md)
+- [v38-post-closeout-lake-lab-scene-first-authoring-verification-2026-03-22.md](./v38-post-closeout-lake-lab-scene-first-authoring-verification-2026-03-22.md)
 
 ## 决策冻结
 
@@ -69,6 +70,7 @@ post-closeout bugfix evidence：
 - [v38-lake-leisure-and-fishing-foundation.md](./v38-lake-leisure-and-fishing-foundation.md)
 - [v38-m5-verification-2026-03-22.md](./v38-m5-verification-2026-03-22.md)
 - [v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md](./v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md)
+- [v38-post-closeout-lake-lab-scene-first-authoring-verification-2026-03-22.md](./v38-post-closeout-lake-lab-scene-first-authoring-verification-2026-03-22.md)
 
 ## 追溯矩阵
 

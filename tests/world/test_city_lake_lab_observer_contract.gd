@@ -3,8 +3,8 @@ extends SceneTree
 const T := preload("res://tests/_test_util.gd")
 
 const LAB_SCENE_PATH := "res://city_game/scenes/labs/LakeFishingLab.tscn"
-const WATER_ENTRY_POINT := Vector3(2838.0, 0.8, 11510.0)
-const UNDERWATER_POINT := Vector3(2838.0, -1.2, 11510.0)
+const WATER_ENTRY_POINT := Vector3(4.0, 0.8, -36.0)
+const UNDERWATER_POINT := Vector3(4.0, -1.2, -36.0)
 const REGION_ID := "region:v38:fishing_lake:chunk_147_181"
 
 func _init() -> void:

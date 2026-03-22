@@ -1,19 +1,23 @@
 extends Node3D
 
-const CityLakeRegionRuntime := preload("res://city_game/world/features/lake/CityLakeRegionRuntime.gd")
+const CityTerrainRegionFeatureRegistry := preload("res://city_game/world/features/CityTerrainRegionFeatureRegistry.gd")
+const CityTerrainRegionFeatureRuntime := preload("res://city_game/world/features/CityTerrainRegionFeatureRuntime.gd")
 const CityLakeFishSchoolRuntime := preload("res://city_game/world/features/lake/CityLakeFishSchoolRuntime.gd")
 const CityFishingVenueRuntime := preload("res://city_game/world/minigames/CityFishingVenueRuntime.gd")
+const CityLakeBasinCarrierBuilder := preload("res://city_game/world/rendering/CityLakeBasinCarrierBuilder.gd")
 
-const REGION_MANIFEST_PATH := "res://city_game/serviceability/terrain_regions/generated/region_v38_fishing_lake_chunk_147_181/terrain_region_manifest.json"
+const TERRAIN_REGION_REGISTRY_PATH := "res://city_game/serviceability/terrain_regions/generated/terrain_region_registry.json"
 const REGION_ID := "region:v38:fishing_lake:chunk_147_181"
 const VENUE_ID := "venue:v38:lakeside_fishing:chunk_147_181"
 
+@onready var ground_body := $GroundBody
 @onready var player := $Player
 @onready var hud := $Hud
 @onready var water_surface_root := $LakeRoot/WaterSurface
 @onready var fish_schools_root := $LakeRoot/FishSchools
 @onready var venue_root := $VenueRoot
 
+var _terrain_region_feature_runtime = null
 var _lake_runtime = null
 var _fish_school_runtime = null
 var _fishing_runtime = null
@@ -73,8 +77,12 @@ func find_scene_minigame_venue_node(venue_id: String) -> Node3D:
 	return venue_root if str(contract.get("venue_id", "")) == venue_id else null
 
 func _setup_runtimes() -> void:
-	_lake_runtime = CityLakeRegionRuntime.new()
-	_lake_runtime.load_from_manifest(REGION_MANIFEST_PATH)
+	var registry := CityTerrainRegionFeatureRegistry.new()
+	registry.configure(TERRAIN_REGION_REGISTRY_PATH, [TERRAIN_REGION_REGISTRY_PATH])
+	_terrain_region_feature_runtime = CityTerrainRegionFeatureRuntime.new()
+	_terrain_region_feature_runtime.configure(registry.load_registry())
+	if _terrain_region_feature_runtime != null and _terrain_region_feature_runtime.has_method("get_lake_runtime"):
+		_lake_runtime = _terrain_region_feature_runtime.get_lake_runtime(REGION_ID)
 	_fish_school_runtime = CityLakeFishSchoolRuntime.new()
 	_fish_school_runtime.configure([_lake_runtime])
 	_fish_school_summaries = _fish_school_runtime.get_school_summaries_for_region(REGION_ID)
@@ -84,7 +92,7 @@ func _setup_runtimes() -> void:
 		_fishing_runtime.configure({
 			str(venue_contract.get("venue_id", VENUE_ID)): venue_contract.duplicate(true),
 		})
-	_fishing_runtime.set_lake_context(_lake_runtime, _fish_school_runtime)
+	_fishing_runtime.set_lake_context(_terrain_region_feature_runtime, _fish_school_runtime)
 	_update_lake_player_water_state()
 
 func _capture_initial_state() -> void:
@@ -94,7 +102,7 @@ func _capture_initial_state() -> void:
 	_initial_player_rotation = player.rotation
 
 func _update_lake_player_water_state() -> void:
-	if _lake_runtime == null or player == null:
+	if _terrain_region_feature_runtime == null or player == null:
 		_water_state = {
 			"in_water": false,
 			"underwater": false,
@@ -102,13 +110,30 @@ func _update_lake_player_water_state() -> void:
 			"world_position": player.global_position if player != null else Vector3.ZERO,
 		}
 		return
-	_water_state = _lake_runtime.query_water_state(player.global_position)
+	_water_state = _terrain_region_feature_runtime.query_water_state(player.global_position)
 	if player.has_method("set_lake_water_state"):
 		player.set_lake_water_state(_water_state)
 
 func _rebuild_lake_visuals() -> void:
+	_rebuild_ground_carrier()
 	_rebuild_water_surface()
 	_rebuild_fish_school_visuals()
+
+func _rebuild_ground_carrier() -> void:
+	if _lake_runtime == null:
+		return
+	var next_ground_body := CityLakeBasinCarrierBuilder.build_ground_body(_lake_runtime.get_runtime_contract())
+	if next_ground_body == null:
+		return
+	var current_ground_body := ground_body
+	var parent_node := current_ground_body.get_parent() if current_ground_body != null else self
+	var insert_index := current_ground_body.get_index() if current_ground_body != null else 0
+	if current_ground_body != null:
+		parent_node.remove_child(current_ground_body)
+		current_ground_body.queue_free()
+	ground_body = next_ground_body
+	parent_node.add_child(ground_body)
+	parent_node.move_child(ground_body, insert_index)
 
 func _rebuild_water_surface() -> void:
 	if water_surface_root == null or _lake_runtime == null:
@@ -116,44 +141,14 @@ func _rebuild_water_surface() -> void:
 	for child in water_surface_root.get_children():
 		child.queue_free()
 	var runtime_contract: Dictionary = _lake_runtime.get_runtime_contract()
-	var polygon_world_points: Array = runtime_contract.get("polygon_world_points", [])
-	if polygon_world_points.size() < 3:
-		return
-	var polygon_local_points := PackedVector2Array()
-	var polygon_vertices: Array[Vector3] = []
-	var water_level_y_m := float(runtime_contract.get("water_level_y_m", 0.0))
-	for point_variant in polygon_world_points:
-		if not (point_variant is Vector3):
-			continue
-		var world_point := point_variant as Vector3
-		polygon_local_points.append(Vector2(world_point.x, world_point.z))
-		polygon_vertices.append(Vector3(world_point.x, water_level_y_m, world_point.z))
-	var indices: PackedInt32Array = Geometry2D.triangulate_polygon(polygon_local_points)
-	if indices.size() < 3:
-		return
-	var surface_tool := SurfaceTool.new()
-	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for index_variant in indices:
-		var vertex_index := int(index_variant)
-		if vertex_index < 0 or vertex_index >= polygon_vertices.size():
-			continue
-		var vertex := polygon_vertices[vertex_index]
-		surface_tool.set_normal(Vector3.UP)
-		surface_tool.set_uv(Vector2(vertex.x, vertex.z))
-		surface_tool.add_vertex(vertex)
-	var mesh := surface_tool.commit()
-	if mesh == null:
-		return
-	var mesh_instance := MeshInstance3D.new()
-	mesh_instance.name = "SurfaceMesh"
-	mesh_instance.mesh = mesh
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.16, 0.44, 0.68, 0.72)
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	material.roughness = 0.08
-	mesh_instance.material_override = material
-	water_surface_root.add_child(mesh_instance)
+	var mesh_instance := CityLakeBasinCarrierBuilder.build_water_surface_node({
+		"region_id": str(runtime_contract.get("region_id", "")),
+		"water_level_y_m": float(runtime_contract.get("water_level_y_m", 0.0)),
+		"polygon_world_points": (runtime_contract.get("polygon_world_points", []) as Array).duplicate(true),
+	})
+	if mesh_instance != null:
+		mesh_instance.name = "SurfaceMesh"
+		water_surface_root.add_child(mesh_instance)
 
 func _rebuild_fish_school_visuals() -> void:
 	if fish_schools_root == null:

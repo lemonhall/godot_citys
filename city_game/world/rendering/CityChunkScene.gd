@@ -9,6 +9,7 @@ const CityVehicleTrafficRenderer := preload("res://city_game/world/vehicles/rend
 const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTerrainMeshBuilder.gd")
 const CityRoadMeshBuilder := preload("res://city_game/world/rendering/CityRoadMeshBuilder.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
+const CityLakeBasinCarrierBuilder := preload("res://city_game/world/rendering/CityLakeBasinCarrierBuilder.gd")
 const CityGroundRoadOverlayShader := preload("res://city_game/world/rendering/CityGroundRoadOverlay.gdshader")
 const CityBuildingSceneBuilder := preload("res://city_game/world/serviceability/CityBuildingSceneBuilder.gd")
 const CityDestructibleBuildingRuntime := preload("res://city_game/combat/buildings/CityDestructibleBuildingRuntime.gd")
@@ -875,44 +876,8 @@ func _build_scene_minigame_venue(entry: Dictionary) -> Node3D:
 	return venue_root
 
 func _build_water_surface(entry: Dictionary) -> Node3D:
-	var polygon_world_points: Array = entry.get("polygon_world_points", [])
-	if polygon_world_points.size() < 3:
-		return null
 	var chunk_center: Vector3 = _chunk_data.get("chunk_center", Vector3.ZERO)
-	var water_level_y_m := float(entry.get("water_level_y_m", 0.0))
-	var polygon_local_points := PackedVector2Array()
-	var polygon_vertices: Array[Vector3] = []
-	for point_variant in polygon_world_points:
-		if not (point_variant is Vector3):
-			continue
-		var world_point := point_variant as Vector3
-		polygon_local_points.append(Vector2(world_point.x - chunk_center.x, world_point.z - chunk_center.z))
-		polygon_vertices.append(Vector3(world_point.x - chunk_center.x, water_level_y_m, world_point.z - chunk_center.z))
-	if polygon_local_points.size() < 3 or polygon_vertices.size() < 3:
-		return null
-	var indices: PackedInt32Array = Geometry2D.triangulate_polygon(polygon_local_points)
-	if indices.size() < 3:
-		return null
-	var surface_tool := SurfaceTool.new()
-	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for index_variant in indices:
-		var vertex_index := int(index_variant)
-		if vertex_index < 0 or vertex_index >= polygon_vertices.size():
-			continue
-		var vertex := polygon_vertices[vertex_index]
-		surface_tool.set_normal(Vector3.UP)
-		surface_tool.set_uv(Vector2(vertex.x, vertex.z))
-		surface_tool.add_vertex(vertex)
-	var mesh: ArrayMesh = surface_tool.commit()
-	if mesh == null:
-		return null
-	var mesh_instance := MeshInstance3D.new()
-	mesh_instance.name = "WaterSurface"
-	mesh_instance.mesh = mesh
-	mesh_instance.material_override = _get_water_surface_material()
-	mesh_instance.set_meta("city_water_surface", true)
-	mesh_instance.set_meta("city_water_surface_region_id", str(entry.get("region_id", "")))
-	return mesh_instance
+	return CityLakeBasinCarrierBuilder.build_water_surface_node(entry, chunk_center)
 
 func _get_water_surface_material() -> StandardMaterial3D:
 	if _shared_water_surface_material_template == null:

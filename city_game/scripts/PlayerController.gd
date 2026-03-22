@@ -78,6 +78,12 @@ const SPORTS_CAR_SPEED_MULTIPLIER := 2.0
 @export var vehicle_drive_camera_local_position := Vector3(0.0, 3.25, 8.4)
 @export var vehicle_drive_camera_fov := 72.0
 @export var vehicle_impact_speed_cap_mps := 8.5
+@export var water_swim_speed := 5.6
+@export var water_sprint_speed := 8.4
+@export var water_ascend_speed := 6.4
+@export var water_sink_speed := 2.4
+@export var water_horizontal_accel := 18.0
+@export var water_vertical_accel := 14.0
 
 @onready var camera_rig: Node3D = $CameraRig
 @onready var camera: Camera3D = $CameraRig/Camera3D
@@ -142,6 +148,8 @@ var _vehicle_autodrive_input_override := {
 }
 var _vehicle_autodrive_input_override_active := false
 var _vehicle_mouse_steer := 0.0
+var _water_vertical_input_override := 0.0
+var _water_vertical_input_override_active := false
 var _vehicle_visual_catalog: CityVehicleVisualCatalog = null
 var _drive_vehicle_visual_root: Node3D = null
 var _drive_vehicle_model_root: Node3D = null
@@ -256,7 +264,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 func _physics_process(delta: float) -> void:
-	floor_snap_length = _current_floor_snap_length()
+	floor_snap_length = 0.0 if _is_in_lake_water() else _current_floor_snap_length()
 	if _driving_vehicle:
 		_process_vehicle_drive(delta)
 		return
@@ -264,6 +272,9 @@ func _physics_process(delta: float) -> void:
 		_wall_climb_reentry_block_frames -= 1
 	if _stabilization_suspend_frames > 0:
 		_stabilization_suspend_frames -= 1
+	if _is_in_lake_water():
+		_process_water_traversal(delta)
+		return
 	if _traversal_mode == TRAVERSAL_MODE_WALL_CLIMB:
 		_process_wall_climb(delta)
 		return
@@ -319,6 +330,7 @@ func set_control_enabled(enabled: bool) -> void:
 		velocity.z = 0.0
 		_driving_vehicle_speed_mps = 0.0
 		clear_vehicle_autodrive_input()
+		clear_water_vertical_input()
 	_clear_transient_weapon_state()
 	_update_missile_launcher_visual()
 
@@ -427,6 +439,8 @@ func get_mobility_tuning() -> Dictionary:
 		"walk_speed": walk_speed,
 		"sprint_speed": sprint_speed,
 		"jump_velocity": jump_velocity,
+		"water_swim_speed": water_swim_speed,
+		"water_ascend_speed": water_ascend_speed,
 		"wall_climb_speed": wall_climb_speed,
 		"wall_jump_vertical_velocity": wall_jump_vertical_velocity,
 		"wall_jump_push_off_speed": wall_jump_push_off_speed,
@@ -505,6 +519,14 @@ func clear_vehicle_autodrive_input() -> void:
 		"steer": 0.0,
 		"brake": false,
 	}
+
+func set_water_vertical_input(input_value: float) -> void:
+	_water_vertical_input_override_active = true
+	_water_vertical_input_override = clampf(input_value, -1.0, 1.0)
+
+func clear_water_vertical_input() -> void:
+	_water_vertical_input_override_active = false
+	_water_vertical_input_override = 0.0
 
 func apply_vehicle_mouse_steer_delta(relative_x: float) -> void:
 	if not _driving_vehicle:
@@ -695,6 +717,8 @@ func request_wall_climb() -> bool:
 		return false
 	if _driving_vehicle:
 		return false
+	if _is_in_lake_water():
+		return false
 	if _wall_climb_reentry_block_frames > 0:
 		return false
 	var wall_hit := _find_climbable_wall()
@@ -729,6 +753,8 @@ func request_ground_slam() -> bool:
 	if not _control_enabled:
 		return false
 	if _driving_vehicle:
+		return false
+	if _is_in_lake_water():
 		return false
 	if _traversal_mode == TRAVERSAL_MODE_GROUNDED or is_on_floor():
 		return false
@@ -945,6 +971,32 @@ func _process_vehicle_drive(delta: float) -> void:
 			move_and_slide()
 	_decay_vehicle_mouse_steer(delta)
 
+func _process_water_traversal(delta: float) -> void:
+	_traversal_mode = TRAVERSAL_MODE_AIRBORNE
+	_wall_climb_normal = Vector3.ZERO
+	_wall_climb_contact_point = Vector3.ZERO
+	var movement_input_enabled := _control_enabled and not _movement_locked
+	var input_dir := _read_move_input() if movement_input_enabled else Vector2.ZERO
+	var move_dir := Vector3.ZERO
+	if input_dir.length() > 0.0:
+		var forward := -global_transform.basis.z
+		forward.y = 0.0
+		forward = forward.normalized()
+		var right := global_transform.basis.x
+		right.y = 0.0
+		right = right.normalized()
+		move_dir = (right * input_dir.x + forward * input_dir.y).normalized()
+	var target_velocity := move_dir * _current_water_swim_speed()
+	var horizontal_step := water_horizontal_accel * maxf(delta, 0.0)
+	velocity.x = move_toward(velocity.x, target_velocity.x, horizontal_step)
+	velocity.z = move_toward(velocity.z, target_velocity.z, horizontal_step)
+	var vertical_input := _read_water_vertical_input() if movement_input_enabled else 0.0
+	if vertical_input > 0.0 and is_on_floor():
+		velocity.y = maxf(velocity.y, water_ascend_speed * 0.65)
+	var target_vertical_speed := water_ascend_speed * vertical_input - water_sink_speed
+	velocity.y = move_toward(velocity.y, target_vertical_speed, water_vertical_accel * maxf(delta, 0.0))
+	move_and_slide()
+
 func _read_vehicle_drive_input() -> Dictionary:
 	if _vehicle_drive_input_override_active:
 		return _merge_vehicle_mouse_steer(_vehicle_drive_input_override)
@@ -1047,6 +1099,11 @@ func _read_move_input() -> Vector2:
 
 	return Vector2(horizontal, vertical).normalized()
 
+func _read_water_vertical_input() -> float:
+	if _water_vertical_input_override_active:
+		return _water_vertical_input_override
+	return 1.0 if _jump_requested() else 0.0
+
 func _jump_requested() -> bool:
 	return Input.is_key_pressed(KEY_SPACE) or Input.is_action_just_pressed("ui_accept")
 
@@ -1055,6 +1112,12 @@ func _wall_jump_requested() -> bool:
 
 func _sprint_requested() -> bool:
 	return Input.is_key_pressed(KEY_SHIFT)
+
+func _current_water_swim_speed() -> float:
+	return water_sprint_speed if _sprint_requested() else water_swim_speed
+
+func _is_in_lake_water() -> bool:
+	return bool(_lake_water_state.get("in_water", false))
 
 func _current_walk_speed() -> float:
 	return inspection_walk_speed if _speed_profile == "inspection" else walk_speed

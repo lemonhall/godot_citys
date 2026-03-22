@@ -147,6 +147,15 @@ var _drive_vehicle_visual_root: Node3D = null
 var _drive_vehicle_model_root: Node3D = null
 var _tennis_racket_visual: Node3D = null
 var _missile_launcher_visual: Node3D = null
+var _lake_water_state := {
+	"in_water": false,
+	"underwater": false,
+	"region_id": "",
+	"water_level_y_m": 0.0,
+	"depth_m": 0.0,
+	"floor_y_m": 0.0,
+	"world_position": Vector3.ZERO,
+}
 
 func _ready() -> void:
 	camera_rig.rotation.x = _pitch
@@ -1094,6 +1103,23 @@ func teleport_to_world_position(world_position: Vector3) -> void:
 	_suspend_primary_collision_for_frames(2)
 	global_position = world_position
 	velocity = Vector3.ZERO
+
+func set_lake_water_state(state: Dictionary) -> void:
+	var next_state := {
+		"in_water": bool(state.get("in_water", false)),
+		"underwater": bool(state.get("underwater", false)),
+		"region_id": str(state.get("region_id", "")),
+		"water_level_y_m": float(state.get("water_level_y_m", 0.0)),
+		"depth_m": float(state.get("depth_m", 0.0)),
+		"floor_y_m": float(state.get("floor_y_m", 0.0)),
+		"world_position": state.get("world_position", global_position),
+	}
+	if next_state == _lake_water_state:
+		return
+	_lake_water_state = next_state
+
+func get_lake_water_state() -> Dictionary:
+	return _lake_water_state.duplicate(true)
 
 func advance_toward_world_position(target_position: Vector3, step_distance: float) -> bool:
 	var planar_delta := Vector3(target_position.x - global_position.x, 0.0, target_position.z - global_position.z)

@@ -1,0 +1,29 @@
+{
+	"shore_blend_distance_m": 30.0,
+	"deep_pockets": [
+		{
+			"pocket_id": "mean_body_center",
+			"world_position": {
+				"@type": "Vector3",
+				"x": 2838.0,
+				"y": 0.0,
+				"z": 11510.0
+			},
+			"radius_m": 34.0,
+			"depth_boost_m": 0.0,
+			"falloff_exp": 1.0
+		},
+		{
+			"pocket_id": "deep_pocket_east",
+			"world_position": {
+				"@type": "Vector3",
+				"x": 2868.0,
+				"y": 0.0,
+				"z": 11536.0
+			},
+			"radius_m": 18.0,
+			"depth_boost_m": 5.0,
+			"falloff_exp": 1.6
+		}
+	]
+}

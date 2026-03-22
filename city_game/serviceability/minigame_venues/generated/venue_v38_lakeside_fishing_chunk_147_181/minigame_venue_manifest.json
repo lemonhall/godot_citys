@@ -1,0 +1,50 @@
+{
+	"venue_id": "venue:v38:lakeside_fishing:chunk_147_181",
+	"display_name": "Lakeside Fishing",
+	"feature_kind": "scene_minigame_venue",
+	"game_kind": "lakeside_fishing",
+	"linked_region_id": "region:v38:fishing_lake:chunk_147_181",
+	"anchor_chunk_id": "chunk_147_181",
+	"anchor_chunk_key": {
+		"@type": "Vector2i",
+		"x": 147,
+		"y": 181
+	},
+	"world_position": {
+		"@type": "Vector3",
+		"x": 2834.0,
+		"y": 0.0,
+		"z": 11546.0
+	},
+	"surface_normal": {
+		"@type": "Vector3",
+		"x": 0.0,
+		"y": 1.0,
+		"z": 0.0
+	},
+	"scene_root_offset": {
+		"@type": "Vector3",
+		"x": 0.0,
+		"y": 0.0,
+		"z": 0.0
+	},
+	"scene_path": "res://city_game/serviceability/minigame_venues/generated/venue_v38_lakeside_fishing_chunk_147_181/lake_fishing_minigame_venue.tscn",
+	"manifest_path": "res://city_game/serviceability/minigame_venues/generated/venue_v38_lakeside_fishing_chunk_147_181/minigame_venue_manifest.json",
+	"seat_anchor_ids": [
+		"seat_main"
+	],
+	"cast_origin_anchor_id": "cast_origin_main",
+	"bite_zone_ids": [
+		"bite_zone_main"
+	],
+	"trigger_radius_m": 4.8,
+	"release_buffer_m": 32.0,
+	"full_map_pin": {
+		"visible": true,
+		"icon_id": "fishing",
+		"title": "Lakeside Fishing",
+		"subtitle": "Minigame Venue",
+		"priority": 72
+	},
+	"yaw_rad": 0.0
+}

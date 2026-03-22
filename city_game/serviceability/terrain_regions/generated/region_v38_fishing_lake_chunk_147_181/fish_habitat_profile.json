@@ -1,0 +1,30 @@
+{
+	"schools": [
+		{
+			"school_id": "school:silver_carp:shelf",
+			"species_id": "silver_carp",
+			"world_position": {
+				"@type": "Vector3",
+				"x": 2834.0,
+				"y": 0.0,
+				"z": 11508.0
+			},
+			"depth_ratio": 0.46,
+			"count": 12,
+			"swim_radius_m": 9.0
+		},
+		{
+			"school_id": "school:grass_carp:drop",
+			"species_id": "grass_carp",
+			"world_position": {
+				"@type": "Vector3",
+				"x": 2858.0,
+				"y": 0.0,
+				"z": 11528.0
+			},
+			"depth_ratio": 0.62,
+			"count": 8,
+			"swim_radius_m": 7.0
+		}
+	]
+}

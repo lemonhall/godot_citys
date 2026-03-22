@@ -129,6 +129,16 @@ var _missile_command_hud_state: Dictionary = {
 	"feedback_event_text": "",
 	"feedback_event_tone": "neutral",
 }
+var _fishing_hud_state: Dictionary = {
+	"visible": false,
+	"fishing_mode_active": false,
+	"cast_state": "idle",
+	"bite_window_active": false,
+	"target_school_id": "",
+	"last_catch_result": {},
+	"active_seat_id": "",
+	"display_name": "Lakeside Fishing",
+}
 var _tennis_feedback_audio_player: AudioStreamPlayer = null
 var _tennis_feedback_audio_state: Dictionary = {
 	"play_count": 0,
@@ -144,6 +154,7 @@ func _ready() -> void:
 	_ensure_soccer_match_hud_view()
 	_ensure_tennis_match_hud_view()
 	_ensure_missile_command_hud_view()
+	_ensure_fishing_hud_view()
 	_ensure_tennis_feedback_audio_player()
 	_ensure_focus_message_view()
 	_ensure_interaction_prompt_view()
@@ -379,6 +390,25 @@ func set_missile_command_hud_state(state: Dictionary) -> void:
 func get_missile_command_hud_state() -> Dictionary:
 	return _missile_command_hud_state.duplicate(true)
 
+func set_fishing_hud_state(state: Dictionary) -> void:
+	var next_state := {
+		"visible": bool(state.get("visible", false)),
+		"fishing_mode_active": bool(state.get("fishing_mode_active", false)),
+		"cast_state": str(state.get("cast_state", "idle")),
+		"bite_window_active": bool(state.get("bite_window_active", false)),
+		"target_school_id": str(state.get("target_school_id", "")),
+		"last_catch_result": (state.get("last_catch_result", {}) as Dictionary).duplicate(true),
+		"active_seat_id": str(state.get("active_seat_id", "")),
+		"display_name": str(state.get("display_name", "Lakeside Fishing")),
+	}
+	if next_state == _fishing_hud_state:
+		return
+	_fishing_hud_state = next_state
+	_apply_fishing_hud_state()
+
+func get_fishing_hud_state() -> Dictionary:
+	return _fishing_hud_state.duplicate(true)
+
 func get_tennis_feedback_audio_state() -> Dictionary:
 	return _tennis_feedback_audio_state.duplicate(true)
 
@@ -408,6 +438,7 @@ func _apply_state() -> void:
 	_apply_soccer_match_hud_state()
 	_apply_tennis_match_hud_state()
 	_apply_missile_command_hud_state()
+	_apply_fishing_hud_state()
 
 func _apply_panel_state() -> void:
 	var panel := get_node_or_null("Root/Panel") as PanelContainer
@@ -615,6 +646,33 @@ func _apply_missile_command_hud_state() -> void:
 			"action":
 				feedback_color = Color(0.78, 0.96, 1.0, 1.0)
 		feedback_label.add_theme_color_override("font_color", feedback_color)
+
+func _apply_fishing_hud_state() -> void:
+	var panel := get_node_or_null("Root/FishingHud") as PanelContainer
+	var title_label := get_node_or_null("Root/FishingHud/Margin/VBox/Title") as Label
+	var state_label := get_node_or_null("Root/FishingHud/Margin/VBox/State") as Label
+	var target_label := get_node_or_null("Root/FishingHud/Margin/VBox/Target") as Label
+	var result_label := get_node_or_null("Root/FishingHud/Margin/VBox/Result") as Label
+	if panel != null:
+		panel.visible = bool(_fishing_hud_state.get("visible", false))
+	if title_label != null:
+		title_label.text = str(_fishing_hud_state.get("display_name", "Lakeside Fishing")).to_upper()
+	if state_label != null:
+		var cast_state := str(_fishing_hud_state.get("cast_state", "idle")).to_upper()
+		if bool(_fishing_hud_state.get("bite_window_active", false)):
+			cast_state += "  BITE"
+		state_label.text = "STATE  %s" % cast_state
+	if target_label != null:
+		var school_id := str(_fishing_hud_state.get("target_school_id", ""))
+		target_label.text = "TARGET  %s" % school_id if school_id != "" else "TARGET  WAITING"
+	if result_label != null:
+		var last_catch_result: Dictionary = _fishing_hud_state.get("last_catch_result", {})
+		var result_text := str(last_catch_result.get("result", "")).to_upper()
+		if result_text == "":
+			result_label.text = "按 E 坐下 / 抛竿 / 收线"
+		else:
+			var school_id := str(last_catch_result.get("school_id", ""))
+			result_label.text = "RESULT  %s  %s" % [result_text, school_id]
 
 func _ensure_mouse_passthrough() -> void:
 	var root := get_node_or_null("Root") as Control
@@ -882,6 +940,62 @@ func _ensure_missile_command_hud_view() -> void:
 		{"name": "Targets", "font_size": 15, "color": Color(0.82, 0.9, 0.98, 1.0)},
 		{"name": "Silo", "font_size": 16, "color": Color(0.82, 1.0, 0.84, 1.0)},
 		{"name": "Feedback", "font_size": 13, "color": Color(0.84, 0.9, 0.96, 1.0)},
+	]:
+		var label := Label.new()
+		label.name = str(label_spec.get("name", "Label"))
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.add_theme_font_size_override("font_size", int(label_spec.get("font_size", 14)))
+		label.add_theme_color_override("font_color", label_spec.get("color", Color.WHITE))
+		vbox.add_child(label)
+	root.add_child(panel)
+
+func _ensure_fishing_hud_view() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("FishingHud") != null:
+		return
+	var panel := PanelContainer.new()
+	panel.name = "FishingHud"
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.0
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.0
+	panel.offset_left = -220.0
+	panel.offset_top = 136.0
+	panel.offset_right = 220.0
+	panel.offset_bottom = 236.0
+	panel.visible = false
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var stylebox := StyleBoxFlat.new()
+	stylebox.bg_color = Color(0.05, 0.1, 0.08, 0.9)
+	stylebox.corner_radius_top_left = 12
+	stylebox.corner_radius_top_right = 12
+	stylebox.corner_radius_bottom_left = 12
+	stylebox.corner_radius_bottom_right = 12
+	stylebox.border_width_left = 1
+	stylebox.border_width_top = 1
+	stylebox.border_width_right = 1
+	stylebox.border_width_bottom = 1
+	stylebox.border_color = Color(0.64, 0.88, 0.82, 0.18)
+	panel.add_theme_stylebox_override("panel", stylebox)
+	var margin := MarginContainer.new()
+	margin.name = "Margin"
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 14)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	panel.add_child(margin)
+	var vbox := VBoxContainer.new()
+	vbox.name = "VBox"
+	vbox.add_theme_constant_override("separation", 2)
+	margin.add_child(vbox)
+	for label_spec in [
+		{"name": "Title", "font_size": 18, "color": Color(0.94, 0.98, 0.88, 1.0)},
+		{"name": "State", "font_size": 16, "color": Color(0.82, 0.96, 0.88, 1.0)},
+		{"name": "Target", "font_size": 14, "color": Color(0.78, 0.92, 0.98, 1.0)},
+		{"name": "Result", "font_size": 13, "color": Color(0.84, 0.9, 0.96, 1.0)},
 	]:
 		var label := Label.new()
 		label.name = str(label_spec.get("name", "Label"))

@@ -1,6 +1,12 @@
 {
 	"schema_version": "v26-scene-minigame-venue-registry-1",
 	"entries": {
+		"venue:v38:lakeside_fishing:chunk_147_181": {
+			"venue_id": "venue:v38:lakeside_fishing:chunk_147_181",
+			"feature_kind": "scene_minigame_venue",
+			"scene_path": "res://city_game/serviceability/minigame_venues/generated/venue_v38_lakeside_fishing_chunk_147_181/lake_fishing_minigame_venue.tscn",
+			"manifest_path": "res://city_game/serviceability/minigame_venues/generated/venue_v38_lakeside_fishing_chunk_147_181/minigame_venue_manifest.json"
+		},
 		"venue:v29:missile_command_battery:chunk_183_152": {
 			"venue_id": "venue:v29:missile_command_battery:chunk_183_152",
 			"feature_kind": "scene_minigame_venue",

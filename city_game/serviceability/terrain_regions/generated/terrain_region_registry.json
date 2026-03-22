@@ -1,0 +1,11 @@
+{
+	"schema_version": "v38-terrain-region-registry-1",
+	"entries": {
+		"region:v38:fishing_lake:chunk_147_181": {
+			"region_id": "region:v38:fishing_lake:chunk_147_181",
+			"feature_kind": "terrain_region_feature",
+			"region_kind": "lake_basin",
+			"manifest_path": "res://city_game/serviceability/terrain_regions/generated/region_v38_fishing_lake_chunk_147_181/terrain_region_manifest.json"
+		}
+	}
+}

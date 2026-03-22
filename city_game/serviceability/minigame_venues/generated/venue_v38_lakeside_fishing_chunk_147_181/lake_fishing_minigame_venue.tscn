@@ -1,0 +1,38 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://city_game/serviceability/minigame_venues/generated/venue_v38_lakeside_fishing_chunk_147_181/LakeFishingMinigameVenue.gd" id="1_venue_script"]
+
+[sub_resource type="BoxShape3D" id="1_dock_shape"]
+size = Vector3(8, 0.5, 12)
+
+[sub_resource type="BoxMesh" id="2_dock_mesh"]
+size = Vector3(8, 0.5, 12)
+
+[sub_resource type="StandardMaterial3D" id="3_dock_material"]
+albedo_color = Color(0.34117648, 0.25490198, 0.1764706, 1)
+roughness = 1.0
+
+[node name="VenueRoot" type="Node3D"]
+script = ExtResource("1_venue_script")
+
+[node name="DockBody" type="StaticBody3D" parent="."]
+position = Vector3(0, -0.25, -4)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DockBody"]
+shape = SubResource("1_dock_shape")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="DockBody"]
+mesh = SubResource("2_dock_mesh")
+material_override = SubResource("3_dock_material")
+
+[node name="SeatAnchorMain" type="Marker3D" parent="."]
+position = Vector3(0, 0, 0)
+
+[node name="CastOriginMain" type="Marker3D" parent="."]
+position = Vector3(0, 1, -10)
+
+[node name="BiteZoneMain" type="Marker3D" parent="."]
+position = Vector3(0, 0, -36)
+
+[node name="PlayAreaCenter" type="Marker3D" parent="."]
+position = Vector3(0, 0, -36)

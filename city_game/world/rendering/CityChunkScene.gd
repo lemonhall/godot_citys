@@ -35,12 +35,14 @@ static var _shared_scene_landmark_scene_cache: Dictionary = {}
 static var _shared_scene_interactive_prop_scene_cache: Dictionary = {}
 static var _shared_scene_minigame_venue_scene_cache: Dictionary = {}
 static var _shared_ground_overlay_material_template: ShaderMaterial = null
+static var _shared_water_surface_material_template: StandardMaterial3D = null
 
 var _chunk_data: Dictionary = {}
 var _profile: Dictionary = {}
 var _setup_profile: Dictionary = {}
 var _current_lod_mode := LOD_NEAR
 var _current_surface_detail_mode := SURFACE_DETAIL_FULL
+var _current_terrain_collision_mode := ""
 var _surface_page_contract: Dictionary = {}
 var _terrain_page_contract: Dictionary = {}
 var _terrain_mesh_results_by_lod: Dictionary = {}
@@ -651,6 +653,16 @@ func _build_near_group() -> Dictionary:
 	near_group.add_child(road_overlay)
 	stats["road_overlay_usec"] = int(Time.get_ticks_usec() - phase_started_usec)
 
+	var water_surfaces := Node3D.new()
+	water_surfaces.name = "WaterSurfaces"
+	near_group.add_child(water_surfaces)
+	for water_entry_variant in _chunk_data.get("water_surface_entries", []):
+		if not (water_entry_variant is Dictionary):
+			continue
+		var water_node := _build_water_surface(water_entry_variant as Dictionary)
+		if water_node != null:
+			water_surfaces.add_child(water_node)
+
 	var props := Node3D.new()
 	props.name = "Props"
 	near_group.add_child(props)
@@ -861,6 +873,58 @@ func _build_scene_minigame_venue(entry: Dictionary) -> Node3D:
 	venue_root.set_meta("city_scene_minigame_venue_manifest_path", str(entry.get("manifest_path", "")))
 	venue_root.set_meta("city_scene_minigame_venue_primary_ball_prop_id", str(entry.get("primary_ball_prop_id", "")))
 	return venue_root
+
+func _build_water_surface(entry: Dictionary) -> Node3D:
+	var polygon_world_points: Array = entry.get("polygon_world_points", [])
+	if polygon_world_points.size() < 3:
+		return null
+	var chunk_center: Vector3 = _chunk_data.get("chunk_center", Vector3.ZERO)
+	var water_level_y_m := float(entry.get("water_level_y_m", 0.0))
+	var polygon_local_points := PackedVector2Array()
+	var polygon_vertices: Array[Vector3] = []
+	for point_variant in polygon_world_points:
+		if not (point_variant is Vector3):
+			continue
+		var world_point := point_variant as Vector3
+		polygon_local_points.append(Vector2(world_point.x - chunk_center.x, world_point.z - chunk_center.z))
+		polygon_vertices.append(Vector3(world_point.x - chunk_center.x, water_level_y_m, world_point.z - chunk_center.z))
+	if polygon_local_points.size() < 3 or polygon_vertices.size() < 3:
+		return null
+	var indices: PackedInt32Array = Geometry2D.triangulate_polygon(polygon_local_points)
+	if indices.size() < 3:
+		return null
+	var surface_tool := SurfaceTool.new()
+	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for index_variant in indices:
+		var vertex_index := int(index_variant)
+		if vertex_index < 0 or vertex_index >= polygon_vertices.size():
+			continue
+		var vertex := polygon_vertices[vertex_index]
+		surface_tool.set_normal(Vector3.UP)
+		surface_tool.set_uv(Vector2(vertex.x, vertex.z))
+		surface_tool.add_vertex(vertex)
+	var mesh: ArrayMesh = surface_tool.commit()
+	if mesh == null:
+		return null
+	var mesh_instance := MeshInstance3D.new()
+	mesh_instance.name = "WaterSurface"
+	mesh_instance.mesh = mesh
+	mesh_instance.material_override = _get_water_surface_material()
+	mesh_instance.set_meta("city_water_surface", true)
+	mesh_instance.set_meta("city_water_surface_region_id", str(entry.get("region_id", "")))
+	return mesh_instance
+
+func _get_water_surface_material() -> StandardMaterial3D:
+	if _shared_water_surface_material_template == null:
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color(0.16, 0.44, 0.68, 0.72)
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		material.roughness = 0.08
+		material.metallic = 0.0
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+		_shared_water_surface_material_template = material
+	return _shared_water_surface_material_template
 
 func _register_building_collision_shapes(root: Node) -> void:
 	var shapes: Array[CollisionShape3D] = CityBuildingSceneBuilder.collect_collision_shapes(root)
@@ -1130,10 +1194,13 @@ func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 	var collision_usec := Time.get_ticks_usec() - collision_started_usec
 	collision_shape.shape = shape
 	ground_body.add_child(collision_shape)
+	_current_terrain_collision_mode = LOD_NEAR if _terrain_mesh_results_by_lod.has(LOD_NEAR) else _current_lod_mode
+	_terrain_collision_apply_count = 1
 
 	var mesh_instance := MeshInstance3D.new()
 	mesh_instance.name = "MeshInstance3D"
 	mesh_instance.mesh = terrain_mesh
+	_terrain_mesh_apply_count = 1
 	var material_started_usec := Time.get_ticks_usec()
 	var material_result := _build_ground_material(chunk_size_m, profile, _current_surface_detail_mode)
 	mesh_instance.material_override = material_result.get("material")
@@ -1298,13 +1365,11 @@ func _normalize_lod_mode(mode: String) -> String:
 	return LOD_NEAR
 
 func _build_terrain_mesh(chunk_size_m: float) -> Dictionary:
-	var flat_result := _build_flat_ground_mesh_result(chunk_size_m)
-	_terrain_mesh_results_by_lod = {
-		LOD_NEAR: flat_result.duplicate(false),
-		LOD_MID: flat_result.duplicate(false),
-		LOD_FAR: flat_result.duplicate(false),
-	}
-	var terrain_build_result: Dictionary = _terrain_mesh_results_by_lod.get(_current_lod_mode, _terrain_mesh_results_by_lod.get(LOD_NEAR, {}))
+	_terrain_mesh_results_by_lod.clear()
+	_terrain_mesh_apply_count = 0
+	_terrain_collision_apply_count = 0
+	_current_terrain_collision_mode = ""
+	var terrain_build_result: Dictionary = _ensure_terrain_mesh_result(_current_lod_mode, chunk_size_m)
 	var sample_stats: Dictionary = terrain_build_result.get("sample_stats", {})
 	_terrain_page_contract = (terrain_build_result.get("page_contract", {}) as Dictionary).duplicate(true)
 	return {
@@ -1315,30 +1380,107 @@ func _build_terrain_mesh(chunk_size_m: float) -> Dictionary:
 		"runtime_page_hit": bool(terrain_build_result.get("runtime_hit", false)),
 	}
 
-func _apply_terrain_lod_mode(_mode: String) -> void:
-	return
+func _apply_terrain_lod_mode(mode: String) -> void:
+	var mesh_instance := get_node_or_null("GroundBody/MeshInstance3D") as MeshInstance3D
+	if mesh_instance == null:
+		return
+	var normalized_mode := _normalize_lod_mode(mode)
+	var terrain_mesh_result: Dictionary = _ensure_terrain_mesh_result(normalized_mode)
+	var target_mesh := terrain_mesh_result.get("mesh") as ArrayMesh
+	if target_mesh == null or mesh_instance.mesh == target_mesh:
+		return
+	mesh_instance.mesh = target_mesh
+	_terrain_page_contract = (terrain_mesh_result.get("page_contract", {}) as Dictionary).duplicate(true)
+	_terrain_mesh_apply_count += 1
 
-func _apply_terrain_collision_mode(_mode: String) -> void:
-	return
+func _apply_terrain_collision_mode(mode: String) -> void:
+	var collision_shape := get_node_or_null("GroundBody/CollisionShape3D") as CollisionShape3D
+	if collision_shape == null:
+		return
+	var normalized_mode := _normalize_lod_mode(mode)
+	var target_collision_mode := LOD_NEAR if _terrain_mesh_results_by_lod.has(LOD_NEAR) else normalized_mode
+	if target_collision_mode == "":
+		return
+	if target_collision_mode == _current_terrain_collision_mode:
+		return
+	var terrain_mesh_result: Dictionary = _ensure_terrain_mesh_result(target_collision_mode)
+	var collision_faces: PackedVector3Array = terrain_mesh_result.get("collision_faces", PackedVector3Array())
+	if collision_faces.is_empty():
+		return
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(collision_faces)
+	collision_shape.shape = shape
+	_current_terrain_collision_mode = target_collision_mode
+	_terrain_collision_apply_count += 1
 
 func _terrain_lod_grid_steps_by_mode() -> Dictionary:
 	return {
-		LOD_NEAR: FLAT_GROUND_GRID_STEPS,
-		LOD_MID: FLAT_GROUND_GRID_STEPS,
-		LOD_FAR: FLAT_GROUND_GRID_STEPS,
+		LOD_NEAR: TERRAIN_GRID_STEPS,
+		LOD_MID: TERRAIN_GRID_STEPS_MID,
+		LOD_FAR: TERRAIN_GRID_STEPS_FAR,
 	}
 
 func _ensure_all_terrain_lod_mesh_results() -> void:
 	for lod_mode in _terrain_lod_grid_steps_by_mode().keys():
 		_ensure_terrain_mesh_result(str(lod_mode))
 
-func _ensure_terrain_mesh_result(mode: String) -> void:
+func _ensure_terrain_mesh_result(mode: String, chunk_size_override: float = -1.0) -> Dictionary:
 	var normalized_mode := _normalize_lod_mode(mode)
 	if _terrain_mesh_results_by_lod.has(normalized_mode):
-		return
-	var chunk_size_m := float(_chunk_data.get("chunk_size_m", 256.0))
-	var flat_result := _build_flat_ground_mesh_result(chunk_size_m)
-	_terrain_mesh_results_by_lod[normalized_mode] = flat_result.duplicate(false)
+		var cached_result: Dictionary = (_terrain_mesh_results_by_lod.get(normalized_mode, {}) as Dictionary).duplicate(false)
+		if (cached_result.get("mesh", null) as ArrayMesh) == null:
+			cached_result = _materialize_terrain_mesh_result(cached_result, normalized_mode)
+			_terrain_mesh_results_by_lod[normalized_mode] = cached_result
+		return cached_result
+	var chunk_size_m := chunk_size_override if chunk_size_override > 0.0 else float(_chunk_data.get("chunk_size_m", 256.0))
+	var mesh_result: Dictionary = {}
+	var provided_results: Dictionary = _chunk_data.get("terrain_lod_mesh_results", {})
+	if provided_results.has(normalized_mode):
+		mesh_result = (provided_results.get(normalized_mode, {}) as Dictionary).duplicate(false)
+	if mesh_result.is_empty():
+		var terrain_page_binding: Dictionary = _resolve_terrain_page_binding(chunk_size_m)
+		if terrain_page_binding.is_empty():
+			mesh_result = _build_flat_ground_mesh_result(chunk_size_m)
+		else:
+			var builder := CityTerrainMeshBuilder.new()
+			var source_grid_steps := int(terrain_page_binding.get("grid_steps", TERRAIN_GRID_STEPS))
+			var target_grid_steps := int(_terrain_lod_grid_steps_by_mode().get(normalized_mode, source_grid_steps))
+			if target_grid_steps == source_grid_steps:
+				mesh_result = builder.build_profiled_terrain_arrays_from_binding(chunk_size_m, target_grid_steps, terrain_page_binding)
+			else:
+				var lod_results: Dictionary = builder.build_profiled_terrain_lod_arrays_from_binding(
+					chunk_size_m,
+					source_grid_steps,
+					terrain_page_binding,
+					{normalized_mode: target_grid_steps}
+				)
+				mesh_result = (lod_results.get(normalized_mode, {}) as Dictionary).duplicate(true)
+	mesh_result = _materialize_terrain_mesh_result(mesh_result, normalized_mode)
+	_terrain_mesh_results_by_lod[normalized_mode] = mesh_result
+	return mesh_result
+
+func _resolve_terrain_page_binding(chunk_size_m: float) -> Dictionary:
+	var existing_binding: Dictionary = _chunk_data.get("terrain_page_binding", {})
+	if not existing_binding.is_empty():
+		return existing_binding.duplicate(false)
+	var terrain_page_provider = _chunk_data.get("terrain_page_provider")
+	if terrain_page_provider != null and terrain_page_provider.has_method("resolve_chunk_sample_binding"):
+		var resolved_binding: Dictionary = terrain_page_provider.resolve_chunk_sample_binding(_chunk_data, TERRAIN_GRID_STEPS)
+		if not resolved_binding.is_empty():
+			resolved_binding["chunk_size_m"] = chunk_size_m
+			_chunk_data["terrain_page_binding"] = resolved_binding
+			return resolved_binding
+	return {}
+
+func _materialize_terrain_mesh_result(mesh_result: Dictionary, mode: String) -> Dictionary:
+	if mesh_result.is_empty():
+		return {}
+	var resolved_result: Dictionary = mesh_result.duplicate(false)
+	if not resolved_result.has("grid_steps"):
+		resolved_result["grid_steps"] = int(_terrain_lod_grid_steps_by_mode().get(mode, TERRAIN_GRID_STEPS))
+	if (resolved_result.get("mesh", null) as ArrayMesh) == null:
+		resolved_result["mesh"] = CityTerrainMeshBuilder.new().commit_terrain_mesh(resolved_result)
+	return resolved_result
 
 func _set_building_collisions_enabled(enabled: bool) -> void:
 	_building_collisions_enabled = enabled

@@ -1,0 +1,36 @@
+{
+	"region_id": "region:v38:fishing_lake:chunk_147_181",
+	"display_name": "Fishing Lake",
+	"feature_kind": "terrain_region_feature",
+	"region_kind": "lake_basin",
+	"anchor_chunk_id": "chunk_147_181",
+	"anchor_chunk_key": {
+		"@type": "Vector2i",
+		"x": 147,
+		"y": 181
+	},
+	"world_position": {
+		"@type": "Vector3",
+		"x": 2844.59,
+		"y": 0.0,
+		"z": 11508.18
+	},
+	"surface_normal": {
+		"@type": "Vector3",
+		"x": 0.0,
+		"y": 1.0,
+		"z": 0.0
+	},
+	"water_level_y_m": 0.0,
+	"mean_depth_m": 10.0,
+	"max_depth_m": 15.0,
+	"player_water_entry_height_m": 1.2,
+	"underwater_margin_m": 0.2,
+	"render_owner_chunk_id": "chunk_147_181",
+	"shoreline_profile_path": "res://city_game/serviceability/terrain_regions/generated/region_v38_fishing_lake_chunk_147_181/lake_shoreline_profile.json",
+	"bathymetry_profile_path": "res://city_game/serviceability/terrain_regions/generated/region_v38_fishing_lake_chunk_147_181/lake_bathymetry_profile.json",
+	"habitat_profile_path": "res://city_game/serviceability/terrain_regions/generated/region_v38_fishing_lake_chunk_147_181/fish_habitat_profile.json",
+	"linked_venue_ids": [
+		"venue:v38:lakeside_fishing:chunk_147_181"
+	]
+}

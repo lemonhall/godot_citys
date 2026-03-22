@@ -4,20 +4,30 @@ const CityRoadLayoutBuilder := preload("res://city_game/world/rendering/CityRoad
 const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
 const CityTerrainGridTemplate := preload("res://city_game/world/rendering/CityTerrainGridTemplate.gd")
 const CityTerrainPageLayout := preload("res://city_game/world/rendering/CityTerrainPageLayout.gd")
+const CityLakeRegionDefinition := preload("res://city_game/world/features/lake/CityLakeRegionDefinition.gd")
 
 var _config
 var _world_data: Dictionary = {}
 var _layout := CityTerrainPageLayout.new()
 var _template_catalog := CityTerrainGridTemplate.new()
 var _runtime_pages: Dictionary = {}
+var _terrain_region_entries: Dictionary = {}
 
 func setup(config, world_data: Dictionary) -> void:
 	_config = config
 	_world_data = world_data
 	_runtime_pages.clear()
+	_terrain_region_entries.clear()
 
 func clear() -> void:
 	_runtime_pages.clear()
+
+func set_terrain_region_entries(entries: Dictionary) -> void:
+	_terrain_region_entries = entries.duplicate(true)
+	_runtime_pages.clear()
+
+func get_terrain_region_entries_snapshot() -> Dictionary:
+	return _terrain_region_entries.duplicate(true)
 
 func get_runtime_page_count() -> int:
 	return _runtime_pages.size()
@@ -96,6 +106,7 @@ func build_page_request(chunk_data: Dictionary, grid_steps: int, page_header: Di
 		"world_seed": world_seed,
 		"world_bounds": world_bounds,
 		"road_graph": _world_data.get("road_graph"),
+		"terrain_region_entries": get_terrain_region_entries_snapshot(),
 	}
 
 static func prepare_page_bundle(page_request: Dictionary) -> Dictionary:
@@ -107,6 +118,7 @@ static func prepare_page_bundle(page_request: Dictionary) -> Dictionary:
 	var world_seed := int(page_request.get("world_seed", 0))
 	var world_bounds: Rect2 = page_request.get("world_bounds", Rect2())
 	var road_graph = page_request.get("road_graph")
+	var terrain_region_entries: Dictionary = (page_request.get("terrain_region_entries", {}) as Dictionary).duplicate(true)
 	var chunks_per_page := int(page_contract.get("chunks_per_page", CityTerrainPageLayout.CHUNKS_PER_PAGE))
 	var page_grid_steps := chunk_grid_steps * chunks_per_page
 	var page_heights := PackedFloat32Array()
@@ -127,7 +139,15 @@ static func prepare_page_bundle(page_request: Dictionary) -> Dictionary:
 				"world_seed": world_seed,
 				"road_graph": road_graph,
 			})
-			var chunk_samples := _build_chunk_samples_static(template_catalog, chunk_center, chunk_size_m, world_seed, chunk_grid_steps, road_layout.get("segments", []))
+			var chunk_samples := _build_chunk_samples_static(
+				template_catalog,
+				chunk_center,
+				chunk_size_m,
+				world_seed,
+				chunk_grid_steps,
+				road_layout.get("segments", []),
+				terrain_region_entries
+			)
 			_merge_chunk_samples_into_page(
 				page_heights,
 				page_normals,
@@ -180,9 +200,9 @@ func _build_runtime_key(page_contract: Dictionary, chunk_size_m: float, grid_ste
 	]
 
 func _build_chunk_samples(chunk_center: Vector3, chunk_size_m: float, world_seed: int, chunk_grid_steps: int, road_segments: Array) -> Dictionary:
-	return _build_chunk_samples_static(_template_catalog, chunk_center, chunk_size_m, world_seed, chunk_grid_steps, road_segments)
+	return _build_chunk_samples_static(_template_catalog, chunk_center, chunk_size_m, world_seed, chunk_grid_steps, road_segments, _terrain_region_entries)
 
-static func _build_chunk_samples_static(template_catalog: CityTerrainGridTemplate, chunk_center: Vector3, chunk_size_m: float, world_seed: int, chunk_grid_steps: int, road_segments: Array) -> Dictionary:
+static func _build_chunk_samples_static(template_catalog: CityTerrainGridTemplate, chunk_center: Vector3, chunk_size_m: float, world_seed: int, chunk_grid_steps: int, road_segments: Array, terrain_region_entries: Dictionary = {}) -> Dictionary:
 	var template: Dictionary = template_catalog.get_template(chunk_size_m, chunk_grid_steps)
 	var local_points: PackedVector2Array = template.get("local_points", PackedVector2Array())
 	var heights := PackedFloat32Array()
@@ -197,10 +217,37 @@ static func _build_chunk_samples_static(template_catalog: CityTerrainGridTemplat
 	}
 	for point_index in range(local_points.size()):
 		heights[point_index] = CityChunkGroundSampler.sample_height(local_points[point_index], chunk_payload, profile)
+	if not terrain_region_entries.is_empty():
+		_apply_terrain_region_carves(local_points, heights, chunk_center, terrain_region_entries)
 	return {
 		"heights": heights,
 		"normals": _build_normals(heights, chunk_grid_steps + 1, chunk_size_m),
 	}
+
+static func _apply_terrain_region_carves(local_points: PackedVector2Array, heights: PackedFloat32Array, chunk_center: Vector3, terrain_region_entries: Dictionary) -> void:
+	if local_points.is_empty() or heights.is_empty() or terrain_region_entries.is_empty():
+		return
+	for point_index in range(local_points.size()):
+		var local_point := local_points[point_index]
+		var carved_height := heights[point_index]
+		var sample_world_position := Vector3(
+			chunk_center.x + local_point.x,
+			0.0,
+			chunk_center.z + local_point.y
+		)
+		for entry_variant in terrain_region_entries.values():
+			if not (entry_variant is Dictionary):
+				continue
+			var entry: Dictionary = entry_variant
+			var lake_contract_variant = entry.get("lake_runtime_contract", {})
+			if not (lake_contract_variant is Dictionary):
+				continue
+			var lake_contract: Dictionary = lake_contract_variant as Dictionary
+			var sample: Dictionary = CityLakeRegionDefinition.sample_depth_from_contract(lake_contract, sample_world_position)
+			if not bool(sample.get("inside_region", false)):
+				continue
+			carved_height = minf(carved_height, float(sample.get("floor_y_m", carved_height)))
+		heights[point_index] = carved_height
 
 static func _merge_chunk_samples_into_page(page_heights: PackedFloat32Array, page_normals: PackedVector3Array, chunk_heights: PackedFloat32Array, chunk_normals: PackedVector3Array, page_grid_steps: int, chunk_grid_steps: int, chunk_slot: Vector2i) -> void:
 	var page_row_stride := page_grid_steps + 1

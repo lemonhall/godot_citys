@@ -44,9 +44,13 @@ const CitySceneInteractivePropRegistry := preload("res://city_game/world/feature
 const CitySceneInteractivePropRuntime := preload("res://city_game/world/features/CitySceneInteractivePropRuntime.gd")
 const CitySceneMinigameVenueRegistry := preload("res://city_game/world/features/CitySceneMinigameVenueRegistry.gd")
 const CitySceneMinigameVenueRuntime := preload("res://city_game/world/features/CitySceneMinigameVenueRuntime.gd")
+const CityTerrainRegionFeatureRegistry := preload("res://city_game/world/features/CityTerrainRegionFeatureRegistry.gd")
+const CityTerrainRegionFeatureRuntime := preload("res://city_game/world/features/CityTerrainRegionFeatureRuntime.gd")
+const CityLakeFishSchoolRuntime := preload("res://city_game/world/features/lake/CityLakeFishSchoolRuntime.gd")
 const CitySoccerVenueRuntime := preload("res://city_game/world/minigames/CitySoccerVenueRuntime.gd")
 const CityTennisVenueRuntime := preload("res://city_game/world/minigames/CityTennisVenueRuntime.gd")
 const CityMissileCommandVenueRuntime := preload("res://city_game/world/minigames/CityMissileCommandVenueRuntime.gd")
+const CityFishingVenueRuntime := preload("res://city_game/world/minigames/CityFishingVenueRuntime.gd")
 const CityMusicRoadRuntimeScript := preload("res://city_game/world/features/music_road/CityMusicRoadRuntime.gd")
 const CityNpcInteractionRuntime := preload("res://city_game/world/interactions/CityNpcInteractionRuntime.gd")
 const CityInteractivePropRuntime := preload("res://city_game/world/interactions/CityInteractivePropRuntime.gd")
@@ -113,6 +117,7 @@ const BUILDING_EXPORT_SCENE_ROOT_FALLBACK := "user://serviceability/buildings/ge
 const SCENE_LANDMARK_REGISTRY_PATH := "res://city_game/serviceability/landmarks/generated/landmark_override_registry.json"
 const SCENE_INTERACTIVE_PROP_REGISTRY_PATH := "res://city_game/serviceability/interactive_props/generated/interactive_prop_registry.json"
 const SCENE_MINIGAME_VENUE_REGISTRY_PATH := "res://city_game/serviceability/minigame_venues/generated/minigame_venue_registry.json"
+const TERRAIN_REGION_REGISTRY_PATH := "res://city_game/serviceability/terrain_regions/generated/terrain_region_registry.json"
 const SERVICE_BUILDING_MAP_PIN_STARTUP_DELAY_FRAMES := 120
 const SERVICE_BUILDING_MAP_PIN_BATCH_SIZE := 1
 const SERVICE_BUILDING_MAP_PIN_BATCH_BUDGET_USEC := 1200
@@ -268,11 +273,24 @@ var _scene_interactive_prop_registry = null
 var _scene_interactive_prop_runtime = null
 var _scene_minigame_venue_registry = null
 var _scene_minigame_venue_runtime = null
+var _terrain_region_feature_registry = null
+var _terrain_region_feature_runtime = null
+var _lake_fish_school_runtime = null
 var _soccer_venue_runtime = null
 var _tennis_venue_runtime = null
 var _missile_command_venue_runtime = null
+var _fishing_venue_runtime = null
 var _music_road_runtime = null
 var _music_road_runtime_time_sec := 0.0
+var _lake_player_water_state := {
+	"in_water": false,
+	"underwater": false,
+	"region_id": "",
+	"water_level_y_m": 0.0,
+	"depth_m": 0.0,
+	"floor_y_m": 0.0,
+	"world_position": Vector3.ZERO,
+}
 var _building_export_state: Dictionary = {
 	"running": false,
 	"status": "idle",
@@ -332,9 +350,13 @@ func _ready() -> void:
 	_scene_interactive_prop_runtime = CitySceneInteractivePropRuntime.new()
 	_scene_minigame_venue_registry = CitySceneMinigameVenueRegistry.new()
 	_scene_minigame_venue_runtime = CitySceneMinigameVenueRuntime.new()
+	_terrain_region_feature_registry = CityTerrainRegionFeatureRegistry.new()
+	_terrain_region_feature_runtime = CityTerrainRegionFeatureRuntime.new()
+	_lake_fish_school_runtime = CityLakeFishSchoolRuntime.new()
 	_soccer_venue_runtime = CitySoccerVenueRuntime.new()
 	_tennis_venue_runtime = CityTennisVenueRuntime.new()
 	_missile_command_venue_runtime = CityMissileCommandVenueRuntime.new()
+	_fishing_venue_runtime = CityFishingVenueRuntime.new()
 	_music_road_runtime = CityMusicRoadRuntimeScript.new()
 	_music_road_runtime_time_sec = 0.0
 	if _inspection_resolver != null and _inspection_resolver.has_method("setup"):
@@ -352,6 +374,7 @@ func _ready() -> void:
 		_reload_scene_landmark_registry()
 		_reload_scene_interactive_prop_registry()
 		_reload_scene_minigame_venue_registry()
+		_reload_terrain_region_feature_registry()
 		if chunk_renderer.has_method("set_pedestrians_visible"):
 			chunk_renderer.set_pedestrians_visible(_pedestrians_visible)
 	_disable_legacy_generated_city_runtime_geometry()
@@ -449,6 +472,7 @@ func _process(delta: float) -> void:
 	_update_abandoned_vehicle_visuals(delta)
 	if player == null:
 		return
+	_update_lake_player_water_state()
 	_update_minigame_venue_runtimes(delta)
 	var frame_started_usec := Time.get_ticks_usec()
 	update_streaming_for_position(player.global_position, delta)
@@ -2152,6 +2176,9 @@ func get_scene_minigame_venue_runtime_state() -> Dictionary:
 		return {}
 	return _scene_minigame_venue_runtime.get_state()
 
+func get_lake_player_water_state() -> Dictionary:
+	return _lake_player_water_state.duplicate(true)
+
 func _build_default_soccer_match_hud_state() -> Dictionary:
 	return {
 		"visible": false,
@@ -2205,6 +2232,18 @@ func _build_default_missile_command_hud_state() -> Dictionary:
 		"feedback_event_tone": "neutral",
 	}
 
+func _build_default_fishing_hud_state() -> Dictionary:
+	return {
+		"visible": false,
+		"fishing_mode_active": false,
+		"cast_state": "idle",
+		"bite_window_active": false,
+		"target_school_id": "",
+		"last_catch_result": {},
+		"active_seat_id": "",
+		"display_name": "Lakeside Fishing",
+	}
+
 func get_soccer_venue_runtime_state() -> Dictionary:
 	if _soccer_venue_runtime == null or not _soccer_venue_runtime.has_method("get_state"):
 		return {}
@@ -2235,6 +2274,26 @@ func get_missile_command_hud_state() -> Dictionary:
 		return _build_default_missile_command_hud_state()
 	return _missile_command_venue_runtime.get_match_hud_state()
 
+func get_fishing_venue_runtime_state() -> Dictionary:
+	if _fishing_venue_runtime == null or not _fishing_venue_runtime.has_method("get_state"):
+		return {}
+	return _fishing_venue_runtime.get_state()
+
+func get_fishing_hud_state() -> Dictionary:
+	if _fishing_venue_runtime == null or not _fishing_venue_runtime.has_method("get_match_hud_state"):
+		return _build_default_fishing_hud_state()
+	return _fishing_venue_runtime.get_match_hud_state()
+
+func get_fishing_primary_interaction_state() -> Dictionary:
+	if _fishing_venue_runtime == null or not _fishing_venue_runtime.has_method("get_primary_interaction_state"):
+		return {
+			"visible": false,
+			"owner_kind": "fishing_venue",
+			"prompt_text": "",
+			"distance_m": 0.0,
+		}
+	return _fishing_venue_runtime.get_primary_interaction_state(player)
+
 func is_ambient_simulation_frozen() -> bool:
 	if chunk_renderer != null and chunk_renderer.has_method("is_ambient_simulation_frozen"):
 		return bool(chunk_renderer.is_ambient_simulation_frozen())
@@ -2245,7 +2304,10 @@ func is_ambient_simulation_frozen() -> bool:
 		if bool(_tennis_venue_runtime.is_ambient_simulation_frozen()):
 			return true
 	if _missile_command_venue_runtime != null and _missile_command_venue_runtime.has_method("is_ambient_simulation_frozen"):
-		return bool(_missile_command_venue_runtime.is_ambient_simulation_frozen())
+		if bool(_missile_command_venue_runtime.is_ambient_simulation_frozen()):
+			return true
+	if _fishing_venue_runtime != null and _fishing_venue_runtime.has_method("is_ambient_simulation_frozen"):
+		return bool(_fishing_venue_runtime.is_ambient_simulation_frozen())
 	return false
 
 func request_missile_command_primary_fire() -> Dictionary:
@@ -3469,15 +3531,20 @@ func _resolve_primary_interaction_prompt_state() -> Dictionary:
 	var prop_state: Dictionary = get_interactive_prop_interaction_state()
 	if bool(prop_state.get("visible", false)):
 		prop_state["owner_kind"] = "interactive_prop"
-	if not bool(npc_state.get("visible", false)):
-		return prop_state
-	if not bool(prop_state.get("visible", false)):
-		return npc_state
-	var npc_distance := float(npc_state.get("distance_m", INF))
-	var prop_distance := float(prop_state.get("distance_m", INF))
-	if npc_distance <= prop_distance:
-		return npc_state
-	return prop_state
+	var fishing_state: Dictionary = get_fishing_primary_interaction_state()
+	if bool(fishing_state.get("visible", false)):
+		fishing_state["owner_kind"] = "fishing_venue"
+	var candidates: Array = []
+	for state_variant in [npc_state, prop_state, fishing_state]:
+		var state: Dictionary = state_variant
+		if bool(state.get("visible", false)):
+			candidates.append(state)
+	if candidates.is_empty():
+		return {}
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a.get("distance_m", INF)) < float(b.get("distance_m", INF))
+	)
+	return candidates[0]
 
 func _augment_tennis_interaction_prompt_state(prompt_state: Dictionary) -> Dictionary:
 	if _tennis_venue_runtime == null or not _tennis_venue_runtime.has_method("get_state"):
@@ -3649,6 +3716,9 @@ func handle_primary_interaction() -> Dictionary:
 			"success": false,
 			"error": "player_driving_vehicle",
 		}
+	var fishing_interaction_result: Dictionary = _handle_fishing_primary_interaction()
+	if bool(fishing_interaction_result.get("handled", false)):
+		return fishing_interaction_result
 	var primary_state := _resolve_primary_interaction_prompt_state()
 	var owner_kind := str(primary_state.get("owner_kind", ""))
 	if owner_kind == "interactive_prop":
@@ -3659,6 +3729,17 @@ func handle_primary_interaction() -> Dictionary:
 		"success": false,
 		"error": "missing_primary_candidate",
 	}
+
+func _handle_fishing_primary_interaction() -> Dictionary:
+	if _fishing_venue_runtime == null or not _fishing_venue_runtime.has_method("handle_primary_interaction"):
+		return {
+			"success": false,
+			"error": "missing_fishing_runtime",
+		}
+	var interaction_result: Dictionary = _fishing_venue_runtime.handle_primary_interaction(chunk_renderer, player)
+	if bool(interaction_result.get("handled", false)):
+		_update_npc_interaction_system()
+	return interaction_result
 
 func _handle_npc_primary_interaction() -> Dictionary:
 	if _npc_interaction_runtime == null or not _npc_interaction_runtime.has_method("get_active_contract"):
@@ -4915,6 +4996,15 @@ func _reload_scene_minigame_venue_registry() -> Dictionary:
 	_sync_scene_minigame_venue_entries(entries)
 	return entries
 
+func _reload_terrain_region_feature_registry() -> Dictionary:
+	if _terrain_region_feature_registry == null:
+		return {}
+	var load_registry_paths: Array[String] = [TERRAIN_REGION_REGISTRY_PATH]
+	_terrain_region_feature_registry.configure(TERRAIN_REGION_REGISTRY_PATH, load_registry_paths)
+	var entries: Dictionary = _terrain_region_feature_registry.load_registry()
+	_sync_terrain_region_feature_entries(entries)
+	return entries
+
 func _resolve_building_override_registry_config() -> Dictionary:
 	var primary_registry_path := _normalize_serviceability_resource_path(_building_serviceability_registry_override_path)
 	var load_registry_paths: Array[String] = []
@@ -4984,6 +5074,8 @@ func _sync_scene_minigame_venue_entries(entries: Dictionary) -> void:
 		_tennis_venue_runtime.configure(runtime_entries.duplicate(true))
 	if _missile_command_venue_runtime != null and _missile_command_venue_runtime.has_method("configure"):
 		_missile_command_venue_runtime.configure(runtime_entries.duplicate(true))
+	if _fishing_venue_runtime != null and _fishing_venue_runtime.has_method("configure"):
+		_fishing_venue_runtime.configure(runtime_entries.duplicate(true))
 	if chunk_renderer != null and chunk_renderer.has_method("set_scene_minigame_venue_entries"):
 		chunk_renderer.set_scene_minigame_venue_entries(runtime_entries)
 	if _map_pin_registry != null and _map_pin_registry.has_method("replace_scene_minigame_venue_pins"):
@@ -4994,19 +5086,69 @@ func _sync_scene_minigame_venue_entries(entries: Dictionary) -> void:
 	if _full_map_open and _map_screen != null and _map_screen.has_method("set_pins"):
 		_map_screen.set_pins(_get_map_pins("full_map"))
 
+func _sync_terrain_region_feature_entries(entries: Dictionary) -> void:
+	if _terrain_region_feature_runtime != null and _terrain_region_feature_runtime.has_method("configure"):
+		_terrain_region_feature_runtime.configure(entries.duplicate(true))
+	var runtime_entries: Dictionary = entries.duplicate(true)
+	if _terrain_region_feature_runtime != null and _terrain_region_feature_runtime.has_method("get_entries_snapshot"):
+		runtime_entries = _terrain_region_feature_runtime.get_entries_snapshot()
+	if chunk_renderer != null and chunk_renderer.has_method("set_terrain_region_entries"):
+		chunk_renderer.set_terrain_region_entries(runtime_entries)
+	if _lake_fish_school_runtime != null and _lake_fish_school_runtime.has_method("configure"):
+		var lake_runtimes: Array = []
+		if _terrain_region_feature_runtime != null and _terrain_region_feature_runtime.has_method("get_lake_runtimes"):
+			lake_runtimes = _terrain_region_feature_runtime.get_lake_runtimes()
+		_lake_fish_school_runtime.configure(lake_runtimes)
+	if _fishing_venue_runtime != null and _fishing_venue_runtime.has_method("set_lake_context"):
+		_fishing_venue_runtime.set_lake_context(_terrain_region_feature_runtime, _lake_fish_school_runtime)
+
+func _update_lake_player_water_state() -> void:
+	var next_state := {
+		"in_water": false,
+		"underwater": false,
+		"region_id": "",
+		"water_level_y_m": 0.0,
+		"depth_m": 0.0,
+		"floor_y_m": 0.0,
+		"world_position": player.global_position if player != null else Vector3.ZERO,
+	}
+	if player != null and _terrain_region_feature_runtime != null and _terrain_region_feature_runtime.has_method("query_water_state"):
+		var player_chunk_key := CityChunkKey.world_to_chunk_key(_world_config, player.global_position)
+		var player_chunk_id: String = _world_config.format_chunk_id(player_chunk_key)
+		var can_skip_query: bool = _terrain_region_feature_runtime.has_method("has_entries_for_chunk") \
+			and not bool(_terrain_region_feature_runtime.has_entries_for_chunk(player_chunk_id)) \
+			and not bool(_lake_player_water_state.get("in_water", false))
+		if can_skip_query:
+			if next_state == _lake_player_water_state:
+				return
+			_lake_player_water_state = next_state.duplicate(true)
+			if player != null and player.has_method("set_lake_water_state"):
+				player.set_lake_water_state(_lake_player_water_state)
+			return
+		next_state = _terrain_region_feature_runtime.query_water_state(player.global_position)
+	if next_state == _lake_player_water_state:
+		return
+	_lake_player_water_state = next_state.duplicate(true)
+	if player != null and player.has_method("set_lake_water_state"):
+		player.set_lake_water_state(_lake_player_water_state)
+
 func _update_minigame_venue_runtimes(delta: float) -> void:
 	var soccer_runtime_state: Dictionary = {}
 	var tennis_runtime_state: Dictionary = {}
 	var missile_command_runtime_state: Dictionary = {}
+	var fishing_runtime_state: Dictionary = {}
 	if _soccer_venue_runtime != null and _soccer_venue_runtime.has_method("update"):
 		soccer_runtime_state = _soccer_venue_runtime.update(chunk_renderer, player, delta)
 	if _tennis_venue_runtime != null and _tennis_venue_runtime.has_method("update"):
 		tennis_runtime_state = _tennis_venue_runtime.update(chunk_renderer, player, delta)
 	if _missile_command_venue_runtime != null and _missile_command_venue_runtime.has_method("update"):
 		missile_command_runtime_state = _missile_command_venue_runtime.update(chunk_renderer, player, delta)
+	if _fishing_venue_runtime != null and _fishing_venue_runtime.has_method("update"):
+		fishing_runtime_state = _fishing_venue_runtime.update(chunk_renderer, player, delta)
 	var ambient_simulation_frozen := bool(soccer_runtime_state.get("ambient_simulation_frozen", false)) \
 		or bool(tennis_runtime_state.get("ambient_simulation_frozen", false)) \
-		or bool(missile_command_runtime_state.get("ambient_simulation_frozen", false))
+		or bool(missile_command_runtime_state.get("ambient_simulation_frozen", false)) \
+		or bool(fishing_runtime_state.get("ambient_simulation_frozen", false))
 	if chunk_renderer != null and chunk_renderer.has_method("set_ambient_simulation_frozen"):
 		chunk_renderer.set_ambient_simulation_frozen(ambient_simulation_frozen)
 	if hud != null and hud.has_method("set_soccer_match_hud_state"):
@@ -5024,6 +5166,11 @@ func _update_minigame_venue_runtimes(delta: float) -> void:
 		if missile_hud_state.is_empty():
 			missile_hud_state = _build_default_missile_command_hud_state()
 		hud.set_missile_command_hud_state(missile_hud_state)
+	if hud != null and hud.has_method("set_fishing_hud_state"):
+		var fishing_hud_state: Dictionary = fishing_runtime_state.get("match_hud_state", {})
+		if fishing_hud_state.is_empty():
+			fishing_hud_state = _build_default_fishing_hud_state()
+		hud.set_fishing_hud_state(fishing_hud_state)
 	if hud != null and hud.has_method("set_crosshair_state"):
 		hud.set_crosshair_state(_build_crosshair_state())
 

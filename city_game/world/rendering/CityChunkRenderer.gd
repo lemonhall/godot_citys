@@ -4,6 +4,7 @@ const CityChunkScene := preload("res://city_game/world/rendering/CityChunkScene.
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 const CityRoadSurfacePageProvider := preload("res://city_game/world/rendering/CityRoadSurfacePageProvider.gd")
 const CityTerrainPageProvider := preload("res://city_game/world/rendering/CityTerrainPageProvider.gd")
+const CityWaterSurfacePageProvider := preload("res://city_game/world/rendering/CityWaterSurfacePageProvider.gd")
 const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTerrainMeshBuilder.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
 const CityChunkMultimeshBuilder := preload("res://city_game/world/rendering/CityChunkMultimeshBuilder.gd")
@@ -46,6 +47,7 @@ var _config
 var _world_data: Dictionary = {}
 var _surface_page_provider = CityRoadSurfacePageProvider.new()
 var _terrain_page_provider = CityTerrainPageProvider.new()
+var _water_surface_page_provider = CityWaterSurfacePageProvider.new()
 var _chunk_scenes: Dictionary = {}
 var _prepared_payloads: Dictionary = {}
 var _pending_prepare: Dictionary = {}
@@ -177,6 +179,7 @@ var _global_death_visuals: Array[Dictionary] = []
 var _chunk_death_visual_records: Dictionary = {}
 var _pedestrian_visual_catalog: CityPedestrianVisualCatalog = null
 var _building_override_entries: Dictionary = {}
+var _terrain_region_entries: Dictionary = {}
 var _scene_landmark_entries_by_chunk_id: Dictionary = {}
 var _scene_interactive_prop_entries_by_chunk_id: Dictionary = {}
 var _scene_minigame_venue_entries_by_chunk_id: Dictionary = {}
@@ -196,6 +199,8 @@ func setup(config, world_data: Dictionary) -> void:
 	_surface_page_provider.setup(_config, _world_data)
 	_terrain_page_provider = CityTerrainPageProvider.new()
 	_terrain_page_provider.setup(_config, _world_data)
+	_water_surface_page_provider = CityWaterSurfacePageProvider.new()
+	_water_surface_page_provider.configure({})
 	CityChunkScene.prewarm_ground_overlay_material()
 	var street_cluster_catalog = _world_data.get("street_cluster_catalog")
 	if street_cluster_catalog != null and street_cluster_catalog.has_method("get_cluster_count"):
@@ -234,6 +239,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_chunk_death_visual_records.clear()
 	_pedestrian_visual_catalog = null
 	_building_override_entries.clear()
+	_terrain_region_entries.clear()
 	_scene_landmark_entries_by_chunk_id.clear()
 	_scene_interactive_prop_entries_by_chunk_id.clear()
 	_scene_minigame_venue_entries_by_chunk_id.clear()
@@ -256,6 +262,14 @@ func setup(config, world_data: Dictionary) -> void:
 func set_building_override_entries(entries: Dictionary) -> void:
 	# Authored building scenes stay lazy; eager preview instantiation inflated cold-path profiling.
 	_building_override_entries = entries.duplicate(true)
+	_clear_retained_chunk_scene_cache()
+
+func set_terrain_region_entries(entries: Dictionary) -> void:
+	_terrain_region_entries = entries.duplicate(true)
+	if _terrain_page_provider != null and _terrain_page_provider.has_method("set_terrain_region_entries"):
+		_terrain_page_provider.set_terrain_region_entries(_terrain_region_entries)
+	if _water_surface_page_provider != null and _water_surface_page_provider.has_method("configure"):
+		_water_surface_page_provider.configure(_terrain_region_entries)
 	_clear_retained_chunk_scene_cache()
 
 func set_scene_landmark_entries(entries: Dictionary) -> void:
@@ -415,6 +429,7 @@ func _notification(what: int) -> void:
 	_last_queue_process_frame = -1
 	_surface_page_provider.clear()
 	_terrain_page_provider.clear()
+	_water_surface_page_provider.configure({})
 	_pedestrian_tier_controller = null
 	_vehicle_tier_controller = null
 	_last_pedestrian_player_position = Vector3.ZERO
@@ -424,6 +439,7 @@ func _notification(what: int) -> void:
 	_pedestrian_visual_catalog = null
 	_clear_global_death_visuals()
 	_chunk_death_visual_records.clear()
+	_terrain_region_entries.clear()
 	_scene_interactive_prop_entries_by_chunk_id.clear()
 	_scene_minigame_venue_entries_by_chunk_id.clear()
 	_ambient_simulation_frozen = false
@@ -2053,6 +2069,8 @@ func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 		"street_cluster_catalog": _world_data.get("street_cluster_catalog"),
 		"vehicle_query": _world_data.get("vehicle_query"),
 		"building_override_entries": _building_override_entries.duplicate(true),
+		"terrain_region_entries": _get_terrain_region_entries_for_chunk(chunk_id),
+		"water_surface_entries": _get_water_surface_entries_for_chunk(chunk_id),
 		"scene_landmark_entries": _get_scene_landmark_entries_for_chunk(chunk_id),
 		"scene_interactive_prop_entries": _get_scene_interactive_prop_entries_for_chunk(chunk_id),
 		"scene_minigame_venue_entries": _get_scene_minigame_venue_entries_for_chunk(chunk_id),
@@ -2140,6 +2158,21 @@ func _get_scene_landmark_entries_for_chunk(chunk_id: String) -> Array:
 		snapshot.append(entry.duplicate(true))
 	return snapshot
 
+func _get_terrain_region_entries_for_chunk(chunk_id: String) -> Array:
+	if chunk_id == "":
+		return []
+	var snapshot: Array = []
+	for entry_variant in _terrain_region_entries.values():
+		if not (entry_variant is Dictionary):
+			continue
+		var entry: Dictionary = entry_variant
+		var anchor_chunk_id := str(entry.get("anchor_chunk_id", "")).strip_edges()
+		var render_owner_chunk_id := str(entry.get("render_owner_chunk_id", anchor_chunk_id)).strip_edges()
+		if anchor_chunk_id != chunk_id and render_owner_chunk_id != chunk_id:
+			continue
+		snapshot.append(entry.duplicate(true))
+	return snapshot
+
 func _get_scene_interactive_prop_entries_for_chunk(chunk_id: String) -> Array:
 	if chunk_id == "":
 		return []
@@ -2149,6 +2182,13 @@ func _get_scene_interactive_prop_entries_for_chunk(chunk_id: String) -> Array:
 		var entry: Dictionary = entry_variant
 		snapshot.append(entry.duplicate(true))
 	return snapshot
+
+func _get_water_surface_entries_for_chunk(chunk_id: String) -> Array:
+	if chunk_id == "":
+		return []
+	if _water_surface_page_provider == null or not _water_surface_page_provider.has_method("get_entries_for_chunk"):
+		return []
+	return _water_surface_page_provider.get_entries_for_chunk(chunk_id)
 
 func _get_scene_minigame_venue_entries_for_chunk(chunk_id: String) -> Array:
 	if chunk_id == "":

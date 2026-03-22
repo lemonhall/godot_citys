@@ -73,6 +73,10 @@ mesh = SubResource("3_player_mesh")
 position = Vector3(0.62, 0.36, -0.18)
 rotation_degrees = Vector3(18, 20, -18)
 
+[node name="FishingPoleLineHoldPoseAnchor" type="Node3D" parent="Player/Visual/FishingPoleHoldAnchor"]
+position = Vector3(0.08, -0.06, -0.1)
+rotation_degrees = Vector3(-18, -12, -38)
+
 [node name="FishingPoleEquippedVisual" parent="Player/Visual/FishingPoleHoldAnchor" instance=ExtResource("8_fishing_pole_equipped_scene")]
 
 [node name="CameraRig" type="Node3D" parent="Player"]

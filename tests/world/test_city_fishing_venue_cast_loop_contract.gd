@@ -24,6 +24,8 @@ func _run() -> void:
 	var player := lab.get_node_or_null("Player")
 	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "Fishing venue cast loop contract requires Player teleport API"):
 		return
+	if not T.require_true(self, player.has_method("get_fishing_visual_state"), "Fishing venue cast loop contract requires player fishing visual introspection for rod-line continuity coverage"):
+		return
 	if not T.require_true(self, lab.has_method("set_fishing_cast_preview_active"), "Fishing venue cast loop contract requires direct cast-preview control in the lab wrapper"):
 		return
 	if not T.require_true(self, lab.has_method("request_fishing_cast_action"), "Fishing venue cast loop contract requires direct cast-action control in the lab wrapper"):
@@ -53,6 +55,45 @@ func _run() -> void:
 	if not T.require_true(self, bool(runtime_state.get("bobber_visible", false)), "Fishing venue cast loop contract must expose a visible fishing bobber after cast_out"):
 		return
 	if not T.require_true(self, bool(runtime_state.get("fishing_line_visible", false)), "Fishing venue cast loop contract must expose a visible fishing line after cast_out"):
+		return
+	await _wait_frames(24)
+	runtime_state = lab.get_fishing_runtime_state()
+	var fishing_visual_state: Dictionary = player.get_fishing_visual_state()
+	if not T.require_true(self, bool(fishing_visual_state.get("line_pose_active", false)), "Fishing venue cast loop contract must keep the held rod in a formal line-hold pose while the bobber is out"):
+		return
+	if not T.require_true(self, str(fishing_visual_state.get("pose_name", "")) == "line_hold", "Fishing venue cast loop contract must switch the held rod out of carry pose once the fishing line is engaged"):
+		return
+	var carry_mount_position: Vector3 = fishing_visual_state.get("carry_mount_position", Vector3.ZERO)
+	var carry_mount_rotation_degrees: Vector3 = fishing_visual_state.get("carry_mount_rotation_degrees", Vector3.ZERO)
+	var cast_endpoint_mount_position: Vector3 = fishing_visual_state.get("cast_endpoint_mount_position", Vector3.ZERO)
+	var cast_endpoint_mount_rotation_degrees: Vector3 = fishing_visual_state.get("cast_endpoint_mount_rotation_degrees", Vector3.ZERO)
+	var actual_mount_position: Vector3 = fishing_visual_state.get("mount_position", Vector3.ZERO)
+	var actual_mount_world_position: Vector3 = fishing_visual_state.get("mount_world_position", Vector3.ZERO)
+	var actual_mount_rotation_degrees: Vector3 = fishing_visual_state.get("mount_rotation_degrees", Vector3.ZERO)
+	if not T.require_true(self, actual_mount_position.distance_to(cast_endpoint_mount_position) <= 0.02, "Fishing venue cast loop contract must keep the held rod at the cast animation endpoint once the line is engaged"):
+		return
+	if not T.require_true(self, actual_mount_rotation_degrees.distance_to(cast_endpoint_mount_rotation_degrees) <= 0.5, "Fishing venue cast loop contract must keep the held rod rotation at the cast animation endpoint instead of snapping back upward"):
+		return
+	if not T.require_true(self, actual_mount_rotation_degrees.distance_to(carry_mount_rotation_degrees) >= 20.0 or actual_mount_position.distance_to(carry_mount_position) >= 0.12, "Fishing venue cast loop contract must not fall back to the initial carry pose after the cast animation completes"):
+		return
+	var tip_world_position: Vector3 = fishing_visual_state.get("tip_world_position", Vector3.ZERO)
+	var rod_direction := (tip_world_position - actual_mount_world_position).normalized()
+	var rod_horizontal_len := Vector2(rod_direction.x, rod_direction.z).length()
+	var rod_pitch_deg := rad_to_deg(atan2(rod_direction.y, rod_horizontal_len))
+	if not T.require_true(self, rod_pitch_deg >= 20.0 and rod_pitch_deg <= 40.0, "Fishing venue cast loop contract must keep the waiting rod roughly 30 degrees above the water instead of dipping beneath the surface"):
+		return
+	var player_forward: Vector3 = -player.global_basis.z
+	player_forward.y = 0.0
+	player_forward = player_forward.normalized()
+	var rod_horizontal: Vector3 = Vector3(rod_direction.x, 0.0, rod_direction.z)
+	if not T.require_true(self, rod_horizontal.length() > 0.001, "Fishing venue cast loop contract requires a stable horizontal rod projection while the line is engaged"):
+		return
+	rod_horizontal = rod_horizontal.normalized()
+	var rod_forward_angle_deg := rad_to_deg(acos(clampf(player_forward.dot(rod_horizontal), -1.0, 1.0)))
+	if not T.require_true(self, rod_forward_angle_deg <= 35.0, "Fishing venue cast loop contract must keep the waiting rod angled forward from the player instead of drifting behind the body"):
+		return
+	var line_start_world_position: Vector3 = runtime_state.get("line_start_world_position", Vector3.ZERO)
+	if not T.require_true(self, tip_world_position.distance_to(line_start_world_position) <= 0.2, "Fishing venue cast loop contract must keep the line start anchored close to the held rod tip while fishing"):
 		return
 	runtime_state = await _wait_for_cast_state(lab, "bite_ready")
 	if not T.require_true(self, str(runtime_state.get("cast_state", "")) == "bite_ready", "Fishing venue cast loop contract must expose a bite_ready state after the randomized waiting period resolves"):
@@ -97,6 +138,11 @@ func _wait_for_cast_state(lab, expected_state: String) -> Dictionary:
 		if str(runtime_state.get("cast_state", "")) == expected_state:
 			return runtime_state
 	return lab.get_fishing_runtime_state()
+
+func _wait_frames(frame_count: int) -> void:
+	for _frame in range(frame_count):
+		await physics_frame
+		await process_frame
 
 func _estimate_standing_height(player) -> float:
 	var collision_shape := player.get_node_or_null("CollisionShape3D") as CollisionShape3D

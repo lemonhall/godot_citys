@@ -19,6 +19,9 @@ func _run() -> void:
 		return
 	if not T.require_true(self, ResourceLoader.exists(FISHING_POLE_EQUIPPED_SCENE_PATH, "PackedScene"), "Fishing pole visual contract requires a dedicated FishingPoleEquippedVisual.tscn wrapper scene for player-held usage"):
 		return
+	var equipped_scene_source := FileAccess.get_file_as_string(FISHING_POLE_EQUIPPED_SCENE_PATH)
+	if not T.require_true(self, equipped_scene_source.find("[node name=\"FishingPoleEquippedVisual\" type=\"Node3D\"]\nvisible = false") == -1, "Fishing pole equipped visual scene must stay visible in the editor so hold pose and line anchors can be authored scene-first"):
+		return
 	if not T.require_true(self, ResourceLoader.exists(VENUE_SCENE_PATH, "PackedScene"), "Fishing pole visual contract requires the canonical lakeside fishing venue scene"):
 		return
 
@@ -46,6 +49,12 @@ func _run() -> void:
 		return
 	var equipped_pole := equipped_visual.get_node_or_null("MountRoot/Pole") as Node3D
 	if not T.require_true(self, equipped_pole != null, "Fishing pole equipped visual must mount the held pole under MountRoot/Pole"):
+		return
+	var line_hold_pose_anchor := equipped_visual.get_node_or_null("LineHoldPoseAnchor") as Node3D
+	if not T.require_true(self, line_hold_pose_anchor != null, "Fishing pole equipped visual must author a dedicated LineHoldPoseAnchor so held waiting pose tuning stays scene-first"):
+		return
+	var line_origin_anchor := equipped_visual.get_node_or_null("MountRoot/LineOriginAnchor") as Marker3D
+	if not T.require_true(self, line_origin_anchor != null, "Fishing pole equipped visual must author a dedicated LineOriginAnchor so rod-line start can be hand-tuned in the editor"):
 		return
 
 	var venue_scene := load(VENUE_SCENE_PATH) as PackedScene

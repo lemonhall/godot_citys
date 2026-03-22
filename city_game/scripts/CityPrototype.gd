@@ -3819,6 +3819,11 @@ func _sync_player_fishing_state(runtime_state: Dictionary = {}) -> void:
 		player.set_fishing_mode_enabled(bool(runtime_state.get("fishing_mode_active", false)), bite_zone_world_position.y)
 	if player.has_method("set_fishing_pole_equipped_visible"):
 		player.set_fishing_pole_equipped_visible(bool(runtime_state.get("pole_equipped", false)))
+	if player.has_method("set_fishing_line_visual_state"):
+		player.set_fishing_line_visual_state(
+			bool(runtime_state.get("fishing_line_visible", false)),
+			runtime_state.get("bobber_world_position", Vector3.ZERO)
+		)
 
 func _apply_fishing_feedback_from_state(runtime_state: Dictionary) -> void:
 	if hud == null:

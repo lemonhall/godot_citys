@@ -441,8 +441,16 @@ func set_fishing_pole_equipped_visible(should_show: bool) -> void:
 	else:
 		_fishing_pole_visual.visible = should_show
 	if not should_show:
+		set_fishing_line_visual_state(false)
 		_fishing_preview_requested = false
 		_update_fishing_preview()
+
+func set_fishing_line_visual_state(active: bool, target_world_position: Vector3 = Vector3.ZERO) -> void:
+	_ensure_fishing_pole_visual()
+	if _fishing_pole_visual == null or not is_instance_valid(_fishing_pole_visual):
+		return
+	if _fishing_pole_visual.has_method("set_line_pose_active"):
+		_fishing_pole_visual.set_line_pose_active(active, target_world_position)
 
 func set_fishing_cast_preview_active(active: bool) -> void:
 	_fishing_preview_requested = active and _fishing_mode_enabled and _control_enabled and not _driving_vehicle
@@ -469,6 +477,13 @@ func play_fishing_cast_swing() -> void:
 func get_fishing_tip_world_position() -> Vector3:
 	_ensure_fishing_pole_visual()
 	if _fishing_pole_visual != null and is_instance_valid(_fishing_pole_visual):
+		if _fishing_pole_visual.has_method("get_line_origin_world_position"):
+			var line_origin_world_position: Variant = _fishing_pole_visual.get_line_origin_world_position()
+			if line_origin_world_position is Vector3:
+				return line_origin_world_position as Vector3
+		var line_origin_anchor := _fishing_pole_visual.get_node_or_null("MountRoot/LineOriginAnchor") as Marker3D
+		if line_origin_anchor != null:
+			return line_origin_anchor.global_position
 		var tip_anchor := _fishing_pole_visual.get_node_or_null("MountRoot/TipAnchor") as Marker3D
 		if tip_anchor != null:
 			return tip_anchor.global_position

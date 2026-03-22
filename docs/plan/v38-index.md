@@ -28,6 +28,7 @@ post-closeout bugfix evidence：
 - [v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md](./v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md)
 - [v38-post-closeout-lake-lab-scene-first-authoring-verification-2026-03-22.md](./v38-post-closeout-lake-lab-scene-first-authoring-verification-2026-03-22.md)
 - [v38-post-closeout-fishing-pole-interaction-verification-2026-03-22.md](./v38-post-closeout-fishing-pole-interaction-verification-2026-03-22.md)
+- [v38-post-closeout-fishing-rod-line-visual-continuity-verification-2026-03-22.md](./v38-post-closeout-fishing-rod-line-visual-continuity-verification-2026-03-22.md)
 
 post-closeout contract change:
 
@@ -83,6 +84,7 @@ post-closeout contract change:
 - [v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md](./v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md)
 - [v38-post-closeout-lake-lab-scene-first-authoring-verification-2026-03-22.md](./v38-post-closeout-lake-lab-scene-first-authoring-verification-2026-03-22.md)
 - [v38-post-closeout-fishing-pole-interaction-verification-2026-03-22.md](./v38-post-closeout-fishing-pole-interaction-verification-2026-03-22.md)
+- [v38-post-closeout-fishing-rod-line-visual-continuity-verification-2026-03-22.md](./v38-post-closeout-fishing-rod-line-visual-continuity-verification-2026-03-22.md)
 
 ## 追溯矩阵
 

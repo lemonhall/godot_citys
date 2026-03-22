@@ -10,8 +10,8 @@ extends Node3D
 @onready var _line_hold_pose_anchor := $LineHoldPoseAnchor as Node3D
 @onready var _mount_root := $MountRoot as Node3D
 @onready var _pole_root := $MountRoot/Pole as Node3D
-@onready var _line_origin_anchor := $MountRoot/LineOriginAnchor as Marker3D
-@onready var _tip_anchor := $MountRoot/TipAnchor as Marker3D
+@onready var _line_origin_anchor := $MountRoot/Pole/LineOriginAnchor as Marker3D
+@onready var _tip_anchor := $MountRoot/Pole/TipAnchor as Marker3D
 
 var _authored_mount_position := Vector3.ZERO
 var _authored_mount_rotation_deg := Vector3.ZERO

@@ -16,6 +16,12 @@ transform = Transform3D(0.7954698, 0.5728249, -0.19773579, -0.5039832, 0.8065417
 [node name="Pole" parent="MountRoot" unique_id=1652159469 instance=ExtResource("2_pole_visual")]
 transform = Transform3D(-0.30896187, -0.92251503, 0.2313192, 0.950726, -0.29299122, 0.101371646, -0.025742427, 0.251241, 0.9675821, 0, 0, 0)
 
+[node name="LineOriginAnchor" type="Marker3D" parent="MountRoot/Pole" unique_id=691798741]
+position = Vector3(-0.633428, 18.0, -0.258382)
+
+[node name="TipAnchor" type="Marker3D" parent="MountRoot/Pole" unique_id=2022469624]
+position = Vector3(-0.633428, 18.0, -0.258382)
+
 [node name="LineOriginAnchor" type="Marker3D" parent="MountRoot" unique_id=691798741]
 transform = Transform3D(0.9999993, -9.536743e-07, 3.2782555e-07, 4.3213367e-07, 0.99999976, -2.5331974e-07, -2.3841858e-07, 3.2782555e-07, 0.99999905, -8.44412, -2.6396844, 2.7201614)
 

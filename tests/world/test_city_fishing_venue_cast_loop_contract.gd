@@ -47,6 +47,19 @@ func _run() -> void:
 	lab.debug_set_fishing_bite_delay_override(0.05)
 	if not T.require_true(self, bool(lab.set_fishing_cast_preview_active(true).get("success", false)), "Fishing venue cast loop contract must allow entering the right-click cast preview state while the pole is equipped"):
 		return
+	var fishing_preview_state: Dictionary = player.get_fishing_preview_state() if player.has_method("get_fishing_preview_state") else {}
+	if not T.require_true(self, bool(fishing_preview_state.get("visible", false)), "Fishing venue cast loop contract must keep the right-click cast preview visibly active while aiming the fishing throw"):
+		return
+	if not T.require_true(self, int(fishing_preview_state.get("sample_count", 0)) > 0, "Fishing venue cast loop contract must populate a formal preview trajectory while right-click cast preview is active"):
+		return
+	if not T.require_true(self, player.has_method("get_fishing_line_origin_world_position"), "Fishing venue cast loop contract requires a dedicated player line-origin getter so fishing-line visuals can be separated from cast preview spawn logic"):
+		return
+	if not T.require_true(self, player.has_method("get_fishing_cast_spawn_transform"), "Fishing venue cast loop contract requires a dedicated fishing cast spawn transform so cast preview stays stable"):
+		return
+	var line_origin_world_position: Vector3 = player.get_fishing_line_origin_world_position()
+	var cast_spawn_origin: Vector3 = player.get_fishing_cast_spawn_transform().origin
+	if not T.require_true(self, line_origin_world_position.distance_to(cast_spawn_origin) >= 0.5, "Fishing venue cast loop contract must not reuse the fishing-line tip anchor as the right-click cast preview spawn point"):
+		return
 
 	var cast_result: Dictionary = lab.request_fishing_cast_action()
 	if not T.require_true(self, bool(cast_result.get("success", false)), "Fishing venue cast loop contract must allow a formal cast through the dedicated cast action entrypoint"):
@@ -81,6 +94,12 @@ func _run() -> void:
 	var rod_horizontal_len := Vector2(rod_direction.x, rod_direction.z).length()
 	var rod_pitch_deg := rad_to_deg(atan2(rod_direction.y, rod_horizontal_len))
 	if not T.require_true(self, rod_pitch_deg >= 20.0 and rod_pitch_deg <= 40.0, "Fishing venue cast loop contract must keep the waiting rod roughly 30 degrees above the water instead of dipping beneath the surface"):
+		return
+	var active_camera := lab.get_viewport().get_camera_3d()
+	if not T.require_true(self, active_camera != null, "Fishing venue cast loop contract requires an active lab camera so rod-line visual alignment can be projected in screen space"):
+		return
+	var tip_screen_position: Vector2 = active_camera.unproject_position(tip_world_position)
+	if not T.require_true(self, tip_screen_position.y >= 80.0 and tip_screen_position.y <= 180.0, "Fishing venue cast loop contract must keep the fishing-line origin projected near the visible rod tip instead of floating far above the pole"):
 		return
 	var player_forward: Vector3 = -player.global_basis.z
 	player_forward.y = 0.0

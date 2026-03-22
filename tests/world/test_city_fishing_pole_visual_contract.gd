@@ -56,6 +56,18 @@ func _run() -> void:
 	var line_origin_anchor := equipped_visual.get_node_or_null("MountRoot/LineOriginAnchor") as Marker3D
 	if not T.require_true(self, line_origin_anchor != null, "Fishing pole equipped visual must author a dedicated LineOriginAnchor so rod-line start can be hand-tuned in the editor"):
 		return
+	var pole_line_origin_anchor := equipped_visual.get_node_or_null("MountRoot/Pole/LineOriginAnchor") as Marker3D
+	if not T.require_true(self, pole_line_origin_anchor != null, "Fishing pole equipped visual must author a dedicated pole-tip LineOriginAnchor so the fishing line can start from the rod head without reusing the cast preview anchor"):
+		return
+	var pole_tip_anchor := equipped_visual.get_node_or_null("MountRoot/Pole/TipAnchor") as Marker3D
+	if not T.require_true(self, pole_tip_anchor != null, "Fishing pole equipped visual must author a dedicated pole-tip TipAnchor so rod-line alignment can be tuned independently from cast preview"):
+		return
+	if not T.require_true(self, pole_tip_anchor.position.y >= 16.0 and pole_tip_anchor.position.y <= 20.5, "Fishing pole equipped visual must keep the pole-tip TipAnchor within the authored rod-head band instead of drifting high above the visible tip"):
+		return
+	if not T.require_true(self, pole_line_origin_anchor.position.y >= 16.0 and pole_line_origin_anchor.position.y <= 21.0, "Fishing pole equipped visual must keep the pole-tip LineOriginAnchor within the authored rod-head band instead of floating above the pole"):
+		return
+	if not T.require_true(self, pole_line_origin_anchor.position.distance_to(pole_tip_anchor.position) <= 0.08, "Fishing pole equipped visual must keep the pole-tip LineOriginAnchor nearly coincident with the pole-tip TipAnchor so the fishing line visibly exits the rod head"):
+		return
 
 	var venue_scene := load(VENUE_SCENE_PATH) as PackedScene
 	if not T.require_true(self, venue_scene != null, "Fishing pole visual contract must load the canonical fishing venue scene"):

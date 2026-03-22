@@ -457,6 +457,10 @@ func _update_line_start_world_position(player_node: Node3D, venue: Node3D) -> vo
 	_line_start_world_position = _resolve_line_start_world_position(player_node, venue)
 
 func _resolve_line_start_world_position(player_node: Node3D, venue: Node3D) -> Vector3:
+	if player_node != null and is_instance_valid(player_node) and player_node.has_method("get_fishing_line_origin_world_position"):
+		var line_origin_world_position: Variant = player_node.get_fishing_line_origin_world_position()
+		if line_origin_world_position is Vector3:
+			return line_origin_world_position as Vector3
 	if player_node != null and is_instance_valid(player_node) and player_node.has_method("get_fishing_tip_world_position"):
 		var tip_world_position: Variant = player_node.get_fishing_tip_world_position()
 		if tip_world_position is Vector3:

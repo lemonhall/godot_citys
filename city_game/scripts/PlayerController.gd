@@ -477,10 +477,6 @@ func play_fishing_cast_swing() -> void:
 func get_fishing_tip_world_position() -> Vector3:
 	_ensure_fishing_pole_visual()
 	if _fishing_pole_visual != null and is_instance_valid(_fishing_pole_visual):
-		if _fishing_pole_visual.has_method("get_line_origin_world_position"):
-			var line_origin_world_position: Variant = _fishing_pole_visual.get_line_origin_world_position()
-			if line_origin_world_position is Vector3:
-				return line_origin_world_position as Vector3
 		var line_origin_anchor := _fishing_pole_visual.get_node_or_null("MountRoot/LineOriginAnchor") as Marker3D
 		if line_origin_anchor != null:
 			return line_origin_anchor.global_position
@@ -489,6 +485,21 @@ func get_fishing_tip_world_position() -> Vector3:
 			return tip_anchor.global_position
 		return _fishing_pole_visual.global_position
 	return global_position + Vector3.UP * 1.2
+
+func get_fishing_line_origin_world_position() -> Vector3:
+	_ensure_fishing_pole_visual()
+	if _fishing_pole_visual != null and is_instance_valid(_fishing_pole_visual):
+		if _fishing_pole_visual.has_method("get_line_origin_world_position"):
+			var line_origin_world_position: Variant = _fishing_pole_visual.get_line_origin_world_position()
+			if line_origin_world_position is Vector3:
+				return line_origin_world_position as Vector3
+		var pole_line_origin_anchor := _fishing_pole_visual.get_node_or_null("MountRoot/Pole/LineOriginAnchor") as Marker3D
+		if pole_line_origin_anchor != null:
+			return pole_line_origin_anchor.global_position
+		var pole_tip_anchor := _fishing_pole_visual.get_node_or_null("MountRoot/Pole/TipAnchor") as Marker3D
+		if pole_tip_anchor != null:
+			return pole_tip_anchor.global_position
+	return get_fishing_tip_world_position()
 
 func get_fishing_visual_state() -> Dictionary:
 	_ensure_fishing_pole_visual()

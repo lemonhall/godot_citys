@@ -23,6 +23,10 @@ PRD 入口：[PRD-0025 Lake Leisure And Fishing Foundation](../prd/PRD-0025-lake
 
 当前状态：`M0-M5` 已完成，fresh verification 见 [v38-m5-verification-2026-03-22.md](./v38-m5-verification-2026-03-22.md)。
 
+post-closeout bugfix evidence：
+
+- [v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md](./v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md)
+
 ## 决策冻结
 
 - `lake` 在 `v38` 不走 `scene_landmark`，必须走 `terrain_region_feature`。
@@ -64,6 +68,7 @@ PRD 入口：[PRD-0025 Lake Leisure And Fishing Foundation](../prd/PRD-0025-lake
 
 - [v38-lake-leisure-and-fishing-foundation.md](./v38-lake-leisure-and-fishing-foundation.md)
 - [v38-m5-verification-2026-03-22.md](./v38-m5-verification-2026-03-22.md)
+- [v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md](./v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md)
 
 ## 追溯矩阵
 

@@ -1,15 +1,17 @@
 extends Node3D
 
-const CityWorldRingMarker := preload("res://city_game/world/navigation/CityWorldRingMarker.gd")
-
 const DEFAULT_MANIFEST_PATH := "res://city_game/serviceability/minigame_venues/generated/venue_v38_lakeside_fishing_chunk_147_181/minigame_venue_manifest.json"
 const PLAY_HALF_EXTENTS_M := Vector2(70.0, 60.0)
+const DEFAULT_RELEASE_BUFFER_M := 32.0
+const DEFAULT_POLE_INTERACTION_RADIUS_M := 3.6
 
 var _entry: Dictionary = {}
 var _fishing_contract: Dictionary = {}
-var _match_start_contract: Dictionary = {}
 var _runtime_state: Dictionary = {}
-var _match_start_ring: Node3D = null
+var _pole_visual: Node3D = null
+var _bobber_visual: Node3D = null
+var _line_visual: Node3D = null
+var _bobber_animation_time_sec := 0.0
 
 func _ready() -> void:
 	if _entry.is_empty():
@@ -17,19 +19,19 @@ func _ready() -> void:
 	else:
 		_entry = _merge_entry_with_defaults(_entry)
 	_refresh_contracts()
-	_resolve_match_start_ring()
-	_sync_match_start_ring()
+	_resolve_runtime_visuals()
+	_apply_runtime_visual_state()
 
 func _process(delta: float) -> void:
-	if _match_start_ring != null and is_instance_valid(_match_start_ring) and _match_start_ring.has_method("tick"):
-		_match_start_ring.tick(delta)
+	_bobber_animation_time_sec += maxf(delta, 0.0)
+	_apply_runtime_visual_state()
 
 func configure_minigame_venue(entry: Dictionary) -> void:
 	_entry = _merge_entry_with_defaults(entry)
 	_refresh_contracts()
 	if is_inside_tree():
-		_resolve_match_start_ring()
-		_sync_match_start_ring()
+		_resolve_runtime_visuals()
+		_apply_runtime_visual_state()
 
 func get_venue_contract() -> Dictionary:
 	return _entry.duplicate(true)
@@ -38,25 +40,20 @@ func get_fishing_contract() -> Dictionary:
 	_refresh_contracts()
 	return _fishing_contract.duplicate(true)
 
-func get_match_start_contract() -> Dictionary:
+func get_pole_anchor(anchor_id: String = "") -> Dictionary:
 	_refresh_contracts()
-	return _match_start_contract.duplicate(true)
-
-func get_seat_anchor(seat_id: String = "") -> Dictionary:
-	_refresh_contracts()
-	var seat_anchors: Dictionary = _fishing_contract.get("seat_anchors", {})
-	var resolved_seat_id := seat_id.strip_edges()
-	if resolved_seat_id == "":
-		var seat_anchor_ids: Array = _fishing_contract.get("seat_anchor_ids", [])
-		resolved_seat_id = str(seat_anchor_ids[0]) if not seat_anchor_ids.is_empty() else ""
-	return (seat_anchors.get(resolved_seat_id, {}) as Dictionary).duplicate(true)
+	var pole_anchors: Dictionary = _fishing_contract.get("pole_anchors", {})
+	var resolved_anchor_id := anchor_id.strip_edges()
+	if resolved_anchor_id == "":
+		resolved_anchor_id = str(_fishing_contract.get("pole_anchor_id", "pole_rest_anchor"))
+	return (pole_anchors.get(resolved_anchor_id, {}) as Dictionary).duplicate(true)
 
 func get_cast_origin_anchor(anchor_id: String = "") -> Dictionary:
 	_refresh_contracts()
 	var cast_anchors: Dictionary = _fishing_contract.get("cast_origins", {})
 	var resolved_anchor_id := anchor_id.strip_edges()
 	if resolved_anchor_id == "":
-		resolved_anchor_id = str(_fishing_contract.get("cast_origin_anchor_id", ""))
+		resolved_anchor_id = str(_fishing_contract.get("cast_origin_anchor_id", "cast_origin_main"))
 	return (cast_anchors.get(resolved_anchor_id, {}) as Dictionary).duplicate(true)
 
 func get_bite_zone(zone_id: String = "") -> Dictionary:
@@ -65,21 +62,20 @@ func get_bite_zone(zone_id: String = "") -> Dictionary:
 	var resolved_zone_id := zone_id.strip_edges()
 	if resolved_zone_id == "":
 		var bite_zone_ids: Array = _fishing_contract.get("bite_zone_ids", [])
-		resolved_zone_id = str(bite_zone_ids[0]) if not bite_zone_ids.is_empty() else ""
+		resolved_zone_id = str(bite_zone_ids[0]) if not bite_zone_ids.is_empty() else "bite_zone_main"
 	return (bite_zones.get(resolved_zone_id, {}) as Dictionary).duplicate(true)
 
 func sync_fishing_state(state: Dictionary) -> void:
 	_runtime_state = state.duplicate(true)
-	_refresh_contracts()
-	_resolve_match_start_ring()
-	if _match_start_ring != null and is_instance_valid(_match_start_ring):
-		_match_start_ring.set_marker_visible(bool(state.get("start_ring_visible", true)))
-		_match_start_ring.set_marker_world_position(_match_start_contract.get("world_position", global_position))
+	_resolve_runtime_visuals()
+	_apply_runtime_visual_state()
 
-func is_world_point_in_match_start_ring(world_position: Vector3) -> bool:
+func is_world_point_in_pole_interaction_range(world_position: Vector3) -> bool:
 	_refresh_contracts()
-	var start_world_position: Vector3 = _match_start_contract.get("world_position", global_position)
-	return world_position.distance_squared_to(start_world_position) <= pow(float(_match_start_contract.get("trigger_radius_m", 4.5)), 2.0)
+	var pole_anchor: Dictionary = get_pole_anchor()
+	var pole_world_position: Vector3 = pole_anchor.get("world_position", global_position)
+	var radius_m := maxf(float(_fishing_contract.get("pole_interaction_radius_m", DEFAULT_POLE_INTERACTION_RADIUS_M)), 1.5)
+	return world_position.distance_squared_to(pole_world_position) <= radius_m * radius_m
 
 func is_world_point_in_play_bounds(world_position: Vector3) -> bool:
 	_refresh_contracts()
@@ -95,22 +91,21 @@ func is_world_point_in_release_bounds(world_position: Vector3) -> bool:
 	var local_center: Vector3 = play_bounds.get("local_center", Vector3.ZERO)
 	var local_position := to_local(world_position) - local_center
 	var half_extents: Vector2 = play_bounds.get("half_extents_m", PLAY_HALF_EXTENTS_M)
-	var release_buffer_m := float(_fishing_contract.get("release_buffer_m", 32.0))
+	var release_buffer_m := float(_fishing_contract.get("release_buffer_m", DEFAULT_RELEASE_BUFFER_M))
 	return absf(local_position.x) <= half_extents.x + release_buffer_m and absf(local_position.z) <= half_extents.y + release_buffer_m
 
 func _refresh_contracts() -> void:
 	if _entry.is_empty():
 		return
-	var seat_anchor_ids: Array = (_entry.get("seat_anchor_ids", []) as Array).duplicate(true)
-	var bite_zone_ids: Array = (_entry.get("bite_zone_ids", []) as Array).duplicate(true)
-	var seat_anchor := _build_anchor_contract("seat_main", get_node_or_null("SeatAnchorMain") as Node3D)
+	var pole_anchor := _build_anchor_contract("pole_rest_anchor", get_node_or_null("FishingPoleRestAnchor") as Node3D)
 	var cast_origin := _build_anchor_contract("cast_origin_main", get_node_or_null("CastOriginMain") as Node3D)
 	var bite_zone := _build_anchor_contract("bite_zone_main", get_node_or_null("BiteZoneMain") as Node3D)
 	var play_center_node := get_node_or_null("PlayAreaCenter") as Node3D
 	var play_center_local := play_center_node.position if play_center_node != null else Vector3(0.0, 0.0, -36.0)
+	var bite_zone_ids: Array = (_entry.get("bite_zone_ids", []) as Array).duplicate(true)
 	_fishing_contract = _entry.duplicate(true)
-	_fishing_contract["seat_anchors"] = {
-		"seat_main": seat_anchor,
+	_fishing_contract["pole_anchors"] = {
+		"pole_rest_anchor": pole_anchor,
 	}
 	_fishing_contract["cast_origins"] = {
 		"cast_origin_main": cast_origin,
@@ -118,40 +113,56 @@ func _refresh_contracts() -> void:
 	_fishing_contract["bite_zones"] = {
 		"bite_zone_main": bite_zone,
 	}
-	_fishing_contract["seat_anchor_ids"] = seat_anchor_ids if not seat_anchor_ids.is_empty() else ["seat_main"]
+	_fishing_contract["pole_anchor_id"] = str(_entry.get("pole_anchor_id", "pole_rest_anchor"))
 	_fishing_contract["cast_origin_anchor_id"] = str(_entry.get("cast_origin_anchor_id", "cast_origin_main"))
 	_fishing_contract["bite_zone_ids"] = bite_zone_ids if not bite_zone_ids.is_empty() else ["bite_zone_main"]
+	_fishing_contract["pole_interaction_radius_m"] = maxf(float(_entry.get("pole_interaction_radius_m", DEFAULT_POLE_INTERACTION_RADIUS_M)), 1.5)
 	_fishing_contract["play_bounds"] = {
 		"local_center": play_center_local,
 		"world_center": _to_world_point(play_center_local),
 		"half_extents_m": PLAY_HALF_EXTENTS_M,
-		"release_buffer_m": float(_entry.get("release_buffer_m", 32.0)),
-	}
-	var seat_world_position: Vector3 = seat_anchor.get("world_position", _to_world_point(Vector3.ZERO))
-	_match_start_contract = {
-		"theme_id": "task_available_start",
-		"family_id": "city_world_ring_marker",
-		"trigger_radius_m": float(_entry.get("trigger_radius_m", 4.5)),
-		"world_position": seat_world_position,
-		"visible": not bool(_runtime_state.get("fishing_mode_active", false)),
+		"release_buffer_m": float(_entry.get("release_buffer_m", DEFAULT_RELEASE_BUFFER_M)),
 	}
 
-func _resolve_match_start_ring() -> void:
-	if _match_start_ring != null and is_instance_valid(_match_start_ring):
-		return
-	_match_start_ring = get_node_or_null("MatchStartRing") as Node3D
+func _resolve_runtime_visuals() -> void:
+	if _pole_visual == null or not is_instance_valid(_pole_visual):
+		_pole_visual = get_node_or_null("FishingPoleRestAnchor/FishingPoleVisual") as Node3D
+	if _bobber_visual == null or not is_instance_valid(_bobber_visual):
+		_bobber_visual = get_node_or_null("FishingBobberVisual") as Node3D
+	if _line_visual == null or not is_instance_valid(_line_visual):
+		_line_visual = get_node_or_null("FishingLineVisual") as Node3D
 
-func _sync_match_start_ring() -> void:
-	if not is_inside_tree():
-		return
-	_resolve_match_start_ring()
-	if _match_start_ring == null or not is_instance_valid(_match_start_ring):
-		return
-	_refresh_contracts()
-	_match_start_ring.set_marker_theme(str(_match_start_contract.get("theme_id", "task_available_start")))
-	_match_start_ring.set_marker_radius(float(_match_start_contract.get("trigger_radius_m", 4.5)))
-	_match_start_ring.set_marker_world_position(_match_start_contract.get("world_position", global_position))
-	_match_start_ring.set_marker_visible(bool(_match_start_contract.get("visible", true)))
+func _apply_runtime_visual_state() -> void:
+	_resolve_runtime_visuals()
+	var pole_equipped := bool(_runtime_state.get("pole_equipped", false))
+	if _pole_visual != null and is_instance_valid(_pole_visual):
+		_pole_visual.visible = not pole_equipped
+	var bite_zone_world_position: Vector3 = get_bite_zone().get("world_position", global_position)
+	var bobber_world_position: Vector3 = _runtime_state.get("bobber_world_position", bite_zone_world_position)
+	var bobber_visible := bool(_runtime_state.get("bobber_visible", false))
+	var bite_feedback_active := bool(_runtime_state.get("bobber_bite_feedback_active", false))
+	var animated_bobber_world_position := _resolve_bobber_world_position(bobber_world_position, bite_feedback_active)
+	if _bobber_visual != null and is_instance_valid(_bobber_visual):
+		if _bobber_visual.has_method("set_bobber_state"):
+			_bobber_visual.set_bobber_state(bobber_visible, animated_bobber_world_position, bite_feedback_active)
+		else:
+			_bobber_visual.visible = bobber_visible
+			_bobber_visual.global_position = animated_bobber_world_position
+	var line_visible := bool(_runtime_state.get("fishing_line_visible", false))
+	var line_start_world_position: Vector3 = _runtime_state.get("line_start_world_position", get_cast_origin_anchor().get("world_position", global_position))
+	if _line_visual != null and is_instance_valid(_line_visual):
+		if _line_visual.has_method("set_line_state"):
+			_line_visual.set_line_state(line_visible, line_start_world_position, animated_bobber_world_position, 0.22)
+		else:
+			_line_visual.visible = line_visible
+
+func _resolve_bobber_world_position(base_world_position: Vector3, bite_feedback_active: bool) -> Vector3:
+	var resolved_world_position := base_world_position
+	if bite_feedback_active:
+		resolved_world_position.y += sin(_bobber_animation_time_sec * 18.0) * 0.18
+	else:
+		resolved_world_position.y += sin(_bobber_animation_time_sec * 2.4) * 0.02
+	return resolved_world_position
 
 func _build_anchor_contract(anchor_id: String, anchor_node: Node3D) -> Dictionary:
 	var local_position := anchor_node.position if anchor_node != null else Vector3.ZERO
@@ -200,11 +211,11 @@ func _load_default_entry() -> Dictionary:
 		"scene_root_offset": _decode_vector3(manifest.get("scene_root_offset", null)),
 		"scene_path": str(manifest.get("scene_path", "")),
 		"manifest_path": DEFAULT_MANIFEST_PATH,
-		"seat_anchor_ids": (manifest.get("seat_anchor_ids", []) as Array).duplicate(true),
+		"pole_anchor_id": str(manifest.get("pole_anchor_id", "")),
 		"cast_origin_anchor_id": str(manifest.get("cast_origin_anchor_id", "")),
 		"bite_zone_ids": (manifest.get("bite_zone_ids", []) as Array).duplicate(true),
-		"trigger_radius_m": float(manifest.get("trigger_radius_m", 4.5)),
-		"release_buffer_m": float(manifest.get("release_buffer_m", 32.0)),
+		"pole_interaction_radius_m": float(manifest.get("pole_interaction_radius_m", DEFAULT_POLE_INTERACTION_RADIUS_M)),
+		"release_buffer_m": float(manifest.get("release_buffer_m", DEFAULT_RELEASE_BUFFER_M)),
 		"full_map_pin": (manifest.get("full_map_pin", {}) as Dictionary).duplicate(true),
 		"yaw_rad": float(manifest.get("yaw_rad", 0.0)),
 	}

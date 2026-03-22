@@ -30,14 +30,12 @@
 	},
 	"scene_path": "res://city_game/serviceability/minigame_venues/generated/venue_v38_lakeside_fishing_chunk_147_181/lake_fishing_minigame_venue.tscn",
 	"manifest_path": "res://city_game/serviceability/minigame_venues/generated/venue_v38_lakeside_fishing_chunk_147_181/minigame_venue_manifest.json",
-	"seat_anchor_ids": [
-		"seat_main"
-	],
+	"pole_anchor_id": "pole_rest_anchor",
 	"cast_origin_anchor_id": "cast_origin_main",
 	"bite_zone_ids": [
 		"bite_zone_main"
 	],
-	"trigger_radius_m": 4.8,
+	"pole_interaction_radius_m": 3.6,
 	"release_buffer_m": 32.0,
 	"full_map_pin": {
 		"visible": true,

@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://city_game/scenes/labs/LakeFishingLab.gd" id="1_lab_script"]
 [ext_resource type="Script" path="res://city_game/scripts/PlayerController.gd" id="2_player_script"]
@@ -7,6 +7,7 @@
 [ext_resource type="ConcavePolygonShape3D" path="res://city_game/scenes/labs/generated/lake_fishing_lab_ground_shape.res" id="5_ground_shape_resource"]
 [ext_resource type="ArrayMesh" path="res://city_game/scenes/labs/generated/lake_fishing_lab_ground_mesh.res" id="6_ground_mesh_resource"]
 [ext_resource type="ArrayMesh" path="res://city_game/scenes/labs/generated/lake_fishing_lab_water_surface_mesh.res" id="7_water_mesh_resource"]
+[ext_resource type="PackedScene" path="res://city_game/assets/minigames/fishing/props/FishingPoleEquippedVisual.tscn" id="8_fishing_pole_equipped_scene"]
 
 [sub_resource type="Environment" id="1_lab_environment"]
 background_mode = 2
@@ -67,6 +68,12 @@ shape = SubResource("2_player_shape")
 [node name="Visual" type="MeshInstance3D" parent="Player"]
 position = Vector3(0, 0.9, 0)
 mesh = SubResource("3_player_mesh")
+
+[node name="FishingPoleHoldAnchor" type="Node3D" parent="Player/Visual"]
+position = Vector3(0.62, 0.36, -0.18)
+rotation_degrees = Vector3(18, 20, -18)
+
+[node name="FishingPoleEquippedVisual" parent="Player/Visual/FishingPoleHoldAnchor" instance=ExtResource("8_fishing_pole_equipped_scene")]
 
 [node name="CameraRig" type="Node3D" parent="Player"]
 position = Vector3(0, 1.35, 0)

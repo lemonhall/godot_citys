@@ -50,18 +50,30 @@ var _initial_player_position := Vector3.ZERO
 var _initial_player_rotation := Vector3.ZERO
 var _water_state: Dictionary = {}
 var _fish_school_summaries: Array = []
+var _last_fishing_feedback_token := 0
 
 func _ready() -> void:
 	_capture_initial_state()
 	_setup_runtimes()
 	_rebuild_fish_school_visuals()
+	_connect_player_fishing_input()
+	_sync_player_fishing_state()
 	_apply_hud_state()
 
 func _process(delta: float) -> void:
 	_update_lake_player_water_state()
 	if _fishing_runtime != null and _fishing_runtime.has_method("update_direct"):
 		_fishing_runtime.update_direct(venue_root, player, delta)
+	_sync_player_fishing_state()
 	_apply_hud_state()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_E:
+			var interaction_result: Dictionary = request_fishing_primary_interaction()
+			if bool(interaction_result.get("handled", false)):
+				get_viewport().set_input_as_handled()
 
 func get_lake_player_water_state() -> Dictionary:
 	return _water_state.duplicate(true)
@@ -80,7 +92,39 @@ func get_fishing_runtime_state() -> Dictionary:
 func request_fishing_primary_interaction() -> Dictionary:
 	if _fishing_runtime == null or not _fishing_runtime.has_method("handle_primary_interaction_direct"):
 		return {"success": false, "error": "runtime_unavailable"}
-	return _fishing_runtime.handle_primary_interaction_direct(venue_root, player)
+	var result: Dictionary = _fishing_runtime.handle_primary_interaction_direct(venue_root, player)
+	_sync_player_fishing_state()
+	_apply_hud_state()
+	return result
+
+func set_fishing_cast_preview_active(active: bool) -> Dictionary:
+	if player != null and player.has_method("set_fishing_cast_preview_active"):
+		player.set_fishing_cast_preview_active(active)
+	if _fishing_runtime == null or not _fishing_runtime.has_method("set_cast_preview_active_direct"):
+		return {"success": false, "error": "runtime_unavailable"}
+	var result: Dictionary = _fishing_runtime.set_cast_preview_active_direct(venue_root, player, active, _get_player_fishing_preview_state())
+	if not bool(result.get("success", false)) and player != null and player.has_method("set_fishing_cast_preview_active"):
+		player.set_fishing_cast_preview_active(false)
+	_sync_player_fishing_state()
+	_apply_hud_state()
+	return result
+
+func request_fishing_cast_action() -> Dictionary:
+	if _fishing_runtime == null or not _fishing_runtime.has_method("request_cast_action_direct"):
+		return {"success": false, "error": "runtime_unavailable"}
+	var result: Dictionary = _fishing_runtime.request_cast_action_direct(venue_root, player, _get_player_fishing_preview_state())
+	if bool(result.get("success", false)) and str(result.get("action", "")) == "cast_started":
+		if player != null and player.has_method("play_fishing_cast_swing"):
+			player.play_fishing_cast_swing()
+		if player != null and player.has_method("set_fishing_cast_preview_active"):
+			player.set_fishing_cast_preview_active(false)
+	_sync_player_fishing_state()
+	_apply_hud_state()
+	return result
+
+func debug_set_fishing_bite_delay_override(seconds: float) -> void:
+	if _fishing_runtime != null and _fishing_runtime.has_method("debug_set_bite_delay_override"):
+		_fishing_runtime.debug_set_bite_delay_override(seconds)
 
 func reset_lab_state() -> void:
 	if _fishing_runtime != null and _fishing_runtime.has_method("reset_runtime_state"):
@@ -92,7 +136,17 @@ func reset_lab_state() -> void:
 			(player as CharacterBody3D).velocity = Vector3.ZERO
 		if player.has_method("set_movement_locked"):
 			player.set_movement_locked(false)
+		if player.has_method("set_fishing_mode_enabled"):
+			player.set_fishing_mode_enabled(false)
+		if player.has_method("set_fishing_pole_equipped_visible"):
+			player.set_fishing_pole_equipped_visible(false)
+		if player.has_method("set_fishing_cast_preview_active"):
+			player.set_fishing_cast_preview_active(false)
+	_last_fishing_feedback_token = 0
+	if hud != null and hud.has_method("clear_focus_message"):
+		hud.clear_focus_message()
 	_update_lake_player_water_state()
+	_sync_player_fishing_state()
 	_apply_hud_state()
 
 func find_scene_minigame_venue_node(venue_id: String) -> Node3D:
@@ -121,6 +175,24 @@ func _setup_runtimes() -> void:
 		})
 	_fishing_runtime.set_lake_context(_terrain_region_feature_runtime, _fish_school_runtime_adapter)
 	_update_lake_player_water_state()
+
+func _connect_player_fishing_input() -> void:
+	if player == null:
+		return
+	if player.has_signal("fishing_preview_toggled"):
+		var preview_callable := Callable(self, "_on_player_fishing_preview_toggled")
+		if not player.fishing_preview_toggled.is_connected(preview_callable):
+			player.fishing_preview_toggled.connect(preview_callable)
+	if player.has_signal("fishing_cast_action_requested"):
+		var cast_callable := Callable(self, "_on_player_fishing_cast_action_requested")
+		if not player.fishing_cast_action_requested.is_connected(cast_callable):
+			player.fishing_cast_action_requested.connect(cast_callable)
+
+func _on_player_fishing_preview_toggled(active: bool) -> void:
+	set_fishing_cast_preview_active(active)
+
+func _on_player_fishing_cast_action_requested() -> void:
+	request_fishing_cast_action()
 
 func _capture_initial_state() -> void:
 	if player == null:
@@ -167,6 +239,22 @@ func _rebuild_fish_school_visuals() -> void:
 		if fish_actor.has_method("configure_school_visual"):
 			fish_actor.configure_school_visual(school)
 
+func _sync_player_fishing_state() -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	var runtime_state := get_fishing_runtime_state()
+	var bite_zone: Dictionary = venue_root.get_bite_zone() if venue_root != null and venue_root.has_method("get_bite_zone") else {}
+	var bite_zone_world_position: Vector3 = bite_zone.get("world_position", Vector3.ZERO)
+	if player.has_method("set_fishing_mode_enabled"):
+		player.set_fishing_mode_enabled(bool(runtime_state.get("fishing_mode_active", false)), bite_zone_world_position.y)
+	if player.has_method("set_fishing_pole_equipped_visible"):
+		player.set_fishing_pole_equipped_visible(bool(runtime_state.get("pole_equipped", false)))
+
+func _get_player_fishing_preview_state() -> Dictionary:
+	if player != null and player.has_method("get_fishing_preview_state"):
+		return player.get_fishing_preview_state()
+	return {}
+
 func _apply_hud_state() -> void:
 	if hud == null:
 		return
@@ -188,3 +276,18 @@ func _apply_hud_state() -> void:
 		hud.set_fishing_hud_state(_fishing_runtime.get_match_hud_state())
 	if hud.has_method("set_interaction_prompt_state") and _fishing_runtime != null and _fishing_runtime.has_method("get_primary_interaction_state"):
 		hud.set_interaction_prompt_state(_fishing_runtime.get_primary_interaction_state(player))
+	_apply_fishing_feedback()
+
+func _apply_fishing_feedback() -> void:
+	if hud == null or _fishing_runtime == null or not _fishing_runtime.has_method("get_state"):
+		return
+	var runtime_state: Dictionary = _fishing_runtime.get_state()
+	var feedback_token := int(runtime_state.get("feedback_event_token", 0))
+	if feedback_token <= 0 or feedback_token == _last_fishing_feedback_token:
+		return
+	_last_fishing_feedback_token = feedback_token
+	var feedback_text := str(runtime_state.get("feedback_event_text", "")).strip_edges()
+	if feedback_text == "":
+		return
+	if hud.has_method("set_focus_message"):
+		hud.set_focus_message(feedback_text, 1.8)

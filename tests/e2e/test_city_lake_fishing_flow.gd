@@ -21,25 +21,34 @@ func _run() -> void:
 	var player := world.get_node_or_null("Player")
 	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "Lake fishing flow requires Player teleport API"):
 		return
+	if not T.require_true(self, world.has_method("set_fishing_cast_preview_active"), "Lake fishing flow requires shared cast-preview control on CityPrototype"):
+		return
+	if not T.require_true(self, world.has_method("request_fishing_cast_action"), "Lake fishing flow requires shared cast-action control on CityPrototype"):
+		return
+	if not T.require_true(self, world.has_method("debug_set_fishing_bite_delay_override"), "Lake fishing flow requires deterministic bite-delay override on CityPrototype"):
+		return
 	var mounted_venue: Node3D = await _wait_for_mounted_venue_after_teleport(world, player)
-	if not T.require_true(self, mounted_venue != null and mounted_venue.has_method("get_seat_anchor"), "Lake fishing flow requires the mounted fishing venue"):
+	if not T.require_true(self, mounted_venue != null and mounted_venue.has_method("get_pole_anchor"), "Lake fishing flow requires the mounted fishing venue"):
 		return
 
-	var seat_anchor: Dictionary = mounted_venue.get_seat_anchor("seat_main")
-	player.teleport_to_world_position(seat_anchor.get("world_position", Vector3.ZERO) + Vector3.UP * 1.2)
-	if not T.require_true(self, bool(world.handle_primary_interaction().get("success", false)), "Lake fishing flow must seat the player through the shared interaction entrypoint"):
+	var pole_anchor: Dictionary = mounted_venue.get_pole_anchor()
+	player.teleport_to_world_position(pole_anchor.get("world_position", Vector3.ZERO) + Vector3.UP * 1.2)
+	if not T.require_true(self, bool(world.handle_primary_interaction().get("success", false)), "Lake fishing flow must let the player pick up the pole through the shared interaction entrypoint"):
 		return
-	if not T.require_true(self, bool(world.handle_primary_interaction().get("success", false)), "Lake fishing flow must start a cast through the shared interaction entrypoint"):
+	world.debug_set_fishing_bite_delay_override(0.05)
+	if not T.require_true(self, bool(world.set_fishing_cast_preview_active(true).get("success", false)), "Lake fishing flow must let the player enter cast preview before throwing the bobber"):
 		return
-	var runtime_state: Dictionary = await _wait_for_cast_state(world, "bite_window")
-	if not T.require_true(self, str(runtime_state.get("cast_state", "")) == "bite_window", "Lake fishing flow must reach bite_window in the main world"):
+	if not T.require_true(self, bool(world.request_fishing_cast_action().get("success", false)), "Lake fishing flow must start a cast through the dedicated cast action entrypoint"):
 		return
-	if not T.require_true(self, bool(world.handle_primary_interaction().get("success", false)), "Lake fishing flow must resolve the catch through the shared interaction entrypoint"):
+	var runtime_state: Dictionary = await _wait_for_cast_state(world, "bite_ready")
+	if not T.require_true(self, str(runtime_state.get("cast_state", "")) == "bite_ready", "Lake fishing flow must reach bite_ready in the main world"):
+		return
+	if not T.require_true(self, bool(world.request_fishing_cast_action().get("success", false)), "Lake fishing flow must resolve the catch through the dedicated cast action entrypoint"):
 		return
 	runtime_state = world.get_fishing_venue_runtime_state()
 	if not T.require_true(self, str(runtime_state.get("last_catch_result", {}).get("result", "")) == "caught", "Lake fishing flow must preserve the caught result in the world runtime snapshot"):
 		return
-	if not T.require_true(self, bool(world.handle_primary_interaction().get("success", false)), "Lake fishing flow must allow reset after catch resolution in the main world"):
+	if not T.require_true(self, bool(world.handle_primary_interaction().get("success", false)), "Lake fishing flow must allow the player to put the pole back with E in the main world"):
 		return
 	runtime_state = world.get_fishing_venue_runtime_state()
 	if not T.require_true(self, str(runtime_state.get("cast_state", "")) == "idle", "Lake fishing flow must return the main-world fishing runtime to idle after reset"):

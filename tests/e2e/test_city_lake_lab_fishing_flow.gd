@@ -20,24 +20,33 @@ func _run() -> void:
 	var venue := lab.get_node_or_null("VenueRoot") as Node3D
 	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "Lake lab fishing flow requires Player teleport API"):
 		return
-	if not T.require_true(self, venue != null and venue.has_method("get_seat_anchor"), "Lake lab fishing flow requires the authored seat anchor contract"):
+	if not T.require_true(self, venue != null and venue.has_method("get_pole_anchor"), "Lake lab fishing flow requires the authored fishing pole anchor contract"):
 		return
-	var seat_anchor: Dictionary = venue.get_seat_anchor("seat_main")
-	player.teleport_to_world_position(seat_anchor.get("world_position", Vector3.ZERO) + Vector3.UP * 1.2)
+	if not T.require_true(self, lab.has_method("set_fishing_cast_preview_active"), "Lake lab fishing flow requires direct cast-preview control in the lab wrapper"):
+		return
+	if not T.require_true(self, lab.has_method("request_fishing_cast_action"), "Lake lab fishing flow requires direct cast-action control in the lab wrapper"):
+		return
+	if not T.require_true(self, lab.has_method("debug_set_fishing_bite_delay_override"), "Lake lab fishing flow requires deterministic bite-delay override for focused regression"):
+		return
+	var pole_anchor: Dictionary = venue.get_pole_anchor()
+	player.teleport_to_world_position(pole_anchor.get("world_position", Vector3.ZERO) + Vector3.UP * 1.2)
 
-	if not T.require_true(self, bool(lab.request_fishing_primary_interaction().get("success", false)), "Lake lab fishing flow must seat the player first"):
+	if not T.require_true(self, bool(lab.request_fishing_primary_interaction().get("success", false)), "Lake lab fishing flow must let the player pick up the authored pole first"):
 		return
-	if not T.require_true(self, bool(lab.request_fishing_primary_interaction().get("success", false)), "Lake lab fishing flow must allow a cast after seating"):
+	lab.debug_set_fishing_bite_delay_override(0.05)
+	if not T.require_true(self, bool(lab.set_fishing_cast_preview_active(true).get("success", false)), "Lake lab fishing flow must let the player enter cast preview before throwing the bobber"):
 		return
-	var runtime_state: Dictionary = await _wait_for_cast_state(lab, "bite_window")
-	if not T.require_true(self, str(runtime_state.get("cast_state", "")) == "bite_window", "Lake lab fishing flow must reach bite_window before reeling"):
+	if not T.require_true(self, bool(lab.request_fishing_cast_action().get("success", false)), "Lake lab fishing flow must allow a cast through the dedicated cast action entrypoint"):
 		return
-	if not T.require_true(self, bool(lab.request_fishing_primary_interaction().get("success", false)), "Lake lab fishing flow must resolve the catch from the bite window"):
+	var runtime_state: Dictionary = await _wait_for_cast_state(lab, "bite_ready")
+	if not T.require_true(self, str(runtime_state.get("cast_state", "")) == "bite_ready", "Lake lab fishing flow must reach bite_ready before reeling"):
+		return
+	if not T.require_true(self, bool(lab.request_fishing_cast_action().get("success", false)), "Lake lab fishing flow must resolve the catch through the cast action entrypoint"):
 		return
 	runtime_state = lab.get_fishing_runtime_state()
 	if not T.require_true(self, str(runtime_state.get("last_catch_result", {}).get("result", "")) == "caught", "Lake lab fishing flow must finish with a caught result"):
 		return
-	if not T.require_true(self, bool(lab.request_fishing_primary_interaction().get("success", false)), "Lake lab fishing flow must allow reset after catch resolution"):
+	if not T.require_true(self, bool(lab.request_fishing_primary_interaction().get("success", false)), "Lake lab fishing flow must allow the player to put the pole back with E after catching a fish"):
 		return
 	runtime_state = lab.get_fishing_runtime_state()
 	if not T.require_true(self, str(runtime_state.get("cast_state", "")) == "idle", "Lake lab fishing flow must return to idle after reset"):

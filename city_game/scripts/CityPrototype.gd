@@ -280,6 +280,7 @@ var _soccer_venue_runtime = null
 var _tennis_venue_runtime = null
 var _missile_command_venue_runtime = null
 var _fishing_venue_runtime = null
+var _last_fishing_feedback_token := 0
 var _music_road_runtime = null
 var _music_road_runtime_time_sec := 0.0
 var _lake_player_water_state := {
@@ -1602,6 +1603,14 @@ func _connect_player_combat() -> void:
 		var ads_callable := Callable(self, "_on_player_aim_down_sights_changed")
 		if not player.aim_down_sights_changed.is_connected(ads_callable):
 			player.aim_down_sights_changed.connect(ads_callable)
+	if player.has_signal("fishing_preview_toggled"):
+		var fishing_preview_callable := Callable(self, "_on_player_fishing_preview_toggled")
+		if not player.fishing_preview_toggled.is_connected(fishing_preview_callable):
+			player.fishing_preview_toggled.connect(fishing_preview_callable)
+	if player.has_signal("fishing_cast_action_requested"):
+		var fishing_cast_callable := Callable(self, "_on_player_fishing_cast_action_requested")
+		if not player.fishing_cast_action_requested.is_connected(fishing_cast_callable):
+			player.fishing_cast_action_requested.connect(fishing_cast_callable)
 
 func _on_player_primary_fire_requested() -> void:
 	fire_player_projectile()
@@ -1620,6 +1629,12 @@ func _on_player_weapon_mode_changed(_weapon_mode: String) -> void:
 
 func _on_player_aim_down_sights_changed(_is_active: bool) -> void:
 	_refresh_hud_status({}, true)
+
+func _on_player_fishing_preview_toggled(active: bool) -> void:
+	set_fishing_cast_preview_active(active)
+
+func _on_player_fishing_cast_action_requested() -> void:
+	request_fishing_cast_action()
 
 func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 	_ensure_combat_roots()
@@ -2236,12 +2251,16 @@ func _build_default_fishing_hud_state() -> Dictionary:
 	return {
 		"visible": false,
 		"fishing_mode_active": false,
+		"pole_equipped": false,
 		"cast_state": "idle",
-		"bite_window_active": false,
 		"target_school_id": "",
 		"last_catch_result": {},
-		"active_seat_id": "",
 		"display_name": "Lakeside Fishing",
+		"state_text": "按 E 拿起鱼竿",
+		"result_text": "",
+		"feedback_event_token": 0,
+		"feedback_event_text": "",
+		"feedback_event_tone": "neutral",
 	}
 
 func get_soccer_venue_runtime_state() -> Dictionary:
@@ -2293,6 +2312,35 @@ func get_fishing_primary_interaction_state() -> Dictionary:
 			"distance_m": 0.0,
 		}
 	return _fishing_venue_runtime.get_primary_interaction_state(player)
+
+func set_fishing_cast_preview_active(active: bool) -> Dictionary:
+	if player != null and player.has_method("set_fishing_cast_preview_active"):
+		player.set_fishing_cast_preview_active(active)
+	if _fishing_venue_runtime == null or not _fishing_venue_runtime.has_method("set_cast_preview_active"):
+		return {"success": false, "error": "missing_fishing_runtime"}
+	var result: Dictionary = _fishing_venue_runtime.set_cast_preview_active(chunk_renderer, player, active, _get_player_fishing_preview_state())
+	if not bool(result.get("success", false)) and player != null and player.has_method("set_fishing_cast_preview_active"):
+		player.set_fishing_cast_preview_active(false)
+	_sync_player_fishing_state()
+	_apply_fishing_feedback_from_state(get_fishing_venue_runtime_state())
+	return result
+
+func request_fishing_cast_action() -> Dictionary:
+	if _fishing_venue_runtime == null or not _fishing_venue_runtime.has_method("request_cast_action"):
+		return {"success": false, "error": "missing_fishing_runtime"}
+	var result: Dictionary = _fishing_venue_runtime.request_cast_action(chunk_renderer, player, _get_player_fishing_preview_state())
+	if bool(result.get("success", false)) and str(result.get("action", "")) == "cast_started":
+		if player != null and player.has_method("play_fishing_cast_swing"):
+			player.play_fishing_cast_swing()
+		if player != null and player.has_method("set_fishing_cast_preview_active"):
+			player.set_fishing_cast_preview_active(false)
+	_sync_player_fishing_state()
+	_apply_fishing_feedback_from_state(get_fishing_venue_runtime_state())
+	return result
+
+func debug_set_fishing_bite_delay_override(seconds: float) -> void:
+	if _fishing_venue_runtime != null and _fishing_venue_runtime.has_method("debug_set_bite_delay_override"):
+		_fishing_venue_runtime.debug_set_bite_delay_override(seconds)
 
 func is_ambient_simulation_frozen() -> bool:
 	if chunk_renderer != null and chunk_renderer.has_method("is_ambient_simulation_frozen"):
@@ -3738,8 +3786,52 @@ func _handle_fishing_primary_interaction() -> Dictionary:
 		}
 	var interaction_result: Dictionary = _fishing_venue_runtime.handle_primary_interaction(chunk_renderer, player)
 	if bool(interaction_result.get("handled", false)):
+		_sync_player_fishing_state()
+		_apply_fishing_feedback_from_state(get_fishing_venue_runtime_state())
 		_update_npc_interaction_system()
 	return interaction_result
+
+func _get_player_fishing_preview_state() -> Dictionary:
+	if player != null and player.has_method("get_fishing_preview_state"):
+		return player.get_fishing_preview_state()
+	return {}
+
+func _resolve_active_fishing_venue_node() -> Node3D:
+	if chunk_renderer == null or not chunk_renderer.has_method("find_scene_minigame_venue_node"):
+		return null
+	var runtime_state := get_fishing_venue_runtime_state()
+	var venue_id := str(runtime_state.get("active_venue_id", "")).strip_edges()
+	if venue_id == "":
+		return null
+	return chunk_renderer.find_scene_minigame_venue_node(venue_id) as Node3D
+
+func _sync_player_fishing_state(runtime_state: Dictionary = {}) -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	if runtime_state.is_empty():
+		runtime_state = get_fishing_venue_runtime_state()
+	var active_venue := _resolve_active_fishing_venue_node()
+	var bite_zone_world_position := Vector3.ZERO
+	if active_venue != null and active_venue.has_method("get_bite_zone"):
+		var bite_zone: Dictionary = active_venue.get_bite_zone()
+		bite_zone_world_position = bite_zone.get("world_position", Vector3.ZERO)
+	if player.has_method("set_fishing_mode_enabled"):
+		player.set_fishing_mode_enabled(bool(runtime_state.get("fishing_mode_active", false)), bite_zone_world_position.y)
+	if player.has_method("set_fishing_pole_equipped_visible"):
+		player.set_fishing_pole_equipped_visible(bool(runtime_state.get("pole_equipped", false)))
+
+func _apply_fishing_feedback_from_state(runtime_state: Dictionary) -> void:
+	if hud == null:
+		return
+	var feedback_token := int(runtime_state.get("feedback_event_token", 0))
+	if feedback_token <= 0 or feedback_token == _last_fishing_feedback_token:
+		return
+	_last_fishing_feedback_token = feedback_token
+	var feedback_text := str(runtime_state.get("feedback_event_text", "")).strip_edges()
+	if feedback_text == "":
+		return
+	if hud.has_method("set_focus_message"):
+		hud.set_focus_message(feedback_text, 1.8)
 
 func _handle_npc_primary_interaction() -> Dictionary:
 	if _npc_interaction_runtime == null or not _npc_interaction_runtime.has_method("get_active_contract"):
@@ -5145,6 +5237,7 @@ func _update_minigame_venue_runtimes(delta: float) -> void:
 		missile_command_runtime_state = _missile_command_venue_runtime.update(chunk_renderer, player, delta)
 	if _fishing_venue_runtime != null and _fishing_venue_runtime.has_method("update"):
 		fishing_runtime_state = _fishing_venue_runtime.update(chunk_renderer, player, delta)
+	_sync_player_fishing_state(fishing_runtime_state)
 	var ambient_simulation_frozen := bool(soccer_runtime_state.get("ambient_simulation_frozen", false)) \
 		or bool(tennis_runtime_state.get("ambient_simulation_frozen", false)) \
 		or bool(missile_command_runtime_state.get("ambient_simulation_frozen", false)) \
@@ -5171,6 +5264,7 @@ func _update_minigame_venue_runtimes(delta: float) -> void:
 		if fishing_hud_state.is_empty():
 			fishing_hud_state = _build_default_fishing_hud_state()
 		hud.set_fishing_hud_state(fishing_hud_state)
+	_apply_fishing_feedback_from_state(fishing_runtime_state)
 	if hud != null and hud.has_method("set_crosshair_state"):
 		hud.set_crosshair_state(_build_crosshair_state())
 

@@ -1,8 +1,9 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://city_game/serviceability/minigame_venues/generated/venue_v38_lakeside_fishing_chunk_147_181/LakeFishingMinigameVenue.gd" id="1_venue_script"]
-[ext_resource type="Script" path="res://city_game/world/navigation/CityWorldRingMarker.gd" id="2_ring_script"]
 [ext_resource type="PackedScene" path="res://city_game/assets/minigames/fishing/props/FishingPoleVisual.tscn" id="3_pole_visual"]
+[ext_resource type="PackedScene" path="res://city_game/assets/minigames/fishing/props/FishingBobberVisual.tscn" id="4_bobber_visual"]
+[ext_resource type="Script" path="res://city_game/assets/minigames/fishing/props/FishingLineVisual.gd" id="5_line_visual"]
 
 [sub_resource type="BoxShape3D" id="1_dock_shape"]
 size = Vector3(8, 0.5, 12)
@@ -27,20 +28,16 @@ shape = SubResource("1_dock_shape")
 mesh = SubResource("2_dock_mesh")
 material_override = SubResource("3_dock_material")
 
-[node name="SeatAnchorMain" type="Marker3D" parent="."]
-position = Vector3(0, 0, 0)
-
 [node name="FishingPoleRestAnchor" type="Node3D" parent="."]
 position = Vector3(0.86, 0.03, -2.64)
 rotation_degrees = Vector3(-74, -8, 18)
 
 [node name="FishingPoleVisual" parent="FishingPoleRestAnchor" instance=ExtResource("3_pole_visual")]
 
-[node name="MatchStartRing" type="Node3D" parent="."]
-visible = true
-script = ExtResource("2_ring_script")
-marker_theme_id = "task_available_start"
-marker_radius_m = 4.8
+[node name="FishingBobberVisual" parent="." instance=ExtResource("4_bobber_visual")]
+
+[node name="FishingLineVisual" type="Node3D" parent="."]
+script = ExtResource("5_line_visual")
 
 [node name="CastOriginMain" type="Marker3D" parent="."]
 position = Vector3(0, 1, -10)

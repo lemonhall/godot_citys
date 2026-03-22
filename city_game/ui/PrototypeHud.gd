@@ -132,12 +132,16 @@ var _missile_command_hud_state: Dictionary = {
 var _fishing_hud_state: Dictionary = {
 	"visible": false,
 	"fishing_mode_active": false,
+	"pole_equipped": false,
 	"cast_state": "idle",
-	"bite_window_active": false,
 	"target_school_id": "",
 	"last_catch_result": {},
-	"active_seat_id": "",
 	"display_name": "Lakeside Fishing",
+	"state_text": "按 E 拿起鱼竿",
+	"result_text": "",
+	"feedback_event_token": 0,
+	"feedback_event_text": "",
+	"feedback_event_tone": "neutral",
 }
 var _tennis_feedback_audio_player: AudioStreamPlayer = null
 var _tennis_feedback_audio_state: Dictionary = {
@@ -394,12 +398,16 @@ func set_fishing_hud_state(state: Dictionary) -> void:
 	var next_state := {
 		"visible": bool(state.get("visible", false)),
 		"fishing_mode_active": bool(state.get("fishing_mode_active", false)),
+		"pole_equipped": bool(state.get("pole_equipped", false)),
 		"cast_state": str(state.get("cast_state", "idle")),
-		"bite_window_active": bool(state.get("bite_window_active", false)),
 		"target_school_id": str(state.get("target_school_id", "")),
 		"last_catch_result": (state.get("last_catch_result", {}) as Dictionary).duplicate(true),
-		"active_seat_id": str(state.get("active_seat_id", "")),
 		"display_name": str(state.get("display_name", "Lakeside Fishing")),
+		"state_text": str(state.get("state_text", "")),
+		"result_text": str(state.get("result_text", "")),
+		"feedback_event_token": int(state.get("feedback_event_token", 0)),
+		"feedback_event_text": str(state.get("feedback_event_text", "")),
+		"feedback_event_tone": str(state.get("feedback_event_tone", "neutral")),
 	}
 	if next_state == _fishing_hud_state:
 		return
@@ -658,21 +666,18 @@ func _apply_fishing_hud_state() -> void:
 	if title_label != null:
 		title_label.text = str(_fishing_hud_state.get("display_name", "Lakeside Fishing")).to_upper()
 	if state_label != null:
-		var cast_state := str(_fishing_hud_state.get("cast_state", "idle")).to_upper()
-		if bool(_fishing_hud_state.get("bite_window_active", false)):
-			cast_state += "  BITE"
-		state_label.text = "STATE  %s" % cast_state
+		var state_text := str(_fishing_hud_state.get("state_text", "")).strip_edges()
+		if state_text == "":
+			state_text = str(_fishing_hud_state.get("cast_state", "idle")).to_upper()
+		state_label.text = state_text
 	if target_label != null:
 		var school_id := str(_fishing_hud_state.get("target_school_id", ""))
 		target_label.text = "TARGET  %s" % school_id if school_id != "" else "TARGET  WAITING"
 	if result_label != null:
-		var last_catch_result: Dictionary = _fishing_hud_state.get("last_catch_result", {})
-		var result_text := str(last_catch_result.get("result", "")).to_upper()
+		var result_text := str(_fishing_hud_state.get("result_text", "")).strip_edges()
 		if result_text == "":
-			result_label.text = "按 E 坐下 / 抛竿 / 收线"
-		else:
-			var school_id := str(last_catch_result.get("school_id", ""))
-			result_label.text = "RESULT  %s  %s" % [result_text, school_id]
+			result_text = "左键收杆 / E 放回"
+		result_label.text = result_text
 
 func _ensure_mouse_passthrough() -> void:
 	var root := get_node_or_null("Root") as Control

@@ -28,7 +28,9 @@ func _run() -> void:
 		return
 
 	var venue_scene_text := FileAccess.get_file_as_string(ProjectSettings.globalize_path(VENUE_SCENE_PATH))
-	if not T.require_true(self, venue_scene_text.find('[node name="MatchStartRing"') >= 0, "Lake fishing venue scene-first contract requires MatchStartRing to be authored in the venue scene so the green ring is editor-visible"):
+	if not T.require_true(self, venue_scene_text.find('[node name="FishingPoleRestAnchor"') >= 0, "Lake fishing venue scene-first contract requires FishingPoleRestAnchor to be authored in the venue scene so the pole entrypoint is editor-visible"):
+		return
+	if not T.require_true(self, venue_scene_text.find('[node name="MatchStartRing"') < 0, "Lake fishing venue scene-first contract must no longer author MatchStartRing after the pole-driven interaction rework"):
 		return
 
 	var lab := scene.instantiate() as Node3D
@@ -41,6 +43,9 @@ func _run() -> void:
 		"get_fish_school_summaries",
 		"get_fishing_runtime_state",
 		"request_fishing_primary_interaction",
+		"set_fishing_cast_preview_active",
+		"request_fishing_cast_action",
+		"debug_set_fishing_bite_delay_override",
 		"reset_lab_state",
 		"find_scene_minigame_venue_node",
 	]:
@@ -52,15 +57,18 @@ func _run() -> void:
 		"GroundBody/CollisionShape3D",
 		"GroundBody/MeshInstance3D",
 		"Player",
+		"Player/Visual/FishingPoleHoldAnchor",
+		"Player/Visual/FishingPoleHoldAnchor/FishingPoleEquippedVisual",
 		"Hud",
 		"LakeRoot",
 		"LakeRoot/WaterSurface",
 		"LakeRoot/WaterSurface/SurfaceMesh",
 		"LakeRoot/FishSchools",
 		"VenueRoot",
-		"VenueRoot/SeatAnchorMain",
+		"VenueRoot/FishingPoleRestAnchor",
 		"VenueRoot/CastOriginMain",
-		"VenueRoot/MatchStartRing",
+		"VenueRoot/FishingBobberVisual",
+		"VenueRoot/FishingLineVisual",
 	]:
 		if not T.require_true(self, lab.get_node_or_null(required_node_path) != null, "Lake fishing lab scene must author %s in the scene-first hierarchy" % required_node_path):
 			return
@@ -84,8 +92,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, venue_node.has_method("get_fishing_contract"), "Lake fishing venue scene must expose get_fishing_contract() for runtime reuse"):
 		return
-	var match_start_ring := venue_node.get_node_or_null("MatchStartRing")
-	if not T.require_true(self, match_start_ring != null and match_start_ring.has_method("set_marker_theme"), "Lake fishing venue scene-first contract requires the authored MatchStartRing node to preserve the shared ring marker API"):
+	if not T.require_true(self, venue_node.get_node_or_null("MatchStartRing") == null, "Lake fishing venue scene-first contract must no longer mount MatchStartRing after the pole-driven interaction rework"):
 		return
 	var venue_contract: Dictionary = venue_node.get_fishing_contract()
 	if not T.require_true(self, str(venue_contract.get("venue_id", "")) == VENUE_ID, "Lake fishing lab must preserve the formal venue_id on the mounted fishing venue"):

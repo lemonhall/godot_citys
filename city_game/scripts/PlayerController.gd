@@ -9,6 +9,8 @@ signal laser_designator_requested
 signal missile_launcher_requested
 signal weapon_mode_changed(weapon_mode: String)
 signal aim_down_sights_changed(is_active: bool)
+signal fishing_preview_toggled(is_active: bool)
+signal fishing_cast_action_requested
 
 const TRAVERSAL_MODE_GROUNDED := "grounded"
 const TRAVERSAL_MODE_AIRBORNE := "airborne"
@@ -44,6 +46,13 @@ const SPORTS_CAR_SPEED_MULTIPLIER := 2.0
 @export var grenade_throw_range_curve := 1.25
 @export var grenade_preview_step_sec := 0.08
 @export var grenade_preview_max_steps := 30
+@export var fishing_cast_gravity_mps2 := 20.0
+@export var fishing_cast_min_distance_m := 4.0
+@export var fishing_cast_max_distance_m := 28.0
+@export var fishing_cast_min_flight_time_sec := 0.22
+@export var fishing_cast_max_flight_time_sec := 1.2
+@export var fishing_preview_step_sec := 0.08
+@export var fishing_preview_max_steps := 24
 @export var ads_camera_local_position := Vector3(0.58, 2.05, 4.2)
 @export var ads_camera_fov := 42.0
 @export var ads_transition_speed := 8.0
@@ -155,6 +164,18 @@ var _drive_vehicle_visual_root: Node3D = null
 var _drive_vehicle_model_root: Node3D = null
 var _tennis_racket_visual: Node3D = null
 var _missile_launcher_visual: Node3D = null
+var _fishing_mode_enabled := false
+var _fishing_cast_surface_y_m := 0.0
+var _fishing_preview_requested := false
+var _fishing_pole_visual: Node3D = null
+var _fishing_preview_root: Node3D = null
+var _fishing_preview_ring: MeshInstance3D = null
+var _fishing_preview_dots: Array[MeshInstance3D] = []
+var _fishing_preview_state := {
+	"visible": false,
+	"landing_point": Vector3.ZERO,
+	"sample_count": 0,
+}
 var _lake_water_state := {
 	"in_water": false,
 	"underwater": false,
@@ -176,9 +197,12 @@ func _ready() -> void:
 	_ensure_traversal_fx_root()
 	_ensure_tennis_racket_visual()
 	_ensure_missile_launcher_visual()
+	_ensure_fishing_pole_visual()
 	set_tennis_racket_visible(false)
+	set_fishing_pole_equipped_visible(false)
 	_update_grenade_hold_visual()
 	_update_grenade_preview()
+	_update_fishing_preview()
 	_update_missile_launcher_visual()
 	floor_snap_length = _current_floor_snap_length()
 	if DisplayServer.get_name() != "headless":
@@ -192,6 +216,7 @@ func _process(delta: float) -> void:
 	_update_ads_camera(delta)
 	_update_traversal_fx(delta)
 	_update_grenade_preview()
+	_update_fishing_preview()
 	if _collision_resume_process_frames <= 0:
 		return
 	_collision_resume_process_frames -= 1
@@ -226,6 +251,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		camera_rig.rotation.x = _pitch
 	elif event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
+		if _fishing_mode_enabled:
+			if button.button_index == MOUSE_BUTTON_LEFT and button.pressed:
+				fishing_cast_action_requested.emit()
+			elif button.button_index == MOUSE_BUTTON_RIGHT:
+				set_fishing_cast_preview_active(button.pressed)
+				fishing_preview_toggled.emit(button.pressed)
+			if button.pressed and (button.button_index == MOUSE_BUTTON_LEFT or button.button_index == MOUSE_BUTTON_RIGHT):
+				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+			if button.button_index == MOUSE_BUTTON_LEFT or button.button_index == MOUSE_BUTTON_RIGHT:
+				return
 		if button.button_index == MOUSE_BUTTON_LEFT:
 			if _weapon_mode == WEAPON_MODE_RIFLE:
 				set_primary_fire_active(button.pressed)
@@ -370,6 +405,85 @@ func get_weapon_state() -> Dictionary:
 		"grenade_ready": _grenade_ready_active,
 		"aim_down_sights_active": _aim_down_sights_active,
 		"driving_vehicle": _driving_vehicle,
+		"fishing_mode_enabled": _fishing_mode_enabled,
+	}
+
+func set_fishing_mode_enabled(enabled: bool, cast_surface_y_m: float = 0.0) -> void:
+	var next_enabled := enabled and not _driving_vehicle
+	var surface_changed := not is_equal_approx(_fishing_cast_surface_y_m, cast_surface_y_m)
+	if _fishing_mode_enabled == next_enabled and (not next_enabled or not surface_changed):
+		_update_fishing_preview()
+		return
+	_fishing_mode_enabled = next_enabled
+	_fishing_cast_surface_y_m = cast_surface_y_m
+	if _fishing_mode_enabled:
+		_clear_transient_weapon_state()
+	else:
+		_fishing_preview_requested = false
+		_hide_fishing_preview_visual()
+		_fishing_preview_state = {
+			"visible": false,
+			"landing_point": Vector3.ZERO,
+			"sample_count": 0,
+		}
+	_update_missile_launcher_visual()
+	_update_fishing_preview()
+
+func is_fishing_mode_enabled() -> bool:
+	return _fishing_mode_enabled
+
+func set_fishing_pole_equipped_visible(should_show: bool) -> void:
+	_ensure_fishing_pole_visual()
+	if _fishing_pole_visual == null or not is_instance_valid(_fishing_pole_visual):
+		return
+	if _fishing_pole_visual.has_method("set_equipped_visible"):
+		_fishing_pole_visual.set_equipped_visible(should_show)
+	else:
+		_fishing_pole_visual.visible = should_show
+	if not should_show:
+		_fishing_preview_requested = false
+		_update_fishing_preview()
+
+func set_fishing_cast_preview_active(active: bool) -> void:
+	_fishing_preview_requested = active and _fishing_mode_enabled and _control_enabled and not _driving_vehicle
+	if not _fishing_preview_requested:
+		_hide_fishing_preview_visual()
+		_fishing_preview_state = {
+			"visible": false,
+			"landing_point": Vector3.ZERO,
+			"sample_count": 0,
+		}
+		return
+	_update_fishing_preview()
+
+func get_fishing_preview_state() -> Dictionary:
+	return _fishing_preview_state.duplicate(true)
+
+func play_fishing_cast_swing() -> void:
+	_ensure_fishing_pole_visual()
+	if _fishing_pole_visual == null or not is_instance_valid(_fishing_pole_visual):
+		return
+	if _fishing_pole_visual.has_method("play_cast_swing"):
+		_fishing_pole_visual.play_cast_swing()
+
+func get_fishing_tip_world_position() -> Vector3:
+	_ensure_fishing_pole_visual()
+	if _fishing_pole_visual != null and is_instance_valid(_fishing_pole_visual):
+		var tip_anchor := _fishing_pole_visual.get_node_or_null("MountRoot/TipAnchor") as Marker3D
+		if tip_anchor != null:
+			return tip_anchor.global_position
+		return _fishing_pole_visual.global_position
+	return global_position + Vector3.UP * 1.2
+
+func get_fishing_visual_state() -> Dictionary:
+	_ensure_fishing_pole_visual()
+	if _fishing_pole_visual != null and is_instance_valid(_fishing_pole_visual) and _fishing_pole_visual.has_method("get_visual_state"):
+		return _fishing_pole_visual.get_visual_state()
+	return {
+		"pole_present": false,
+		"equipped_visible": false,
+		"swing_active": false,
+		"swing_count": 0,
 	}
 
 func set_tennis_racket_visible(should_show: bool) -> void:
@@ -652,6 +766,14 @@ func is_grenade_ready_active() -> bool:
 
 func get_grenade_preview_state() -> Dictionary:
 	return _grenade_preview_state.duplicate(true)
+
+func get_fishing_cast_spawn_transform() -> Transform3D:
+	var aim_basis := _resolve_aim_basis()
+	return Transform3D(aim_basis, get_fishing_tip_world_position())
+
+func get_fishing_cast_launch_velocity() -> Vector3:
+	var cast_profile := _build_fishing_cast_profile()
+	return cast_profile.get("launch_velocity", Vector3.ZERO)
 
 func get_camera_fov_state() -> Dictionary:
 	return {
@@ -1352,7 +1474,7 @@ func _update_missile_launcher_visual() -> void:
 	_ensure_missile_launcher_visual()
 	if _missile_launcher_visual == null or not is_instance_valid(_missile_launcher_visual):
 		return
-	var should_show := _weapon_mode == WEAPON_MODE_MISSILE_LAUNCHER and _control_enabled and not _driving_vehicle
+	var should_show := _weapon_mode == WEAPON_MODE_MISSILE_LAUNCHER and _control_enabled and not _driving_vehicle and not _fishing_mode_enabled
 	if _missile_launcher_visual.has_method("set_equipped_visible"):
 		_missile_launcher_visual.set_equipped_visible(should_show)
 	else:
@@ -1436,7 +1558,7 @@ func _ensure_grenade_preview_visual() -> void:
 			_grenade_preview_dots.append(dot)
 
 func _update_grenade_hold_visual() -> void:
-	var should_show := _weapon_mode == WEAPON_MODE_GRENADE and _grenade_ready_active and _control_enabled
+	var should_show := _weapon_mode == WEAPON_MODE_GRENADE and _grenade_ready_active and _control_enabled and not _fishing_mode_enabled
 	if should_show and (_grenade_hold_visual == null or not is_instance_valid(_grenade_hold_visual)):
 		_ensure_grenade_hold_visual()
 	if _grenade_hold_visual == null or not is_instance_valid(_grenade_hold_visual):
@@ -1444,7 +1566,7 @@ func _update_grenade_hold_visual() -> void:
 	_grenade_hold_visual.visible = should_show
 
 func _update_grenade_preview() -> void:
-	var preview_visible := _weapon_mode == WEAPON_MODE_GRENADE and _grenade_ready_active and _control_enabled
+	var preview_visible := _weapon_mode == WEAPON_MODE_GRENADE and _grenade_ready_active and _control_enabled and not _fishing_mode_enabled
 	if not preview_visible:
 		if not bool(_grenade_preview_state.get("visible", false)):
 			return
@@ -1511,6 +1633,154 @@ func _build_grenade_preview_state() -> Dictionary:
 	return {
 		"points": points,
 		"landing_point": landing_point,
+	}
+
+func _ensure_fishing_pole_visual() -> void:
+	if _fishing_pole_visual != null and is_instance_valid(_fishing_pole_visual):
+		return
+	var visual_parent := player_visual if player_visual != null and is_instance_valid(player_visual) else self
+	var hold_anchor := visual_parent.get_node_or_null("FishingPoleHoldAnchor") as Node3D
+	if hold_anchor == null:
+		return
+	_fishing_pole_visual = hold_anchor.get_node_or_null("FishingPoleEquippedVisual") as Node3D
+
+func _ensure_fishing_preview_visual() -> void:
+	if get_node_or_null("FishingPreview") != null:
+		_fishing_preview_root = get_node_or_null("FishingPreview") as Node3D
+	if _fishing_preview_root == null:
+		_fishing_preview_root = Node3D.new()
+		_fishing_preview_root.name = "FishingPreview"
+		_fishing_preview_root.top_level = true
+		add_child(_fishing_preview_root)
+	if _fishing_preview_ring == null or not is_instance_valid(_fishing_preview_ring):
+		_fishing_preview_ring = _fishing_preview_root.get_node_or_null("LandingRing") as MeshInstance3D
+	if _fishing_preview_ring == null:
+		_fishing_preview_ring = MeshInstance3D.new()
+		_fishing_preview_ring.name = "LandingRing"
+		var ring_mesh := CylinderMesh.new()
+		ring_mesh.top_radius = 0.42
+		ring_mesh.bottom_radius = 0.42
+		ring_mesh.height = 0.05
+		ring_mesh.radial_segments = 24
+		_fishing_preview_ring.mesh = ring_mesh
+		var ring_material := StandardMaterial3D.new()
+		ring_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		ring_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		ring_material.albedo_color = Color(0.980392, 0.913725, 0.556863, 0.58)
+		ring_material.emission_enabled = true
+		ring_material.emission = Color(0.992157, 0.831373, 0.431373, 1.0)
+		ring_material.emission_energy_multiplier = 0.88
+		_fishing_preview_ring.material_override = ring_material
+		_fishing_preview_ring.visible = false
+		_fishing_preview_root.add_child(_fishing_preview_ring)
+	if _fishing_preview_dots.is_empty():
+		for index in range(fishing_preview_max_steps):
+			var dot := MeshInstance3D.new()
+			dot.name = "PreviewDot%d" % index
+			var dot_mesh := SphereMesh.new()
+			dot_mesh.radius = 0.055
+			dot_mesh.height = 0.11
+			dot.mesh = dot_mesh
+			var dot_material := StandardMaterial3D.new()
+			dot_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			dot_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			dot_material.albedo_color = Color(1.0, 0.956863, 0.768627, 0.46)
+			dot_material.emission_enabled = true
+			dot_material.emission = Color(1.0, 0.905882, 0.611765, 1.0)
+			dot_material.emission_energy_multiplier = 0.42
+			dot.material_override = dot_material
+			dot.visible = false
+			_fishing_preview_root.add_child(dot)
+			_fishing_preview_dots.append(dot)
+
+func _update_fishing_preview() -> void:
+	var preview_visible := _fishing_preview_requested and _fishing_mode_enabled and _control_enabled and not _driving_vehicle
+	if not preview_visible:
+		if not bool(_fishing_preview_state.get("visible", false)):
+			return
+		_hide_fishing_preview_visual()
+		_fishing_preview_state = {
+			"visible": false,
+			"landing_point": Vector3.ZERO,
+			"sample_count": 0,
+		}
+		return
+	_ensure_fishing_preview_visual()
+	if _fishing_preview_root == null:
+		return
+	var preview_state := _build_fishing_preview_state()
+	var preview_points: Array = preview_state.get("points", [])
+	var landing_point: Vector3 = preview_state.get("landing_point", Vector3.ZERO)
+	for dot_index in range(_fishing_preview_dots.size()):
+		var dot := _fishing_preview_dots[dot_index]
+		if dot == null or not is_instance_valid(dot):
+			continue
+		if dot_index < preview_points.size():
+			dot.global_position = preview_points[dot_index]
+			dot.visible = true
+		else:
+			dot.visible = false
+	if _fishing_preview_ring != null and is_instance_valid(_fishing_preview_ring):
+		_fishing_preview_ring.global_position = landing_point + Vector3.UP * 0.03
+		_fishing_preview_ring.visible = preview_points.size() > 0
+	_fishing_preview_state = {
+		"visible": preview_points.size() > 0,
+		"landing_point": landing_point,
+		"sample_count": preview_points.size(),
+	}
+
+func _hide_fishing_preview_visual() -> void:
+	for dot in _fishing_preview_dots:
+		if dot != null and is_instance_valid(dot):
+			dot.visible = false
+	if _fishing_preview_ring != null and is_instance_valid(_fishing_preview_ring):
+		_fishing_preview_ring.visible = false
+
+func _build_fishing_preview_state() -> Dictionary:
+	var cast_profile := _build_fishing_cast_profile()
+	var points: Array[Vector3] = []
+	var current_position: Vector3 = cast_profile.get("spawn_origin", get_fishing_tip_world_position())
+	var current_velocity: Vector3 = cast_profile.get("launch_velocity", Vector3.ZERO)
+	var landing_point: Vector3 = cast_profile.get("landing_point", current_position)
+	for _step_index in range(fishing_preview_max_steps):
+		var next_velocity := current_velocity + Vector3.DOWN * fishing_cast_gravity_mps2 * fishing_preview_step_sec
+		var next_position := current_position + (current_velocity + next_velocity) * 0.5 * fishing_preview_step_sec
+		if next_position.y <= _fishing_cast_surface_y_m:
+			points.append(landing_point)
+			break
+		points.append(next_position)
+		current_position = next_position
+		current_velocity = next_velocity
+	if points.is_empty():
+		points.append(landing_point)
+	return {
+		"points": points,
+		"landing_point": landing_point,
+	}
+
+func _build_fishing_cast_profile() -> Dictionary:
+	var spawn_origin := get_fishing_cast_spawn_transform().origin
+	var horizontal_direction := _get_grenade_horizontal_direction()
+	var range_factor := _get_grenade_throw_range_factor()
+	var target_distance_m := lerpf(fishing_cast_min_distance_m, fishing_cast_max_distance_m, range_factor)
+	var landing_point := Vector3(
+		spawn_origin.x + horizontal_direction.x * target_distance_m,
+		_fishing_cast_surface_y_m,
+		spawn_origin.z + horizontal_direction.z * target_distance_m
+	)
+	var planar_delta := Vector3(landing_point.x - spawn_origin.x, 0.0, landing_point.z - spawn_origin.z)
+	var planar_distance_m := maxf(planar_delta.length(), 0.001)
+	var flight_time_sec := lerpf(fishing_cast_min_flight_time_sec, fishing_cast_max_flight_time_sec, range_factor)
+	flight_time_sec = maxf(flight_time_sec, 0.12)
+	var horizontal_speed_mps := planar_distance_m / flight_time_sec
+	var vertical_delta_m := landing_point.y - spawn_origin.y
+	var vertical_speed_mps := (vertical_delta_m + 0.5 * fishing_cast_gravity_mps2 * flight_time_sec * flight_time_sec) / flight_time_sec
+	var launch_velocity := horizontal_direction * horizontal_speed_mps
+	launch_velocity.y = vertical_speed_mps
+	return {
+		"spawn_origin": spawn_origin,
+		"landing_point": landing_point,
+		"launch_velocity": launch_velocity,
 	}
 
 func _clear_transient_weapon_state() -> void:

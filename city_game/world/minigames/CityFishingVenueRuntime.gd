@@ -1,32 +1,44 @@
 extends RefCounted
 
 const ACTIVE_VENUE_SCAN_RADIUS_M := 768.0
-const CAST_TO_BITE_DELAY_SEC := 1.2
-const BITE_WINDOW_DURATION_SEC := 1.4
+const BITE_WAIT_MIN_SEC := 0.0
+const BITE_WAIT_MAX_SEC := 30.0
 const CAST_STATE_IDLE := "idle"
-const CAST_STATE_SEATED := "seated"
+const CAST_STATE_EQUIPPED := "equipped"
 const CAST_STATE_CAST_OUT := "cast_out"
-const CAST_STATE_BITE_WINDOW := "bite_window"
-const CAST_STATE_CATCH_RESOLVED := "catch_resolved"
-const CAST_STATE_MISSED := "missed"
+const CAST_STATE_BITE_READY := "bite_ready"
 
 var _entries_by_venue_id: Dictionary = {}
 var _active_venue_id := ""
 var _terrain_region_runtime = null
 var _direct_lake_runtime = null
 var _fish_school_runtime = null
+var _rng := RandomNumberGenerator.new()
 var _fishing_mode_active := false
-var _active_seat_id := ""
+var _pole_equipped := false
 var _cast_state := CAST_STATE_IDLE
+var _cast_preview_active := false
+var _preview_landing_world_position := Vector3.ZERO
 var _target_school_id := ""
-var _bite_window_active := false
-var _ambient_simulation_frozen := false
+var _bobber_visible := false
+var _bobber_world_position := Vector3.ZERO
+var _bobber_bite_feedback_active := false
+var _fishing_line_visible := false
+var _line_start_world_position := Vector3.ZERO
 var _last_catch_result: Dictionary = {}
-var _state_timer_sec := 0.0
+var _bite_wait_remaining_sec := 0.0
+var _debug_bite_delay_override_sec := -1.0
+var _feedback_event_token := 0
+var _feedback_event_text := ""
+var _feedback_event_tone := "neutral"
 var _hud_state: Dictionary = {}
+var _ambient_simulation_frozen := false
 var _last_chunk_renderer: Node = null
 var _last_player: Node3D = null
 var _last_mounted_venue: Node3D = null
+
+func _init() -> void:
+	_rng.seed = 3838
 
 func configure(entries: Dictionary) -> void:
 	_entries_by_venue_id.clear()
@@ -55,10 +67,10 @@ func update(chunk_renderer: Node, player_node: Node3D, delta: float) -> Dictiona
 	_last_player = player_node
 	var entry := _resolve_active_entry()
 	if entry.is_empty():
-		_handle_unavailable_runtime(false)
+		_handle_unavailable_runtime(_pole_equipped)
 		return _build_runtime_tick_summary()
 	if not _is_player_near_active_venue(entry, player_node):
-		_handle_unavailable_runtime(false)
+		_handle_unavailable_runtime(_pole_equipped)
 		return _build_runtime_tick_summary()
 	var mounted_venue := _resolve_mounted_venue(chunk_renderer, entry)
 	return _update_with_venue(entry, mounted_venue, player_node, delta)
@@ -73,12 +85,22 @@ func get_state() -> Dictionary:
 		"active_venue_id": _active_venue_id,
 		"venue_entry_count": _entries_by_venue_id.size(),
 		"fishing_mode_active": _fishing_mode_active,
-		"active_seat_id": _active_seat_id,
+		"pole_equipped": _pole_equipped,
 		"cast_state": _cast_state,
+		"cast_preview_active": _cast_preview_active,
+		"preview_landing_world_position": _preview_landing_world_position,
 		"target_school_id": _target_school_id,
-		"bite_window_active": _bite_window_active,
+		"bobber_visible": _bobber_visible,
+		"bobber_world_position": _bobber_world_position,
+		"bobber_bite_feedback_active": _bobber_bite_feedback_active,
+		"fishing_line_visible": _fishing_line_visible,
+		"line_start_world_position": _line_start_world_position,
+		"bite_wait_remaining_sec": _bite_wait_remaining_sec,
 		"ambient_simulation_frozen": _ambient_simulation_frozen,
 		"last_catch_result": _last_catch_result.duplicate(true),
+		"feedback_event_token": _feedback_event_token,
+		"feedback_event_text": _feedback_event_text,
+		"feedback_event_tone": _feedback_event_tone,
 		"match_hud_state": _hud_state.duplicate(true),
 	}
 
@@ -113,76 +135,139 @@ func handle_primary_interaction_direct(venue: Node3D, player_node: Node3D) -> Di
 		return {"handled": false, "success": false, "error": "missing_venue"}
 	if player_node == null or not is_instance_valid(player_node):
 		return {"handled": true, "success": false, "error": "missing_player"}
+	if _pole_equipped:
+		_reset_runtime_state(true)
+		_sync_venue_state(venue)
+		_refresh_hud_state(venue)
+		_publish_feedback("鱼竿已放回原位", "neutral")
+		return _build_handled_result(true, "pole_stowed")
 	var interaction_state := _build_primary_interaction_state(entry, venue, player_node)
-	if not bool(interaction_state.get("visible", false)) and not _fishing_mode_active:
+	if not bool(interaction_state.get("visible", false)):
 		return {"handled": false, "success": false, "error": "interaction_unavailable"}
-	match _cast_state:
-		CAST_STATE_IDLE:
-			if not venue.has_method("is_world_point_in_match_start_ring") or not bool(venue.is_world_point_in_match_start_ring(player_node.global_position)):
-				return {"handled": false, "success": false, "error": "outside_start_ring"}
-			_begin_fishing_mode(entry, venue, player_node)
-			return _build_handled_result(true, "seat_entered")
-		CAST_STATE_SEATED:
-			_start_cast(entry, venue)
-			return _build_handled_result(true, "cast_started")
-		CAST_STATE_CAST_OUT:
-			return _build_handled_result(false, "bite_pending")
-		CAST_STATE_BITE_WINDOW:
-			_resolve_catch(entry, venue)
-			return _build_handled_result(true, "catch_resolved")
-		CAST_STATE_CATCH_RESOLVED, CAST_STATE_MISSED:
-			_reset_runtime_state(true)
-			_sync_venue_state(venue)
-			return _build_handled_result(true, "session_reset")
-		_:
-			return _build_handled_result(false, "unsupported_state")
+	_fishing_mode_active = true
+	_pole_equipped = true
+	_cast_state = CAST_STATE_EQUIPPED
+	_cast_preview_active = false
+	_preview_landing_world_position = Vector3.ZERO
+	_target_school_id = ""
+	_bobber_visible = false
+	_bobber_bite_feedback_active = false
+	_fishing_line_visible = false
+	_bobber_world_position = Vector3.ZERO
+	_line_start_world_position = _resolve_line_start_world_position(player_node, venue)
+	_last_catch_result.clear()
+	_bite_wait_remaining_sec = 0.0
+	_publish_feedback("已拿起鱼竿", "action")
+	_sync_venue_state(venue)
+	_refresh_hud_state(venue)
+	return _build_handled_result(true, "pole_equipped")
 
-func reset_runtime_state(release_player: bool = true) -> void:
-	_reset_runtime_state(release_player)
+func set_cast_preview_active(chunk_renderer: Node, player_node: Node3D, active: bool, preview_state: Dictionary = {}) -> Dictionary:
+	var entry := _resolve_active_entry()
+	if entry.is_empty():
+		return {"success": false, "error": "missing_entry"}
+	var venue := _resolve_mounted_venue(chunk_renderer, entry)
+	return set_cast_preview_active_direct(venue, player_node, active, preview_state)
+
+func set_cast_preview_active_direct(venue: Node3D, player_node: Node3D, active: bool, preview_state: Dictionary = {}) -> Dictionary:
+	var entry := _resolve_entry_for_venue(venue)
+	if entry.is_empty():
+		return {"success": false, "error": "missing_entry"}
+	if venue == null or not is_instance_valid(venue):
+		return {"success": false, "error": "missing_venue"}
+	if player_node == null or not is_instance_valid(player_node):
+		return {"success": false, "error": "missing_player"}
+	if not active:
+		_cast_preview_active = false
+		_preview_landing_world_position = Vector3.ZERO
+		_sync_venue_state(venue)
+		_refresh_hud_state(venue)
+		return _build_action_result(true, "preview_cleared")
+	if not _pole_equipped or _cast_state != CAST_STATE_EQUIPPED:
+		return _build_action_result(false, "preview_unavailable", "preview_unavailable")
+	_cast_preview_active = true
+	_preview_landing_world_position = _resolve_preview_landing_world_position(preview_state, venue)
+	_sync_venue_state(venue)
+	_refresh_hud_state(venue)
+	return _build_action_result(true, "preview_ready")
+
+func request_cast_action(chunk_renderer: Node, player_node: Node3D, preview_state: Dictionary = {}) -> Dictionary:
+	var entry := _resolve_active_entry()
+	if entry.is_empty():
+		return {"success": false, "error": "missing_entry"}
+	var venue := _resolve_mounted_venue(chunk_renderer, entry)
+	return request_cast_action_direct(venue, player_node, preview_state)
+
+func request_cast_action_direct(venue: Node3D, player_node: Node3D, preview_state: Dictionary = {}) -> Dictionary:
+	var entry := _resolve_entry_for_venue(venue)
+	if entry.is_empty():
+		return {"success": false, "error": "missing_entry"}
+	if venue == null or not is_instance_valid(venue):
+		return {"success": false, "error": "missing_venue"}
+	if player_node == null or not is_instance_valid(player_node):
+		return {"success": false, "error": "missing_player"}
+	if not _pole_equipped:
+		return _build_action_result(false, "cast_unavailable", "pole_not_equipped")
+	match _cast_state:
+		CAST_STATE_EQUIPPED:
+			if not _cast_preview_active:
+				return _build_action_result(false, "cast_unavailable", "preview_required")
+			_start_cast(entry, venue, player_node, preview_state)
+			return _build_action_result(true, "cast_started")
+		CAST_STATE_CAST_OUT:
+			_resolve_reel(false)
+			_sync_venue_state(venue)
+			_refresh_hud_state(venue)
+			_publish_feedback("空杆收回", "warning")
+			return _build_action_result(true, "reel_missed")
+		CAST_STATE_BITE_READY:
+			_resolve_reel(true)
+			_sync_venue_state(venue)
+			_refresh_hud_state(venue)
+			_publish_feedback("钓到一条鱼", "success")
+			return _build_action_result(true, "catch_resolved")
+		_:
+			return _build_action_result(false, "cast_unavailable", "unsupported_state")
+
+func debug_set_bite_delay_override(seconds: float) -> void:
+	_debug_bite_delay_override_sec = maxf(seconds, 0.0) if seconds >= 0.0 else -1.0
+
+func reset_runtime_state(_release_player: bool = true) -> void:
+	_reset_runtime_state(_release_player)
 
 func _update_with_venue(entry: Dictionary, venue: Node3D, player_node: Node3D, delta: float) -> Dictionary:
 	_last_mounted_venue = venue
 	if venue != null and is_instance_valid(venue):
 		entry = _resolve_entry_for_venue(venue)
 	if entry.is_empty() or venue == null or not is_instance_valid(venue):
-		_handle_unavailable_runtime(false)
+		_handle_unavailable_runtime(_pole_equipped)
 		return _build_runtime_tick_summary()
-	if _fishing_mode_active and player_node != null and is_instance_valid(player_node):
+	if _pole_equipped and player_node != null and is_instance_valid(player_node):
 		var in_release_bounds := venue.has_method("is_world_point_in_release_bounds") and bool(venue.is_world_point_in_release_bounds(player_node.global_position))
 		if not in_release_bounds:
 			_reset_runtime_state(true)
 			_update_ambient_freeze(player_node, venue)
 			_sync_venue_state(venue)
 			_refresh_hud_state(venue)
+			_publish_feedback("离开湖边，钓鱼已收起", "warning")
 			return _build_runtime_tick_summary()
-	_update_ambient_freeze(player_node, venue)
-	if _fishing_mode_active and player_node != null and is_instance_valid(player_node):
-		_apply_player_to_seat(player_node, venue, _active_seat_id)
+	_update_line_start_world_position(player_node, venue)
 	_advance_session_timer(maxf(delta, 0.0))
+	_update_ambient_freeze(player_node, venue)
 	_sync_venue_state(venue)
 	_refresh_hud_state(venue)
 	return _build_runtime_tick_summary()
 
 func _advance_session_timer(delta: float) -> void:
-	if _cast_state != CAST_STATE_CAST_OUT and _cast_state != CAST_STATE_BITE_WINDOW:
+	if _cast_state != CAST_STATE_CAST_OUT:
 		return
-	_state_timer_sec = maxf(_state_timer_sec - delta, 0.0)
-	if _state_timer_sec > 0.0:
+	_bite_wait_remaining_sec = maxf(_bite_wait_remaining_sec - delta, 0.0)
+	if _bite_wait_remaining_sec > 0.0:
 		return
-	if _cast_state == CAST_STATE_CAST_OUT:
-		_cast_state = CAST_STATE_BITE_WINDOW
-		_bite_window_active = true
-		_state_timer_sec = BITE_WINDOW_DURATION_SEC
-		_refresh_hud_state(_last_mounted_venue)
-		return
-	if _cast_state == CAST_STATE_BITE_WINDOW:
-		_cast_state = CAST_STATE_MISSED
-		_bite_window_active = false
-		_last_catch_result = {
-			"result": "miss",
-			"school_id": _target_school_id,
-		}
-		_refresh_hud_state(_last_mounted_venue)
+	_cast_state = CAST_STATE_BITE_READY
+	_bobber_bite_feedback_active = true
+	_publish_feedback("鱼漂动了，左键收杆", "action")
+	_refresh_hud_state(_last_mounted_venue)
 
 func _update_ambient_freeze(player_node: Node3D, venue: Node3D) -> void:
 	if player_node == null or not is_instance_valid(player_node) or venue == null:
@@ -190,107 +275,89 @@ func _update_ambient_freeze(player_node: Node3D, venue: Node3D) -> void:
 		return
 	var player_world_position := player_node.global_position
 	var in_play_bounds := venue.has_method("is_world_point_in_play_bounds") and bool(venue.is_world_point_in_play_bounds(player_world_position))
-	if in_play_bounds or _fishing_mode_active:
-		_ambient_simulation_frozen = true
-		return
-	var in_release_bounds := venue.has_method("is_world_point_in_release_bounds") and bool(venue.is_world_point_in_release_bounds(player_world_position))
-	if not in_release_bounds:
-		_ambient_simulation_frozen = false
+	_ambient_simulation_frozen = in_play_bounds or _pole_equipped
 
-func _begin_fishing_mode(_entry: Dictionary, venue: Node3D, player_node: Node3D) -> void:
-	var contract: Dictionary = venue.get_fishing_contract() if venue.has_method("get_fishing_contract") else {}
-	var seat_anchor_ids: Array = contract.get("seat_anchor_ids", [])
-	_fishing_mode_active = true
-	_active_seat_id = str(seat_anchor_ids[0]) if not seat_anchor_ids.is_empty() else ""
-	_cast_state = CAST_STATE_SEATED
-	_target_school_id = ""
-	_bite_window_active = false
-	_last_catch_result.clear()
-	_state_timer_sec = 0.0
-	_apply_player_to_seat(player_node, venue, _active_seat_id)
-	_sync_venue_state(venue)
-	_refresh_hud_state(venue)
-
-func _start_cast(entry: Dictionary, venue: Node3D) -> void:
+func _start_cast(entry: Dictionary, venue: Node3D, player_node: Node3D, preview_state: Dictionary) -> void:
 	_cast_state = CAST_STATE_CAST_OUT
-	_target_school_id = _resolve_target_school_id(entry, venue)
-	_bite_window_active = false
+	_cast_preview_active = false
+	_preview_landing_world_position = _resolve_preview_landing_world_position(preview_state, venue)
+	_target_school_id = _resolve_target_school_id(entry, venue, _preview_landing_world_position)
+	_bobber_visible = true
+	_bobber_world_position = _preview_landing_world_position
+	_bobber_bite_feedback_active = false
+	_fishing_line_visible = true
+	_line_start_world_position = _resolve_line_start_world_position(player_node, venue)
 	_last_catch_result.clear()
-	_state_timer_sec = CAST_TO_BITE_DELAY_SEC
+	_bite_wait_remaining_sec = _resolve_bite_delay_sec()
+	_publish_feedback("甩杆完成，等待上钩", "action")
 	_sync_venue_state(venue)
 	_refresh_hud_state(venue)
 
-func _resolve_catch(entry: Dictionary, venue: Node3D) -> void:
-	var target_school_id := _resolve_target_school_id(entry, venue)
-	if target_school_id != "":
-		_target_school_id = target_school_id
-	_cast_state = CAST_STATE_CATCH_RESOLVED
-	_bite_window_active = false
-	_state_timer_sec = 0.0
+func _resolve_reel(success: bool) -> void:
+	_cast_state = CAST_STATE_EQUIPPED
+	_cast_preview_active = false
+	_preview_landing_world_position = Vector3.ZERO
+	_bobber_visible = false
+	_bobber_bite_feedback_active = false
+	_fishing_line_visible = false
+	_bite_wait_remaining_sec = 0.0
 	_last_catch_result = {
-		"result": "caught",
+		"result": "caught" if success else "miss",
 		"school_id": _target_school_id,
 	}
-	_sync_venue_state(venue)
-	_refresh_hud_state(venue)
 
 func _refresh_hud_state(venue: Node3D = null) -> void:
 	var venue_contract: Dictionary = venue.get_fishing_contract() if venue != null and is_instance_valid(venue) and venue.has_method("get_fishing_contract") else {}
+	var state_text := "按 E 拿起鱼竿"
+	match _cast_state:
+		CAST_STATE_EQUIPPED:
+			state_text = "右键预甩 / 左键甩杆 / E 放回"
+		CAST_STATE_CAST_OUT:
+			state_text = "等待上钩"
+		CAST_STATE_BITE_READY:
+			state_text = "鱼漂动了，左键收杆"
+	var result_text := ""
+	if not _last_catch_result.is_empty():
+		var result_label := "钓到鱼了" if str(_last_catch_result.get("result", "")) == "caught" else "空杆"
+		var school_id := str(_last_catch_result.get("school_id", "")).strip_edges()
+		result_text = "%s %s" % [result_label, school_id] if school_id != "" else result_label
 	_hud_state = {
-		"visible": _fishing_mode_active,
+		"visible": _pole_equipped,
 		"fishing_mode_active": _fishing_mode_active,
+		"pole_equipped": _pole_equipped,
 		"cast_state": _cast_state,
-		"bite_window_active": _bite_window_active,
+		"cast_preview_active": _cast_preview_active,
 		"target_school_id": _target_school_id,
+		"bobber_visible": _bobber_visible,
+		"fishing_line_visible": _fishing_line_visible,
+		"bobber_bite_feedback_active": _bobber_bite_feedback_active,
 		"last_catch_result": _last_catch_result.duplicate(true),
-		"active_seat_id": _active_seat_id,
 		"display_name": str(venue_contract.get("display_name", "Lakeside Fishing")),
+		"state_text": state_text,
+		"result_text": result_text,
+		"feedback_event_token": _feedback_event_token,
+		"feedback_event_text": _feedback_event_text,
+		"feedback_event_tone": _feedback_event_tone,
 	}
 
 func _build_primary_interaction_state(entry: Dictionary, venue: Node3D, player_node: Node3D) -> Dictionary:
 	if player_node == null or not is_instance_valid(player_node) or venue == null or not is_instance_valid(venue):
 		return _build_hidden_prompt_state()
-	var start_contract: Dictionary = venue.get_match_start_contract() if venue.has_method("get_match_start_contract") else {}
-	var prompt_world_position: Vector3 = start_contract.get("world_position", _resolve_entry_world_position(entry))
+	if _pole_equipped:
+		return _build_hidden_prompt_state()
+	var pole_anchor: Dictionary = venue.get_pole_anchor() if venue.has_method("get_pole_anchor") else {}
+	var prompt_world_position: Vector3 = pole_anchor.get("world_position", _resolve_entry_world_position(entry))
 	var distance_m := player_node.global_position.distance_to(prompt_world_position)
-	match _cast_state:
-		CAST_STATE_IDLE:
-			var in_ring := venue.has_method("is_world_point_in_match_start_ring") and bool(venue.is_world_point_in_match_start_ring(player_node.global_position))
-			if not in_ring:
-				return _build_hidden_prompt_state()
-			return {
-				"visible": true,
-				"owner_kind": "fishing_venue",
-				"venue_id": str(entry.get("venue_id", "")),
-				"prompt_text": "按 E 坐下钓鱼",
-				"distance_m": distance_m,
-			}
-		CAST_STATE_SEATED:
-			return {
-				"visible": true,
-				"owner_kind": "fishing_venue",
-				"venue_id": str(entry.get("venue_id", "")),
-				"prompt_text": "按 E 抛竿",
-				"distance_m": distance_m,
-			}
-		CAST_STATE_BITE_WINDOW:
-			return {
-				"visible": true,
-				"owner_kind": "fishing_venue",
-				"venue_id": str(entry.get("venue_id", "")),
-				"prompt_text": "按 E 收线",
-				"distance_m": distance_m,
-			}
-		CAST_STATE_CATCH_RESOLVED, CAST_STATE_MISSED:
-			return {
-				"visible": true,
-				"owner_kind": "fishing_venue",
-				"venue_id": str(entry.get("venue_id", "")),
-				"prompt_text": "按 E 收竿重置",
-				"distance_m": distance_m,
-			}
-		_:
-			return _build_hidden_prompt_state()
+	var in_range := venue.has_method("is_world_point_in_pole_interaction_range") and bool(venue.is_world_point_in_pole_interaction_range(player_node.global_position))
+	if not in_range:
+		return _build_hidden_prompt_state()
+	return {
+		"visible": true,
+		"owner_kind": "fishing_venue",
+		"venue_id": str(entry.get("venue_id", "")),
+		"prompt_text": "按 E 拿起鱼竿",
+		"distance_m": distance_m,
+	}
 
 func _build_hidden_prompt_state() -> Dictionary:
 	return {
@@ -301,14 +368,25 @@ func _build_hidden_prompt_state() -> Dictionary:
 		"distance_m": 0.0,
 	}
 
-func _build_handled_result(success: bool, action: String) -> Dictionary:
+func _build_handled_result(success: bool, action: String, error: String = "") -> Dictionary:
 	return {
 		"handled": true,
 		"success": success,
 		"owner_kind": "fishing_venue",
 		"interaction_kind": "lakeside_fishing",
 		"action": action,
+		"error": error,
 		"venue_id": _active_venue_id,
+		"cast_state": _cast_state,
+		"target_school_id": _target_school_id,
+		"last_catch_result": _last_catch_result.duplicate(true),
+	}
+
+func _build_action_result(success: bool, action: String, error: String = "") -> Dictionary:
+	return {
+		"success": success,
+		"action": action,
+		"error": error,
 		"cast_state": _cast_state,
 		"target_school_id": _target_school_id,
 		"last_catch_result": _last_catch_result.duplicate(true),
@@ -317,69 +395,83 @@ func _build_handled_result(success: bool, action: String) -> Dictionary:
 func _build_runtime_tick_summary() -> Dictionary:
 	return {
 		"ambient_simulation_frozen": _ambient_simulation_frozen,
-		"match_hud_state": _hud_state,
+		"match_hud_state": _hud_state.duplicate(true),
 	}
 
-func _apply_player_to_seat(player_node: Node3D, venue: Node3D, seat_id: String) -> void:
-	if player_node == null or not is_instance_valid(player_node) or venue == null or not venue.has_method("get_seat_anchor"):
-		return
-	var seat_anchor: Dictionary = venue.get_seat_anchor(seat_id)
-	var seat_world_position: Vector3 = seat_anchor.get("world_position", player_node.global_position)
-	if player_node.has_method("set_movement_locked"):
-		player_node.set_movement_locked(true)
-	if player_node.has_method("teleport_to_world_position"):
-		player_node.teleport_to_world_position(seat_world_position + Vector3.UP * _estimate_standing_height(player_node))
-	else:
-		player_node.global_position = seat_world_position + Vector3.UP * _estimate_standing_height(player_node)
-	var cast_origin: Dictionary = venue.get_cast_origin_anchor() if venue.has_method("get_cast_origin_anchor") else {}
-	var cast_world_position: Vector3 = cast_origin.get("world_position", seat_world_position + Vector3.FORWARD)
-	var look_delta := cast_world_position - seat_world_position
-	look_delta.y = 0.0
-	if look_delta.length_squared() > 0.0001:
-		player_node.rotation.y = atan2(-look_delta.x, -look_delta.z)
-
-func _estimate_standing_height(player_node: Node3D) -> float:
-	var collision_shape := player_node.get_node_or_null("CollisionShape3D") as CollisionShape3D
-	if collision_shape == null or collision_shape.shape == null:
-		return 1.0
-	if collision_shape.shape is CapsuleShape3D:
-		var capsule := collision_shape.shape as CapsuleShape3D
-		return capsule.radius + capsule.height * 0.5
-	if collision_shape.shape is BoxShape3D:
-		var box := collision_shape.shape as BoxShape3D
-		return box.size.y * 0.5
-	return 1.0
+func _publish_feedback(text: String, tone: String) -> void:
+	_feedback_event_token += 1
+	_feedback_event_text = text.strip_edges()
+	_feedback_event_tone = tone
 
 func _handle_unavailable_runtime(reset_session: bool) -> void:
 	if reset_session:
 		_reset_runtime_state(true)
+		_sync_venue_state(_last_mounted_venue)
 	_ambient_simulation_frozen = false
 	_refresh_hud_state()
 
-func _reset_runtime_state(release_player: bool) -> void:
-	if release_player and _last_player != null and is_instance_valid(_last_player) and _last_player.has_method("set_movement_locked"):
-		_last_player.set_movement_locked(false)
+func _reset_runtime_state(_release_player: bool) -> void:
 	_fishing_mode_active = false
-	_active_seat_id = ""
+	_pole_equipped = false
 	_cast_state = CAST_STATE_IDLE
+	_cast_preview_active = false
+	_preview_landing_world_position = Vector3.ZERO
 	_target_school_id = ""
-	_bite_window_active = false
+	_bobber_visible = false
+	_bobber_world_position = Vector3.ZERO
+	_bobber_bite_feedback_active = false
+	_fishing_line_visible = false
+	_line_start_world_position = Vector3.ZERO
 	_last_catch_result.clear()
-	_state_timer_sec = 0.0
+	_bite_wait_remaining_sec = 0.0
 	_refresh_hud_state()
 
-func _resolve_target_school_id(entry: Dictionary, venue: Node3D) -> String:
+func _resolve_bite_delay_sec() -> float:
+	if _debug_bite_delay_override_sec >= 0.0:
+		return _debug_bite_delay_override_sec
+	return _rng.randf_range(BITE_WAIT_MIN_SEC, BITE_WAIT_MAX_SEC)
+
+func _resolve_preview_landing_world_position(preview_state: Dictionary, venue: Node3D) -> Vector3:
+	var preview_variant: Variant = preview_state.get("landing_point", Vector3.ZERO)
+	if preview_variant is Vector3:
+		var preview_world_position := preview_variant as Vector3
+		if preview_world_position != Vector3.ZERO and _is_preview_position_valid(venue, preview_world_position):
+			return preview_world_position
+	if _preview_landing_world_position != Vector3.ZERO and _is_preview_position_valid(venue, _preview_landing_world_position):
+		return _preview_landing_world_position
+	var bite_zone: Dictionary = venue.get_bite_zone() if venue != null and venue.has_method("get_bite_zone") else {}
+	var bite_world_position: Vector3 = bite_zone.get("world_position", Vector3.ZERO)
+	if bite_world_position != Vector3.ZERO:
+		return bite_world_position
+	var cast_origin: Dictionary = venue.get_cast_origin_anchor() if venue != null and venue.has_method("get_cast_origin_anchor") else {}
+	return cast_origin.get("world_position", Vector3.ZERO)
+
+func _is_preview_position_valid(venue: Node3D, world_position: Vector3) -> bool:
+	if venue == null or not is_instance_valid(venue):
+		return false
+	if not venue.has_method("is_world_point_in_play_bounds"):
+		return true
+	return bool(venue.is_world_point_in_play_bounds(world_position))
+
+func _update_line_start_world_position(player_node: Node3D, venue: Node3D) -> void:
+	_line_start_world_position = _resolve_line_start_world_position(player_node, venue)
+
+func _resolve_line_start_world_position(player_node: Node3D, venue: Node3D) -> Vector3:
+	if player_node != null and is_instance_valid(player_node) and player_node.has_method("get_fishing_tip_world_position"):
+		var tip_world_position: Variant = player_node.get_fishing_tip_world_position()
+		if tip_world_position is Vector3:
+			return tip_world_position as Vector3
+	var cast_origin: Dictionary = venue.get_cast_origin_anchor() if venue != null and venue.has_method("get_cast_origin_anchor") else {}
+	return cast_origin.get("world_position", Vector3.ZERO)
+
+func _resolve_target_school_id(entry: Dictionary, venue: Node3D, target_world_position: Vector3 = Vector3.ZERO) -> String:
 	var region_id := str(entry.get("linked_region_id", "")).strip_edges()
 	if region_id == "" or _fish_school_runtime == null or not _fish_school_runtime.has_method("get_school_summaries_for_region"):
 		return ""
-	var target_position := Vector3.ZERO
-	if venue != null and is_instance_valid(venue):
-		if venue.has_method("get_bite_zone"):
-			var bite_zone: Dictionary = venue.get_bite_zone()
-			target_position = bite_zone.get("world_position", Vector3.ZERO)
-		if target_position == Vector3.ZERO and venue.has_method("get_cast_origin_anchor"):
-			var cast_origin: Dictionary = venue.get_cast_origin_anchor()
-			target_position = cast_origin.get("world_position", Vector3.ZERO)
+	var resolved_world_position := target_world_position
+	if resolved_world_position == Vector3.ZERO and venue != null and is_instance_valid(venue) and venue.has_method("get_bite_zone"):
+		var bite_zone: Dictionary = venue.get_bite_zone()
+		resolved_world_position = bite_zone.get("world_position", Vector3.ZERO)
 	var schools: Array = _fish_school_runtime.get_school_summaries_for_region(region_id)
 	var best_school_id := ""
 	var best_distance_sq := INF
@@ -387,11 +479,11 @@ func _resolve_target_school_id(entry: Dictionary, venue: Node3D) -> String:
 		if not (school_variant is Dictionary):
 			continue
 		var school: Dictionary = school_variant
-		var school_world_position: Variant = school.get("world_position", Vector3.ZERO)
-		if not (school_world_position is Vector3):
+		var school_world_position_variant: Variant = school.get("world_position", Vector3.ZERO)
+		if not (school_world_position_variant is Vector3):
 			continue
-		var school_position := school_world_position as Vector3
-		var distance_sq := school_position.distance_squared_to(target_position)
+		var school_position := school_world_position_variant as Vector3
+		var distance_sq := school_position.distance_squared_to(resolved_world_position)
 		if distance_sq < best_distance_sq:
 			best_distance_sq = distance_sq
 			best_school_id = str(school.get("school_id", ""))
@@ -449,11 +541,16 @@ func _sync_venue_state(venue: Node3D) -> void:
 	if venue == null or not is_instance_valid(venue) or not venue.has_method("sync_fishing_state"):
 		return
 	venue.sync_fishing_state({
-		"start_ring_visible": not _fishing_mode_active,
 		"fishing_mode_active": _fishing_mode_active,
-		"active_seat_id": _active_seat_id,
+		"pole_equipped": _pole_equipped,
 		"cast_state": _cast_state,
+		"cast_preview_active": _cast_preview_active,
+		"preview_landing_world_position": _preview_landing_world_position,
 		"target_school_id": _target_school_id,
-		"bite_window_active": _bite_window_active,
+		"bobber_visible": _bobber_visible,
+		"bobber_world_position": _bobber_world_position,
+		"bobber_bite_feedback_active": _bobber_bite_feedback_active,
+		"fishing_line_visible": _fishing_line_visible,
+		"line_start_world_position": _line_start_world_position,
 		"last_catch_result": _last_catch_result.duplicate(true),
 	})

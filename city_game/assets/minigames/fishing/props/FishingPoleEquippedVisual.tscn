@@ -1,0 +1,18 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://city_game/assets/minigames/fishing/props/FishingPoleEquippedVisual.gd" id="1_equipped_script"]
+[ext_resource type="PackedScene" path="res://city_game/assets/minigames/fishing/props/FishingPoleVisual.tscn" id="2_pole_visual"]
+
+[node name="FishingPoleEquippedVisual" type="Node3D"]
+visible = false
+script = ExtResource("1_equipped_script")
+
+[node name="MountRoot" type="Node3D" parent="."]
+position = Vector3(0.08, 0.04, -0.08)
+rotation_degrees = Vector3(-18, -12, -32)
+
+[node name="Pole" parent="MountRoot" instance=ExtResource("2_pole_visual")]
+rotation_degrees = Vector3(0, 0, 92)
+
+[node name="TipAnchor" type="Marker3D" parent="MountRoot"]
+position = Vector3(0.02, 2.18, -0.01)

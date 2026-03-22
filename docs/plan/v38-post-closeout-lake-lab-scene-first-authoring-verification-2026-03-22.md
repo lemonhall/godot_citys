@@ -1,5 +1,7 @@
 # V38 Post-Closeout Lake Lab Scene-First Authoring Verification 2026-03-22
 
+> 注意：本 artifact 仅覆盖当时的 lab scene-first 回收工作。fishing 入口语义已在 `ECN-0028` 与 [v38-post-closeout-fishing-pole-interaction-verification-2026-03-22.md](./v38-post-closeout-fishing-pole-interaction-verification-2026-03-22.md) 中被后续 closeout 正式改写；其中涉及 `MatchStartRing` 的 fishing 入口描述不再是当前口径。
+
 ## Scope
 
 上一轮 [v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md](./v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md) 已经修掉了两条真实功能缺口：

@@ -49,15 +49,14 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(manifest.get("linked_region_id", "")) == REGION_ID, "Fishing venue manifest must bind back to the formal lake region_id"):
 		return
-	var seat_anchor_ids: Array = manifest.get("seat_anchor_ids", [])
-	if not T.require_true(self, seat_anchor_ids.size() >= 1, "Fishing venue manifest must declare at least one authored seat_anchor_id"):
+	if not T.require_true(self, str(manifest.get("pole_anchor_id", "")) != "", "Fishing venue manifest must declare a formal pole_anchor_id for the authored fishing pole entrypoint"):
 		return
 	if not T.require_true(self, str(manifest.get("cast_origin_anchor_id", "")) != "", "Fishing venue manifest must declare a cast_origin_anchor_id"):
 		return
 	var bite_zone_ids: Array = manifest.get("bite_zone_ids", [])
 	if not T.require_true(self, bite_zone_ids.size() >= 1, "Fishing venue manifest must declare at least one bite zone id"):
 		return
-	if not T.require_true(self, float(manifest.get("trigger_radius_m", 0.0)) >= 4.0, "Fishing venue manifest must author a non-trivial trigger radius for entering the fishing seat flow"):
+	if not T.require_true(self, float(manifest.get("pole_interaction_radius_m", 0.0)) >= 1.5, "Fishing venue manifest must author a non-trivial pole_interaction_radius_m for nearby pickup prompt resolution"):
 		return
 	if not T.require_true(self, is_equal_approx(float(manifest.get("release_buffer_m", -1.0)), 32.0), "Fishing venue manifest must freeze release_buffer_m = 32.0"):
 		return

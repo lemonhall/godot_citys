@@ -25,17 +25,23 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("handle_primary_interaction"), "Fishing venue reset-on-exit contract requires the shared primary interaction entrypoint"):
 		return
+	if not T.require_true(self, world.has_method("set_fishing_cast_preview_active"), "Fishing venue reset-on-exit contract requires shared cast-preview control on CityPrototype"):
+		return
+	if not T.require_true(self, world.has_method("request_fishing_cast_action"), "Fishing venue reset-on-exit contract requires shared cast-action control on CityPrototype"):
+		return
 
 	player.teleport_to_world_position(Vector3(2834.0, 1.2, 11546.0))
 	var mounted_venue: Node3D = await _wait_for_mounted_venue(world)
-	if not T.require_true(self, mounted_venue != null and mounted_venue.has_method("get_seat_anchor"), "Fishing venue reset-on-exit contract must mount the fishing venue before interaction checks"):
+	if not T.require_true(self, mounted_venue != null and mounted_venue.has_method("get_pole_anchor"), "Fishing venue reset-on-exit contract must mount the fishing venue before interaction checks"):
 		return
-	var seat_anchor: Dictionary = mounted_venue.get_seat_anchor("seat_main")
-	player.teleport_to_world_position(seat_anchor.get("world_position", Vector3.ZERO) + Vector3.UP * 1.2)
+	var pole_anchor: Dictionary = mounted_venue.get_pole_anchor()
+	player.teleport_to_world_position(pole_anchor.get("world_position", Vector3.ZERO) + Vector3.UP * 1.2)
 
-	if not T.require_true(self, bool(world.handle_primary_interaction().get("success", false)), "Fishing venue reset-on-exit contract must seat the player before reset checks"):
+	if not T.require_true(self, bool(world.handle_primary_interaction().get("success", false)), "Fishing venue reset-on-exit contract must let the player equip the pole before reset checks"):
 		return
-	if not T.require_true(self, bool(world.handle_primary_interaction().get("success", false)), "Fishing venue reset-on-exit contract must let the player cast before reset checks"):
+	if not T.require_true(self, bool(world.set_fishing_cast_preview_active(true).get("success", false)), "Fishing venue reset-on-exit contract must let the player enter cast preview before leaving bounds"):
+		return
+	if not T.require_true(self, bool(world.request_fishing_cast_action().get("success", false)), "Fishing venue reset-on-exit contract must let the player cast before reset checks"):
 		return
 	var runtime_state: Dictionary = world.get_fishing_venue_runtime_state()
 	if not T.require_true(self, bool(runtime_state.get("fishing_mode_active", false)), "Fishing venue reset-on-exit contract must enter an active fishing session before leaving bounds"):

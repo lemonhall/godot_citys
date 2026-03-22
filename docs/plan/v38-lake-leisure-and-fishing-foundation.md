@@ -77,27 +77,34 @@
   - `feature_kind`
   - `game_kind`
   - `linked_region_id`
-  - `seat_anchor_ids`
+  - `pole_anchor_id`
   - `cast_origin_anchor_id`
   - `bite_zone_ids`
-  - `trigger_radius_m`
+  - `pole_interaction_radius_m`
   - `release_buffer_m`
   - `full_map_pin`
 - fishing runtime 最小状态冻结为：
   - `fishing_mode_active`
-  - `active_seat_id`
+  - `pole_equipped`
   - `cast_state`
   - `target_school_id`
-  - `bite_window_active`
+  - `bite_wait_remaining_sec`
   - `ambient_simulation_frozen`
   - `last_catch_result`
 - HUD 最小 contract 冻结为：
   - `visible`
   - `fishing_mode_active`
+  - `pole_equipped`
   - `cast_state`
-  - `bite_window_active`
+  - `bite_wait_remaining_sec`
   - `target_school_id`
   - `last_catch_result`
+- fishing 输入 contract 冻结为：
+  - `E = 拿起/放回鱼竿`
+  - `右键 = 待甩杆预览`
+  - `左键 = 甩杆 / 收杆`
+- `MatchStartRing` 不再拥有 fishing 入口所有权。
+- fishing 不再依赖任何单独的固定 start trigger；鱼竿本身就是唯一入口。
 - `ambient_simulation_freeze` 在 lake leisure 区域的 release buffer 冻结为 `32.0m`
 - full map pin `icon_id` 冻结为 `fishing`
 - 交付顺序冻结为：
@@ -144,7 +151,7 @@
 7. 自动化测试必须证明：独立 lab 场景能加载 player、地面、lake root、water surface 与 fish runtime。
 8. 自动化测试必须证明：lab 场景里挖出的湖与 shared shoreline / bathymetry / habitat profile 保持同源，不是第二套独立 lake 数据。
 9. 自动化测试必须证明：lab 场景里 player 可进入正式 water/underwater state，并观察非空 fish school summary。
-10. 自动化测试必须证明：lab 场景中至少一条 headless flow 可完成“进场 -> 坐下 -> 抛竿 -> bite/miss -> reset”的最小钓鱼闭环。
+10. 自动化测试必须证明：lab 场景中至少一条 headless flow 可完成“接近鱼竿 -> E 拿竿 -> 右键预甩 -> 左键甩杆 -> 等待上钩 -> 左键收杆 -> E 放回”的最小钓鱼闭环。
 11. 自动化测试必须证明：lab 验收通过后，主世界 `chunk_147_181` 能接入同一套 lake + fishing runtime，而不是重写第二套逻辑。
 12. 自动化测试必须证明：进入主世界 lake leisure 区域后 `ambient_simulation_freeze` 激活，但 player、radio、lake runtime、fish runtime 与 fishing runtime 继续更新。
 13. 自动化测试必须证明：离开主世界 lake leisure 内圈但仍处于 `32m` release buffer 内时，不会立刻解冻。
@@ -230,7 +237,7 @@
    - 搭建 `LakeFishingLab.tscn`，先在 lab 里复用 shared layer 1/2 挖出同样的湖
    - author lab fishing venue scene / manifest / script
    - 实现 `CityFishingVenueRuntime.gd`
-   - 在 lab 里跑通 fishing minigame
+   - 在 lab 里跑通基于鱼竿交互的 fishing minigame
    - 最后接入 `CityPrototype.gd` 的 main-world fishing runtime 聚合、leisure freeze 与最小 HUD / map pin
 6. Refactor
    - 收口 lake sampling、fish school summary 与 fishing runtime 输入/状态接口

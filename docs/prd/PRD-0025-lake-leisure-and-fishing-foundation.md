@@ -2,9 +2,9 @@
 
 ## Vision
 
-把 `godot_citys` 从“已经有若干离散场馆和 minigame”的状态，推进到“世界里第一次出现正式的可下水湖区 + 休闲钓鱼玩法”。`v38` 的目标不是在地表上摆一张蓝色平面，也不是在湖边放一把椅子就说能钓鱼，而是在用户给定的 `chunk_147_181` ground probe 周围，正式落成一块 **需要向下 carve 地形的浅湖区域**：湖岸是不规则形状，水位稳定在 probe 给定高程附近，常态深度约 `10m`，最深处约 `15m`；玩家未来可以走到岸边坐下钓鱼，也可以直接跳进湖里，看见湖中的鱼群和后续扩展出来的水草、彩蛋与水下装饰。
+把 `godot_citys` 从“已经有若干离散场馆和 minigame”的状态，推进到“世界里第一次出现正式的可下水湖区 + 休闲钓鱼玩法”。`v38` 的目标不是在地表上摆一张蓝色平面，也不是在湖边放一把椅子就说能钓鱼，而是在用户给定的 `chunk_147_181` ground probe 周围，正式落成一块 **需要向下 carve 地形的浅湖区域**：湖岸是不规则形状，水位稳定在 probe 给定高程附近，常态深度约 `10m`，最深处约 `15m`；玩家未来可以走到岸边拿起鱼竿开始钓鱼，也可以直接跳进湖里，看见湖中的鱼群和后续扩展出来的水草、彩蛋与水下装饰。
 
-`v38` 的成功标准不是“地图上多了一个湖的概念”，而是同时满足七件事。第一，仓库必须正式把 lake 从 `PRD-0012` 预留的 future note 变成第一条真实 `terrain_region_feature` consumer，而不是偷走 `scene_landmark` 或“挂一个超大 scene” 的老路。第二，lake runtime 必须真的 override 那一片 terrain，把地面往下挖成湖盆；不能只有视觉上的水面，没有向下 carve 的地形、碰撞和深度。第三，湖区必须显式暴露水位、不规则 shoreline、bathymetry、可游泳/可观察区域和鱼群 habitat contract，而不是把深度写死在脚本常量里。第四，本轮开发流程必须像 `v37` 直升机炮艇那样，先把 shared `1/2` 层能力做成正式运行时，再在独立 lab 场景里用同一套能力挖出同样的湖并完成低干扰验收，最后才允许把整条链移植回主世界。第五，钓鱼规则不应和湖盆 carve/runtime 混在一起，而应继续沿现有 `scene_minigame_venue` 主链，在 lab 里先挂一套正式 `fishing venue`，把坐下、抛竿、咬钩、收线、重置和 HUD 关进自己的 runtime；lab 验收无误后，再把同一套 runtime 正式接回主世界。第六，进入这片湖区后，系统必须允许像足球场那样把 `pedestrians + ambient vehicles` 冻结掉，但不得演变成 full world pause，更不能把收音机、玩家、湖区和鱼群 runtime 一起停掉。第七，`v38` 不得为了做湖和钓鱼而打坏 `v21` 的 ground probe / world feature discipline、`v26/v28/v29` 的 minigame 聚合链，或现有 streaming/performance guard。
+`v38` 的成功标准不是“地图上多了一个湖的概念”，而是同时满足七件事。第一，仓库必须正式把 lake 从 `PRD-0012` 预留的 future note 变成第一条真实 `terrain_region_feature` consumer，而不是偷走 `scene_landmark` 或“挂一个超大 scene” 的老路。第二，lake runtime 必须真的 override 那一片 terrain，把地面往下挖成湖盆；不能只有视觉上的水面，没有向下 carve 的地形、碰撞和深度。第三，湖区必须显式暴露水位、不规则 shoreline、bathymetry、可游泳/可观察区域和鱼群 habitat contract，而不是把深度写死在脚本常量里。第四，本轮开发流程必须像 `v37` 直升机炮艇那样，先把 shared `1/2` 层能力做成正式运行时，再在独立 lab 场景里用同一套能力挖出同样的湖并完成低干扰验收，最后才允许把整条链移植回主世界。第五，钓鱼规则不应和湖盆 carve/runtime 混在一起，而应继续沿现有 `scene_minigame_venue` 主链，在 lab 里先挂一套正式 `fishing venue`，把“接近鱼竿 -> E 拿竿 -> 右键预甩 -> 左键甩杆/收杆 -> 结果提示”和 HUD 关进自己的 runtime；lab 验收无误后，再把同一套 runtime 正式接回主世界。第六，进入这片湖区后，系统必须允许像足球场那样把 `pedestrians + ambient vehicles` 冻结掉，但不得演变成 full world pause，更不能把收音机、玩家、湖区和鱼群 runtime 一起停掉。第七，`v38` 不得为了做湖和钓鱼而打坏 `v21` 的 ground probe / world feature discipline、`v26/v28/v29` 的 minigame 聚合链，或现有 streaming/performance guard。
 
 ## Background
 
@@ -25,6 +25,10 @@
   - 湖里未来会继续扩展水草、隐藏彩蛋和其他水下内容
   - 进入湖区后，行人和 ambient 车辆可以完全冻结
   - 用户主要想做的是一套休闲钓鱼机制，并希望继续走 minigame 包装
+  - 用户在 post-closeout 手玩里进一步冻结了 fishing 输入：
+    - `E` 负责拿起/放回鱼竿
+    - `右键` 进入待甩杆预览态
+    - `左键` 在预览态执行甩杆、在上钩后执行收杆
 - 这意味着 `v38` 不能只做“湖边钓鱼点”，也不能只做“有水没玩法”的风景区域；正确路线必须是 **shared lake layers 1/2 + lab-first 验收 + fishing venue runtime + main-world port**。
 
 ## Scope
@@ -224,23 +228,33 @@
   - `manifest_path`
   - `linked_region_id`
   - `full_map_pin`
-- venue scene 必须 author 至少一处正式 shoreline `seat / cast origin / bite zone / release bounds`
+- venue scene 必须 author 至少一处正式 shoreline `fishing pole rest anchor / cast origin / bite zone / release bounds`
+- fishing 输入 contract 冻结为：
+  - 玩家接近 author 的鱼竿时，出现 `按 E 拿起鱼竿`
+  - 拿起鱼竿后，player 进入正式持竿态
+  - 不再存在单独的 fixed start ring / fixed seat trigger / task-style start zone
+  - `右键` 进入待甩杆预览态，并显示类似手雷的抛物线虚线与落点提示
+  - `左键` 在预览态执行甩杆，把鱼漂与鱼线抛到目标点
+  - 上钩后 `左键` 执行收杆
+  - 再按一次 `E`，则把鱼竿放回原位
 - fishing runtime 最小闭环冻结为：
   - `idle`
-  - `seated`
+  - `equipped`
   - `cast_out`
-  - `waiting_bite`
-  - `bite_window`
-  - `reeling`
+  - `bite_ready`
   - `catch_resolved`
-  - `resetting`
 - HUD 至少需要暴露：
   - `visible`
   - `fishing_mode_active`
+  - `pole_equipped`
   - `cast_state`
   - `target_school_id`
-  - `bite_window_active`
+  - `bite_wait_remaining_sec`
   - `last_catch_result`
+- 甩杆表现至少需要暴露：
+  - 可见鱼漂
+  - 可见鱼线
+  - 上钩时鱼漂的上下浮动提示
 - full-map pin `icon_id` 在 `v38` 冻结为 `fishing`
 
 **非目标**：
@@ -250,12 +264,12 @@
 **验收口径**：
 
 - 自动化测试至少断言：fishing venue 可以从 `scene_minigame_venue` registry / manifest pipeline 正式读取并 near mount。
-- 自动化测试至少断言：lab 场景可完成“进点位 -> 坐下 -> 抛竿 -> 等待 bite -> 成功/失败收线 -> reset”。
-- 自动化测试至少断言：venue scene 暴露正式可坐下的 shoreline anchor 和 cast contract。
+- 自动化测试至少断言：lab 场景可完成“接近鱼竿 -> E 拿竿 -> 右键预甩 -> 左键甩杆 -> 等待上钩 -> 左键收杆 -> E 放回”的 headless 闭环。
+- 自动化测试至少断言：venue scene 暴露正式鱼竿交互 anchor、cast contract、鱼漂与鱼线可视载体。
 - 自动化测试至少断言：主世界 port 后，同一条 flow 能在 `chunk_147_181` 正式跑通。
 - 自动化测试至少断言：fishing venue 的 `linked_region_id` 指向正式 lake region，而不是孤立场馆。
 - 自动化测试至少断言：full map 上可解析 `icon_id = fishing` 的 pin。
-- 反作弊条款：不得把 fishing 做成离开世界的独立 UI 页面；不得只有菜单随机结果，没有 lake world runtime 参与；不得 lab 一套、主世界再写第二套逻辑冒充“移植完成”。
+- 反作弊条款：不得继续用 `MatchStartRing` 绿圈作为 fishing 入口所有者；不得把 fishing 做成离开世界的独立 UI 页面；不得只有菜单随机结果，没有 lake world runtime 参与；不得 lab 一套、主世界再写第二套逻辑冒充“移植完成”。
 
 ### REQ-0025-006 进入湖区后必须支持 `ambient_simulation_freeze`，但不得误伤 lake/fishing runtime
 

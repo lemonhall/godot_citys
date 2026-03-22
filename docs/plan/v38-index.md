@@ -27,6 +27,11 @@ post-closeout bugfix evidence：
 
 - [v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md](./v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md)
 - [v38-post-closeout-lake-lab-scene-first-authoring-verification-2026-03-22.md](./v38-post-closeout-lake-lab-scene-first-authoring-verification-2026-03-22.md)
+- [v38-post-closeout-fishing-pole-interaction-verification-2026-03-22.md](./v38-post-closeout-fishing-pole-interaction-verification-2026-03-22.md)
+
+post-closeout contract change:
+
+- [ECN-0028-v38-fishing-pole-interaction-rework.md](../ecn/ECN-0028-v38-fishing-pole-interaction-rework.md)
 
 ## 决策冻结
 
@@ -50,6 +55,12 @@ post-closeout bugfix evidence：
 - `v38` 必须先交付独立 lab，再做主世界移植。
 - lab 与主世界必须共享同一套 `terrain_region_feature / lake / fish / fishing` runtime；只允许 wrapper 和 anchor 不同。
 - fishing 继续沿 `scene_minigame_venue` 包装，不把规则塞进 lake region runtime。
+- `v38` post-closeout 后，fishing 入口从 `MatchStartRing` 绿圈切换为 `FishingPoleRestAnchor` 交互，不再以进圈坐下作为正式玩法入口。
+- fishing 不再存在独立的 fixed start trigger；只要玩家接近并拿起这根鱼竿，就能随时开始这一轮钓鱼。
+- fishing 输入冻结为：
+  - `E = 拿起/放回鱼竿`
+  - `右键 = 待甩杆预览`
+  - `左键 = 甩杆 / 收杆`
 - 进入 lake leisure 区域后允许激活 `ambient_simulation_freeze`，但冻结对象仍只包括 `pedestrians + ambient vehicles`。
 - `ambient_simulation_freeze` 在 lake leisure 语义下的 release buffer 冻结为 `32.0m`。
 - full map pin `icon_id` 冻结为 `fishing`。
@@ -61,7 +72,7 @@ post-closeout bugfix evidence：
 | M0 docs freeze | `PRD-0025`、design、`v38-index`、`v38` plan、traceability | 4 份文档全部落地且 `REQ-0025-*` 可追溯 | `rg -n "REQ-0025" docs/prd/PRD-0025-lake-leisure-and-fishing-foundation.md docs/plan/v38-index.md docs/plan/v38-lake-leisure-and-fishing-foundation.md` | done |
 | M1 shared layer 1/2 foundation | `terrain_region_feature` registry/runtime、lake manifest/profile、terrain downward carve、水面 page、fish school/runtime | shared lake layers `1/2` 在 engine/world 侧成立，lake basin、水位和 fish school 真源稳定可测 | `tests/world/test_city_terrain_region_feature_registry_runtime.gd`、`tests/world/test_city_lake_region_manifest_contract.gd`、`tests/world/test_city_lake_bathymetry_contract.gd`、`tests/world/test_city_lake_water_surface_contract.gd`、`tests/world/test_city_lake_fish_school_contract.gd` | done |
 | M2 lab 湖区验收 | `LakeFishingLab.tscn`、同湖复现、下水观察、fish school 可视 | 独立 lab 场景里复用 shared layer `1/2` 挖出同样的湖；player 可进水并观察 fish school | `tests/world/test_city_lake_lab_scene_contract.gd`、`tests/world/test_city_lake_lab_observer_contract.gd` | done |
-| M3 lab 钓鱼 minigame | lab shoreline seat/cast/bite/reset、HUD、freeze | lab 场景里可完成“进点位 -> 坐下 -> 抛竿 -> bite/miss -> reset”最小闭环，并保留 lake leisure freeze | `tests/e2e/test_city_lake_lab_fishing_flow.gd`、`tests/world/test_city_fishing_venue_cast_loop_contract.gd` | done |
+| M3 lab 钓鱼 minigame | lab 鱼竿交互/cast/reel、HUD、freeze | lab 场景里可完成“接近鱼竿 -> E 拿竿 -> 右键预甩 -> 左键甩杆 -> 等待上钩 -> 左键收杆 -> E 放回”的最小闭环，并保留 lake leisure freeze | `tests/e2e/test_city_lake_lab_fishing_flow.gd`、`tests/world/test_city_fishing_venue_cast_loop_contract.gd` | done |
 | M4 主世界移植与流程验证 | `chunk_147_181` 的正式 lake region + fishing venue、pin、freeze | 主世界复用同一套 lake/fishing runtime，地图 pin、freeze 与完整钓鱼流程成立 | `tests/world/test_city_lake_main_world_port_contract.gd`、`tests/world/test_city_fishing_full_map_pin_contract.gd`、`tests/world/test_city_fishing_venue_ambient_freeze_contract.gd`、`tests/e2e/test_city_lake_fishing_flow.gd` | done |
 | M5 regression + profiling | 受影响旧链回归；如触及 terrain/render/HUD/tick，profiling 三件套 | `ground_probe`、soccer、tennis、missile command 关键链继续通过；profiling 三件套 fresh rerun 过线 | [v38-m5-verification-2026-03-22.md](./v38-m5-verification-2026-03-22.md) | done |
 
@@ -71,6 +82,7 @@ post-closeout bugfix evidence：
 - [v38-m5-verification-2026-03-22.md](./v38-m5-verification-2026-03-22.md)
 - [v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md](./v38-post-closeout-lake-lab-bugfix-verification-2026-03-22.md)
 - [v38-post-closeout-lake-lab-scene-first-authoring-verification-2026-03-22.md](./v38-post-closeout-lake-lab-scene-first-authoring-verification-2026-03-22.md)
+- [v38-post-closeout-fishing-pole-interaction-verification-2026-03-22.md](./v38-post-closeout-fishing-pole-interaction-verification-2026-03-22.md)
 
 ## 追溯矩阵
 
@@ -86,7 +98,7 @@ post-closeout bugfix evidence：
 
 ## ECN 索引
 
-- 当前无
+- [ECN-0028-v38-fishing-pole-interaction-rework.md](../ecn/ECN-0028-v38-fishing-pole-interaction-rework.md)
 
 ## 差异列表
 

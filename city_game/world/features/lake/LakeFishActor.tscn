@@ -1,0 +1,13 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://city_game/world/features/lake/LakeFishActor.gd" id="1_fish_actor_script"]
+[ext_resource type="PackedScene" path="res://city_game/assets/environment/source/creatures/fish/Fish.glb" id="2_fish_model"]
+
+[node name="LakeFishActor" type="Node3D"]
+script = ExtResource("1_fish_actor_script")
+
+[node name="MotionRoot" type="Node3D" parent="."]
+
+[node name="Model" parent="MotionRoot" instance=ExtResource("2_fish_model")]
+rotation_degrees = Vector3(0, 180, 0)
+scale = Vector3(0.12, 0.12, 0.12)

@@ -3,6 +3,7 @@ extends Node3D
 const CityTerrainRegionFeatureRegistry := preload("res://city_game/world/features/CityTerrainRegionFeatureRegistry.gd")
 const CityTerrainRegionFeatureRuntime := preload("res://city_game/world/features/CityTerrainRegionFeatureRuntime.gd")
 const CityLakeFishSchoolRuntime := preload("res://city_game/world/features/lake/CityLakeFishSchoolRuntime.gd")
+const LakeFishActorScene := preload("res://city_game/world/features/lake/LakeFishActor.tscn")
 const CityFishingVenueRuntime := preload("res://city_game/world/minigames/CityFishingVenueRuntime.gd")
 
 const TERRAIN_REGION_REGISTRY_PATH := "res://city_game/serviceability/terrain_regions/generated/terrain_region_registry.json"
@@ -155,20 +156,16 @@ func _rebuild_fish_school_visuals() -> void:
 		if not (school_variant is Dictionary):
 			continue
 		var school: Dictionary = school_variant
-		var mesh_instance := MeshInstance3D.new()
-		mesh_instance.name = str(school.get("school_id", "FishSchool"))
-		var sphere := SphereMesh.new()
-		sphere.radius = clampf(float(school.get("swim_radius_m", 6.0)) * 0.05, 0.25, 0.7)
-		sphere.height = sphere.radius * 2.0
-		mesh_instance.mesh = sphere
-		var material := StandardMaterial3D.new()
-		material.albedo_color = Color(0.88, 0.72, 0.34, 0.95)
-		material.emission_enabled = true
-		material.emission = Color(0.18, 0.44, 0.56, 1.0)
-		material.emission_energy_multiplier = 0.15
-		mesh_instance.material_override = material
-		mesh_instance.position = school.get("world_position", Vector3.ZERO)
-		fish_schools_root.add_child(mesh_instance)
+		var fish_actor := LakeFishActorScene.instantiate() as Node3D
+		if fish_actor == null:
+			continue
+		fish_actor.name = str(school.get("school_id", "FishSchool"))
+		var school_world_position_variant: Variant = school.get("world_position", Vector3.ZERO)
+		var school_world_position: Vector3 = school_world_position_variant as Vector3 if school_world_position_variant is Vector3 else Vector3.ZERO
+		fish_actor.position = school_world_position
+		fish_schools_root.add_child(fish_actor)
+		if fish_actor.has_method("configure_school_visual"):
+			fish_actor.configure_school_visual(school)
 
 func _apply_hud_state() -> void:
 	if hud == null:

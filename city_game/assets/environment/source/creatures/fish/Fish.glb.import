@@ -4,12 +4,12 @@ importer="scene"
 importer_version=1
 type="PackedScene"
 uid="uid://neu78pk40wil"
-path="res://.godot/imported/Fish.glb-a22e6f9ab4fd64796da2caa8f0e3e3d3.scn"
+path="res://.godot/imported/Fish.glb-33f962dc33ea2ddde20736b22c1a57ef.scn"
 
 [deps]
 
-source_file="res://Fish.glb"
-dest_files=["res://.godot/imported/Fish.glb-a22e6f9ab4fd64796da2caa8f0e3e3d3.scn"]
+source_file="res://city_game/assets/environment/source/creatures/fish/Fish.glb"
+dest_files=["res://.godot/imported/Fish.glb-33f962dc33ea2ddde20736b22c1a57ef.scn"]
 
 [params]
 

@@ -57,6 +57,7 @@
   - `world_anchor`
   - `ground_resolver`
   - `activation_gate`
+  - `spawn_policy`
   - `debug_passthrough`
 
 ## Scope

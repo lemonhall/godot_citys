@@ -20,6 +20,8 @@ PRD 入口：[PRD-0026 Arthropod Crawler Locomotion Labs](../prd/PRD-0026-arthro
 
 `v39` 的目标不是急着把一只多足生物接进主世界，而是正式建立一条“shared arthropod locomotion spine -> spider lab -> lobster lab -> future main-world portability hooks”的实验主链。首个正式 consumer 冻结为蜘蛛，第二个 consumer 冻结为龙虾；两者都必须以独立 lab 的形式先完成低干扰验收。当前版本明确不接主世界，不做任务、地图 pin、任务圈或生态接入，但要在文档和测试层提前冻结 future port 的契约，确保后续只做 wrapper 接线，不重写 locomotion runtime。
 
+当前状态：`M0-M4` 已在 [v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) 中完成 fresh functional verification。`v39` 已正式落下 shared arthropod locomotion spine、蜘蛛 lab、龙虾 lab 与 future main-world portability contract freeze，但仍不宣称已经接入主世界。
+
 ## 决策冻结
 
 - `v39` 先做蜘蛛，再做龙虾。
@@ -46,11 +48,11 @@ PRD 入口：[PRD-0026 Arthropod Crawler Locomotion Labs](../prd/PRD-0026-arthro
 
 | 里程碑 | 范围 | DoD | 验证命令/测试 | 状态 |
 |---|---|---|---|---|
-| M0 docs freeze | `PRD-0026`、research、implementation plan、`v39-index`、`v39` plan | 文档链完整，`REQ-0026-*` 可追溯 | `rg -n "REQ-0026|v39" docs/prd/PRD-0026-arthropod-crawler-locomotion-labs.md docs/plan/v39-index.md docs/plan/v39-arthropod-crawler-locomotion-labs.md` | todo |
-| M1 shared locomotion spine | profile、per-leg state、foothold resolver、body solver、debug state | shared runtime 可脱离 species scene 被测试消费 | `tests/world/test_arthropod_crawler_shared_spine_contract.gd` | todo |
-| M2 spider lab | `SpiderCrawlerLab`、spider wrapper、gait/terrain-follow/reset | 蜘蛛在独立 lab 里走通 gait 与地形跟随闭环 | `tests/world/test_spider_crawler_lab_scene_contract.gd`、`tests/world/test_spider_crawler_gait_contract.gd`、`tests/world/test_spider_crawler_terrain_follow_contract.gd`、`tests/e2e/test_spider_crawler_lab_flow.gd` | todo |
-| M3 lobster lab | `LobsterCrawlerLab`、lobster wrapper、metachronal profile | 龙虾作为 shared runtime 第二个 consumer 跑通，且 gait 明显不同于蜘蛛 | `tests/world/test_lobster_crawler_lab_scene_contract.gd`、`tests/world/test_lobster_crawler_metachronal_gait_contract.gd`、`tests/world/test_lobster_crawler_shared_runtime_contract.gd`、`tests/e2e/test_lobster_crawler_lab_flow.gd` | todo |
-| M4 future port freeze | portability contract、wrapper 口径、debug passthrough | future main-world port 契约冻结，且不要求实际接入主世界 | `tests/world/test_arthropod_crawler_portability_contract.gd` | todo |
+| M0 docs freeze | `PRD-0026`、research、implementation plan、`v39-index`、`v39` plan | 文档链完整，`REQ-0026-*` 可追溯 | `rg -n "REQ-0026|v39" docs/prd/PRD-0026-arthropod-crawler-locomotion-labs.md docs/plan/v39-index.md docs/plan/v39-arthropod-crawler-locomotion-labs.md`、[v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
+| M1 shared locomotion spine | profile、per-leg state、foothold resolver、body solver、debug state | shared runtime 可脱离 species scene 被测试消费 | `tests/world/test_arthropod_crawler_shared_spine_contract.gd`、[v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
+| M2 spider lab | `SpiderCrawlerLab`、spider wrapper、gait/terrain-follow/reset | 蜘蛛在独立 lab 里走通 gait 与地形跟随闭环 | `tests/world/test_spider_crawler_lab_scene_contract.gd`、`tests/world/test_spider_crawler_gait_contract.gd`、`tests/world/test_spider_crawler_terrain_follow_contract.gd`、`tests/e2e/test_spider_crawler_lab_flow.gd`、[v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
+| M3 lobster lab | `LobsterCrawlerLab`、lobster wrapper、metachronal profile | 龙虾作为 shared runtime 第二个 consumer 跑通，且 gait 明显不同于蜘蛛 | `tests/world/test_lobster_crawler_lab_scene_contract.gd`、`tests/world/test_lobster_crawler_metachronal_gait_contract.gd`、`tests/world/test_lobster_crawler_shared_runtime_contract.gd`、`tests/e2e/test_lobster_crawler_lab_flow.gd`、[v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
+| M4 future port freeze | portability contract、wrapper 口径、debug passthrough | future main-world port 契约冻结，且不要求实际接入主世界 | `tests/world/test_arthropod_crawler_portability_contract.gd`、[v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
 
 ## 计划索引
 
@@ -60,12 +62,12 @@ PRD 入口：[PRD-0026 Arthropod Crawler Locomotion Labs](../prd/PRD-0026-arthro
 
 | Req ID | V39 Plan | 单元/集成测试 | E2E / 验证命令 | 证据 | 状态 |
 |---|---|---|---|---|---|
-| REQ-0026-001 | `v39-arthropod-crawler-locomotion-labs.md` | `tests/world/test_arthropod_crawler_shared_spine_contract.gd` | `--script res://tests/world/test_arthropod_crawler_shared_spine_contract.gd` | — | todo |
-| REQ-0026-002 | `v39-arthropod-crawler-locomotion-labs.md` | `tests/world/test_spider_crawler_lab_scene_contract.gd` | `tests/e2e/test_spider_crawler_lab_flow.gd` | — | todo |
-| REQ-0026-003 | `v39-arthropod-crawler-locomotion-labs.md` | `tests/world/test_spider_crawler_gait_contract.gd`、`tests/world/test_spider_crawler_terrain_follow_contract.gd` | `--script res://tests/world/test_spider_crawler_terrain_follow_contract.gd` | — | todo |
-| REQ-0026-004 | `v39-arthropod-crawler-locomotion-labs.md` | `tests/world/test_lobster_crawler_lab_scene_contract.gd`、`tests/world/test_lobster_crawler_metachronal_gait_contract.gd`、`tests/world/test_lobster_crawler_shared_runtime_contract.gd` | `tests/e2e/test_lobster_crawler_lab_flow.gd` | — | todo |
-| REQ-0026-005 | `v39-arthropod-crawler-locomotion-labs.md` | `tests/world/test_arthropod_crawler_portability_contract.gd` | `rg -n "future main-world runtime" docs/plan/v39-index.md docs/plan/v39-arthropod-crawler-locomotion-labs.md` | — | todo |
-| REQ-0026-006 | `v39-arthropod-crawler-locomotion-labs.md` | 所有 focused tests + future profiling entry | fresh verification 文档 | — | todo |
+| REQ-0026-001 | `v39-arthropod-crawler-locomotion-labs.md` | `tests/world/test_arthropod_crawler_shared_spine_contract.gd` | `--script res://tests/world/test_arthropod_crawler_shared_spine_contract.gd` | [v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
+| REQ-0026-002 | `v39-arthropod-crawler-locomotion-labs.md` | `tests/world/test_spider_crawler_lab_scene_contract.gd` | `tests/e2e/test_spider_crawler_lab_flow.gd` | [v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
+| REQ-0026-003 | `v39-arthropod-crawler-locomotion-labs.md` | `tests/world/test_spider_crawler_gait_contract.gd`、`tests/world/test_spider_crawler_terrain_follow_contract.gd` | `--script res://tests/world/test_spider_crawler_terrain_follow_contract.gd`、`--script res://tests/e2e/test_spider_crawler_lab_flow.gd` | [v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
+| REQ-0026-004 | `v39-arthropod-crawler-locomotion-labs.md` | `tests/world/test_lobster_crawler_lab_scene_contract.gd`、`tests/world/test_lobster_crawler_metachronal_gait_contract.gd`、`tests/world/test_lobster_crawler_shared_runtime_contract.gd` | `tests/e2e/test_lobster_crawler_lab_flow.gd` | [v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
+| REQ-0026-005 | `v39-arthropod-crawler-locomotion-labs.md` | `tests/world/test_arthropod_crawler_portability_contract.gd` | `rg -n "future main-world runtime|spawn_policy" docs/plan/v39-index.md docs/plan/v39-arthropod-crawler-locomotion-labs.md` | [v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
+| REQ-0026-006 | `v39-arthropod-crawler-locomotion-labs.md` | 所有 focused tests | fresh verification 文档 | [v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
 
 ## Closeout 证据口径
 

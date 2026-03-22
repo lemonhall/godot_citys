@@ -1,0 +1,94 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://city_game/world/creatures/arthropods/CityLobsterCrawler.gd" id="1_lobster_script"]
+[ext_resource type="PackedScene" path="res://city_game/assets/environment/source/creatures/lobster_02.glb" id="2_lobster_model"]
+
+[sub_resource type="SphereMesh" id="1_foot_mesh"]
+radius = 0.08
+height = 0.16
+
+[sub_resource type="StandardMaterial3D" id="2_foot_material"]
+albedo_color = Color(0.91, 0.49, 0.28, 1)
+roughness = 0.9
+
+[node name="CityLobsterCrawler" type="Node3D"]
+script = ExtResource("1_lobster_script")
+
+[node name="BodyPivot" type="Node3D" parent="."]
+
+[node name="Model" parent="BodyPivot" instance=ExtResource("2_lobster_model")]
+transform = Transform3D(8, 0, 0, 0, 8, 0, 0, 0, 8, 0, 0, 0)
+
+[node name="LegSockets" type="Node3D" parent="."]
+
+[node name="lf_rear" type="Marker3D" parent="LegSockets"]
+position = Vector3(-1.2, 0, -1.4)
+
+[node name="rf_rear" type="Marker3D" parent="LegSockets"]
+position = Vector3(1.2, 0, -1.4)
+
+[node name="lf_mid_b" type="Marker3D" parent="LegSockets"]
+position = Vector3(-1.35, 0, -0.7)
+
+[node name="rf_mid_b" type="Marker3D" parent="LegSockets"]
+position = Vector3(1.35, 0, -0.7)
+
+[node name="lf_mid_a" type="Marker3D" parent="LegSockets"]
+position = Vector3(-1.42, 0, 0.0)
+
+[node name="rf_mid_a" type="Marker3D" parent="LegSockets"]
+position = Vector3(1.42, 0, 0.0)
+
+[node name="lf_front" type="Marker3D" parent="LegSockets"]
+position = Vector3(-1.28, 0, 0.82)
+
+[node name="rf_front" type="Marker3D" parent="LegSockets"]
+position = Vector3(1.28, 0, 0.82)
+
+[node name="lf_claw" type="Marker3D" parent="LegSockets"]
+position = Vector3(-1.05, 0, 1.52)
+
+[node name="rf_claw" type="Marker3D" parent="LegSockets"]
+position = Vector3(1.05, 0, 1.52)
+
+[node name="FootDebugRoot" type="Node3D" parent="."]
+
+[node name="lf_rear" type="MeshInstance3D" parent="FootDebugRoot"]
+material_override = SubResource("2_foot_material")
+mesh = SubResource("1_foot_mesh")
+
+[node name="rf_rear" type="MeshInstance3D" parent="FootDebugRoot"]
+material_override = SubResource("2_foot_material")
+mesh = SubResource("1_foot_mesh")
+
+[node name="lf_mid_b" type="MeshInstance3D" parent="FootDebugRoot"]
+material_override = SubResource("2_foot_material")
+mesh = SubResource("1_foot_mesh")
+
+[node name="rf_mid_b" type="MeshInstance3D" parent="FootDebugRoot"]
+material_override = SubResource("2_foot_material")
+mesh = SubResource("1_foot_mesh")
+
+[node name="lf_mid_a" type="MeshInstance3D" parent="FootDebugRoot"]
+material_override = SubResource("2_foot_material")
+mesh = SubResource("1_foot_mesh")
+
+[node name="rf_mid_a" type="MeshInstance3D" parent="FootDebugRoot"]
+material_override = SubResource("2_foot_material")
+mesh = SubResource("1_foot_mesh")
+
+[node name="lf_front" type="MeshInstance3D" parent="FootDebugRoot"]
+material_override = SubResource("2_foot_material")
+mesh = SubResource("1_foot_mesh")
+
+[node name="rf_front" type="MeshInstance3D" parent="FootDebugRoot"]
+material_override = SubResource("2_foot_material")
+mesh = SubResource("1_foot_mesh")
+
+[node name="lf_claw" type="MeshInstance3D" parent="FootDebugRoot"]
+material_override = SubResource("2_foot_material")
+mesh = SubResource("1_foot_mesh")
+
+[node name="rf_claw" type="MeshInstance3D" parent="FootDebugRoot"]
+material_override = SubResource("2_foot_material")
+mesh = SubResource("1_foot_mesh")

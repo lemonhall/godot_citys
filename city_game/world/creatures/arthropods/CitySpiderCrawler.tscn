@@ -1,0 +1,90 @@
+[gd_scene format=3 uid="uid://bxrrt3kmudap"]
+
+[ext_resource type="Script" path="res://city_game/world/creatures/arthropods/CitySpiderCrawler.gd" id="1_spider_script"]
+
+[sub_resource type="StandardMaterial3D" id="2_body_material"]
+albedo_color = Color(0.13, 0.13, 0.16, 1)
+roughness = 0.96
+
+[sub_resource type="BoxMesh" id="1_body_mesh"]
+size = Vector3(2.4, 0.7, 2.9)
+
+[sub_resource type="StandardMaterial3D" id="4_foot_material"]
+albedo_color = Color(0.78, 0.42, 0.22, 1)
+roughness = 0.92
+
+[sub_resource type="SphereMesh" id="3_foot_mesh"]
+radius = 0.1
+height = 0.2
+
+[node name="CitySpiderCrawler" type="Node3D" unique_id=1425064174]
+script = ExtResource("1_spider_script")
+
+[node name="BodyPivot" type="Node3D" parent="." unique_id=734868655]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3204893, 0)
+
+[node name="BodyMesh" type="MeshInstance3D" parent="BodyPivot" unique_id=818465634]
+material_override = SubResource("2_body_material")
+mesh = SubResource("1_body_mesh")
+
+[node name="LegSockets" type="Node3D" parent="." unique_id=123859938]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3204893, 0)
+
+[node name="lf_front" type="Marker3D" parent="LegSockets" unique_id=1159473610]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2, 0, 1.4)
+
+[node name="rf_front" type="Marker3D" parent="LegSockets" unique_id=430571117]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, 0, 1.4)
+
+[node name="lf_mid_a" type="Marker3D" parent="LegSockets" unique_id=1033111499]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.35, 0, 0.52)
+
+[node name="rf_mid_a" type="Marker3D" parent="LegSockets" unique_id=1453875353]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.35, 0, 0.52)
+
+[node name="lf_mid_b" type="Marker3D" parent="LegSockets" unique_id=478277506]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.35, 0, -0.52)
+
+[node name="rf_mid_b" type="Marker3D" parent="LegSockets" unique_id=621026828]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.35, 0, -0.52)
+
+[node name="lf_rear" type="Marker3D" parent="LegSockets" unique_id=185344322]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2, 0, -1.4)
+
+[node name="rf_rear" type="Marker3D" parent="LegSockets" unique_id=1326908912]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, 0, -1.4)
+
+[node name="FootDebugRoot" type="Node3D" parent="." unique_id=1422907227]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3204893, 0)
+
+[node name="lf_front" type="MeshInstance3D" parent="FootDebugRoot" unique_id=237894389]
+material_override = SubResource("4_foot_material")
+mesh = SubResource("3_foot_mesh")
+
+[node name="rf_front" type="MeshInstance3D" parent="FootDebugRoot" unique_id=1475837390]
+material_override = SubResource("4_foot_material")
+mesh = SubResource("3_foot_mesh")
+
+[node name="lf_mid_a" type="MeshInstance3D" parent="FootDebugRoot" unique_id=491395243]
+material_override = SubResource("4_foot_material")
+mesh = SubResource("3_foot_mesh")
+
+[node name="rf_mid_a" type="MeshInstance3D" parent="FootDebugRoot" unique_id=1910244602]
+material_override = SubResource("4_foot_material")
+mesh = SubResource("3_foot_mesh")
+
+[node name="lf_mid_b" type="MeshInstance3D" parent="FootDebugRoot" unique_id=2108553716]
+material_override = SubResource("4_foot_material")
+mesh = SubResource("3_foot_mesh")
+
+[node name="rf_mid_b" type="MeshInstance3D" parent="FootDebugRoot" unique_id=244288580]
+material_override = SubResource("4_foot_material")
+mesh = SubResource("3_foot_mesh")
+
+[node name="lf_rear" type="MeshInstance3D" parent="FootDebugRoot" unique_id=2134329741]
+material_override = SubResource("4_foot_material")
+mesh = SubResource("3_foot_mesh")
+
+[node name="rf_rear" type="MeshInstance3D" parent="FootDebugRoot" unique_id=766516039]
+material_override = SubResource("4_foot_material")
+mesh = SubResource("3_foot_mesh")

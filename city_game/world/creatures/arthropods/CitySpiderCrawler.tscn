@@ -54,6 +54,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2, 0, -1.4)
 [node name="rf_rear" type="Marker3D" parent="LegSockets" unique_id=1326908912]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, 0, -1.4)
 
+[node name="LegVisualRoot" type="Node3D" parent="." unique_id=1248848123]
+
 [node name="FootDebugRoot" type="Node3D" parent="." unique_id=1422907227]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3204893, 0)
 

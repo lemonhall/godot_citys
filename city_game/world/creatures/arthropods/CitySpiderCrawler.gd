@@ -6,6 +6,12 @@ const CityArthropodCrawlerRuntimeScript := preload("res://city_game/world/creatu
 const CityArthropodFootholdResolverScript := preload("res://city_game/world/creatures/arthropods/CityArthropodFootholdResolver.gd")
 const CityArthropodBodySolverScript := preload("res://city_game/world/creatures/arthropods/CityArthropodBodySolver.gd")
 const SHARED_RUNTIME_SCRIPT_PATH := "res://city_game/world/creatures/arthropods/CityArthropodCrawlerRuntime.gd"
+const LEG_SEGMENT_RADIUS_M := 0.05
+const KNEE_JOINT_RADIUS_M := 0.08
+const KNEE_LATERAL_OFFSET_SCALE := 0.42
+const KNEE_LIFT_STANCE_M := 0.04
+const KNEE_LIFT_SWING_M := 0.18
+const KNEE_FORE_AFT_OFFSET_SCALE := 0.08
 
 const LEG_ORDER := [
 	"lf_front",
@@ -48,6 +54,7 @@ const LEG_STRIDE_SCALES := {
 
 @onready var body_pivot: Node3D = $BodyPivot
 @onready var leg_socket_root: Node3D = $LegSockets
+@onready var leg_visual_root: Node3D = $LegVisualRoot
 @onready var foot_debug_root: Node3D = $FootDebugRoot
 
 var _profile: CityArthropodLocomotionProfile = null
@@ -56,15 +63,23 @@ var _foothold_resolver: CityArthropodFootholdResolver = null
 var _body_solver: CityArthropodBodySolver = null
 var _socket_offsets_by_leg_id: Dictionary = {}
 var _stride_scale_by_leg_id: Dictionary = {}
+var _leg_visual_nodes_by_leg_id: Dictionary = {}
 var _foot_debug_nodes_by_leg_id: Dictionary = {}
 var _initial_anchor_world_position := Vector3.ZERO
 var _auto_step_enabled := false
 var _debug_motion_velocity := Vector3.ZERO
 var _last_runtime_state: Dictionary = {}
+var _last_leg_visual_state: Array = []
+var _leg_segment_mesh: CylinderMesh = null
+var _upper_leg_material: StandardMaterial3D = null
+var _lower_leg_material: StandardMaterial3D = null
+var _knee_joint_mesh: SphereMesh = null
+var _knee_joint_material: StandardMaterial3D = null
 
 func _ready() -> void:
 	_initial_anchor_world_position = global_position
 	_cache_leg_socket_offsets()
+	_ensure_leg_visual_nodes()
 	_cache_foot_debug_nodes()
 	_rebuild_runtime()
 	debug_force_replan_all_legs()
@@ -120,12 +135,21 @@ func get_debug_state() -> Dictionary:
 	state["debug_motion_velocity"] = _debug_motion_velocity
 	state["auto_step_enabled"] = _auto_step_enabled
 	state["socket_leg_count"] = _socket_offsets_by_leg_id.size()
+	state["leg_visuals"] = get_leg_visual_state()
 	return state
 
 func get_profile_contract() -> Dictionary:
 	if _profile == null:
 		return _build_profile_contract().duplicate(true)
 	return _profile.get_contract()
+
+func get_leg_visual_state() -> Array:
+	var copy: Array = []
+	for leg_variant in _last_leg_visual_state:
+		if not (leg_variant is Dictionary):
+			continue
+		copy.append((leg_variant as Dictionary).duplicate(true))
+	return copy
 
 func get_portability_contract() -> Dictionary:
 	return {
@@ -262,6 +286,7 @@ func _sync_visual_state_from_runtime() -> void:
 		body_pivot.global_position = resolved_origin
 		body_pivot.global_basis = _build_basis_from_up(resolved_up)
 	_sync_foot_debug_nodes(_last_runtime_state.get("legs", []))
+	_sync_leg_visual_nodes(_last_runtime_state.get("legs", []))
 
 func _sync_foot_debug_nodes(leg_states: Array) -> void:
 	for leg_variant in leg_states:
@@ -273,6 +298,44 @@ func _sync_foot_debug_nodes(leg_states: Array) -> void:
 		if foot_node == null:
 			continue
 		foot_node.global_position = leg_state.get("locked_foothold", global_position)
+
+func _sync_leg_visual_nodes(leg_states: Array) -> void:
+	_last_leg_visual_state.clear()
+	for leg_variant in leg_states:
+		if not (leg_variant is Dictionary):
+			continue
+		var leg_state: Dictionary = leg_variant as Dictionary
+		var leg_id: String = str(leg_state.get("leg_id", ""))
+		if leg_id == "":
+			continue
+		var visual_nodes: Dictionary = _leg_visual_nodes_by_leg_id.get(leg_id, {}) as Dictionary
+		if visual_nodes.is_empty():
+			continue
+		var socket_local: Vector3 = _socket_offsets_by_leg_id.get(leg_id, Vector3.ZERO)
+		var socket_world_position: Vector3 = _resolve_socket_world_position(socket_local)
+		var foot_world_position: Vector3 = leg_state.get("locked_foothold", global_position)
+		var knee_world_position: Vector3 = _compute_knee_world_position(leg_id, socket_local, socket_world_position, foot_world_position, leg_state)
+		var upper_segment_root: Node3D = visual_nodes.get("upper_segment_root", null) as Node3D
+		var lower_segment_root: Node3D = visual_nodes.get("lower_segment_root", null) as Node3D
+		var upper_segment_mesh: MeshInstance3D = visual_nodes.get("upper_segment_mesh", null) as MeshInstance3D
+		var lower_segment_mesh: MeshInstance3D = visual_nodes.get("lower_segment_mesh", null) as MeshInstance3D
+		var knee_joint: MeshInstance3D = visual_nodes.get("knee_joint", null) as MeshInstance3D
+		_sync_leg_segment(upper_segment_root, upper_segment_mesh, socket_world_position, knee_world_position)
+		_sync_leg_segment(lower_segment_root, lower_segment_mesh, knee_world_position, foot_world_position)
+		if knee_joint != null:
+			knee_joint.global_position = knee_world_position
+		var upper_length: float = socket_world_position.distance_to(knee_world_position)
+		var lower_length: float = knee_world_position.distance_to(foot_world_position)
+		_last_leg_visual_state.append({
+			"leg_id": leg_id,
+			"mode": str(leg_state.get("mode", "")),
+			"socket_world_position": socket_world_position,
+			"knee_world_position": knee_world_position,
+			"foot_world_position": foot_world_position,
+			"upper_length": upper_length,
+			"lower_length": lower_length,
+			"knee_offset_m": _compute_knee_offset_m(socket_world_position, knee_world_position, foot_world_position),
+		})
 
 func _cache_leg_socket_offsets() -> void:
 	_socket_offsets_by_leg_id.clear()
@@ -289,6 +352,156 @@ func _cache_foot_debug_nodes() -> void:
 		if foot_node == null:
 			continue
 		_foot_debug_nodes_by_leg_id[leg_id] = foot_node
+
+func _ensure_leg_visual_nodes() -> void:
+	if leg_visual_root == null:
+		return
+	_leg_visual_nodes_by_leg_id.clear()
+	for leg_id in LEG_ORDER:
+		var leg_root: Node3D = leg_visual_root.get_node_or_null(leg_id) as Node3D
+		if leg_root == null:
+			leg_root = Node3D.new()
+			leg_root.name = leg_id
+			leg_visual_root.add_child(leg_root)
+		var upper_segment_root: Node3D = leg_root.get_node_or_null("UpperSegment") as Node3D
+		if upper_segment_root == null:
+			upper_segment_root = Node3D.new()
+			upper_segment_root.name = "UpperSegment"
+			leg_root.add_child(upper_segment_root)
+		var lower_segment_root: Node3D = leg_root.get_node_or_null("LowerSegment") as Node3D
+		if lower_segment_root == null:
+			lower_segment_root = Node3D.new()
+			lower_segment_root.name = "LowerSegment"
+			leg_root.add_child(lower_segment_root)
+		var knee_joint: MeshInstance3D = leg_root.get_node_or_null("KneeJoint") as MeshInstance3D
+		if knee_joint == null:
+			knee_joint = MeshInstance3D.new()
+			knee_joint.name = "KneeJoint"
+			leg_root.add_child(knee_joint)
+		var upper_segment_mesh: MeshInstance3D = upper_segment_root.get_node_or_null("Mesh") as MeshInstance3D
+		if upper_segment_mesh == null:
+			upper_segment_mesh = MeshInstance3D.new()
+			upper_segment_mesh.name = "Mesh"
+			upper_segment_root.add_child(upper_segment_mesh)
+		var lower_segment_mesh: MeshInstance3D = lower_segment_root.get_node_or_null("Mesh") as MeshInstance3D
+		if lower_segment_mesh == null:
+			lower_segment_mesh = MeshInstance3D.new()
+			lower_segment_mesh.name = "Mesh"
+			lower_segment_root.add_child(lower_segment_mesh)
+		_configure_leg_segment_mesh(upper_segment_mesh, true)
+		_configure_leg_segment_mesh(lower_segment_mesh, false)
+		_configure_knee_joint_mesh(knee_joint)
+		_leg_visual_nodes_by_leg_id[leg_id] = {
+			"upper_segment_root": upper_segment_root,
+			"upper_segment_mesh": upper_segment_mesh,
+			"lower_segment_root": lower_segment_root,
+			"lower_segment_mesh": lower_segment_mesh,
+			"knee_joint": knee_joint,
+		}
+
+func _configure_leg_segment_mesh(segment_mesh: MeshInstance3D, is_upper_segment: bool) -> void:
+	if segment_mesh == null:
+		return
+	segment_mesh.mesh = _get_leg_segment_mesh()
+	segment_mesh.material_override = _get_upper_leg_material() if is_upper_segment else _get_lower_leg_material()
+	segment_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+func _configure_knee_joint_mesh(knee_joint: MeshInstance3D) -> void:
+	if knee_joint == null:
+		return
+	knee_joint.mesh = _get_knee_joint_mesh()
+	knee_joint.material_override = _get_knee_joint_material()
+	knee_joint.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+func _sync_leg_segment(segment_root: Node3D, segment_mesh: MeshInstance3D, start_position: Vector3, end_position: Vector3) -> void:
+	if segment_root == null or segment_mesh == null:
+		return
+	var segment_vector: Vector3 = end_position - start_position
+	var segment_length: float = segment_vector.length()
+	if segment_length <= 0.001:
+		segment_mesh.visible = false
+		return
+	segment_mesh.visible = true
+	segment_root.global_position = start_position.lerp(end_position, 0.5)
+	segment_root.global_basis = _build_segment_basis(segment_vector.normalized())
+	segment_mesh.scale = Vector3.ONE
+	segment_mesh.scale = Vector3(1.0, segment_length, 1.0)
+
+func _resolve_socket_world_position(socket_local: Vector3) -> Vector3:
+	if body_pivot != null:
+		return body_pivot.global_transform * socket_local
+	return global_position + socket_local
+
+func _compute_knee_world_position(leg_id: String, socket_local: Vector3, socket_world_position: Vector3, foot_world_position: Vector3, leg_state: Dictionary) -> Vector3:
+	var span_vector: Vector3 = foot_world_position - socket_world_position
+	var span_length: float = maxf(span_vector.length(), 0.001)
+	var midpoint: Vector3 = socket_world_position.lerp(foot_world_position, 0.5)
+	var body_right: Vector3 = body_pivot.global_basis.x.normalized() if body_pivot != null else Vector3.RIGHT
+	var body_up: Vector3 = body_pivot.global_basis.y.normalized() if body_pivot != null else Vector3.UP
+	var body_longitudinal: Vector3 = body_pivot.global_basis.z.normalized() if body_pivot != null else Vector3.BACK
+	var side_sign: float = -1.0 if leg_id.begins_with("l") else 1.0
+	var fore_aft_sign: float = signf(socket_local.z)
+	var lateral_offset_m: float = clampf(span_length * KNEE_LATERAL_OFFSET_SCALE, 0.18, 0.58)
+	var lift_offset_m: float = KNEE_LIFT_STANCE_M if str(leg_state.get("mode", "stance")) == "stance" else KNEE_LIFT_SWING_M
+	var fore_aft_offset_m: float = clampf(absf(socket_local.z) * KNEE_FORE_AFT_OFFSET_SCALE, 0.0, 0.12)
+	return midpoint + body_right * side_sign * lateral_offset_m + body_up * lift_offset_m + body_longitudinal * fore_aft_sign * fore_aft_offset_m
+
+func _compute_knee_offset_m(socket_world_position: Vector3, knee_world_position: Vector3, foot_world_position: Vector3) -> float:
+	var leg_axis: Vector3 = foot_world_position - socket_world_position
+	var leg_axis_length: float = leg_axis.length()
+	if leg_axis_length <= 0.001:
+		return 0.0
+	var projection_distance: float = (knee_world_position - socket_world_position).dot(leg_axis / leg_axis_length)
+	var projected_point: Vector3 = socket_world_position + leg_axis.normalized() * projection_distance
+	return knee_world_position.distance_to(projected_point)
+
+func _build_segment_basis(direction: Vector3) -> Basis:
+	var segment_up: Vector3 = direction.normalized()
+	var reference_axis: Vector3 = body_pivot.global_basis.x.normalized() if body_pivot != null else Vector3.RIGHT
+	if absf(segment_up.dot(reference_axis)) >= 0.96:
+		reference_axis = body_pivot.global_basis.z.normalized() if body_pivot != null else Vector3.FORWARD
+	var segment_right: Vector3 = reference_axis.cross(segment_up).normalized()
+	if segment_right.length_squared() <= 0.0001:
+		segment_right = Vector3.RIGHT
+	var segment_forward: Vector3 = segment_up.cross(segment_right).normalized()
+	return Basis(segment_right, segment_up, segment_forward).orthonormalized()
+
+func _get_leg_segment_mesh() -> CylinderMesh:
+	if _leg_segment_mesh == null:
+		_leg_segment_mesh = CylinderMesh.new()
+		_leg_segment_mesh.top_radius = LEG_SEGMENT_RADIUS_M
+		_leg_segment_mesh.bottom_radius = LEG_SEGMENT_RADIUS_M
+		_leg_segment_mesh.height = 1.0
+		_leg_segment_mesh.radial_segments = 12
+	return _leg_segment_mesh
+
+func _get_upper_leg_material() -> StandardMaterial3D:
+	if _upper_leg_material == null:
+		_upper_leg_material = StandardMaterial3D.new()
+		_upper_leg_material.albedo_color = Color(0.16, 0.16, 0.18, 1.0)
+		_upper_leg_material.roughness = 0.94
+	return _upper_leg_material
+
+func _get_lower_leg_material() -> StandardMaterial3D:
+	if _lower_leg_material == null:
+		_lower_leg_material = StandardMaterial3D.new()
+		_lower_leg_material.albedo_color = Color(0.28, 0.24, 0.22, 1.0)
+		_lower_leg_material.roughness = 0.92
+	return _lower_leg_material
+
+func _get_knee_joint_mesh() -> SphereMesh:
+	if _knee_joint_mesh == null:
+		_knee_joint_mesh = SphereMesh.new()
+		_knee_joint_mesh.radius = KNEE_JOINT_RADIUS_M
+		_knee_joint_mesh.height = KNEE_JOINT_RADIUS_M * 2.0
+	return _knee_joint_mesh
+
+func _get_knee_joint_material() -> StandardMaterial3D:
+	if _knee_joint_material == null:
+		_knee_joint_material = StandardMaterial3D.new()
+		_knee_joint_material.albedo_color = Color(0.66, 0.42, 0.22, 1.0)
+		_knee_joint_material.roughness = 0.88
+	return _knee_joint_material
 
 func _build_basis_from_up(up_vector: Vector3) -> Basis:
 	var up := up_vector.normalized()

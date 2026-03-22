@@ -12,6 +12,8 @@ extends Node3D
 @onready var _pole_root := $MountRoot/Pole as Node3D
 @onready var _line_origin_anchor := $MountRoot/Pole/LineOriginAnchor as Marker3D
 @onready var _tip_anchor := $MountRoot/Pole/TipAnchor as Marker3D
+@onready var _carry_line_origin_anchor := $MountRoot/LineOriginAnchor as Marker3D
+@onready var _carry_tip_anchor := $MountRoot/TipAnchor as Marker3D
 
 var _authored_mount_position := Vector3.ZERO
 var _authored_mount_rotation_deg := Vector3.ZERO
@@ -60,6 +62,7 @@ func set_line_pose_active(active: bool, target_world_position: Vector3 = Vector3
 func get_visual_state() -> Dictionary:
 	var carry_pose := _resolve_carry_pose()
 	var cast_endpoint_pose := _resolve_cast_endpoint_pose()
+	var visual_tip_world_position := _resolve_visual_tip_world_position()
 	return {
 		"pole_present": _pole_root != null and is_instance_valid(_pole_root),
 		"equipped_visible": visible,
@@ -67,7 +70,7 @@ func get_visual_state() -> Dictionary:
 		"swing_count": _swing_count,
 		"line_pose_active": _line_pose_active,
 		"pose_name": _resolve_pose_name(),
-		"tip_world_position": get_line_origin_world_position(),
+		"tip_world_position": visual_tip_world_position,
 		"mount_position": Vector3.ZERO if _mount_root == null else _mount_root.position,
 		"mount_world_position": Vector3.ZERO if _mount_root == null else _mount_root.global_position,
 		"mount_rotation_degrees": Vector3.ZERO if _mount_root == null else _mount_root.rotation_degrees,
@@ -83,6 +86,15 @@ func get_line_origin_world_position() -> Vector3:
 	if _tip_anchor != null and is_instance_valid(_tip_anchor):
 		return _tip_anchor.global_position
 	return Vector3.ZERO
+
+func _resolve_visual_tip_world_position() -> Vector3:
+	if _line_pose_active:
+		return get_line_origin_world_position()
+	if _carry_tip_anchor != null and is_instance_valid(_carry_tip_anchor):
+		return _carry_tip_anchor.global_position
+	if _carry_line_origin_anchor != null and is_instance_valid(_carry_line_origin_anchor):
+		return _carry_line_origin_anchor.global_position
+	return get_line_origin_world_position()
 
 func _apply_pose(progress: float) -> void:
 	if _mount_root == null:

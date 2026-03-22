@@ -180,6 +180,7 @@ var _chunk_death_visual_records: Dictionary = {}
 var _pedestrian_visual_catalog: CityPedestrianVisualCatalog = null
 var _building_override_entries: Dictionary = {}
 var _terrain_region_entries: Dictionary = {}
+var _lake_fish_school_entries_by_chunk_id: Dictionary = {}
 var _scene_landmark_entries_by_chunk_id: Dictionary = {}
 var _scene_interactive_prop_entries_by_chunk_id: Dictionary = {}
 var _scene_minigame_venue_entries_by_chunk_id: Dictionary = {}
@@ -240,6 +241,7 @@ func setup(config, world_data: Dictionary) -> void:
 	_pedestrian_visual_catalog = null
 	_building_override_entries.clear()
 	_terrain_region_entries.clear()
+	_lake_fish_school_entries_by_chunk_id.clear()
 	_scene_landmark_entries_by_chunk_id.clear()
 	_scene_interactive_prop_entries_by_chunk_id.clear()
 	_scene_minigame_venue_entries_by_chunk_id.clear()
@@ -271,6 +273,23 @@ func set_terrain_region_entries(entries: Dictionary) -> void:
 	if _water_surface_page_provider != null and _water_surface_page_provider.has_method("configure"):
 		_water_surface_page_provider.configure(_terrain_region_entries)
 	_clear_retained_chunk_scene_cache()
+
+func set_lake_fish_school_entries(entries_by_chunk_id: Dictionary) -> void:
+	_lake_fish_school_entries_by_chunk_id.clear()
+	_clear_retained_chunk_scene_cache()
+	for chunk_id_variant in entries_by_chunk_id.keys():
+		var chunk_id := str(chunk_id_variant).strip_edges()
+		if chunk_id == "":
+			continue
+		var school_entries_variant = entries_by_chunk_id.get(chunk_id_variant, [])
+		if not (school_entries_variant is Array):
+			continue
+		var chunk_entries: Array = []
+		for school_variant in school_entries_variant:
+			if school_variant is Dictionary:
+				chunk_entries.append((school_variant as Dictionary).duplicate(true))
+		if not chunk_entries.is_empty():
+			_lake_fish_school_entries_by_chunk_id[chunk_id] = chunk_entries
 
 func set_scene_landmark_entries(entries: Dictionary) -> void:
 	_scene_landmark_entries_by_chunk_id.clear()
@@ -1224,6 +1243,9 @@ func _process_prepare_budget() -> void:
 			payload["prepared_profile"] = cached_profile
 			_record_prepare_profile_sample(0)
 		payload["surface_page_provider"] = _surface_page_provider
+		var terrain_region_entries: Array = payload.get("terrain_region_entries", [])
+		if not terrain_region_entries.is_empty():
+			payload["terrain_page_provider"] = _terrain_page_provider
 		payload["initial_lod_mode"] = _resolve_initial_lod_mode(payload)
 		if not _has_live_retained_chunk_scene(chunk_id):
 			_prebuild_near_mount_nodes(payload)
@@ -2070,6 +2092,7 @@ func _build_chunk_payload(entry: Dictionary) -> Dictionary:
 		"vehicle_query": _world_data.get("vehicle_query"),
 		"building_override_entries": _building_override_entries.duplicate(true),
 		"terrain_region_entries": _get_terrain_region_entries_for_chunk(chunk_id),
+		"lake_fish_school_entries": _get_lake_fish_school_entries_for_chunk(chunk_id),
 		"water_surface_entries": _get_water_surface_entries_for_chunk(chunk_id),
 		"scene_landmark_entries": _get_scene_landmark_entries_for_chunk(chunk_id),
 		"scene_interactive_prop_entries": _get_scene_interactive_prop_entries_for_chunk(chunk_id),
@@ -2171,6 +2194,16 @@ func _get_terrain_region_entries_for_chunk(chunk_id: String) -> Array:
 		if anchor_chunk_id != chunk_id and render_owner_chunk_id != chunk_id:
 			continue
 		snapshot.append(entry.duplicate(true))
+	return snapshot
+
+func _get_lake_fish_school_entries_for_chunk(chunk_id: String) -> Array:
+	if chunk_id == "":
+		return []
+	var chunk_entries: Array = _lake_fish_school_entries_by_chunk_id.get(chunk_id, [])
+	var snapshot: Array = []
+	for entry_variant in chunk_entries:
+		if entry_variant is Dictionary:
+			snapshot.append((entry_variant as Dictionary).duplicate(true))
 	return snapshot
 
 func _get_scene_interactive_prop_entries_for_chunk(chunk_id: String) -> Array:

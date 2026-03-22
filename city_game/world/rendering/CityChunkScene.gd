@@ -10,6 +10,7 @@ const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTer
 const CityRoadMeshBuilder := preload("res://city_game/world/rendering/CityRoadMeshBuilder.gd")
 const CityRoadMaskBuilder := preload("res://city_game/world/rendering/CityRoadMaskBuilder.gd")
 const CityLakeBasinCarrierBuilder := preload("res://city_game/world/rendering/CityLakeBasinCarrierBuilder.gd")
+const LakeFishActorScene := preload("res://city_game/world/features/lake/LakeFishActor.tscn")
 const CityGroundRoadOverlayShader := preload("res://city_game/world/rendering/CityGroundRoadOverlay.gdshader")
 const CityBuildingSceneBuilder := preload("res://city_game/world/serviceability/CityBuildingSceneBuilder.gd")
 const CityDestructibleBuildingRuntime := preload("res://city_game/combat/buildings/CityDestructibleBuildingRuntime.gd")
@@ -663,6 +664,15 @@ func _build_near_group() -> Dictionary:
 		var water_node := _build_water_surface(water_entry_variant as Dictionary)
 		if water_node != null:
 			water_surfaces.add_child(water_node)
+	var lake_fish_schools := Node3D.new()
+	lake_fish_schools.name = "LakeFishSchools"
+	near_group.add_child(lake_fish_schools)
+	for school_variant in _chunk_data.get("lake_fish_school_entries", []):
+		if not (school_variant is Dictionary):
+			continue
+		var fish_actor := _build_lake_fish_school_actor(school_variant as Dictionary)
+		if fish_actor != null:
+			lake_fish_schools.add_child(fish_actor)
 
 	var props := Node3D.new()
 	props.name = "Props"
@@ -878,6 +888,19 @@ func _build_scene_minigame_venue(entry: Dictionary) -> Node3D:
 func _build_water_surface(entry: Dictionary) -> Node3D:
 	var chunk_center: Vector3 = _chunk_data.get("chunk_center", Vector3.ZERO)
 	return CityLakeBasinCarrierBuilder.build_water_surface_node(entry, chunk_center)
+
+func _build_lake_fish_school_actor(school: Dictionary) -> Node3D:
+	var fish_actor := LakeFishActorScene.instantiate() as Node3D
+	if fish_actor == null:
+		return null
+	fish_actor.name = str(school.get("school_id", "LakeFishSchool"))
+	var school_world_position_variant: Variant = school.get("world_position", Vector3.ZERO)
+	var school_world_position: Vector3 = school_world_position_variant as Vector3 if school_world_position_variant is Vector3 else Vector3.ZERO
+	var chunk_center: Vector3 = _chunk_data.get("chunk_center", Vector3.ZERO)
+	fish_actor.position = school_world_position - chunk_center
+	if fish_actor.has_method("configure_school_visual"):
+		fish_actor.configure_school_visual(school)
+	return fish_actor
 
 func _get_water_surface_material() -> StandardMaterial3D:
 	if _shared_water_surface_material_template == null:

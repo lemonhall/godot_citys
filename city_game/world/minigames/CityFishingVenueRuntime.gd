@@ -274,8 +274,12 @@ func _update_ambient_freeze(player_node: Node3D, venue: Node3D) -> void:
 		_ambient_simulation_frozen = false
 		return
 	var player_world_position := player_node.global_position
-	var in_play_bounds := venue.has_method("is_world_point_in_play_bounds") and bool(venue.is_world_point_in_play_bounds(player_world_position))
-	_ambient_simulation_frozen = in_play_bounds or _pole_equipped
+	var in_freeze_bounds := false
+	if venue.has_method("is_world_point_in_release_bounds"):
+		in_freeze_bounds = bool(venue.is_world_point_in_release_bounds(player_world_position))
+	elif venue.has_method("is_world_point_in_play_bounds"):
+		in_freeze_bounds = bool(venue.is_world_point_in_play_bounds(player_world_position))
+	_ambient_simulation_frozen = in_freeze_bounds or _pole_equipped
 
 func _start_cast(entry: Dictionary, venue: Node3D, player_node: Node3D, preview_state: Dictionary) -> void:
 	_cast_state = CAST_STATE_CAST_OUT
@@ -394,7 +398,17 @@ func _build_action_result(success: bool, action: String, error: String = "") -> 
 
 func _build_runtime_tick_summary() -> Dictionary:
 	return {
+		"fishing_mode_active": _fishing_mode_active,
+		"pole_equipped": _pole_equipped,
+		"cast_state": _cast_state,
+		"bobber_visible": _bobber_visible,
+		"bobber_world_position": _bobber_world_position,
+		"bobber_bite_feedback_active": _bobber_bite_feedback_active,
+		"fishing_line_visible": _fishing_line_visible,
 		"ambient_simulation_frozen": _ambient_simulation_frozen,
+		"feedback_event_token": _feedback_event_token,
+		"feedback_event_text": _feedback_event_text,
+		"feedback_event_tone": _feedback_event_tone,
 		"match_hud_state": _hud_state.duplicate(true),
 	}
 

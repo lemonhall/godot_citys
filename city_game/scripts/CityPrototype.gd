@@ -2719,8 +2719,9 @@ func _build_crosshair_state() -> Dictionary:
 		screen_position = camera.unproject_position(world_target)
 	var weapon_mode: String = player.get_weapon_mode() if player.has_method("get_weapon_mode") else "rifle"
 	var driving_vehicle := player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle())
+	var fishing_mode_enabled := player.has_method("is_fishing_mode_enabled") and bool(player.is_fishing_mode_enabled())
 	return {
-		"visible": weapon_mode != "grenade" and not driving_vehicle,
+		"visible": weapon_mode != "grenade" and not driving_vehicle and not fishing_mode_enabled,
 		"screen_position": screen_position,
 		"viewport_size": viewport_size,
 		"world_target": world_target,
@@ -5196,8 +5197,35 @@ func _sync_terrain_region_feature_entries(entries: Dictionary) -> void:
 		if _terrain_region_feature_runtime != null and _terrain_region_feature_runtime.has_method("get_lake_runtimes"):
 			lake_runtimes = _terrain_region_feature_runtime.get_lake_runtimes()
 		_lake_fish_school_runtime.configure(lake_runtimes)
+	if chunk_renderer != null and chunk_renderer.has_method("set_lake_fish_school_entries"):
+		chunk_renderer.set_lake_fish_school_entries(_build_lake_fish_school_entries_by_chunk(runtime_entries))
 	if _fishing_venue_runtime != null and _fishing_venue_runtime.has_method("set_lake_context"):
 		_fishing_venue_runtime.set_lake_context(_terrain_region_feature_runtime, _lake_fish_school_runtime)
+
+func _build_lake_fish_school_entries_by_chunk(terrain_region_entries: Dictionary) -> Dictionary:
+	var entries_by_chunk_id := {}
+	if _lake_fish_school_runtime == null or not _lake_fish_school_runtime.has_method("get_school_summaries_for_region"):
+		return entries_by_chunk_id
+	for entry_variant in terrain_region_entries.values():
+		if not (entry_variant is Dictionary):
+			continue
+		var entry: Dictionary = entry_variant
+		var region_id := str(entry.get("region_id", "")).strip_edges()
+		if region_id == "":
+			continue
+		var render_owner_chunk_id := str(entry.get("render_owner_chunk_id", entry.get("anchor_chunk_id", ""))).strip_edges()
+		if render_owner_chunk_id == "":
+			continue
+		var school_summaries: Array = _lake_fish_school_runtime.get_school_summaries_for_region(region_id)
+		if school_summaries.is_empty():
+			continue
+		var chunk_entries: Array = entries_by_chunk_id.get(render_owner_chunk_id, [])
+		for school_variant in school_summaries:
+			if not (school_variant is Dictionary):
+				continue
+			chunk_entries.append((school_variant as Dictionary).duplicate(true))
+		entries_by_chunk_id[render_owner_chunk_id] = chunk_entries
+	return entries_by_chunk_id
 
 func _update_lake_player_water_state() -> void:
 	var next_state := {

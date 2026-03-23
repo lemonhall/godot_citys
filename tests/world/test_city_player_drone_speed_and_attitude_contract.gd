@@ -26,6 +26,9 @@ func _run() -> void:
 	var active_state := await _wait_for_state(world, "active", 180)
 	if not T.require_true(self, str(active_state.get("system_state", "")) == "active", "Player drone speed and attitude contract requires the drone to reach active flight before validating motion tuning"):
 		return
+	if not T.require_true(self, active_state.has("body_yaw_deg"), "Player drone speed and attitude contract requires debug state to expose body_yaw_deg so rotorcraft strafe semantics can be regression tested"):
+		return
+	var baseline_yaw_deg := float(active_state.get("body_yaw_deg", 0.0))
 
 	var initial_position: Vector3 = runtime.global_position
 	_set_key_pressed(KEY_W, true)
@@ -33,18 +36,51 @@ func _run() -> void:
 	var forward_state: Dictionary = world.get_player_drone_debug_state()
 	_set_key_pressed(KEY_W, false)
 
-	if not T.require_true(self, runtime.global_position.distance_to(initial_position) >= 7.0, "Forward drone flight must cover a much longer distance than the current sluggish baseline"):
+	if not T.require_true(self, runtime.global_position.distance_to(initial_position) >= 10.0, "Forward drone flight must cover a much longer distance than the current sluggish baseline"):
 		return
-	if not T.require_true(self, float(forward_state.get("planar_velocity_mps", 0.0)) >= 18.0, "Forward drone flight must reach a clearly faster cruise speed so the aircraft no longer feels capped like a slow hover toy"):
+	if not T.require_true(self, float(forward_state.get("planar_velocity_mps", 0.0)) >= 28.0, "Forward drone flight must reach a clearly faster cruise speed so the aircraft no longer feels capped like a slow hover toy"):
 		return
 	if not T.require_true(self, forward_state.has("visual_pitch_deg"), "Drone debug state must expose visual_pitch_deg so forward-tilt behavior can be regression tested formally"):
 		return
 	if not T.require_true(self, float(forward_state.get("visual_pitch_deg", 0.0)) <= -12.0, "Forward drone flight must visibly pitch the nose down instead of staying too level while accelerating"):
 		return
+	if not T.require_true(self, _angle_delta_deg(float(forward_state.get("body_yaw_deg", baseline_yaw_deg)), baseline_yaw_deg) <= 4.0, "Forward drone flight must preserve a stable body heading instead of auto-yawing toward velocity like an arcade missile"):
+		return
 
 	await _advance_frames(36)
 	var hover_state: Dictionary = world.get_player_drone_debug_state()
 	if not T.require_true(self, absf(float(hover_state.get("visual_pitch_deg", 999.0))) <= 4.0, "Releasing forward input must let the drone visually settle back toward level hover instead of staying locked in a dive posture"):
+		return
+
+	_set_key_pressed(KEY_S, true)
+	await _advance_frames(24)
+	var reverse_state: Dictionary = world.get_player_drone_debug_state()
+	_set_key_pressed(KEY_S, false)
+	if not T.require_true(self, float(reverse_state.get("visual_pitch_deg", 0.0)) >= 8.0, "Holding S during active flight must visibly pitch the nose up instead of reusing the same forward-dive attitude"):
+		return
+	if not T.require_true(self, _angle_delta_deg(float(reverse_state.get("body_yaw_deg", baseline_yaw_deg)), baseline_yaw_deg) <= 4.0, "Holding S during active flight must not auto-rotate the body toward the travel direction"):
+		return
+
+	await _advance_frames(24)
+
+	_set_key_pressed(KEY_A, true)
+	await _advance_frames(24)
+	var left_state: Dictionary = world.get_player_drone_debug_state()
+	_set_key_pressed(KEY_A, false)
+	if not T.require_true(self, float(left_state.get("visual_roll_deg", 0.0)) >= 6.0, "Holding A during active flight must visibly bank left instead of flattening or rotating the whole craft sideways"):
+		return
+	if not T.require_true(self, _angle_delta_deg(float(left_state.get("body_yaw_deg", baseline_yaw_deg)), baseline_yaw_deg) <= 4.0, "Holding A during active flight must strafe left under a stable heading instead of slewing the body toward velocity"):
+		return
+
+	await _advance_frames(24)
+
+	_set_key_pressed(KEY_D, true)
+	await _advance_frames(24)
+	var right_state: Dictionary = world.get_player_drone_debug_state()
+	_set_key_pressed(KEY_D, false)
+	if not T.require_true(self, float(right_state.get("visual_roll_deg", 0.0)) <= -6.0, "Holding D during active flight must visibly bank right instead of flattening or rotating the whole craft sideways"):
+		return
+	if not T.require_true(self, _angle_delta_deg(float(right_state.get("body_yaw_deg", baseline_yaw_deg)), baseline_yaw_deg) <= 4.0, "Holding D during active flight must strafe right under a stable heading instead of slewing the body toward velocity"):
 		return
 
 	world.queue_free()
@@ -80,3 +116,6 @@ func _set_key_pressed(keycode: Key, pressed: bool) -> void:
 	event.keycode = keycode
 	event.physical_keycode = keycode
 	Input.parse_input_event(event)
+
+func _angle_delta_deg(a_deg: float, b_deg: float) -> float:
+	return absf(rad_to_deg(wrapf(deg_to_rad(a_deg - b_deg), -PI, PI)))

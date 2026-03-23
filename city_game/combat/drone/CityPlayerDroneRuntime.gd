@@ -16,11 +16,14 @@ const SYSTEM_STATE_RECOVERING := "recovering"
 @export var retrieval_height_m := 0.95
 @export var hover_forward_offset_m := 3.4
 @export var hover_height_m := 5.8
+@export var presentation_scale := 3.0
 
 @onready var collision_shape: CollisionShape3D = $CollisionShape3D
 @onready var visual_root: Node3D = $ModelRoot
+@onready var rotor_blur_root: Node3D = $RotorBlurRoot
 @onready var camera_rig: Node3D = $CameraRig
 @onready var camera: Camera3D = $CameraRig/Camera3D
+@onready var death_fx_root: Node3D = $DeathFxRoot
 @onready var rotor_audio: AudioStreamPlayer3D = $RotorAudio
 
 var _flight_controller = FlightControllerScript.new()
@@ -36,6 +39,8 @@ var _last_reject_reason := ""
 var _locked_player_position := Vector3.ZERO
 
 func _ready() -> void:
+	_apply_presentation_scale()
+	_sync_presentation_from_visual_root()
 	_set_drone_visible(false)
 	if camera != null:
 		camera.current = false
@@ -146,10 +151,14 @@ func get_debug_state() -> Dictionary:
 		"player_locked": _is_player_locked(),
 		"drone_visible": visible,
 		"drone_world_position": global_position,
+		"body_yaw_deg": rad_to_deg(rotation.y),
 		"planar_velocity_mps": _planar_velocity_mps,
 		"vertical_velocity_mps": _vertical_velocity_mps,
+		"presentation_scale": presentation_scale,
 		"visual_pitch_deg": rad_to_deg(visual_root.rotation.x) if visual_root != null else 0.0,
 		"visual_roll_deg": rad_to_deg(visual_root.rotation.z) if visual_root != null else 0.0,
+		"rotor_blur_pitch_deg": rad_to_deg(rotor_blur_root.rotation.x) if rotor_blur_root != null else 0.0,
+		"rotor_blur_roll_deg": rad_to_deg(rotor_blur_root.rotation.z) if rotor_blur_root != null else 0.0,
 		"last_reject_reason": _last_reject_reason,
 		"scene_path": SCENE_PATH,
 		"runtime_script_path": RUNTIME_SCRIPT_PATH,
@@ -202,6 +211,7 @@ func _step_active(delta: float) -> void:
 	_set_player_lock(true)
 	_apply_camera_ownership()
 	var flight_state: Dictionary = _flight_controller.step(self, camera, visual_root, delta)
+	_sync_presentation_from_visual_root()
 	_planar_velocity_mps = float(flight_state.get("planar_speed_mps", 0.0))
 	_vertical_velocity_mps = float(flight_state.get("vertical_speed_mps", 0.0))
 
@@ -353,3 +363,16 @@ func _maintain_player_lock_position() -> void:
 func _smoothstep(value: float) -> float:
 	var clamped := clampf(value, 0.0, 1.0)
 	return clamped * clamped * (3.0 - 2.0 * clamped)
+
+func _apply_presentation_scale() -> void:
+	var scaled_nodes: Array[Node3D] = [visual_root, rotor_blur_root, death_fx_root]
+	for presentation_node in scaled_nodes:
+		if presentation_node == null:
+			continue
+		presentation_node.scale = Vector3.ONE * presentation_scale
+
+func _sync_presentation_from_visual_root() -> void:
+	if visual_root == null or rotor_blur_root == null:
+		return
+	rotor_blur_root.rotation.x = visual_root.rotation.x
+	rotor_blur_root.rotation.z = visual_root.rotation.z

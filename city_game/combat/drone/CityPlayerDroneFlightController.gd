@@ -1,14 +1,13 @@
 extends RefCounted
 
-var max_planar_speed_mps := 26.0
-var planar_accel_mps2 := 42.0
-var planar_brake_mps2 := 42.0
+var max_planar_speed_mps := 42.0
+var planar_accel_mps2 := 72.0
+var planar_brake_mps2 := 72.0
 var max_vertical_speed_mps := 6.8
 var vertical_accel_mps2 := 42.0
-var yaw_turn_speed_rad := 6.0
 var visual_response := 8.5
-var max_roll_deg := 11.0
-var max_pitch_deg := 16.0
+var max_roll_deg := 13.0
+var max_pitch_deg := 19.0
 
 func step(drone: CharacterBody3D, camera: Camera3D, visual_root: Node3D, delta: float) -> Dictionary:
 	if drone == null or camera == null:
@@ -44,10 +43,6 @@ func step(drone: CharacterBody3D, camera: Camera3D, visual_root: Node3D, delta: 
 	if absf(target_vertical_velocity) > 0.01 and absf(drone.velocity.y) > 0.01 and signf(target_vertical_velocity) != signf(drone.velocity.y):
 		vertical_step *= 2.2
 	drone.velocity.y = move_toward(drone.velocity.y, target_vertical_velocity, vertical_step)
-	if current_planar_velocity.length_squared() > 0.05:
-		var target_heading := current_planar_velocity.normalized()
-		var target_yaw := atan2(-target_heading.x, -target_heading.z)
-		drone.rotation.y = rotate_toward(drone.rotation.y, target_yaw, yaw_turn_speed_rad * maxf(delta, 0.0))
 	drone.move_and_slide()
 	_apply_visual_bank(drone, visual_root, delta)
 	return {

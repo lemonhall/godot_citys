@@ -8,7 +8,8 @@
 - `CityDroneGunship.tscn` 从 `helicopter` combat runtime 脱钩，切到 `combat/drone` 正式 runtime
 - deploy / active / recover 的 camera ownership / input ownership / player lock 主链
 - active 阶段第三人称自稳定 hover flight
-- active 阶段更高的前冲速度与明确的机体前倾视觉
+- active 阶段更高的前冲速度、stable-heading rotorcraft strafe 语义与明确的机体前倾视觉
+- active 阶段 enlarged third-person presentation 与 rotor blur 姿态同步合同
 - drone active / recover 阶段主世界 streaming 与 minimap focus 跟随无人机
 - formal portability contract 与主世界 wrapper 接线
 - `CityPrototype` 原有 debug hotkey / inspection regression 冒烟
@@ -26,6 +27,7 @@ $tests=@(
   'res://tests/world/test_city_player_drone_camera_takeover_contract.gd',
   'res://tests/world/test_city_player_drone_flight_input_contract.gd',
   'res://tests/world/test_city_player_drone_speed_and_attitude_contract.gd',
+  'res://tests/world/test_city_player_drone_presentation_contract.gd',
   'res://tests/world/test_city_player_drone_portability_contract.gd',
   'res://tests/world/test_city_player_drone_streaming_anchor_contract.gd',
   'res://tests/e2e/test_city_player_drone_flow.gd',
@@ -58,7 +60,11 @@ foreach($test in $tests){
   - 证明释放输入后无人机会回到 near-zero hover，而不是继续漂移。
 - `test_city_player_drone_speed_and_attitude_contract.gd`
   - 证明 active 阶段前冲速度已高于原先 sluggish baseline。
-  - 证明前冲时 `visual_pitch_deg` 会进入明确的 nose-down 姿态，松手后能回到 hover。
+  - 证明机体默认保持 stable heading，不再按平面速度自动扭 `yaw`。
+  - 证明 `W/S` 与 `A/D` 会分别进入正确的 pitch / bank 语义，而不是把旋翼机飞成一枚自动转头的导弹。
+- `test_city_player_drone_presentation_contract.gd`
+  - 证明正式 third-person presentation scale 已放大到约 `3x`，无人机在主世界第三人称视角下不再小得像玩具。
+  - 证明 `RotorBlurRoot` 与 `ModelRoot` 会共享同一套 pitch / roll 姿态，四个 shader 旋翼不再留在原地“站直”。
 - `test_city_player_drone_portability_contract.gd`
   - 证明正式 drone runtime 暴露 portability contract，且 `CityPrototype` 挂载的是同一份 `combat/drone` runtime。
 - `test_city_player_drone_streaming_anchor_contract.gd`

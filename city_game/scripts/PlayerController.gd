@@ -37,6 +37,9 @@ const SPORTS_CAR_SPEED_MULTIPLIER := 2.0
 @export var primary_fire_shoulder_offset := Vector3(0.46, 1.22, -0.18)
 @export var primary_fire_forward_offset_m := 0.72
 @export var aim_trace_distance_m := 240.0
+@export var rifle_aim_trace_distance_m := 960.0
+@export var rifle_muzzle_flash_duration_sec := 0.085
+@export var rifle_muzzle_flash_forward_offset_m := 0.12
 @export var grenade_hold_offset := Vector3(0.52, 1.18, -0.62)
 @export var grenade_gravity_mps2 := 24.0
 @export var grenade_min_throw_distance_m := 2.0
@@ -164,6 +167,11 @@ var _drive_vehicle_visual_root: Node3D = null
 var _drive_vehicle_model_root: Node3D = null
 var _tennis_racket_visual: Node3D = null
 var _missile_launcher_visual: Node3D = null
+var _rifle_muzzle_flash_root: Node3D = null
+var _rifle_muzzle_flash_materials: Array[StandardMaterial3D] = []
+var _rifle_fire_fx_remaining_sec := 0.0
+var _rifle_fire_count := 0
+var _last_rifle_muzzle_world_position := Vector3.ZERO
 var _fishing_mode_enabled := false
 var _fishing_cast_surface_y_m := 0.0
 var _fishing_preview_requested := false
@@ -195,6 +203,7 @@ func _ready() -> void:
 	_rng.seed = 1337
 	_vehicle_visual_catalog = CityVehicleVisualCatalog.new()
 	_ensure_traversal_fx_root()
+	_ensure_rifle_muzzle_flash()
 	_ensure_tennis_racket_visual()
 	_ensure_missile_launcher_visual()
 	_ensure_fishing_pole_visual()
@@ -213,6 +222,7 @@ func _process(delta: float) -> void:
 		_primary_fire_cooldown_remaining = maxf(_primary_fire_cooldown_remaining - delta, 0.0)
 	if _primary_fire_active and _control_enabled:
 		request_primary_fire()
+	_update_rifle_muzzle_flash(delta)
 	_update_ads_camera(delta)
 	_update_traversal_fx(delta)
 	_update_grenade_preview()
@@ -406,6 +416,17 @@ func get_weapon_state() -> Dictionary:
 		"aim_down_sights_active": _aim_down_sights_active,
 		"driving_vehicle": _driving_vehicle,
 		"fishing_mode_enabled": _fishing_mode_enabled,
+	}
+
+func get_rifle_visual_state() -> Dictionary:
+	_ensure_rifle_muzzle_flash()
+	return {
+		"muzzle_flash_present": _rifle_muzzle_flash_root != null and is_instance_valid(_rifle_muzzle_flash_root),
+		"fire_fx_active": _rifle_fire_fx_remaining_sec > 0.0,
+		"fire_count": _rifle_fire_count,
+		"muzzle_flash_visible": _rifle_muzzle_flash_root != null and is_instance_valid(_rifle_muzzle_flash_root) and _rifle_muzzle_flash_root.visible,
+		"last_muzzle_world_position": _last_rifle_muzzle_world_position,
+		"aim_trace_distance_m": rifle_aim_trace_distance_m,
 	}
 
 func set_fishing_mode_enabled(enabled: bool, cast_surface_y_m: float = 0.0) -> void:
@@ -819,6 +840,7 @@ func request_primary_fire() -> bool:
 	if _primary_fire_cooldown_remaining > 0.0:
 		return false
 	_primary_fire_cooldown_remaining = primary_fire_cooldown_sec
+	_play_rifle_fire_fx()
 	primary_fire_requested.emit()
 	return true
 
@@ -1024,16 +1046,17 @@ func get_aim_trace_segment() -> Dictionary:
 	var aim_basis := _resolve_aim_basis()
 	var origin: Vector3 = camera.global_position if camera != null else global_position + Vector3.UP * 1.4
 	var forward := (-aim_basis.z).normalized()
+	var trace_distance_m := _get_active_aim_trace_distance_m()
 	return {
 		"origin": origin,
-		"target": origin + forward * aim_trace_distance_m,
-		"distance_m": aim_trace_distance_m,
+		"target": origin + forward * trace_distance_m,
+		"distance_m": trace_distance_m,
 	}
 
 func _resolve_aim_target_world_position() -> Vector3:
 	var trace_segment: Dictionary = get_aim_trace_segment()
 	var origin: Vector3 = trace_segment.get("origin", global_position + Vector3.UP * 1.4)
-	var fallback_target: Vector3 = trace_segment.get("target", origin + Vector3.FORWARD * aim_trace_distance_m)
+	var fallback_target: Vector3 = trace_segment.get("target", origin + Vector3.FORWARD * _get_active_aim_trace_distance_m())
 	if get_world_3d() == null or get_world_3d().direct_space_state == null:
 		return fallback_target
 	var query := PhysicsRayQueryParameters3D.create(origin, fallback_target)
@@ -1043,6 +1066,9 @@ func _resolve_aim_target_world_position() -> Vector3:
 	if hit.is_empty():
 		return fallback_target
 	return hit.get("position", fallback_target)
+
+func _get_active_aim_trace_distance_m() -> float:
+	return rifle_aim_trace_distance_m if _weapon_mode == WEAPON_MODE_RIFLE else aim_trace_distance_m
 
 func suspend_ground_stabilization(frame_count: int) -> void:
 	_stabilization_suspend_frames = maxi(_stabilization_suspend_frames, frame_count)
@@ -1496,6 +1522,101 @@ func _ensure_missile_launcher_visual() -> void:
 	var visual_parent := player_visual if player_visual != null and is_instance_valid(player_visual) else self
 	_missile_launcher_visual = visual_parent.get_node_or_null("RpgLauncherEquippedVisual") as Node3D
 
+func _ensure_rifle_muzzle_flash() -> void:
+	if _rifle_muzzle_flash_root != null and is_instance_valid(_rifle_muzzle_flash_root):
+		return
+	_rifle_muzzle_flash_materials.clear()
+	_rifle_muzzle_flash_root = get_node_or_null("RifleMuzzleFlash") as Node3D
+	if _rifle_muzzle_flash_root == null:
+		_rifle_muzzle_flash_root = Node3D.new()
+		_rifle_muzzle_flash_root.name = "RifleMuzzleFlash"
+		_rifle_muzzle_flash_root.top_level = true
+		add_child(_rifle_muzzle_flash_root)
+	var core := _rifle_muzzle_flash_root.get_node_or_null("Core") as MeshInstance3D
+	if core == null:
+		core = MeshInstance3D.new()
+		core.name = "Core"
+		var core_mesh := SphereMesh.new()
+		core_mesh.radius = 0.1
+		core_mesh.height = 0.2
+		core.mesh = core_mesh
+		_rifle_muzzle_flash_root.add_child(core)
+	var cone := _rifle_muzzle_flash_root.get_node_or_null("Cone") as MeshInstance3D
+	if cone == null:
+		cone = MeshInstance3D.new()
+		cone.name = "Cone"
+		var cone_mesh := CylinderMesh.new()
+		cone_mesh.top_radius = 0.01
+		cone_mesh.bottom_radius = 0.11
+		cone_mesh.height = 0.42
+		cone.mesh = cone_mesh
+		cone.rotation_degrees = Vector3(90.0, 0.0, 0.0)
+		cone.position = Vector3(0.0, 0.0, -0.22)
+		_rifle_muzzle_flash_root.add_child(cone)
+	for mesh_instance in [core, cone]:
+		if mesh_instance == null:
+			continue
+		mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var material := mesh_instance.material_override as StandardMaterial3D
+		if material == null:
+			material = StandardMaterial3D.new()
+			material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			material.albedo_color = Color(1.0, 0.84, 0.48, 0.0)
+			material.emission_enabled = true
+			material.emission = Color(1.0, 0.76, 0.34, 1.0)
+			material.emission_energy_multiplier = 0.0
+			mesh_instance.material_override = material
+		_rifle_muzzle_flash_materials.append(material)
+	_rifle_muzzle_flash_root.visible = false
+
+func _play_rifle_fire_fx() -> void:
+	_ensure_rifle_muzzle_flash()
+	_rifle_fire_count += 1
+	_rifle_fire_fx_remaining_sec = maxf(rifle_muzzle_flash_duration_sec, 0.01)
+	_sync_rifle_muzzle_flash_transform()
+	_set_rifle_muzzle_flash_strength(1.0)
+
+func _update_rifle_muzzle_flash(delta: float) -> void:
+	if _rifle_fire_fx_remaining_sec <= 0.0:
+		_set_rifle_muzzle_flash_strength(0.0)
+		return
+	_rifle_fire_fx_remaining_sec = maxf(_rifle_fire_fx_remaining_sec - maxf(delta, 0.0), 0.0)
+	_sync_rifle_muzzle_flash_transform()
+	var progress := 1.0 - (_rifle_fire_fx_remaining_sec / maxf(rifle_muzzle_flash_duration_sec, 0.01))
+	_set_rifle_muzzle_flash_strength(clampf(1.0 - progress, 0.0, 1.0))
+
+func _sync_rifle_muzzle_flash_transform() -> void:
+	_ensure_rifle_muzzle_flash()
+	if _rifle_muzzle_flash_root == null or not is_instance_valid(_rifle_muzzle_flash_root):
+		return
+	var spawn_transform := get_projectile_spawn_transform()
+	var direction := get_projectile_direction()
+	var muzzle_world_position := spawn_transform.origin + direction * rifle_muzzle_flash_forward_offset_m
+	_last_rifle_muzzle_world_position = muzzle_world_position
+	_rifle_muzzle_flash_root.global_position = muzzle_world_position
+	var up_axis := Vector3.UP if absf(direction.dot(Vector3.UP)) < 0.94 else Vector3.FORWARD
+	_rifle_muzzle_flash_root.look_at(muzzle_world_position + direction, up_axis, true)
+
+func _set_rifle_muzzle_flash_strength(flash_strength: float) -> void:
+	if _rifle_muzzle_flash_root == null or not is_instance_valid(_rifle_muzzle_flash_root):
+		return
+	var active := flash_strength > 0.01
+	_rifle_muzzle_flash_root.visible = active
+	var core := _rifle_muzzle_flash_root.get_node_or_null("Core") as MeshInstance3D
+	var cone := _rifle_muzzle_flash_root.get_node_or_null("Cone") as MeshInstance3D
+	if core != null:
+		core.scale = Vector3.ONE * lerpf(0.5, 1.22, flash_strength)
+	if cone != null:
+		cone.scale = Vector3(lerpf(0.46, 1.0, flash_strength), lerpf(0.72, 1.18, flash_strength), lerpf(0.46, 1.0, flash_strength))
+	for material in _rifle_muzzle_flash_materials:
+		if material == null:
+			continue
+		var albedo := material.albedo_color
+		albedo.a = flash_strength * 0.88
+		material.albedo_color = albedo
+		material.emission_energy_multiplier = lerpf(0.0, 3.4, flash_strength)
+
 func _update_missile_launcher_visual() -> void:
 	_ensure_missile_launcher_visual()
 	if _missile_launcher_visual == null or not is_instance_valid(_missile_launcher_visual):
@@ -1813,6 +1934,8 @@ func _clear_transient_weapon_state() -> void:
 	var ads_was_active := _aim_down_sights_active
 	_primary_fire_active = false
 	_aim_down_sights_active = false
+	_rifle_fire_fx_remaining_sec = 0.0
+	_set_rifle_muzzle_flash_strength(0.0)
 	_grenade_hold_requested = false
 	_grenade_ready_active = false
 	_update_grenade_hold_visual()

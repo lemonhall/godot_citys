@@ -1,9 +1,17 @@
 extends Node3D
 
+const LEGACY_ORB_VISUAL_PROFILE := "orb"
+const RIFLE_VISUAL_PROFILE := "rifle_smoke_trace"
+const RIFLE_SPEED_MPS := 920.0
+const RIFLE_MAX_DISTANCE_M := 960.0
+const RIFLE_MAX_LIFETIME_SEC := 1.25
+
 @export var speed_mps := 180.0
 @export var max_distance_m := 420.0
 @export var max_lifetime_sec := 3.5
 @export var damage := 1.0
+@export var body_visible := true
+@export var visual_profile := LEGACY_ORB_VISUAL_PROFILE
 
 var _direction := Vector3.FORWARD
 var _owner: Node = null
@@ -15,6 +23,7 @@ var _tint := Color(0.65098, 0.85098, 1.0, 1.0)
 var _emission_tint := Color(0.360784, 0.713725, 1.0, 1.0)
 var _pedestrian_hit_resolver: Object = null
 var _vehicle_hit_resolver: Object = null
+var _body_mesh_instance: MeshInstance3D = null
 
 func _ready() -> void:
 	add_to_group(_group_name)
@@ -48,6 +57,15 @@ func get_direction() -> Vector3:
 
 func get_velocity() -> Vector3:
 	return _direction * speed_mps
+
+func get_visual_state() -> Dictionary:
+	return {
+		"visual_profile": visual_profile,
+		"body_present": _body_mesh_instance != null and is_instance_valid(_body_mesh_instance),
+		"body_visible": _body_mesh_instance != null and is_instance_valid(_body_mesh_instance) and _body_mesh_instance.visible,
+		"speed_mps": speed_mps,
+		"max_distance_m": max_distance_m,
+	}
 
 func _physics_process(delta: float) -> void:
 	if get_world_3d() == null or get_world_3d().direct_space_state == null:
@@ -92,18 +110,24 @@ func _build_query_exclusions() -> Array[RID]:
 	return exclusions
 
 func _ensure_visual() -> void:
-	if get_node_or_null("MeshInstance3D") != null:
+	if _body_mesh_instance == null:
+		_body_mesh_instance = get_node_or_null("MeshInstance3D") as MeshInstance3D
+	if not body_visible:
+		if _body_mesh_instance != null and is_instance_valid(_body_mesh_instance):
+			_body_mesh_instance.visible = false
 		return
-	var mesh_instance := MeshInstance3D.new()
-	mesh_instance.name = "MeshInstance3D"
+	if _body_mesh_instance == null:
+		_body_mesh_instance = MeshInstance3D.new()
+		_body_mesh_instance.name = "MeshInstance3D"
+		add_child(_body_mesh_instance)
 	var mesh := SphereMesh.new()
 	mesh.radius = 0.08
 	mesh.height = 0.16
-	mesh_instance.mesh = mesh
+	_body_mesh_instance.mesh = mesh
 	var material := StandardMaterial3D.new()
 	material.albedo_color = _tint
 	material.emission_enabled = true
 	material.emission = _emission_tint
 	material.emission_energy_multiplier = 1.2
-	mesh_instance.material_override = material
-	add_child(mesh_instance)
+	_body_mesh_instance.material_override = material
+	_body_mesh_instance.visible = true

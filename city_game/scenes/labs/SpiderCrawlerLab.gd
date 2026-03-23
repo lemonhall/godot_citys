@@ -1,6 +1,7 @@
 extends Node3D
 
 const CityProjectile := preload("res://city_game/combat/CityProjectile.gd")
+const CityProjectileTracer := preload("res://city_game/combat/CityProjectileTracer.gd")
 const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
 const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesignatorBeam.gd")
 const CityMissileScene := preload("res://city_game/combat/CityMissile.tscn")
@@ -30,6 +31,7 @@ const SPIDER_LASER_FALLBACK_RADIUS_M := 1.35
 @onready var swarm_root := $SwarmRoot
 @onready var swarm_spawn_root := $SwarmSpawnRoot
 @onready var projectile_root := $CombatRoot/Projectiles
+@onready var projectile_tracer_root := $CombatRoot/ProjectileTracers
 @onready var grenade_root := $CombatRoot/Grenades
 @onready var laser_beam_root := $CombatRoot/LaserBeams
 @onready var missile_root := $CombatRoot/Missiles
@@ -257,6 +259,9 @@ func fire_missile_at_world_position(target_world_position: Vector3) -> Node3D:
 func get_active_projectile_count() -> int:
 	return 0 if projectile_root == null else projectile_root.get_child_count()
 
+func get_active_projectile_tracer_count() -> int:
+	return 0 if projectile_tracer_root == null else projectile_tracer_root.get_child_count()
+
 func get_active_grenade_count() -> int:
 	return 0 if grenade_root == null else grenade_root.get_child_count()
 
@@ -268,6 +273,7 @@ func get_active_missile_count() -> int:
 
 func reset_lab_state() -> void:
 	_clear_projectiles(projectile_root)
+	_clear_projectiles(projectile_tracer_root)
 	_clear_projectiles(grenade_root)
 	_clear_projectiles(laser_beam_root)
 	_clear_projectiles(missile_root)
@@ -538,6 +544,11 @@ func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 	if projectile_root == null:
 		return null
 	var projectile := CityProjectile.new()
+	projectile.speed_mps = CityProjectile.RIFLE_SPEED_MPS
+	projectile.max_distance_m = CityProjectile.RIFLE_MAX_DISTANCE_M
+	projectile.max_lifetime_sec = CityProjectile.RIFLE_MAX_LIFETIME_SEC
+	projectile.body_visible = false
+	projectile.visual_profile = CityProjectile.RIFLE_VISUAL_PROFILE
 	projectile.configure(
 		origin,
 		direction,
@@ -547,7 +558,16 @@ func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 		"city_enemy"
 	)
 	projectile_root.add_child(projectile)
+	_spawn_projectile_tracer(origin, direction, projectile.speed_mps)
 	return projectile
+
+func _spawn_projectile_tracer(origin: Vector3, direction: Vector3, speed_mps: float) -> Node3D:
+	if projectile_tracer_root == null:
+		return null
+	var tracer := CityProjectileTracer.new()
+	tracer.configure(origin, direction, speed_mps)
+	projectile_tracer_root.add_child(tracer)
+	return tracer
 
 func _spawn_grenade(origin: Vector3, launch_velocity: Vector3) -> Node3D:
 	if grenade_root == null:

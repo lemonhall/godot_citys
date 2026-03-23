@@ -29,6 +29,7 @@ const CityTaskBriefViewModel := preload("res://city_game/world/tasks/presentatio
 const CityTaskPinProjection := preload("res://city_game/world/tasks/presentation/CityTaskPinProjection.gd")
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
 const CityProjectile := preload("res://city_game/combat/CityProjectile.gd")
+const CityProjectileTracer := preload("res://city_game/combat/CityProjectileTracer.gd")
 const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
 const CityMissileScene := preload("res://city_game/combat/CityMissile.tscn")
 const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesignatorBeam.gd")
@@ -236,6 +237,7 @@ var _minimap_build_max_usec := 0
 var _minimap_build_last_usec := 0
 var _combat_root: Node3D = null
 var _projectile_root: Node3D = null
+var _projectile_tracer_root: Node3D = null
 var _grenade_root: Node3D = null
 var _missile_root: Node3D = null
 var _laser_beam_root: Node3D = null
@@ -1169,6 +1171,9 @@ func fire_player_projectile_toward(target_world_position: Vector3) -> Node3D:
 func get_active_projectile_count() -> int:
 	return 0 if _projectile_root == null else _projectile_root.get_child_count()
 
+func get_active_projectile_tracer_count() -> int:
+	return 0 if _projectile_tracer_root == null else _projectile_tracer_root.get_child_count()
+
 func get_active_grenade_count() -> int:
 	return 0 if _grenade_root == null else _grenade_root.get_child_count()
 
@@ -1545,6 +1550,12 @@ func _ensure_combat_roots() -> void:
 			_projectile_root = Node3D.new()
 			_projectile_root.name = "Projectiles"
 			_combat_root.add_child(_projectile_root)
+	if _projectile_tracer_root == null:
+		_projectile_tracer_root = _combat_root.get_node_or_null("ProjectileTracers") as Node3D
+		if _projectile_tracer_root == null:
+			_projectile_tracer_root = Node3D.new()
+			_projectile_tracer_root.name = "ProjectileTracers"
+			_combat_root.add_child(_projectile_tracer_root)
 	if _grenade_root == null:
 		_grenade_root = _combat_root.get_node_or_null("Grenades") as Node3D
 		if _grenade_root == null:
@@ -1641,6 +1652,11 @@ func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 	if _projectile_root == null:
 		return
 	var projectile := CityProjectile.new()
+	projectile.speed_mps = CityProjectile.RIFLE_SPEED_MPS
+	projectile.max_distance_m = CityProjectile.RIFLE_MAX_DISTANCE_M
+	projectile.max_lifetime_sec = CityProjectile.RIFLE_MAX_LIFETIME_SEC
+	projectile.body_visible = false
+	projectile.visual_profile = CityProjectile.RIFLE_VISUAL_PROFILE
 	projectile.configure(
 		origin,
 		direction,
@@ -1654,9 +1670,19 @@ func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 		chunk_renderer if chunk_renderer != null and chunk_renderer.has_method("resolve_vehicle_projectile_hit") else null
 	)
 	_projectile_root.add_child(projectile)
+	_spawn_projectile_tracer(origin, direction, projectile.speed_mps)
 	if chunk_renderer != null and chunk_renderer.has_method("notify_projectile_event"):
 		chunk_renderer.notify_projectile_event(origin, direction, projectile.max_distance_m if projectile != null else 36.0)
 	return projectile
+
+func _spawn_projectile_tracer(origin: Vector3, direction: Vector3, speed_mps: float) -> Node3D:
+	_ensure_combat_roots()
+	if _projectile_tracer_root == null:
+		return null
+	var tracer := CityProjectileTracer.new()
+	tracer.configure(origin, direction, speed_mps)
+	_projectile_tracer_root.add_child(tracer)
+	return tracer
 
 func _spawn_grenade(origin: Vector3, launch_velocity: Vector3) -> Node3D:
 	_ensure_combat_roots()

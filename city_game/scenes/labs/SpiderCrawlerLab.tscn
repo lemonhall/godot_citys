@@ -112,6 +112,8 @@ mesh = SubResource("11_beam_mesh")
 
 [node name="Projectiles" type="Node3D" parent="CombatRoot"]
 
+[node name="ProjectileTracers" type="Node3D" parent="CombatRoot"]
+
 [node name="Grenades" type="Node3D" parent="CombatRoot"]
 
 [node name="LaserBeams" type="Node3D" parent="CombatRoot"]

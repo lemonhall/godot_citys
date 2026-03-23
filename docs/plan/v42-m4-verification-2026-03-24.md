@@ -8,6 +8,8 @@
 - `CityDroneGunship.tscn` 从 `helicopter` combat runtime 脱钩，切到 `combat/drone` 正式 runtime
 - deploy / active / recover 的 camera ownership / input ownership / player lock 主链
 - active 阶段第三人称自稳定 hover flight
+- active 阶段更高的前冲速度与明确的机体前倾视觉
+- drone active / recover 阶段主世界 streaming 与 minimap focus 跟随无人机
 - formal portability contract 与主世界 wrapper 接线
 - `CityPrototype` 原有 debug hotkey / inspection regression 冒烟
 
@@ -23,8 +25,12 @@ $tests=@(
   'res://tests/world/test_city_player_drone_toggle_contract.gd',
   'res://tests/world/test_city_player_drone_camera_takeover_contract.gd',
   'res://tests/world/test_city_player_drone_flight_input_contract.gd',
+  'res://tests/world/test_city_player_drone_speed_and_attitude_contract.gd',
   'res://tests/world/test_city_player_drone_portability_contract.gd',
+  'res://tests/world/test_city_player_drone_streaming_anchor_contract.gd',
   'res://tests/e2e/test_city_player_drone_flow.gd',
+  'res://tests/world/test_city_minimap_drive_heading_contract.gd',
+  'res://tests/world/test_city_minimap_cache_quantization.gd',
   'res://tests/world/test_city_fps_overlay_toggle.gd',
   'res://tests/e2e/test_city_fast_inspection_mode.gd'
 )
@@ -50,10 +56,20 @@ foreach($test in $tests){
 - `test_city_player_drone_flight_input_contract.gd`
   - 证明 active 阶段 `W/D` 提供 camera-relative planar move，`E/Space` 上升，`Q` 下降。
   - 证明释放输入后无人机会回到 near-zero hover，而不是继续漂移。
+- `test_city_player_drone_speed_and_attitude_contract.gd`
+  - 证明 active 阶段前冲速度已高于原先 sluggish baseline。
+  - 证明前冲时 `visual_pitch_deg` 会进入明确的 nose-down 姿态，松手后能回到 hover。
 - `test_city_player_drone_portability_contract.gd`
   - 证明正式 drone runtime 暴露 portability contract，且 `CityPrototype` 挂载的是同一份 `combat/drone` runtime。
+- `test_city_player_drone_streaming_anchor_contract.gd`
+  - 证明 active drone 穿越 chunk 后，主世界 `current_chunk_id` 会跟随无人机变化。
+  - 证明 minimap center 会落在 drone 的量化 refresh cell，而不是继续钉在 player body。
 - `test_city_player_drone_flow.gd`
   - 证明主世界整链 `deploy -> active flight -> recover -> restore player control` 端到端通过。
+- `test_city_minimap_drive_heading_contract.gd`
+  - 证明这轮 navigation marker 改动没有把 drive-mode minimap heading 打坏。
+- `test_city_minimap_cache_quantization.gd`
+  - 证明 minimap 量化缓存合同仍成立，没有因为 drone focus 逻辑退回成每次都重建。
 - `test_city_fps_overlay_toggle.gd`
   - 证明新增 `KP_5` 没打坏原有 numpad debug hotkey 链。
 - `test_city_fast_inspection_mode.gd`

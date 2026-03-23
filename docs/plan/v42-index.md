@@ -49,8 +49,8 @@ PRD 入口：[PRD-0027 Drone Flight Foundation](../prd/PRD-0027-drone-flight-fou
 | M0 docs freeze | PRD / design / v42 plan 全链冻结 | `KEY_KP_5`、deploy/recover、ownership、自稳定第三人称与非目标边界全部落文档 | `rg -n "KEY_KP_5|deploying|recovering|camera_owner|input_owner|combat/drone" docs/prd/PRD-0027-drone-flight-foundation.md docs/plan/v42-index.md docs/plan/v42-drone-flight-foundation.md docs/plans/2026-03-24-v42-drone-flight-foundation-design.md` | done |
 | M1 toggle + drone-only runtime | 正式 hotkey toggle、drone runtime 脱离 helicopter | `KEY_KP_5` 驱动 `stowed <-> deploying/recovering`；runtime path 留在 `combat/drone/` | `tests/world/test_city_player_drone_toggle_contract.gd`、`tests/world/test_city_drone_gunship_scene_contract.gd` | done |
 | M2 transition + player lock | deploy / recover sequence、玩家冻结 / 恢复 | camera/input ownership 在正确时刻切换，玩家位置与武器输入在 transition 中完全冻结 | `tests/world/test_city_player_drone_camera_takeover_contract.gd` | done |
-| M3 active flight foundation | 第三人称自稳定 hover flight | `W/A/S/D` 平面移动、`E/Space` 上升、`Q` 下降、松手 hover 与平滑姿态成立 | `tests/world/test_city_player_drone_flight_input_contract.gd` | done |
-| M4 world wrapper + portability | `CityPrototype` 正式接入，future lab portability contract 锁定 | `get_player_drone_debug_state()` 成立，主世界 wrapper 可驱动完整放飞/飞行/回收链，且不分叉第二套 lab runtime | `tests/world/test_city_player_drone_portability_contract.gd`、`tests/e2e/test_city_player_drone_flow.gd` | done |
+| M3 active flight foundation | 第三人称自稳定 hover flight | `W/A/S/D` 平面移动、`E/Space` 上升、`Q` 下降、松手 hover 与平滑姿态成立，且前冲速度/前倾姿态达到正式飞行器观感 | `tests/world/test_city_player_drone_flight_input_contract.gd`、`tests/world/test_city_player_drone_speed_and_attitude_contract.gd` | done |
+| M4 world wrapper + portability | `CityPrototype` 正式接入，future lab portability contract 锁定 | `get_player_drone_debug_state()` 成立，主世界 wrapper 可驱动完整放飞/飞行/回收链，drone active 时 streaming/minimap focus 跟随无人机，且不分叉第二套 lab runtime | `tests/world/test_city_player_drone_portability_contract.gd`、`tests/world/test_city_player_drone_streaming_anchor_contract.gd`、`tests/e2e/test_city_player_drone_flow.gd` | done |
 
 ## 计划索引
 
@@ -64,8 +64,8 @@ PRD 入口：[PRD-0027 Drone Flight Foundation](../prd/PRD-0027-drone-flight-fou
 | REQ-0027-002 | `v42-drone-flight-foundation.md` | `tests/world/test_city_player_drone_toggle_contract.gd` | `docs/plan/v42-m4-verification-2026-03-24.md` | `docs/plan/v42-m4-verification-2026-03-24.md` | done |
 | REQ-0027-003 | `v42-drone-flight-foundation.md` | `tests/world/test_city_player_drone_camera_takeover_contract.gd` | `docs/plan/v42-m4-verification-2026-03-24.md` | `docs/plan/v42-m4-verification-2026-03-24.md` | done |
 | REQ-0027-004 | `v42-drone-flight-foundation.md` | `tests/world/test_city_player_drone_camera_takeover_contract.gd` | `docs/plan/v42-m4-verification-2026-03-24.md` | `docs/plan/v42-m4-verification-2026-03-24.md` | done |
-| REQ-0027-005 | `v42-drone-flight-foundation.md` | `tests/world/test_city_player_drone_flight_input_contract.gd` | `docs/plan/v42-m4-verification-2026-03-24.md` | `docs/plan/v42-m4-verification-2026-03-24.md` | done |
-| REQ-0027-006 | `v42-drone-flight-foundation.md` | `tests/world/test_city_player_drone_portability_contract.gd` | `docs/plan/v42-m4-verification-2026-03-24.md` | `docs/plan/v42-m4-verification-2026-03-24.md` | done |
+| REQ-0027-005 | `v42-drone-flight-foundation.md` | `tests/world/test_city_player_drone_flight_input_contract.gd`、`tests/world/test_city_player_drone_speed_and_attitude_contract.gd` | `docs/plan/v42-m4-verification-2026-03-24.md` | `docs/plan/v42-m4-verification-2026-03-24.md` | done |
+| REQ-0027-006 | `v42-drone-flight-foundation.md` | `tests/world/test_city_player_drone_portability_contract.gd`、`tests/world/test_city_player_drone_streaming_anchor_contract.gd` | `docs/plan/v42-m4-verification-2026-03-24.md` | `docs/plan/v42-m4-verification-2026-03-24.md` | done |
 
 ## Closeout 证据口径
 

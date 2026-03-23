@@ -108,7 +108,9 @@
 - Create: `tests/world/test_city_player_drone_toggle_contract.gd`
 - Create: `tests/world/test_city_player_drone_camera_takeover_contract.gd`
 - Create: `tests/world/test_city_player_drone_flight_input_contract.gd`
+- Create: `tests/world/test_city_player_drone_speed_and_attitude_contract.gd`
 - Create: `tests/world/test_city_player_drone_portability_contract.gd`
+- Create: `tests/world/test_city_player_drone_streaming_anchor_contract.gd`
 - Create: `tests/e2e/test_city_player_drone_flow.gd`
 
 ## Steps

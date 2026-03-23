@@ -36,9 +36,9 @@ func _run() -> void:
 	var forward_state: Dictionary = world.get_player_drone_debug_state()
 	_set_key_pressed(KEY_W, false)
 
-	if not T.require_true(self, runtime.global_position.distance_to(initial_position) >= 10.0, "Forward drone flight must cover a much longer distance than the current sluggish baseline"):
+	if not T.require_true(self, runtime.global_position.distance_to(initial_position) >= 14.0, "Forward drone flight must cover a much longer distance than the current sluggish baseline"):
 		return
-	if not T.require_true(self, float(forward_state.get("planar_velocity_mps", 0.0)) >= 28.0, "Forward drone flight must reach a clearly faster cruise speed so the aircraft no longer feels capped like a slow hover toy"):
+	if not T.require_true(self, float(forward_state.get("planar_velocity_mps", 0.0)) >= 38.0, "Forward drone flight must reach a clearly faster cruise speed so the aircraft no longer feels capped like a slow hover toy"):
 		return
 	if not T.require_true(self, forward_state.has("visual_pitch_deg"), "Drone debug state must expose visual_pitch_deg so forward-tilt behavior can be regression tested formally"):
 		return

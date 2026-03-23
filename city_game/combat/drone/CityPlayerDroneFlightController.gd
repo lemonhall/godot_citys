@@ -1,10 +1,10 @@
 extends RefCounted
 
-var max_planar_speed_mps := 42.0
-var planar_accel_mps2 := 72.0
-var planar_brake_mps2 := 72.0
-var max_vertical_speed_mps := 6.8
-var vertical_accel_mps2 := 42.0
+var max_planar_speed_mps := 58.0
+var planar_accel_mps2 := 108.0
+var planar_brake_mps2 := 108.0
+var max_vertical_speed_mps := 20.4
+var vertical_accel_mps2 := 126.0
 var visual_response := 8.5
 var max_roll_deg := 13.0
 var max_pitch_deg := 19.0

@@ -75,7 +75,7 @@
 - 建立 formal deploy / recover sequence
 - 建立 third-person chase camera ownership contract
 - 建立自稳定 hover flight foundation
-- 建立 stable-heading rotorcraft strafe 语义与更高前冲速度
+- 建立 stable-heading rotorcraft strafe 语义、鼠标 yaw 转向与更高前冲速度
 - 建立 enlarged third-person presentation 与 rotor blur 姿态同步 contract
 - 建立 player lock / restore contract
 - 规划 focused tests 与 portability contract
@@ -97,11 +97,13 @@
 4. 自动化测试必须证明：`deploying` / `active` / `recovering` 三段期间，玩家移动、武器、准星输入全部失效。
 5. 自动化测试必须证明：active 阶段 `W/A/S/D` 产生 camera-relative planar control，`E` 与 `Space` 上升，`Q` 下降。
 6. 自动化测试必须证明：active 阶段机体默认保持 stable heading，不允许再按平面速度自动扭 `yaw`；`W` 必须 nose-down，`S` 必须 nose-up，`A/D` 必须分别产生左/右 bank。
-7. 自动化测试必须证明：释放飞行输入后无人机回到 near-zero hover，而不是继续漂移或瞬时硬停。
-8. 自动化测试必须证明：第三人称 presentation 至少维持约 `3x` 的正式视觉体量，且 rotor blur 必须跟随机体共享 pitch/roll 姿态。
-9. 自动化测试必须证明：active 状态再次按下 `KEY_KP_5` 会进入 `recovering`，并且只有在回收 sequence 结束后玩家 input/camera owner 才恢复。
-10. 自动化测试必须证明：`CityPrototype` 暴露 `get_player_drone_debug_state()`，供 focused tests 直接断言 ownership、heading 与 presentation。
-11. 反作弊条款：不接受“切一个 inspection camera + 隐藏玩家武器”冒充正式无人机系统。
+7. 自动化测试必须证明：鼠标左右滑动会在 active flight 中驱动无人机 yaw 左/右转向，且单次中等幅度 mouse motion 不得过激。
+8. 自动化测试必须证明：`E/Q/Space` 的垂直机动速度显著高于初版 slow-hover lift/sink，满足快速上升与下降。
+9. 自动化测试必须证明：释放飞行输入后无人机回到 near-zero hover，而不是继续漂移或瞬时硬停。
+10. 自动化测试必须证明：第三人称 presentation 至少维持约 `3x` 的正式视觉体量，且 rotor blur 必须跟随机体共享 pitch/roll 姿态。
+11. 自动化测试必须证明：active 状态再次按下 `KEY_KP_5` 会进入 `recovering`，并且只有在回收 sequence 结束后玩家 input/camera owner 才恢复。
+12. 自动化测试必须证明：`CityPrototype` 暴露 `get_player_drone_debug_state()`，供 focused tests 直接断言 ownership、heading 与 presentation。
+13. 反作弊条款：不接受“切一个 inspection camera + 隐藏玩家武器”冒充正式无人机系统。
 
 ## Files
 

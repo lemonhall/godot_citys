@@ -17,6 +17,8 @@ const SYSTEM_STATE_RECOVERING := "recovering"
 @export var hover_forward_offset_m := 3.4
 @export var hover_height_m := 5.8
 @export var presentation_scale := 3.0
+@export var mouse_yaw_sensitivity := 0.0024
+@export var max_mouse_yaw_step_deg := 10.0
 
 @onready var collision_shape: CollisionShape3D = $CollisionShape3D
 @onready var visual_root: Node3D = $ModelRoot
@@ -37,6 +39,7 @@ var _planar_velocity_mps := 0.0
 var _vertical_velocity_mps := 0.0
 var _last_reject_reason := ""
 var _locked_player_position := Vector3.ZERO
+var _pending_mouse_yaw_delta_rad := 0.0
 
 func _ready() -> void:
 	_apply_presentation_scale()
@@ -63,6 +66,23 @@ func bind_player_owner(player_owner: Node3D) -> void:
 	_player_owner = player_owner
 	_player_camera = _resolve_player_camera()
 	_apply_camera_ownership()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _system_state != SYSTEM_STATE_ACTIVE:
+		return
+	if event is InputEventMouseButton:
+		var button := event as InputEventMouseButton
+		if button.pressed and DisplayServer.get_name() != "headless" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+		get_viewport().set_input_as_handled()
+		return
+	if not (event is InputEventMouseMotion):
+		return
+	if DisplayServer.get_name() != "headless" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		return
+	var motion := event as InputEventMouseMotion
+	_pending_mouse_yaw_delta_rad += -motion.relative.x * mouse_yaw_sensitivity
+	get_viewport().set_input_as_handled()
 
 func request_toggle() -> Dictionary:
 	match _system_state:
@@ -173,6 +193,7 @@ func _begin_deploy() -> void:
 	_locked_player_position = _player_owner.global_position
 	global_position = _transition_start_position
 	global_rotation.y = _resolve_player_yaw()
+	_pending_mouse_yaw_delta_rad = 0.0
 	velocity = Vector3.ZERO
 	_planar_velocity_mps = 0.0
 	_vertical_velocity_mps = 0.0
@@ -187,6 +208,7 @@ func _begin_recover() -> void:
 	_transition_start_position = global_position
 	_transition_target_position = _resolve_retrieval_anchor()
 	_locked_player_position = _player_owner.global_position
+	_pending_mouse_yaw_delta_rad = 0.0
 	velocity = Vector3.ZERO
 	_planar_velocity_mps = 0.0
 	_vertical_velocity_mps = 0.0
@@ -210,6 +232,7 @@ func _step_deploy(delta: float) -> void:
 func _step_active(delta: float) -> void:
 	_set_player_lock(true)
 	_apply_camera_ownership()
+	_apply_pending_mouse_yaw()
 	var flight_state: Dictionary = _flight_controller.step(self, camera, visual_root, delta)
 	_sync_presentation_from_visual_root()
 	_planar_velocity_mps = float(flight_state.get("planar_speed_mps", 0.0))
@@ -223,6 +246,7 @@ func _step_recover(delta: float) -> void:
 	global_position = next_position
 	if progress >= 1.0 - 0.0001:
 		_system_state = SYSTEM_STATE_STOWED
+		_pending_mouse_yaw_delta_rad = 0.0
 		velocity = Vector3.ZERO
 		_planar_velocity_mps = 0.0
 		_vertical_velocity_mps = 0.0
@@ -363,6 +387,14 @@ func _maintain_player_lock_position() -> void:
 func _smoothstep(value: float) -> float:
 	var clamped := clampf(value, 0.0, 1.0)
 	return clamped * clamped * (3.0 - 2.0 * clamped)
+
+func _apply_pending_mouse_yaw() -> void:
+	if absf(_pending_mouse_yaw_delta_rad) <= 0.000001:
+		return
+	var max_step_rad := deg_to_rad(max_mouse_yaw_step_deg)
+	var yaw_step := clampf(_pending_mouse_yaw_delta_rad, -max_step_rad, max_step_rad)
+	rotation.y += yaw_step
+	_pending_mouse_yaw_delta_rad = 0.0
 
 func _apply_presentation_scale() -> void:
 	var scaled_nodes: Array[Node3D] = [visual_root, rotor_blur_root, death_fx_root]

@@ -8,7 +8,8 @@
 - `CityDroneGunship.tscn` 从 `helicopter` combat runtime 脱钩，切到 `combat/drone` 正式 runtime
 - deploy / active / recover 的 camera ownership / input ownership / player lock 主链
 - active 阶段第三人称自稳定 hover flight
-- active 阶段更高的前冲速度、stable-heading rotorcraft strafe 语义与明确的机体前倾视觉
+- active 阶段更高的前冲速度、fast vertical reposition、stable-heading rotorcraft strafe 语义与明确的机体前倾视觉
+- active 阶段鼠标 yaw 转向合同
 - active 阶段 enlarged third-person presentation 与 rotor blur 姿态同步合同
 - drone active / recover 阶段主世界 streaming 与 minimap focus 跟随无人机
 - formal portability contract 与主世界 wrapper 接线
@@ -57,9 +58,11 @@ foreach($test in $tests){
   - 证明 deploy / active / recover 三段都会冻结玩家位置与武器链。
 - `test_city_player_drone_flight_input_contract.gd`
   - 证明 active 阶段 `W/D` 提供 camera-relative planar move，`E/Space` 上升，`Q` 下降。
+  - 证明 `E/Q/Space` 的垂直机动速度已明显高于初版 slow-hover lift/sink。
+  - 证明鼠标左右滑动会驱动无人机 yaw 左/右转向，且单次中等幅度 mouse motion 不会过激。
   - 证明释放输入后无人机会回到 near-zero hover，而不是继续漂移。
 - `test_city_player_drone_speed_and_attitude_contract.gd`
-  - 证明 active 阶段前冲速度已高于原先 sluggish baseline。
+  - 证明 active 阶段前冲速度已高于原先 sluggish baseline，且比上一版进一步提升。
   - 证明机体默认保持 stable heading，不再按平面速度自动扭 `yaw`。
   - 证明 `W/S` 与 `A/D` 会分别进入正确的 pitch / bank 语义，而不是把旋翼机飞成一枚自动转头的导弹。
 - `test_city_player_drone_presentation_contract.gd`

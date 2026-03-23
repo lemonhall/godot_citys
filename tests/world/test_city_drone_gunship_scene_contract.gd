@@ -8,6 +8,7 @@ const DRONE_FLIGHT_CONTROLLER_PATH := "res://city_game/combat/drone/CityPlayerDr
 const DRONE_CAMERA_RIG_SCENE_PATH := "res://city_game/combat/drone/CityPlayerDroneCameraRig.tscn"
 const DRONE_MODEL_PATH := "res://city_game/assets/environment/source/aircraft/drone_a.glb"
 const ROTOR_BLUR_SHADER_PATH := "res://city_game/combat/helicopter/CityHelicopterRotorBlur.gdshader"
+const DRONE_FLIGHT_AUDIO_PATH := "res://city_game/combat/drone/audio/drone-in-flight.wav"
 
 const REQUIRED_NODE_PATHS := [
 	"CollisionShape3D",
@@ -48,6 +49,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, ResourceLoader.exists(ROTOR_BLUR_SHADER_PATH, "Shader"), "Drone foundation contract requires the shared rotor blur shader resource for all four rotors"):
 		return
+	if not T.require_true(self, ResourceLoader.exists(DRONE_FLIGHT_AUDIO_PATH, "AudioStreamWAV"), "Drone foundation contract requires the formal looped in-flight audio asset under combat/drone/audio"):
+		return
 
 	var scene_text := FileAccess.get_file_as_string(DRONE_SCENE_PATH)
 	if not T.require_true(self, scene_text.find(DRONE_RUNTIME_SCRIPT_PATH) >= 0, "Drone scene must bind CityPlayerDroneRuntime.gd instead of a helicopter combat script"):
@@ -59,6 +62,8 @@ func _run() -> void:
 	if not T.require_true(self, scene_text.find(DRONE_MODEL_PATH) >= 0, "Drone scene must wrap drone_a.glb through the authored .tscn"):
 		return
 	if not T.require_true(self, scene_text.find(ROTOR_BLUR_SHADER_PATH) >= 0, "Drone scene must bind the shared rotor blur shader through the scene instead of rebuilding it from code"):
+		return
+	if not T.require_true(self, scene_text.find(DRONE_FLIGHT_AUDIO_PATH) >= 0, "Drone scene must bind the formal looped in-flight audio asset through RotorAudio"):
 		return
 
 	var scene := load(DRONE_SCENE_PATH) as PackedScene
@@ -85,6 +90,12 @@ func _run() -> void:
 		return
 	var hitbox := collision_shape.shape as BoxShape3D
 	if not T.require_true(self, hitbox.size.x >= 1.0 and hitbox.size.y >= 0.4 and hitbox.size.z >= 1.0, "Drone hit volume must cover the body with a non-trivial collision envelope"):
+		return
+
+	var rotor_audio := drone.get_node_or_null("RotorAudio") as AudioStreamPlayer3D
+	if not T.require_true(self, rotor_audio != null and rotor_audio.stream != null, "Drone foundation contract requires RotorAudio to carry the formal in-flight hum stream"):
+		return
+	if not T.require_true(self, str(rotor_audio.stream.resource_path) == DRONE_FLIGHT_AUDIO_PATH, "Drone RotorAudio must point at the formal combat/drone audio asset instead of an ad-hoc root-level file"):
 		return
 
 	var rotor_positions: Array[Vector3] = []

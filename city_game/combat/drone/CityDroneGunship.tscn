@@ -1,10 +1,11 @@
 [gd_scene format=3 uid="uid://bqdq4d2phcia"]
 
 [ext_resource type="Script" uid="uid://dwiuj3akqvdio" path="res://city_game/combat/helicopter/CityHelicopterEditorDebugPreview.gd" id="1_editor_debug_preview"]
-[ext_resource type="Script" path="res://city_game/combat/drone/CityPlayerDroneRuntime.gd" id="2_runtime_script"]
+[ext_resource type="Script" uid="uid://cjmeoh1prank0" path="res://city_game/combat/drone/CityPlayerDroneRuntime.gd" id="2_runtime_script"]
 [ext_resource type="PackedScene" uid="uid://cspg1r7awldny" path="res://city_game/assets/environment/source/aircraft/drone_a.glb" id="3_drone_model"]
 [ext_resource type="Shader" uid="uid://cjfhg4tlk28wb" path="res://city_game/combat/helicopter/CityHelicopterRotorBlur.gdshader" id="4_rotor_blur_shader"]
 [ext_resource type="PackedScene" path="res://city_game/combat/drone/CityPlayerDroneCameraRig.tscn" id="5_camera_rig_scene"]
+[ext_resource type="AudioStream" uid="uid://bmlu8pvtq7451" path="res://city_game/combat/drone/audio/drone-in-flight.wav" id="6_rotor_audio"]
 
 [sub_resource type="BoxShape3D" id="1_hitbox_shape"]
 size = Vector3(2.2, 0.7, 2.2)
@@ -188,6 +189,7 @@ mesh = SubResource("10_debug_rotor_preview_mesh")
 script = ExtResource("1_editor_debug_preview")
 
 [node name="CameraRig" parent="." unique_id=921171435 instance=ExtResource("5_camera_rig_scene")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0)
 
 [node name="DeathFxRoot" type="Node3D" parent="." unique_id=380221737]
 visible = false
@@ -206,6 +208,7 @@ cast_shadow = 0
 mesh = SubResource("14_death_sphere_mesh")
 
 [node name="RotorAudio" type="AudioStreamPlayer3D" parent="." unique_id=671670538]
+stream = ExtResource("6_rotor_audio")
 unit_size = 80.0
 max_distance = 180.0
 

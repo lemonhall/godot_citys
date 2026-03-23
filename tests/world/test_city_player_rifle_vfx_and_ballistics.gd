@@ -89,7 +89,8 @@ func _run() -> void:
 	await physics_frame
 
 	var tracer_cleared := false
-	for _frame in range(18):
+	var clear_deadline_usec := Time.get_ticks_usec() + 1200000
+	while Time.get_ticks_usec() < clear_deadline_usec:
 		await process_frame
 		if int(world.get_active_projectile_tracer_count()) <= tracer_count_before:
 			tracer_cleared = true

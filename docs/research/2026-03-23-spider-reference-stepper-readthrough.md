@@ -17,6 +17,7 @@
 - **脚在迈步期间不应立即修改支撑脚点**：参考实现里旧 target 与新 target 之间有一段拱线过渡，真正 plant 之后才切到新脚点。[1]
 - **第二轮最该对齐的是 scheduler，而不是继续盲调腿比例**：`IKStepManager.AlternatingTetrapodGait()` 不是纯相位窗口，而是 `currentGaitGroup + nextSwitchTime + averageStepTime` 的显式 timer scheduler。[1]
 - **`Spider.cs` 的 body 不是 snap 到瞬时 centroid/normal，而是有时间滤波**：`bodyCentroid = Vector3.Lerp(...)`，pitch/roll 也用 `Mathf.LerpAngle(...)` 渐进调整；如果只抄 centroid/plane normal 的几何解而漏掉这层 smoothing，躯干就会出现 1-2 帧的左右抽动残影。[1]
+- **`calculateDefault()` / `getDefault()` / `findTargetOnSurface()` 都是 root-frame 语义，不是 torso-frame 语义**：reference repo 的默认 anchor、prediction 平面和 cast focal points 全都挂在 `spider.transform` 上，而不是挂在 `body` 上；如果把这些 stepping frame 错绑到 torso，会直接把 torso tilt 反馈进脚点规划，坡面处理会发钝甚至退化。[1]
 - **论文层面的比例约束依然重要**：就算 stepping 管线正确，腿段如果还是中点折叠、近端远端近等长，视觉依然会假。[2]
 
 ## Detailed Analysis
@@ -156,6 +157,31 @@
 这一步的意义是：当前 spider 不再只是“行为大概像 PhilS94 的实现”，而是已经能把参考实现拆成独立原理块逐个映射、逐个回归。[1]
 
 不过第三轮对齐后，后续又补抓到一个重要遗漏：虽然 body solver 的 `centroid/plane normal` 语义已经对齐，但最初还没有把 `Spider.cs Update()` 里的 body smoothing 一起搬过来。[1] 这会导致 lab 追人时，body visual 直接追着瞬时 `leg_centroid_world_position` 左右翻，形成明显的 1-2 帧残影。修正方式不是改掉 centroid/plane normal 原理本身，而是把 reference 同款的 `delta * speed` 渐进式 centroid/normal adjust 补回 `CitySpiderCrawler.gd`，并新增 `test_spider_crawler_lab_body_lateral_jitter_contract.gd` 专门卡这个用户可见 bug。
+
+### 7. 第四轮对齐补抓到的 terrain regression 根因
+
+第三轮把 body smoothing 补回之后，又暴露出另一个更隐蔽的问题：当前实现里，`default_anchor_world_position`、prediction 平面，以及 structured surface search 的焦点/投射方向，仍然有一部分是围绕 `body_pivot` 算的；但 reference repo 里，这一整套 stepping frame 都是挂在 `spider.transform` 上的。[1]
+
+这件事会直接影响地形处理。因为一旦 torso 发生可见 tilt，当前实现就会把这个 tilt 反向喂回默认 anchor 与脚点搜索，等于让“视觉 torso 的姿态”去污染“步态规划的世界基准”。结果是：
+
+- 坡面上 default anchor lattice 会跟着 torso 一起转
+- prediction 平面会带入 torso 的滞后姿态
+- surface search 会以 torso tilt 为参考，而不是以 spider root 为参考
+
+这会让蜘蛛在地形上的步点选择变钝，视觉上就像“地形处理不如之前了”。
+
+第四轮修正的核心不是继续调 ray 长度，而是把 stepping frame 从 `body_pivot` 抽回到 spider root：
+
+- `default_anchor_world_position` 重新使用 root basis
+- prediction 平面重新使用 root up
+- structured surface search 的 `top/bottom/frontal` 参考系重新使用 root frame
+- swing arc 的抬脚方向也回到 root-frame up
+
+并新增 `test_spider_crawler_reference_default_anchor_frame_contract.gd`，直接卡住“默认 anchor 不得被 torso tilt 旋转”这个 reference 级 contract。[1]
+
+此外，这轮还暴露了当前 lab 与 reference repo 的一个基础设施差异：reference spider 有自己的 root transform / collider / fake gravity 主链，所以 torso smoothing 本身不会把整个可见身体压进障碍物；但 `godot_citys` 里的 spider lab 目前没有那层真实 collider 负责把 torso 顶起来，visible body 基本就是 `body_pivot + proxy meshes` 本身。[1]
+
+这意味着如果只做 stepping frame 对齐，仍然可能在 beam / step 这种 authored obstacle 上看到 prosoma/abdomen 埋进几何体里。这里真正需要补的不是“更激进的坡面 ray”，而是一层 under-body clearance guard：先按 reference 的 centroid/plane 解 body target，再用实际 body mesh hull 对障碍物做 clearance 校正，把 body origin 抬到不再穿模的位置。对应新增的 contract 是 `test_spider_crawler_obstacle_body_clearance_contract.gd`。
 
 ## Areas of Consensus
 

@@ -17,6 +17,7 @@ const REFERENCE_LEG_NORMAL_WEIGHT := 0.4
 const REFERENCE_BODY_CENTROID_ADJUST_SPEED := 12.0
 const REFERENCE_BODY_NORMAL_ADJUST_SPEED := 10.0
 const REFERENCE_BODY_SMOOTHING_FALLBACK_DELTA_SECONDS := 1.0 / 60.0
+const REFERENCE_BODY_OBSTACLE_CLEARANCE_MARGIN_M := 0.04
 const REFERENCE_GROUP_A := ["lf_front", "rf_mid_a", "lf_mid_b", "rf_rear"]
 const REFERENCE_GROUP_B := ["rf_front", "lf_mid_a", "rf_mid_b", "lf_rear"]
 const UPPER_LEG_SEGMENT_RADIUS_M := 0.055
@@ -619,8 +620,8 @@ func _compute_reference_step_duration_seconds(leg_id: String) -> float:
 
 func _compute_reference_step_prediction(leg_id: String, locked_foothold: Vector3, default_anchor_world_position: Vector3, duration_seconds: float) -> Vector3:
 	var visual_contract: Dictionary = _leg_visual_contracts_by_leg_id.get(leg_id, {}) as Dictionary
-	var body_up: Vector3 = body_pivot.global_basis.y.normalized() if body_pivot != null else Vector3.UP
-	var projected_start := locked_foothold - body_up * (locked_foothold - default_anchor_world_position).dot(body_up)
+	var step_frame_up := _get_reference_step_frame_up()
+	var projected_start := locked_foothold - step_frame_up * (locked_foothold - default_anchor_world_position).dot(step_frame_up)
 	var overshoot_multiplier: float = maxf(float(visual_contract.get("step_overshoot_multiplier", 1.25)), 1.0)
 	var desired_position := projected_start + (default_anchor_world_position - projected_start) * overshoot_multiplier
 	return desired_position + _debug_motion_velocity * duration_seconds
@@ -750,11 +751,10 @@ func _resolve_reference_step_surface_target(leg_id: String, prediction: Vector3,
 	return fallback
 
 func _build_reference_surface_search_candidates(leg_id: String, prediction: Vector3, default_anchor_world_position: Vector3) -> Array:
-	var body_up := _get_reference_body_up()
-	var body_center := body_pivot.global_position if body_pivot != null else global_position
-	var socket_world_position := _resolve_socket_world_position(_socket_offsets_by_leg_id.get(leg_id, Vector3.ZERO))
-	var top_focus := body_center + body_up * maxf(body_clearance_m * 1.5, 0.9)
-	var bottom_focus := body_center - body_up * maxf(body_clearance_m * 1.8, 1.1)
+	var step_frame_up := _get_reference_step_frame_up()
+	var body_center := global_position
+	var top_focus := body_center + step_frame_up * maxf(body_clearance_m * 1.5, 0.9)
+	var bottom_focus := body_center - step_frame_up * maxf(body_clearance_m * 1.8, 1.1)
 	var frontal_height := maxf(body_clearance_m * 0.85, 0.6)
 	var frontal_length := maxf(body_clearance_m * 2.8, 1.8)
 	var down_height := maxf(body_clearance_m * 2.0, 1.2)
@@ -766,19 +766,19 @@ func _build_reference_surface_search_candidates(leg_id: String, prediction: Vect
 	]:
 		var family := str((target_spec as Dictionary).get("family", "prediction"))
 		var target := (target_spec as Dictionary).get("target", prediction) as Vector3
-		var frontal_start := socket_world_position + body_up * frontal_height
-		var frontal_direction := (target - frontal_start) - body_up * (target - frontal_start).dot(body_up)
+		var frontal_start := body_center + step_frame_up * frontal_height
+		var frontal_direction := (target - frontal_start) - step_frame_up * (target - frontal_start).dot(step_frame_up)
 		if frontal_direction.length_squared() <= 0.0001:
-			frontal_direction = (target - socket_world_position)
+			frontal_direction = (target - body_center)
 		frontal_direction = frontal_direction.normalized() if frontal_direction.length_squared() > 0.0001 else -global_basis.z.normalized()
 		var frontal_origin := frontal_start.lerp(frontal_start + frontal_direction * frontal_length, 0.25)
 		var top_end := top_focus + (target - top_focus) * 2.0
 		var out_origin := top_focus.lerp(target, 0.22)
 		var out_end := target.lerp(top_end, 0.28)
-		var down_origin := target + body_up * down_height
-		var down_end := target - body_up * down_depth
-		var in_close_end := body_center - body_up * maxf(body_clearance_m, 0.6)
-		var in_mid_end := body_center - body_up * maxf(body_clearance_m * 1.6, 1.0)
+		var down_origin := target + step_frame_up * down_height
+		var down_end := target - step_frame_up * down_depth
+		var in_close_end := body_center - step_frame_up * maxf(body_clearance_m, 0.6)
+		var in_mid_end := body_center - step_frame_up * maxf(body_clearance_m * 1.6, 1.0)
 		var in_far_end := target.lerp(bottom_focus, 0.58)
 		candidates.append({"id": "%s_frontal" % family, "start": frontal_origin, "end": frontal_start + frontal_direction * frontal_length})
 		candidates.append({"id": "%s_out" % family, "start": out_origin, "end": out_end})
@@ -882,6 +882,8 @@ func _compute_reference_body_target(leg_states: Array) -> Dictionary:
 		plane_normal = Vector3.UP if normal_sum.length_squared() <= 0.0001 else normal_sum.normalized()
 	var centroid_components := _compute_reference_leg_centroid_components(display_positions, default_centroid_world_position)
 	var leg_centroid_world_position := centroid_components.get("leg_centroid_world_position", default_centroid_world_position) as Vector3
+	var clearance_adjustment_y := _compute_reference_body_obstacle_clearance_adjustment(leg_centroid_world_position, plane_normal)
+	leg_centroid_world_position += Vector3.UP * clearance_adjustment_y
 	if grounded_positions.is_empty():
 		var fallback := _last_stable_body_target_transform.duplicate(true)
 		if (fallback.get("origin", Vector3.ZERO) as Vector3).length_squared() <= 0.0001:
@@ -897,6 +899,7 @@ func _compute_reference_body_target(leg_states: Array) -> Dictionary:
 				"plane_normal": plane_normal,
 				"centroid_normal_offset": centroid_components.get("centroid_normal_offset", Vector3.ZERO),
 				"centroid_tangent_offset": centroid_components.get("centroid_tangent_offset", Vector3.ZERO),
+				"obstacle_clearance_adjustment_y": clearance_adjustment_y,
 			}
 		return fallback
 	var resolved := {
@@ -909,6 +912,7 @@ func _compute_reference_body_target(leg_states: Array) -> Dictionary:
 		"plane_normal": plane_normal,
 		"centroid_normal_offset": centroid_components.get("centroid_normal_offset", Vector3.ZERO),
 		"centroid_tangent_offset": centroid_components.get("centroid_tangent_offset", Vector3.ZERO),
+		"obstacle_clearance_adjustment_y": clearance_adjustment_y,
 	}
 	_last_stable_body_target_transform = resolved.duplicate(true)
 	return resolved
@@ -916,12 +920,15 @@ func _compute_reference_body_target(leg_states: Array) -> Dictionary:
 func _get_reference_body_up() -> Vector3:
 	return body_pivot.global_basis.y.normalized() if body_pivot != null else Vector3.UP
 
+func _get_reference_step_frame_up() -> Vector3:
+	return global_basis.y.normalized() if global_basis.y.length_squared() > 0.0001 else Vector3.UP
+
 func _compute_reference_default_centroid_world_position() -> Vector3:
-	var body_up := _get_reference_body_up()
-	return global_position + body_up * maxf(body_clearance_m, 0.0)
+	var step_frame_up := _get_reference_step_frame_up()
+	return global_position + step_frame_up * maxf(body_clearance_m, 0.0)
 
 func _compute_reference_leg_centroid_components(display_positions: Array, default_centroid_world_position: Vector3) -> Dictionary:
-	var body_up := _get_reference_body_up()
+	var body_up := _get_reference_step_frame_up()
 	var leg_centroid := default_centroid_world_position
 	if not display_positions.is_empty():
 		leg_centroid = Vector3.ZERO
@@ -941,7 +948,7 @@ func _compute_reference_leg_centroid_components(display_positions: Array, defaul
 	}
 
 func _compute_reference_leg_plane_normal(leg_states: Array) -> Vector3:
-	var body_up := _get_reference_body_up()
+	var body_up := _get_reference_step_frame_up()
 	var new_normal := body_up
 	for leg_variant in leg_states:
 		if not (leg_variant is Dictionary):
@@ -991,6 +998,47 @@ func _smooth_reference_body_visual_transform(target_origin: Vector3, target_up: 
 
 func _compute_reference_body_smoothing_weight(speed: float, delta: float) -> float:
 	return clampf(maxf(speed, 0.0) * maxf(delta, 0.0), 0.0, 1.0)
+
+func _compute_reference_body_obstacle_clearance_adjustment(origin: Vector3, up: Vector3) -> float:
+	if get_world_3d() == null:
+		return 0.0
+	var body_basis := _build_basis_from_up(up)
+	var body_transform := Transform3D(body_basis, origin)
+	var max_penetration_m := 0.0
+	for mesh_instance in [prosoma_mesh, abdomen_mesh]:
+		if not (mesh_instance is MeshInstance3D):
+			continue
+		max_penetration_m = maxf(max_penetration_m, _compute_reference_body_mesh_penetration(mesh_instance as MeshInstance3D, body_transform))
+	if max_penetration_m <= 0.0:
+		return 0.0
+	return max_penetration_m + REFERENCE_BODY_OBSTACLE_CLEARANCE_MARGIN_M
+
+func _compute_reference_body_mesh_penetration(mesh_instance: MeshInstance3D, body_transform: Transform3D) -> float:
+	if mesh_instance == null or mesh_instance.mesh == null:
+		return 0.0
+	var local_aabb := mesh_instance.get_aabb()
+	var part_transform := mesh_instance.transform
+	var mesh_center_local := local_aabb.position + local_aabb.size * 0.5
+	var mesh_center_world := body_transform * (part_transform * mesh_center_local)
+	var bottom_world_y := INF
+	for x_index in range(2):
+		for y_index in range(2):
+			for z_index in range(2):
+				var corner := local_aabb.position + Vector3(
+					local_aabb.size.x * float(x_index),
+					local_aabb.size.y * float(y_index),
+					local_aabb.size.z * float(z_index)
+				)
+				var world_corner := body_transform * (part_transform * corner)
+				bottom_world_y = minf(bottom_world_y, world_corner.y)
+	var ray_origin := mesh_center_world + Vector3.UP * 8.0
+	var ray_end := mesh_center_world + Vector3.DOWN * 8.0
+	var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end)
+	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return 0.0
+	var ground_y := float((hit.get("position", Vector3.ZERO) as Vector3).y)
+	return maxf(ground_y - bottom_world_y, 0.0)
 
 func _sync_foot_debug_nodes(leg_states: Array) -> void:
 	for leg_variant in leg_states:
@@ -1159,14 +1207,13 @@ func _resolve_socket_world_position(socket_local: Vector3) -> Vector3:
 
 func _compute_default_anchor_world_position(leg_id: String) -> Vector3:
 	var foothold_offset: Vector3 = _default_foothold_offsets_by_leg_id.get(leg_id, _socket_offsets_by_leg_id.get(leg_id, Vector3.ZERO))
-	var basis_source: Basis = body_pivot.global_basis if body_pivot != null else global_basis
-	return global_position + basis_source * foothold_offset
+	return global_position + global_basis * foothold_offset
 
 func _compute_reference_display_foot_world_position(leg_id: String, step_state: Dictionary) -> Vector3:
 	var start_foothold: Vector3 = step_state.get("start_foothold", global_position)
 	var goal_foothold: Vector3 = step_state.get("goal_foothold", start_foothold)
 	var progress: float = clampf(float(step_state.get("progress", 0.0)), 0.0, 1.0)
-	var body_up: Vector3 = body_pivot.global_basis.y.normalized() if body_pivot != null else Vector3.UP
+	var body_up := _get_reference_step_frame_up()
 	var visual_contract: Dictionary = _leg_visual_contracts_by_leg_id.get(leg_id, {}) as Dictionary
 	var arc_height_m: float = maxf(float(visual_contract.get("step_height_m", step_height_m)), 0.06)
 	var display_foot_world_position := start_foothold.lerp(goal_foothold, progress)

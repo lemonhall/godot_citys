@@ -5,6 +5,7 @@ const CityProjectileTracer := preload("res://city_game/combat/CityProjectileTrac
 const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
 const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesignatorBeam.gd")
 const CityMissileScene := preload("res://city_game/combat/CityMissile.tscn")
+const CityRifleFireEmitterScene := preload("res://city_game/combat/CityRifleFireEmitter.tscn")
 const SpiderCrawlerScene := preload("res://city_game/world/creatures/arthropods/CitySpiderCrawler.tscn")
 const DEMO_MOTION_SPEED_MPS := 6.0
 const DEMO_STOP_DISTANCE_M := 2.8
@@ -21,6 +22,8 @@ const RESET_KEY := KEY_F5
 const LASER_DAMAGE := 1.0
 const LASER_TRACE_OVERSHOOT_M := 3.0
 const SPIDER_LASER_FALLBACK_RADIUS_M := 1.35
+const RIFLE_FIRE_AUDIO_RESTART_WINDOW_SEC := 2.55
+const RIFLE_FIRE_AUDIO_RESTART_MARGIN_SEC := 0.08
 
 @export var lab_title := "v39 spider crawler lab"
 @export var lab_hint := "1 Rifle  2 Grenade  0 Laser  8 RPG  Left Fire  Right ADS/Prep  Space Pause/Run  F5 Reset"
@@ -35,6 +38,7 @@ const SPIDER_LASER_FALLBACK_RADIUS_M := 1.35
 @onready var grenade_root := $CombatRoot/Grenades
 @onready var laser_beam_root := $CombatRoot/LaserBeams
 @onready var missile_root := $CombatRoot/Missiles
+@onready var combat_root := $CombatRoot
 
 var _initial_player_position := Vector3.ZERO
 var _initial_player_rotation := Vector3.ZERO
@@ -42,6 +46,12 @@ var _initial_camera_rig_rotation := Vector3.ZERO
 var _demo_motion_active := false
 var _spider_swarm: Array[Node3D] = []
 var _scripted_aim_target_world_position := Vector3.INF
+var _player_rifle_audio_emitter: AudioStreamPlayer3D = null
+var _player_rifle_audio_play_trigger_count := 0
+var _player_rifle_audio_restart_trigger_count := 0
+var _player_rifle_audio_stop_count := 0
+var _player_rifle_audio_runtime_active := false
+var _player_rifle_audio_elapsed_sec := 0.0
 
 func _ready() -> void:
 	_capture_initial_state()
@@ -54,6 +64,7 @@ func _ready() -> void:
 	_refresh_hud()
 
 func _process(_delta: float) -> void:
+	_update_player_rifle_audio_emitter(_delta)
 	if _demo_motion_active:
 		_update_demo_motion_velocity()
 	_refresh_hud()
@@ -271,12 +282,30 @@ func get_active_laser_beam_count() -> int:
 func get_active_missile_count() -> int:
 	return 0 if missile_root == null else missile_root.get_child_count()
 
+func get_player_rifle_audio_debug_state() -> Dictionary:
+	_ensure_player_rifle_audio_emitter()
+	return {
+		"emitter_present": _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter),
+		"emitter_kind": _player_rifle_audio_emitter.get_class() if _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter) else "",
+		"stream_bound": _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter) and _player_rifle_audio_emitter.stream != null,
+		"stream_path": _player_rifle_audio_emitter.stream.resource_path if _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter) and _player_rifle_audio_emitter.stream != null else "",
+		"playing": _player_rifle_audio_runtime_active,
+		"engine_playing": _player_rifle_audio_emitter.playing if _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter) else false,
+		"play_trigger_count": _player_rifle_audio_play_trigger_count,
+		"restart_trigger_count": _player_rifle_audio_restart_trigger_count,
+		"stop_count": _player_rifle_audio_stop_count,
+		"loop_enabled": _player_rifle_audio_emitter.stream is AudioStreamWAV and (_player_rifle_audio_emitter.stream as AudioStreamWAV).loop_mode == AudioStreamWAV.LOOP_FORWARD if _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter) else false,
+		"playback_elapsed_sec": _player_rifle_audio_elapsed_sec,
+		"restart_window_sec": RIFLE_FIRE_AUDIO_RESTART_WINDOW_SEC,
+	}
+
 func reset_lab_state() -> void:
 	_clear_projectiles(projectile_root)
 	_clear_projectiles(projectile_tracer_root)
 	_clear_projectiles(grenade_root)
 	_clear_projectiles(laser_beam_root)
 	_clear_projectiles(missile_root)
+	_update_player_rifle_audio_emitter(0.0, true)
 	_restore_player_state()
 	_reset_spider_swarm_state()
 	_refresh_hud()
@@ -402,6 +431,58 @@ func _connect_player_signal(signal_name: String, method_name: String) -> void:
 	if player.is_connected(signal_name, callable):
 		return
 	player.connect(signal_name, callable)
+
+func _ensure_player_rifle_audio_emitter() -> void:
+	if _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter):
+		return
+	if combat_root == null or not is_instance_valid(combat_root):
+		return
+	_player_rifle_audio_emitter = combat_root.get_node_or_null("PlayerRifleAudio") as AudioStreamPlayer3D
+	if _player_rifle_audio_emitter == null:
+		if CityRifleFireEmitterScene != null:
+			_player_rifle_audio_emitter = CityRifleFireEmitterScene.instantiate() as AudioStreamPlayer3D
+		if _player_rifle_audio_emitter == null:
+			_player_rifle_audio_emitter = AudioStreamPlayer3D.new()
+			_player_rifle_audio_emitter.name = "PlayerRifleAudio"
+			_player_rifle_audio_emitter.max_distance = 180.0
+			_player_rifle_audio_emitter.unit_size = 80.0
+			_player_rifle_audio_emitter.panning_strength = 1.0
+		_player_rifle_audio_emitter.name = "PlayerRifleAudio"
+		combat_root.add_child(_player_rifle_audio_emitter)
+	if _player_rifle_audio_emitter.stream is AudioStreamWAV:
+		var wav := _player_rifle_audio_emitter.stream as AudioStreamWAV
+		wav.loop_mode = AudioStreamWAV.LOOP_DISABLED
+
+func _update_player_rifle_audio_emitter(delta: float = 0.0, force_stop: bool = false) -> void:
+	_ensure_player_rifle_audio_emitter()
+	if _player_rifle_audio_emitter == null or not is_instance_valid(_player_rifle_audio_emitter):
+		return
+	var should_play := false
+	if not force_stop and player != null and is_instance_valid(player) and player.has_method("get_weapon_state"):
+		var weapon_state: Dictionary = player.get_weapon_state()
+		should_play = str(weapon_state.get("mode", "")) == "rifle" and bool(weapon_state.get("primary_fire_active", false))
+	if should_play and player != null and is_instance_valid(player) and player.has_method("get_projectile_spawn_transform"):
+		var spawn_transform: Transform3D = player.get_projectile_spawn_transform()
+		_player_rifle_audio_emitter.global_position = spawn_transform.origin
+		if not _player_rifle_audio_runtime_active and _player_rifle_audio_emitter.stream != null:
+			_player_rifle_audio_play_trigger_count += 1
+			_player_rifle_audio_runtime_active = true
+			_player_rifle_audio_elapsed_sec = 0.0
+			_player_rifle_audio_emitter.play()
+		elif _player_rifle_audio_runtime_active:
+			_player_rifle_audio_elapsed_sec += maxf(delta, 0.0)
+			var restart_threshold_sec := maxf(RIFLE_FIRE_AUDIO_RESTART_WINDOW_SEC - RIFLE_FIRE_AUDIO_RESTART_MARGIN_SEC, 0.01)
+			if _player_rifle_audio_elapsed_sec >= restart_threshold_sec:
+				_player_rifle_audio_play_trigger_count += 1
+				_player_rifle_audio_restart_trigger_count += 1
+				_player_rifle_audio_elapsed_sec = 0.0
+				_player_rifle_audio_emitter.play()
+		return
+	if _player_rifle_audio_runtime_active:
+		_player_rifle_audio_runtime_active = false
+		_player_rifle_audio_elapsed_sec = 0.0
+		_player_rifle_audio_emitter.stop()
+		_player_rifle_audio_stop_count += 1
 
 func _rebuild_spider_swarm() -> void:
 	_spider_swarm.clear()

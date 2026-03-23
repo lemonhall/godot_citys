@@ -2,6 +2,8 @@ extends CharacterBody3D
 
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
 const TennisRacketVisualRig := preload("res://city_game/world/minigames/TennisRacketVisualRig.gd")
+const RIFLE_FIRE_AUDIO_PATH := "res://city_game/assets/weapons/rifles/audio/M4 Assault rifle Long Burst.wav"
+const RifleFireAudioPlayerScene := preload("res://city_game/assets/weapons/rifles/audio/RifleFireAudioPlayer.tscn")
 
 signal primary_fire_requested
 signal grenade_throw_requested
@@ -172,6 +174,10 @@ var _rifle_muzzle_flash_materials: Array[StandardMaterial3D] = []
 var _rifle_fire_fx_remaining_sec := 0.0
 var _rifle_fire_count := 0
 var _last_rifle_muzzle_world_position := Vector3.ZERO
+var _rifle_fire_audio: AudioStreamPlayer = null
+var _rifle_fire_audio_play_trigger_count := 0
+var _rifle_fire_audio_stop_count := 0
+var _rifle_fire_audio_runtime_active := false
 var _fishing_mode_enabled := false
 var _fishing_cast_surface_y_m := 0.0
 var _fishing_preview_requested := false
@@ -411,6 +417,7 @@ func get_weapon_mode() -> String:
 func get_weapon_state() -> Dictionary:
 	return {
 		"mode": _weapon_mode,
+		"primary_fire_active": _primary_fire_active,
 		"grenade_hold_requested": _grenade_hold_requested,
 		"grenade_ready": _grenade_ready_active,
 		"aim_down_sights_active": _aim_down_sights_active,
@@ -427,6 +434,24 @@ func get_rifle_visual_state() -> Dictionary:
 		"muzzle_flash_visible": _rifle_muzzle_flash_root != null and is_instance_valid(_rifle_muzzle_flash_root) and _rifle_muzzle_flash_root.visible,
 		"last_muzzle_world_position": _last_rifle_muzzle_world_position,
 		"aim_trace_distance_m": rifle_aim_trace_distance_m,
+	}
+
+func get_rifle_audio_state() -> Dictionary:
+	_ensure_rifle_fire_audio()
+	return {
+		"player_present": _rifle_fire_audio != null and is_instance_valid(_rifle_fire_audio),
+		"stream_bound": _rifle_fire_audio != null and is_instance_valid(_rifle_fire_audio) and _rifle_fire_audio.stream != null,
+		"stream_path": _rifle_fire_audio.stream.resource_path if _rifle_fire_audio != null and is_instance_valid(_rifle_fire_audio) and _rifle_fire_audio.stream != null else "",
+		"player_kind": _rifle_fire_audio.get_class() if _rifle_fire_audio != null and is_instance_valid(_rifle_fire_audio) else "",
+		"playing": _rifle_fire_audio_runtime_active,
+		"engine_playing": _rifle_fire_audio.playing if _rifle_fire_audio != null and is_instance_valid(_rifle_fire_audio) else false,
+		"play_trigger_count": _rifle_fire_audio_play_trigger_count,
+		"stop_count": _rifle_fire_audio_stop_count,
+		"loop_enabled": _resolve_rifle_audio_loop_enabled(),
+		"bus": StringName(_rifle_fire_audio.bus) if _rifle_fire_audio != null and is_instance_valid(_rifle_fire_audio) else StringName(),
+		"playback_position_sec": _rifle_fire_audio.get_playback_position() if _rifle_fire_audio != null and is_instance_valid(_rifle_fire_audio) else 0.0,
+		"expected_stream_path": RIFLE_FIRE_AUDIO_PATH,
+		"route": "world_emitter",
 	}
 
 func set_fishing_mode_enabled(enabled: bool, cast_surface_y_m: float = 0.0) -> void:
@@ -1570,6 +1595,35 @@ func _ensure_rifle_muzzle_flash() -> void:
 		_rifle_muzzle_flash_materials.append(material)
 	_rifle_muzzle_flash_root.visible = false
 
+func _ensure_rifle_fire_audio() -> void:
+	if _rifle_fire_audio != null and is_instance_valid(_rifle_fire_audio):
+		return
+	_rifle_fire_audio = get_node_or_null("RifleFireAudio") as AudioStreamPlayer
+	if _rifle_fire_audio == null:
+		if RifleFireAudioPlayerScene != null:
+			_rifle_fire_audio = RifleFireAudioPlayerScene.instantiate() as AudioStreamPlayer
+		if _rifle_fire_audio == null:
+			_rifle_fire_audio = AudioStreamPlayer.new()
+			_rifle_fire_audio.name = "RifleFireAudio"
+			_rifle_fire_audio.bus = &"Master"
+		add_child(_rifle_fire_audio)
+	if _rifle_fire_audio.stream is AudioStreamWAV:
+		var wav := _rifle_fire_audio.stream as AudioStreamWAV
+		wav.loop_mode = AudioStreamWAV.LOOP_DISABLED
+
+func _update_rifle_fire_audio() -> void:
+	return
+
+func _sync_rifle_fire_audio_transform() -> void:
+	return
+
+func _resolve_rifle_audio_loop_enabled() -> bool:
+	_ensure_rifle_fire_audio()
+	if _rifle_fire_audio == null or not is_instance_valid(_rifle_fire_audio) or not (_rifle_fire_audio.stream is AudioStreamWAV):
+		return false
+	var wav := _rifle_fire_audio.stream as AudioStreamWAV
+	return wav.loop_mode == AudioStreamWAV.LOOP_FORWARD
+
 func _play_rifle_fire_fx() -> void:
 	_ensure_rifle_muzzle_flash()
 	_rifle_fire_count += 1
@@ -1936,6 +1990,10 @@ func _clear_transient_weapon_state() -> void:
 	_aim_down_sights_active = false
 	_rifle_fire_fx_remaining_sec = 0.0
 	_set_rifle_muzzle_flash_strength(0.0)
+	if _rifle_fire_audio != null and is_instance_valid(_rifle_fire_audio) and _rifle_fire_audio_runtime_active:
+		_rifle_fire_audio_runtime_active = false
+		_rifle_fire_audio.stop()
+		_rifle_fire_audio_stop_count += 1
 	_grenade_hold_requested = false
 	_grenade_ready_active = false
 	_update_grenade_hold_visual()

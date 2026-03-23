@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://c785tnrqfnlh0"]
+
+[ext_resource type="AudioStream" uid="uid://d21xgy16p38qd" path="res://city_game/assets/weapons/rifles/audio/M4 Assault rifle Long Burst.wav" id="1_rifle_fire_audio"]
+
+[node name="RifleFireAudio" type="AudioStreamPlayer" unique_id=970731517]
+stream = ExtResource("1_rifle_fire_audio")

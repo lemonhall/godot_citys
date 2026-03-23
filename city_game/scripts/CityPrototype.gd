@@ -32,6 +32,7 @@ const CityProjectile := preload("res://city_game/combat/CityProjectile.gd")
 const CityProjectileTracer := preload("res://city_game/combat/CityProjectileTracer.gd")
 const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
 const CityMissileScene := preload("res://city_game/combat/CityMissile.tscn")
+const CityRifleFireEmitterScene := preload("res://city_game/combat/CityRifleFireEmitter.tscn")
 const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesignatorBeam.gd")
 const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
 const CityHelicopterGunshipWorldEncounterScene := preload("res://city_game/combat/helicopter/CityHelicopterGunshipWorldEncounter.tscn")
@@ -125,6 +126,8 @@ const SERVICE_BUILDING_MAP_PIN_BATCH_BUDGET_USEC := 1200
 const HELICOPTER_GUNSHIP_TASK_ID := "task_helicopter_gunship_v37"
 const HELICOPTER_GUNSHIP_COMPLETION_EVENT_ID := "encounter:helicopter_gunship_v37"
 const HELICOPTER_GUNSHIP_REPEATABLE_RESET_DELAY_SEC := 0.35
+const RIFLE_FIRE_AUDIO_RESTART_WINDOW_SEC := 2.55
+const RIFLE_FIRE_AUDIO_RESTART_MARGIN_SEC := 0.08
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -240,6 +243,12 @@ var _projectile_root: Node3D = null
 var _projectile_tracer_root: Node3D = null
 var _grenade_root: Node3D = null
 var _missile_root: Node3D = null
+var _player_rifle_audio_emitter: AudioStreamPlayer3D = null
+var _player_rifle_audio_play_trigger_count := 0
+var _player_rifle_audio_restart_trigger_count := 0
+var _player_rifle_audio_stop_count := 0
+var _player_rifle_audio_runtime_active := false
+var _player_rifle_audio_elapsed_sec := 0.0
 var _laser_beam_root: Node3D = null
 var _enemy_projectile_root: Node3D = null
 var _enemy_root: Node3D = null
@@ -467,6 +476,7 @@ func _process(delta: float) -> void:
 	_sync_vehicle_radio_runtime_driving_context()
 	_update_vehicle_radio_audio_backend()
 	if _world_simulation_paused:
+		_update_player_rifle_audio_emitter(delta, true)
 		_update_npc_interaction_system()
 		return
 	_step_autodrive(delta)
@@ -474,7 +484,9 @@ func _process(delta: float) -> void:
 	_update_destination_world_marker(delta)
 	_update_abandoned_vehicle_visuals(delta)
 	if player == null:
+		_update_player_rifle_audio_emitter(delta, true)
 		return
+	_update_player_rifle_audio_emitter(delta)
 	_update_lake_player_water_state()
 	_update_minigame_venue_runtimes(delta)
 	var frame_started_usec := Time.get_ticks_usec()
@@ -1568,6 +1580,77 @@ func _ensure_combat_roots() -> void:
 			_missile_root = Node3D.new()
 			_missile_root.name = "Missiles"
 			_combat_root.add_child(_missile_root)
+	_ensure_player_rifle_audio_emitter()
+
+func get_player_rifle_audio_debug_state() -> Dictionary:
+	_ensure_player_rifle_audio_emitter()
+	return {
+		"emitter_present": _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter),
+		"emitter_kind": _player_rifle_audio_emitter.get_class() if _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter) else "",
+		"stream_bound": _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter) and _player_rifle_audio_emitter.stream != null,
+		"stream_path": _player_rifle_audio_emitter.stream.resource_path if _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter) and _player_rifle_audio_emitter.stream != null else "",
+		"playing": _player_rifle_audio_runtime_active,
+		"engine_playing": _player_rifle_audio_emitter.playing if _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter) else false,
+		"play_trigger_count": _player_rifle_audio_play_trigger_count,
+		"restart_trigger_count": _player_rifle_audio_restart_trigger_count,
+		"stop_count": _player_rifle_audio_stop_count,
+		"loop_enabled": _player_rifle_audio_emitter.stream is AudioStreamWAV and (_player_rifle_audio_emitter.stream as AudioStreamWAV).loop_mode == AudioStreamWAV.LOOP_FORWARD if _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter) else false,
+		"playback_elapsed_sec": _player_rifle_audio_elapsed_sec,
+		"restart_window_sec": RIFLE_FIRE_AUDIO_RESTART_WINDOW_SEC,
+	}
+
+func _ensure_player_rifle_audio_emitter() -> void:
+	if _player_rifle_audio_emitter != null and is_instance_valid(_player_rifle_audio_emitter):
+		return
+	if _combat_root == null or not is_instance_valid(_combat_root):
+		return
+	_player_rifle_audio_emitter = _combat_root.get_node_or_null("PlayerRifleAudio") as AudioStreamPlayer3D
+	if _player_rifle_audio_emitter == null:
+		if CityRifleFireEmitterScene != null:
+			_player_rifle_audio_emitter = CityRifleFireEmitterScene.instantiate() as AudioStreamPlayer3D
+		if _player_rifle_audio_emitter == null:
+			_player_rifle_audio_emitter = AudioStreamPlayer3D.new()
+			_player_rifle_audio_emitter.name = "PlayerRifleAudio"
+			_player_rifle_audio_emitter.max_distance = 180.0
+			_player_rifle_audio_emitter.unit_size = 80.0
+			_player_rifle_audio_emitter.panning_strength = 1.0
+		_player_rifle_audio_emitter.name = "PlayerRifleAudio"
+		_combat_root.add_child(_player_rifle_audio_emitter)
+	if _player_rifle_audio_emitter.stream is AudioStreamWAV:
+		var wav := _player_rifle_audio_emitter.stream as AudioStreamWAV
+		wav.loop_mode = AudioStreamWAV.LOOP_DISABLED
+
+func _update_player_rifle_audio_emitter(delta: float = 0.0, force_stop: bool = false) -> void:
+	_ensure_combat_roots()
+	_ensure_player_rifle_audio_emitter()
+	if _player_rifle_audio_emitter == null or not is_instance_valid(_player_rifle_audio_emitter):
+		return
+	var should_play := false
+	if not force_stop and player != null and is_instance_valid(player) and player.has_method("get_weapon_state"):
+		var weapon_state: Dictionary = player.get_weapon_state()
+		should_play = str(weapon_state.get("mode", "")) == "rifle" and bool(weapon_state.get("primary_fire_active", false))
+	if should_play and player != null and is_instance_valid(player) and player.has_method("get_projectile_spawn_transform"):
+		var spawn_transform: Transform3D = player.get_projectile_spawn_transform()
+		_player_rifle_audio_emitter.global_position = spawn_transform.origin
+		if not _player_rifle_audio_runtime_active and _player_rifle_audio_emitter.stream != null:
+			_player_rifle_audio_play_trigger_count += 1
+			_player_rifle_audio_runtime_active = true
+			_player_rifle_audio_elapsed_sec = 0.0
+			_player_rifle_audio_emitter.play()
+		elif _player_rifle_audio_runtime_active:
+			_player_rifle_audio_elapsed_sec += maxf(delta, 0.0)
+			var restart_threshold_sec := maxf(RIFLE_FIRE_AUDIO_RESTART_WINDOW_SEC - RIFLE_FIRE_AUDIO_RESTART_MARGIN_SEC, 0.01)
+			if _player_rifle_audio_elapsed_sec >= restart_threshold_sec:
+				_player_rifle_audio_play_trigger_count += 1
+				_player_rifle_audio_restart_trigger_count += 1
+				_player_rifle_audio_elapsed_sec = 0.0
+				_player_rifle_audio_emitter.play()
+		return
+	if _player_rifle_audio_runtime_active:
+		_player_rifle_audio_runtime_active = false
+		_player_rifle_audio_elapsed_sec = 0.0
+		_player_rifle_audio_emitter.stop()
+		_player_rifle_audio_stop_count += 1
 	if _laser_beam_root == null:
 		_laser_beam_root = _combat_root.get_node_or_null("LaserBeams") as Node3D
 		if _laser_beam_root == null:

@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="AudioStream" path="res://city_game/assets/weapons/rifles/audio/M4 Assault rifle Long Burst.wav" id="1_rifle_fire_audio"]
+
+[node name="CityRifleFireEmitter" type="AudioStreamPlayer3D"]
+stream = ExtResource("1_rifle_fire_audio")
+max_distance = 180.0
+unit_size = 80.0
+panning_strength = 1.0

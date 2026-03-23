@@ -1,0 +1,212 @@
+[gd_scene format=3 uid="uid://bqdq4d2phcia"]
+
+[ext_resource type="Script" uid="uid://dwiuj3akqvdio" path="res://city_game/combat/helicopter/CityHelicopterEditorDebugPreview.gd" id="1_editor_debug_preview"]
+[ext_resource type="Script" uid="uid://cw8eya5aqe0ma" path="res://city_game/combat/helicopter/CityHelicopterGunship.gd" id="2_gunship_script"]
+[ext_resource type="PackedScene" uid="uid://cspg1r7awldny" path="res://city_game/assets/environment/source/aircraft/drone_a.glb" id="3_drone_model"]
+[ext_resource type="Shader" uid="uid://cjfhg4tlk28wb" path="res://city_game/combat/helicopter/CityHelicopterRotorBlur.gdshader" id="4_rotor_blur_shader"]
+
+[sub_resource type="BoxShape3D" id="1_hitbox_shape"]
+size = Vector3(2.2, 0.7, 2.2)
+
+[sub_resource type="StandardMaterial3D" id="2_debug_hitbox_material"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 0.133333, 0.133333, 0.16)
+
+[sub_resource type="BoxMesh" id="3_debug_hitbox_mesh"]
+size = Vector3(2.2, 0.7, 2.2)
+
+[sub_resource type="ShaderMaterial" id="4_front_left_rotor_blur_material"]
+render_priority = 0
+shader = ExtResource("4_rotor_blur_shader")
+shader_parameter/blur_color = Color(0.74, 0.79, 0.84, 0.4)
+shader_parameter/disc_radius = 0.92
+shader_parameter/hub_radius = 0.16
+shader_parameter/edge_softness = 0.1
+shader_parameter/streak_count = 3.0
+shader_parameter/streak_speed = 42.0
+shader_parameter/streak_strength = 0.26
+shader_parameter/ring_glow = 0.16
+
+[sub_resource type="QuadMesh" id="8_rotor_blur_mesh"]
+size = Vector2(0.96, 0.96)
+
+[sub_resource type="ShaderMaterial" id="5_front_right_rotor_blur_material"]
+render_priority = 0
+shader = ExtResource("4_rotor_blur_shader")
+shader_parameter/blur_color = Color(0.74, 0.79, 0.84, 0.4)
+shader_parameter/disc_radius = 0.92
+shader_parameter/hub_radius = 0.16
+shader_parameter/edge_softness = 0.1
+shader_parameter/streak_count = 3.0
+shader_parameter/streak_speed = -42.0
+shader_parameter/streak_strength = 0.26
+shader_parameter/ring_glow = 0.16
+
+[sub_resource type="ShaderMaterial" id="6_rear_left_rotor_blur_material"]
+render_priority = 0
+shader = ExtResource("4_rotor_blur_shader")
+shader_parameter/blur_color = Color(0.74, 0.79, 0.84, 0.4)
+shader_parameter/disc_radius = 0.92
+shader_parameter/hub_radius = 0.16
+shader_parameter/edge_softness = 0.1
+shader_parameter/streak_count = 3.0
+shader_parameter/streak_speed = -46.0
+shader_parameter/streak_strength = 0.28
+shader_parameter/ring_glow = 0.16
+
+[sub_resource type="ShaderMaterial" id="7_rear_right_rotor_blur_material"]
+render_priority = 0
+shader = ExtResource("4_rotor_blur_shader")
+shader_parameter/blur_color = Color(0.74, 0.79, 0.84, 0.4)
+shader_parameter/disc_radius = 0.92
+shader_parameter/hub_radius = 0.16
+shader_parameter/edge_softness = 0.1
+shader_parameter/streak_count = 3.0
+shader_parameter/streak_speed = 46.0
+shader_parameter/streak_strength = 0.28
+shader_parameter/ring_glow = 0.16
+
+[sub_resource type="StandardMaterial3D" id="9_debug_rotor_preview_material"]
+transparency = 1
+cull_mode = 2
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(1, 0.588235, 0.219608, 0.28)
+
+[sub_resource type="QuadMesh" id="10_debug_rotor_preview_mesh"]
+size = Vector2(0.96, 0.96)
+
+[sub_resource type="StandardMaterial3D" id="11_death_ring_material"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 0.533333, 0.203922, 0.74)
+
+[sub_resource type="CylinderMesh" id="12_death_ring_mesh"]
+top_radius = 0.8
+bottom_radius = 0.8
+height = 0.12
+radial_segments = 20
+
+[sub_resource type="StandardMaterial3D" id="13_death_sphere_material"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 0.427451, 0.168627, 0.44)
+
+[sub_resource type="SphereMesh" id="14_death_sphere_mesh"]
+radius = 0.8
+height = 1.6
+
+[node name="CityDroneGunship" type="CharacterBody3D" unique_id=997283566]
+script = ExtResource("2_gunship_script")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1504325824]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
+shape = SubResource("1_hitbox_shape")
+
+[node name="DebugHitboxPreview" type="MeshInstance3D" parent="." unique_id=2071894743]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
+material_override = SubResource("2_debug_hitbox_material")
+cast_shadow = 0
+mesh = SubResource("3_debug_hitbox_mesh")
+script = ExtResource("1_editor_debug_preview")
+
+[node name="ModelRoot" type="Node3D" parent="." unique_id=787102231]
+
+[node name="DroneModel" parent="ModelRoot" unique_id=1528594891 instance=ExtResource("3_drone_model")]
+
+[node name="Anchors" type="Node3D" parent="." unique_id=950707247]
+
+[node name="BodyCenter" type="Marker3D" parent="Anchors" unique_id=436963554]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.03211966, 0)
+
+[node name="GunMuzzle" type="Marker3D" parent="Anchors" unique_id=1551634988]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.14, -0.98)
+
+[node name="MissileMuzzleLeft" type="Marker3D" parent="Anchors" unique_id=1832871798]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.38, 0.08, -0.46)
+
+[node name="MissileMuzzleRight" type="Marker3D" parent="Anchors" unique_id=848876406]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.38, 0.08, -0.46)
+
+[node name="DamageSmokeAnchor" type="Marker3D" parent="Anchors" unique_id=1985825951]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.002382487, 0)
+
+[node name="RotorBlurRoot" type="Node3D" parent="." unique_id=1708852241]
+
+[node name="FrontLeftRotorBlur" type="MeshInstance3D" parent="RotorBlurRoot" unique_id=645755336]
+transform = Transform3D(0.3, 0, 0, 0, -1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, -0.24923126, 0.036017343, -0.3922512)
+material_override = SubResource("4_front_left_rotor_blur_material")
+cast_shadow = 0
+mesh = SubResource("8_rotor_blur_mesh")
+
+[node name="FrontRightRotorBlur" type="MeshInstance3D" parent="RotorBlurRoot" unique_id=1645069270]
+transform = Transform3D(0.3, 0, 0, 0, -1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0.24691457, 0.03577864, -0.39458865)
+material_override = SubResource("5_front_right_rotor_blur_material")
+cast_shadow = 0
+mesh = SubResource("8_rotor_blur_mesh")
+
+[node name="RearLeftRotorBlur" type="MeshInstance3D" parent="RotorBlurRoot" unique_id=326368874]
+transform = Transform3D(0.3, 0, 0, 0, -1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, -0.25013614, 0.040329456, 0.12702093)
+material_override = SubResource("6_rear_left_rotor_blur_material")
+cast_shadow = 0
+mesh = SubResource("8_rotor_blur_mesh")
+
+[node name="RearRightRotorBlur" type="MeshInstance3D" parent="RotorBlurRoot" unique_id=917912352]
+transform = Transform3D(0.3, 0, 0, 0, -1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0.24893165, 0.038769186, 0.12534499)
+material_override = SubResource("7_rear_right_rotor_blur_material")
+cast_shadow = 0
+mesh = SubResource("8_rotor_blur_mesh")
+
+[node name="FrontLeftRotorBlurDebugPreview" type="MeshInstance3D" parent="RotorBlurRoot" unique_id=73383833]
+transform = Transform3D(0.3, 0, 0, 0, -1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, -0.24815181, 0.028175712, -0.37502888)
+material_override = SubResource("9_debug_rotor_preview_material")
+cast_shadow = 0
+mesh = SubResource("10_debug_rotor_preview_mesh")
+script = ExtResource("1_editor_debug_preview")
+
+[node name="FrontRightRotorBlurDebugPreview" type="MeshInstance3D" parent="RotorBlurRoot" unique_id=1686576296]
+transform = Transform3D(0.3, 0, 0, 0, -1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0.24632299, 0.034580708, -0.38832554)
+material_override = SubResource("9_debug_rotor_preview_material")
+cast_shadow = 0
+mesh = SubResource("10_debug_rotor_preview_mesh")
+script = ExtResource("1_editor_debug_preview")
+
+[node name="RearLeftRotorBlurDebugPreview" type="MeshInstance3D" parent="RotorBlurRoot" unique_id=929992]
+transform = Transform3D(0.3, 0, 0, 0, -1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, -0.24728143, 0.029984266, 0.1354059)
+material_override = SubResource("9_debug_rotor_preview_material")
+cast_shadow = 0
+mesh = SubResource("10_debug_rotor_preview_mesh")
+script = ExtResource("1_editor_debug_preview")
+
+[node name="RearRightRotorBlurDebugPreview" type="MeshInstance3D" parent="RotorBlurRoot" unique_id=677892324]
+transform = Transform3D(0.3, 0, 0, 0, -1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0.25914025, 0.03853944, 0.1309663)
+material_override = SubResource("9_debug_rotor_preview_material")
+cast_shadow = 0
+mesh = SubResource("10_debug_rotor_preview_mesh")
+script = ExtResource("1_editor_debug_preview")
+
+[node name="DeathFxRoot" type="Node3D" parent="." unique_id=380221737]
+visible = false
+
+[node name="ExplosionRing" type="MeshInstance3D" parent="DeathFxRoot" unique_id=720445687]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.08, 0)
+visible = false
+material_override = SubResource("11_death_ring_material")
+cast_shadow = 0
+mesh = SubResource("12_death_ring_mesh")
+
+[node name="ExplosionSphere" type="MeshInstance3D" parent="DeathFxRoot" unique_id=1054527576]
+visible = false
+material_override = SubResource("13_death_sphere_material")
+cast_shadow = 0
+mesh = SubResource("14_death_sphere_mesh")
+
+[node name="RotorAudio" type="AudioStreamPlayer3D" parent="." unique_id=671670538]
+unit_size = 80.0
+max_distance = 180.0
+
+[node name="MissileFireAudio" type="AudioStreamPlayer3D" parent="." unique_id=994961259]
+unit_size = 72.0
+max_distance = 200.0
+max_polyphony = 4

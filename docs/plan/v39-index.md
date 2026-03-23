@@ -8,6 +8,10 @@ PRD 入口：[PRD-0026 Arthropod Crawler Locomotion Labs](../prd/PRD-0026-arthro
 
 研究入口：[2026-03-23-spider-lobster-procedural-gait-research.md](../research/2026-03-23-spider-lobster-procedural-gait-research.md)
 
+Spider realism deep dive：[2026-03-23-spider-leg-proportion-and-gait-realism-deep-dive.md](../research/2026-03-23-spider-leg-proportion-and-gait-realism-deep-dive.md)
+
+Spider reference readthrough：[2026-03-23-spider-reference-stepper-readthrough.md](../research/2026-03-23-spider-reference-stepper-readthrough.md)
+
 依赖入口：
 
 - [PRD-0020 Scene Preview Harness](../prd/PRD-0020-scene-preview-harness.md)
@@ -20,7 +24,7 @@ PRD 入口：[PRD-0026 Arthropod Crawler Locomotion Labs](../prd/PRD-0026-arthro
 
 `v39` 的目标不是急着把一只多足生物接进主世界，而是正式建立一条“shared arthropod locomotion spine -> spider lab -> lobster lab -> future main-world portability hooks”的实验主链。首个正式 consumer 冻结为蜘蛛，第二个 consumer 冻结为龙虾；两者都必须以独立 lab 的形式先完成低干扰验收。当前版本明确不接主世界，不做任务、地图 pin、任务圈或生态接入，但要在文档和测试层提前冻结 future port 的契约，确保后续只做 wrapper 接线，不重写 locomotion runtime。
 
-当前状态：`M0-M4` 已在 [v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) 中完成 fresh functional verification。`v39` 已正式落下 shared arthropod locomotion spine、蜘蛛 lab、龙虾 lab 与 future main-world portability contract freeze，但仍不宣称已经接入主世界。
+当前状态：`M0-M4` 已在 [v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) 中完成 fresh functional verification；`M5 spider realism variants` 已在 [v39-m5-verification-2026-03-23.md](./v39-m5-verification-2026-03-23.md) 中完成 fresh verification；`M6 spider reference stepper alignment` 已在 [v39-m6-verification-2026-03-23.md](./v39-m6-verification-2026-03-23.md) 中完成 fresh verification。`v39` 现在除了 shared arthropod locomotion spine、蜘蛛 lab、龙虾 lab 与 future main-world portability contract freeze 之外，还新增了 spider morphology/gait/hybrid 三个可对比 lab，并把 spider stepping 主链收口到 reference-driven `anchor + overshoot + prediction + arc stepping`，但仍不宣称已经接入主世界。
 
 ## 决策冻结
 
@@ -53,6 +57,8 @@ PRD 入口：[PRD-0026 Arthropod Crawler Locomotion Labs](../prd/PRD-0026-arthro
 | M2 spider lab | `SpiderCrawlerLab`、spider wrapper、gait/terrain-follow/reset | 蜘蛛在独立 lab 里走通 gait 与地形跟随闭环 | `tests/world/test_spider_crawler_lab_scene_contract.gd`、`tests/world/test_spider_crawler_gait_contract.gd`、`tests/world/test_spider_crawler_terrain_follow_contract.gd`、`tests/e2e/test_spider_crawler_lab_flow.gd`、[v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
 | M3 lobster lab | `LobsterCrawlerLab`、lobster wrapper、metachronal profile | 龙虾作为 shared runtime 第二个 consumer 跑通，且 gait 明显不同于蜘蛛 | `tests/world/test_lobster_crawler_lab_scene_contract.gd`、`tests/world/test_lobster_crawler_metachronal_gait_contract.gd`、`tests/world/test_lobster_crawler_shared_runtime_contract.gd`、`tests/e2e/test_lobster_crawler_lab_flow.gd`、[v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
 | M4 future port freeze | portability contract、wrapper 口径、debug passthrough | future main-world port 契约冻结，且不要求实际接入主世界 | `tests/world/test_arthropod_crawler_portability_contract.gd`、[v39-m4-verification-2026-03-23.md](./v39-m4-verification-2026-03-23.md) | done |
+| M5 spider realism variants | spider proxy silhouette、leg ratio、swing arc、variant labs | spider 不再只是“会走”，而是至少具备可读的蜘蛛 silhouette，并提供 morphology/gait/hybrid 三个可选 lab 方向 | `tests/world/test_spider_crawler_leg_visual_contract.gd`、`tests/world/test_spider_crawler_variant_labs_contract.gd`、`tests/world/test_spider_crawler_lab_scene_contract.gd`、`tests/world/test_spider_crawler_lab_demo_contract.gd`、`tests/world/test_spider_crawler_gait_contract.gd`、`tests/world/test_spider_crawler_terrain_follow_contract.gd`、`tests/e2e/test_spider_crawler_lab_flow.gd`、[v39-m5-verification-2026-03-23.md](./v39-m5-verification-2026-03-23.md) | done |
+| M6 spider reference stepper | reference-driven spider step manager、anchor prediction、arc stepping | spider gait 不再只是 phase-clock，而是明确对齐一个完整参考实现的 stepping 管线 | `tests/world/test_spider_crawler_reference_step_contract.gd`、`tests/world/test_spider_crawler_leg_visual_contract.gd`、`tests/world/test_spider_crawler_variant_labs_contract.gd`、`tests/world/test_spider_crawler_lab_scene_contract.gd`、`tests/world/test_spider_crawler_lab_demo_contract.gd`、`tests/world/test_spider_crawler_gait_contract.gd`、`tests/world/test_spider_crawler_terrain_follow_contract.gd`、`tests/e2e/test_spider_crawler_lab_flow.gd`、[v39-m6-verification-2026-03-23.md](./v39-m6-verification-2026-03-23.md) | done |
 
 ## 计划索引
 

@@ -6,8 +6,17 @@
 albedo_color = Color(0.13, 0.13, 0.16, 1)
 roughness = 0.96
 
-[sub_resource type="BoxMesh" id="1_body_mesh"]
-size = Vector3(2.4, 0.7, 2.9)
+[sub_resource type="StandardMaterial3D" id="5_abdomen_material"]
+albedo_color = Color(0.18, 0.17, 0.16, 1)
+roughness = 0.98
+
+[sub_resource type="SphereMesh" id="1_prosoma_mesh"]
+radius = 0.5
+height = 1.0
+
+[sub_resource type="SphereMesh" id="6_abdomen_mesh"]
+radius = 0.5
+height = 1.0
 
 [sub_resource type="StandardMaterial3D" id="4_foot_material"]
 albedo_color = Color(0.78, 0.42, 0.22, 1)
@@ -23,9 +32,13 @@ script = ExtResource("1_spider_script")
 [node name="BodyPivot" type="Node3D" parent="." unique_id=734868655]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3204893, 0)
 
-[node name="BodyMesh" type="MeshInstance3D" parent="BodyPivot" unique_id=818465634]
+[node name="ProsomaMesh" type="MeshInstance3D" parent="BodyPivot" unique_id=818465634]
 material_override = SubResource("2_body_material")
-mesh = SubResource("1_body_mesh")
+mesh = SubResource("1_prosoma_mesh")
+
+[node name="AbdomenMesh" type="MeshInstance3D" parent="BodyPivot" unique_id=612944447]
+material_override = SubResource("5_abdomen_material")
+mesh = SubResource("6_abdomen_mesh")
 
 [node name="LegSockets" type="Node3D" parent="." unique_id=123859938]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3204893, 0)

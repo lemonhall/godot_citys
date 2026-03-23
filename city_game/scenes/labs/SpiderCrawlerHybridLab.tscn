@@ -52,10 +52,10 @@ roughness = 1.0
 albedo_color = Color(0.41, 0.39, 0.31, 1)
 roughness = 0.98
 
-[node name="SpiderCrawlerLab" type="Node3D"]
+[node name="SpiderCrawlerHybridLab" type="Node3D"]
 script = ExtResource("1_lab_script")
 lab_title = "v39 spider hybrid lab"
-lab_hint = "Spider follows player  Space Pause/Run  F5 Reset"
+lab_hint = "Hybrid focus  Space Pause/Run  F5 Reset"
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("1_lab_environment")
@@ -158,7 +158,7 @@ offset_bottom = 320.0
 text = "v39 spider hybrid lab"
 
 [node name="Status" type="Label" parent="Hud/Root/Panel/VBox"]
-text = "Booting spider crawler lab..."
+text = "Booting spider hybrid lab..."
 autowrap_mode = 3
 
 [node name="DebugText" type="Label" parent="Hud/Root/Panel/VBox"]

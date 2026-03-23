@@ -6,9 +6,11 @@ var _phase := 0.0
 var _mode := "stance"
 var _locked_foothold := Vector3.ZERO
 var _desired_foothold := Vector3.ZERO
+var _previous_foothold := Vector3.ZERO
 var _surface_normal := Vector3.UP
 var _is_grounded := true
 var _replan_count := 0
+var _duty_factor := 0.6
 
 func configure(leg_contract: Dictionary) -> void:
 	_leg_contract = leg_contract.duplicate(true)
@@ -16,13 +18,16 @@ func configure(leg_contract: Dictionary) -> void:
 	_mode = "stance"
 	_locked_foothold = _leg_contract.get("default_foothold", Vector3.ZERO)
 	_desired_foothold = _locked_foothold
+	_previous_foothold = _locked_foothold
 	_surface_normal = Vector3.UP
 	_is_grounded = true
 	_replan_count = 0
+	_duty_factor = 0.6
 
 func tick(global_phase: float, duty_factor: float) -> void:
 	_phase = fposmod(global_phase + float(_leg_contract.get("phase_offset", 0.0)), 1.0)
 	var clamped_duty := clampf(duty_factor, 0.05, 0.95)
+	_duty_factor = clamped_duty
 	if _phase < clamped_duty:
 		_mode = "stance"
 		_is_grounded = true
@@ -40,6 +45,7 @@ func apply_foothold_resolution(result: Dictionary) -> void:
 	if not bool(result.get("success", false)):
 		return
 	var world_position: Vector3 = result.get("world_position", _desired_foothold)
+	_previous_foothold = _locked_foothold
 	_desired_foothold = world_position
 	_locked_foothold = world_position
 	_surface_normal = result.get("surface_normal", Vector3.UP)
@@ -56,9 +62,17 @@ func get_state() -> Dictionary:
 		"step_height_m": float(_leg_contract.get("step_height_m", 0.18)),
 		"phase": _phase,
 		"mode": _mode,
+		"swing_progress": _compute_swing_progress(),
 		"locked_foothold": _locked_foothold,
 		"desired_foothold": _desired_foothold,
+		"previous_foothold": _previous_foothold,
 		"surface_normal": _surface_normal,
 		"is_grounded": _is_grounded,
 		"replan_count": _replan_count,
 	}
+
+func _compute_swing_progress() -> float:
+	if _mode == "stance":
+		return 0.0
+	var swing_span := maxf(1.0 - _duty_factor, 0.001)
+	return clampf((_phase - _duty_factor) / swing_span, 0.0, 1.0)

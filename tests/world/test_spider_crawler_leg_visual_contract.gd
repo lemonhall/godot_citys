@@ -23,6 +23,10 @@ func _run() -> void:
 		return
 	if not T.require_true(self, spider.get_node_or_null("LegVisualRoot") != null, "Spider leg visual contract requires a dedicated LegVisualRoot under the spider scene"):
 		return
+	if not T.require_true(self, spider.get_node_or_null("BodyPivot/ProsomaMesh") != null, "Spider leg visual contract requires a dedicated ProsomaMesh so the spider body is no longer represented by a single box"):
+		return
+	if not T.require_true(self, spider.get_node_or_null("BodyPivot/AbdomenMesh") != null, "Spider leg visual contract requires a dedicated AbdomenMesh so the body silhouette reads as a spider"):
+		return
 
 	var leg_visuals: Array = spider.get_leg_visual_state()
 	if not T.require_true(self, leg_visuals.size() == 8, "Spider leg visual contract must expose one visual state per leg"):
@@ -48,18 +52,29 @@ func _run() -> void:
 			return
 
 	var front_left_visual: Dictionary = _find_leg_visual_state(leg_visuals, "lf_front")
+	var mid_left_visual: Dictionary = _find_leg_visual_state(leg_visuals, "lf_mid_a")
 	if not T.require_true(self, float(front_left_visual.get("upper_length", 0.0)) > 0.4, "Spider leg visual contract requires a readable upper leg segment length"):
 		return
 	if not T.require_true(self, float(front_left_visual.get("lower_length", 0.0)) > 0.4, "Spider leg visual contract requires a readable lower leg segment length"):
 		return
 	if not T.require_true(self, float(front_left_visual.get("knee_offset_m", 0.0)) > 0.08, "Spider leg visual contract requires a non-zero knee bend so the leg is visually legible"):
 		return
+	if not T.require_true(self, float(front_left_visual.get("lower_length", 0.0)) >= float(front_left_visual.get("upper_length", 0.0)) * 1.18, "Spider leg visual contract requires the distal segment to read clearly longer than the proximal segment; near-equal two-link legs look too robotic"):
+		return
+	if not T.require_true(self, float(front_left_visual.get("lower_length", 0.0)) > float(mid_left_visual.get("lower_length", 0.0)) + 0.02, "Spider leg visual contract requires front legs to read longer than the inner middle legs so the silhouette is not perfectly uniform"):
+		return
 
 	spider.set_debug_motion_velocity(Vector3(2.4, 0.0, 0.0))
+	var saw_lifted_display_foot := false
 	for _step in range(6):
 		spider.tick_crawler(0.20)
+		var tick_visuals: Array = spider.get_leg_visual_state()
+		if _count_lifted_display_feet(tick_visuals) >= 1:
+			saw_lifted_display_foot = true
 	var moved_visuals: Array = spider.get_leg_visual_state()
 	if not T.require_true(self, _count_moved_knees(leg_visuals, moved_visuals) >= 1, "Spider leg visual contract requires at least one knee joint to update as gait state changes"):
+		return
+	if not T.require_true(self, saw_lifted_display_foot, "Spider leg visual contract requires at least one visible foot arc during swing instead of only teleporting locked footholds"):
 		return
 
 	spider.queue_free()
@@ -90,3 +105,17 @@ func _count_moved_knees(before_visuals: Array, after_visuals: Array) -> int:
 		if before_knee.distance_to(after_knee) > 0.02:
 			moved_count += 1
 	return moved_count
+
+func _count_lifted_display_feet(leg_visuals: Array) -> int:
+	var lifted_count := 0
+	for leg_variant in leg_visuals:
+		if not (leg_variant is Dictionary):
+			continue
+		var leg_state: Dictionary = leg_variant as Dictionary
+		if str(leg_state.get("mode", "stance")) == "stance":
+			continue
+		var display_foot_world_position: Vector3 = leg_state.get("display_foot_world_position", Vector3.ZERO)
+		var locked_foothold: Vector3 = leg_state.get("foot_world_position", Vector3.ZERO)
+		if display_foot_world_position.y > locked_foothold.y + 0.03:
+			lifted_count += 1
+	return lifted_count

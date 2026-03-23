@@ -52,10 +52,10 @@ roughness = 1.0
 albedo_color = Color(0.41, 0.39, 0.31, 1)
 roughness = 0.98
 
-[node name="SpiderCrawlerLab" type="Node3D"]
+[node name="SpiderCrawlerGaitLab" type="Node3D"]
 script = ExtResource("1_lab_script")
-lab_title = "v39 spider hybrid lab"
-lab_hint = "Spider follows player  Space Pause/Run  F5 Reset"
+lab_title = "v39 spider gait lab"
+lab_hint = "Gait focus  Space Pause/Run  F5 Reset"
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("1_lab_environment")
@@ -155,10 +155,10 @@ offset_bottom = 320.0
 [node name="VBox" type="VBoxContainer" parent="Hud/Root/Panel"]
 
 [node name="Title" type="Label" parent="Hud/Root/Panel/VBox"]
-text = "v39 spider hybrid lab"
+text = "v39 spider gait lab"
 
 [node name="Status" type="Label" parent="Hud/Root/Panel/VBox"]
-text = "Booting spider crawler lab..."
+text = "Booting spider gait lab..."
 autowrap_mode = 3
 
 [node name="DebugText" type="Label" parent="Hud/Root/Panel/VBox"]
@@ -167,4 +167,4 @@ autowrap_mode = 3
 
 [node name="CrawlerRoot" parent="." instance=ExtResource("4_spider_scene")]
 position = Vector3(-26, 0, 0)
-spider_variant_id = "hybrid_focus"
+spider_variant_id = "gait_focus"

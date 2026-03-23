@@ -5,6 +5,9 @@ const DEMO_STOP_DISTANCE_M := 2.8
 const DEMO_TOGGLE_KEY := KEY_SPACE
 const RESET_KEY := KEY_F5
 
+@export var lab_title := "v39 spider crawler lab"
+@export var lab_hint := "Spider follows player  Space Pause/Run  F5 Reset"
+
 @onready var player := $Player
 @onready var hud := $Hud
 @onready var spider_crawler := $CrawlerRoot
@@ -109,7 +112,10 @@ func _refresh_hud() -> void:
 	if hud.has_method("set_status"):
 		var spider_state: Dictionary = get_crawler_debug_state()
 		hud.set_status(
-			"v39 spider crawler lab\nSpider follows player  Space Pause/Run  F5 Reset\nlegs=%d  gait=%s  failures=%d  body_y=%.2f" % [
+			"%s\n%s\nvariant=%s  legs=%d  gait=%s  failures=%d  body_y=%.2f" % [
+				lab_title,
+				lab_hint,
+				str(spider_state.get("variant_id", "")),
 				int(spider_state.get("leg_count", 0)),
 				str(spider_state.get("gait_profile_id", "")),
 				int(spider_state.get("failed_replan_count", 0)),

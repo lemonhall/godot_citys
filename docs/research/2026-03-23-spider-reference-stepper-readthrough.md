@@ -4,11 +4,18 @@
 
 这次 spider gait 的实现不再以“调一组看起来更像的参数”为主，而是明确对齐一个完整的开源实现：`PhilS94/Unity-Procedural-IK-Wall-Walking-Spider`。[1] 我这次实际照着读完并落地的不是它全部的 wall-walking / CCD IK / Unity 控制器，而是对当前 `godot_citys` 最关键的四段 stepping 管线：`step desire -> tetrapod group gating -> anchor/overshoot/prediction -> arc stepping`，再用蜘蛛运动学论文校正两段腿代理比例与步态直觉。[1][2]
 
+## Reference Project
+
+- 项目名称：`PhilS94/Unity-Procedural-IK-Wall-Walking-Spider`
+- 项目地址：<https://github.com/PhilS94/Unity-Procedural-IK-Wall-Walking-Spider>
+- 项目简介：一个 Unity 开源程序化蜘蛛项目，核心展示的是 `per-leg step check`、`tetrapod gait scheduler`、`anchor/overshoot/prediction` 脚点规划，以及可见的 swing stepping；仓库还包含 wall-walking / ceiling-walking / CCD IK，但当前 `godot_citys` 这轮主要吸收的是 stepping 调度与脚点预测这条主链。[1]
+
 ## Key Findings
 
 - **参考项目的核心不是“相位表”，而是 step manager**：每条腿先独立判断“想不想迈步”，再由统一 manager 决定“现在准不准迈”。[1]
 - **新脚点不是直接用 anchor，而是 `anchor + overshoot + body-travel prediction`**：这比“当前脚点跟着全局相位抖动”更像活物。[1]
 - **脚在迈步期间不应立即修改支撑脚点**：参考实现里旧 target 与新 target 之间有一段拱线过渡，真正 plant 之后才切到新脚点。[1]
+- **第二轮最该对齐的是 scheduler，而不是继续盲调腿比例**：`IKStepManager.AlternatingTetrapodGait()` 不是纯相位窗口，而是 `currentGaitGroup + nextSwitchTime + averageStepTime` 的显式 timer scheduler。[1]
 - **论文层面的比例约束依然重要**：就算 stepping 管线正确，腿段如果还是中点折叠、近端远端近等长，视觉依然会假。[2]
 
 ## Detailed Analysis
@@ -90,6 +97,33 @@
 
 其中 `CitySpiderCrawler.gd` 现在明确暴露 `step_controller_id = reference_anchor_prediction_v1`，表示这只 spider 已经不再是“纯手调相位蜘蛛”。
 
+### 5. 第二轮为什么要继续对齐 scheduler
+
+第一轮对齐完之后，蜘蛛已经不再是“纯相位摆腿”，但离参考实现还有一个关键差距：当前仓库当时仍然用 `_reference_step_clock` 去推 `A/B` 组窗口，本质上还是 phase-window gating；而 `PhilS94` 的 `IKStepManager.AlternatingTetrapodGait()` 真正做的是另一件事。[1]
+
+它先维护两个显式状态：
+
+- `currentGaitGroup`
+- `nextSwitchTime`
+
+然后只在 `Time.time >= nextSwitchTime` 的瞬间切组、统一计算新组的 `averageStepTime`，并把这个时间同时赋给该组所有本轮要迈步的腿。[1]
+
+这件事的价值不只是“更像参考实现”，而是直接决定 gait 的时间结构：group cadence 由**当前速度下的动态 step time**决定，而不是由一个静态 phase-duration 决定。对视觉来说，这会带来两个可感知变化：
+
+- 当速度升高时，A/B 组切换会真实变快，而不是继续按固定相位半周期切换
+- 同一组里真正起步的腿会共享同一轮 step duration，不会出现“看起来是一组，但每条腿像在各走各的”
+
+这也是为什么第二轮实现里，我把 spider debug state 继续扩展为：
+
+- `step_scheduler_id = reference_tetrapod_timer_v2`
+- `active_step_group_id`
+- `next_group_switch_time`
+- `group_step_time_seconds`
+- `group_switch_count`
+- `step_clock_seconds`
+
+并新增 `test_spider_crawler_reference_scheduler_contract.gd`，直接卡住“两次组切换之间的时间间隔必须跟上一轮 group step time 对齐”。这一步的目标不是再做一个“更平滑的效果”，而是把 reference repo 真正值钱的 scheduler contract 也落成仓库资产。[1]
+
 ## Areas of Consensus
 
 - 开源参考实现和论文都支持：蜘蛛 gait 不能只靠统一 phase-clock 来解释。[1][2]
@@ -100,6 +134,7 @@
 
 - **是否必须把完整 CCD IK 也一起搬过来**：对当前 lab 目标不是必须；当前先把 stepping 管线对齐更划算。[1]
 - **tetrapod group 是否要继续完全同步**：参考实现允许整组同窗 stepping，但自然感更强的版本以后可以再加 per-leg timing jitter。[1]
+- **timer-based scheduler 是否已经足够“像活物”**：还不够。它只是把 cadence 主链对齐了；后续若继续提升真实感，更该下钻 body sway、3-link visual proxy 与更真实的 foothold workspace。[1][2]
 
 ## Sources
 

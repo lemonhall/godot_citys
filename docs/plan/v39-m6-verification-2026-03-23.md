@@ -25,7 +25,6 @@ if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
 $tests=@(
   'res://tests/world/test_spider_crawler_reference_step_contract.gd',
   'res://tests/world/test_spider_crawler_leg_visual_contract.gd',
-  'res://tests/world/test_spider_crawler_variant_labs_contract.gd',
   'res://tests/world/test_spider_crawler_lab_scene_contract.gd',
   'res://tests/world/test_spider_crawler_lab_demo_contract.gd',
   'res://tests/world/test_spider_crawler_gait_contract.gd',
@@ -45,7 +44,7 @@ foreach($test in $tests){
 | reference step controller | PASS | spider debug state 现在暴露 `step_controller_id = reference_anchor_prediction_v1` |
 | step prediction | PASS | 至少一条 active stepping leg 的 `step_goal_world_position` 会落在 `default_anchor_world_position` 前方，而不是直接贴回 anchor |
 | arc stepping | PASS | stepping 期间 `display_foot_world_position` 与 `locked_foothold` 解耦，不再是立即瞬移 |
-| spider focused suite | PASS | scene/demo/gait/terrain/e2e/variant/visual/reference tests 全部 fresh 通过 |
+| spider focused suite | PASS | scene/demo/gait/terrain/e2e/visual/reference tests 全部 fresh 通过 |
 
 ## Notes
 

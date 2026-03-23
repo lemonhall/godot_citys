@@ -8,6 +8,7 @@ const CityArthropodBodySolverScript := preload("res://city_game/world/creatures/
 const SHARED_RUNTIME_SCRIPT_PATH := "res://city_game/world/creatures/arthropods/CityArthropodCrawlerRuntime.gd"
 const DEFAULT_SPIDER_VARIANT_ID := "hybrid_focus"
 const REFERENCE_STEP_CONTROLLER_ID := "reference_anchor_prediction_v1"
+const REFERENCE_STEP_SCHEDULER_ID := "reference_tetrapod_timer_v2"
 const REFERENCE_GROUP_A := ["lf_front", "rf_mid_a", "lf_mid_b", "rf_rear"]
 const REFERENCE_GROUP_B := ["rf_front", "lf_mid_a", "rf_mid_b", "lf_rear"]
 const UPPER_LEG_SEGMENT_RADIUS_M := 0.055
@@ -76,6 +77,10 @@ var _leg_visual_contracts_by_leg_id: Dictionary = {}
 var _phase_offsets_by_leg_id: Dictionary = LEG_PHASE_OFFSETS.duplicate(true)
 var _gait_profile_id := "tetrapod_ground"
 var _reference_step_clock := 0.0
+var _reference_active_group_id := "A"
+var _reference_next_group_switch_time := 0.0
+var _reference_group_step_time_seconds := 0.0
+var _reference_group_switch_count := 0
 var _reference_step_states_by_leg_id: Dictionary = {}
 var _leg_visual_nodes_by_leg_id: Dictionary = {}
 var _foot_debug_nodes_by_leg_id: Dictionary = {}
@@ -162,6 +167,13 @@ func get_debug_state() -> Dictionary:
 	state["variant_id"] = spider_variant_id
 	state["visual_profile_id"] = str(_active_variant_contract.get("visual_profile_id", ""))
 	state["step_controller_id"] = REFERENCE_STEP_CONTROLLER_ID
+	state["step_scheduler_id"] = REFERENCE_STEP_SCHEDULER_ID
+	state["active_step_group_id"] = _reference_active_group_id
+	state["next_group_switch_time"] = _reference_next_group_switch_time
+	state["group_step_time_seconds"] = _reference_group_step_time_seconds
+	state["group_switch_count"] = _reference_group_switch_count
+	state["step_clock_seconds"] = _reference_step_clock
+	state["time_until_next_group_switch_seconds"] = maxf(_reference_next_group_switch_time - _reference_step_clock, 0.0)
 	state["body_anchor_world_position"] = global_position
 	state["body_visual_world_position"] = body_pivot.global_position if body_pivot != null else global_position
 	state["debug_motion_velocity"] = _debug_motion_velocity
@@ -417,6 +429,7 @@ func _make_leg_contract(
 	}.duplicate(true)
 
 func _initialize_reference_step_states() -> void:
+	_reset_reference_step_scheduler_state()
 	_reference_step_states_by_leg_id.clear()
 	for leg_id in LEG_ORDER:
 		_reference_step_states_by_leg_id[leg_id] = {
@@ -436,9 +449,35 @@ func _compute_reference_group_id(leg_id: String) -> String:
 		return "A"
 	return "B"
 
-func _get_active_reference_group_id() -> String:
-	var cycle_phase := fposmod(_reference_step_clock / maxf(gait_phase_duration_seconds, 0.001), 1.0)
-	return "A" if cycle_phase < 0.5 else "B"
+func _toggle_reference_group_id(group_id: String) -> String:
+	return "B" if group_id == "A" else "A"
+
+func _reset_reference_step_scheduler_state() -> void:
+	_reference_active_group_id = "A"
+	_reference_group_step_time_seconds = _compute_reference_max_step_time_seconds()
+	_reference_next_group_switch_time = _reference_group_step_time_seconds
+	_reference_group_switch_count = 0
+
+func _compute_reference_max_step_time_seconds() -> float:
+	var max_duration_s := 0.18
+	for leg_id in LEG_ORDER:
+		var visual_contract: Dictionary = _leg_visual_contracts_by_leg_id.get(leg_id, {}) as Dictionary
+		max_duration_s = maxf(max_duration_s, float(visual_contract.get("step_duration_max_s", 0.28)))
+	return maxf(max_duration_s, 0.08)
+
+func _compute_reference_group_step_time_seconds(group_id: String) -> float:
+	var group_leg_ids: Array = REFERENCE_GROUP_A if group_id == "A" else REFERENCE_GROUP_B
+	var total_duration_s := 0.0
+	var leg_count := 0
+	for leg_variant in group_leg_ids:
+		var leg_id := str(leg_variant)
+		if leg_id == "":
+			continue
+		total_duration_s += _compute_reference_step_duration_seconds(leg_id)
+		leg_count += 1
+	if leg_count <= 0:
+		return _compute_reference_max_step_time_seconds()
+	return maxf(total_duration_s / float(leg_count), 0.001)
 
 func _update_reference_step_manager(delta: float) -> void:
 	var runtime_state: Dictionary = _runtime.get_debug_state()
@@ -452,9 +491,16 @@ func _update_reference_step_manager(delta: float) -> void:
 			continue
 		step_state["cooldown_remaining"] = maxf(float(step_state.get("cooldown_remaining", 0.0)) - delta, 0.0)
 		_reference_step_states_by_leg_id[leg_id] = step_state
+	if _reference_step_clock < _reference_next_group_switch_time:
+		return
 	if _has_any_reference_step_active():
 		return
-	var active_group_id := _get_active_reference_group_id()
+	var active_group_id := _toggle_reference_group_id(_reference_active_group_id)
+	var group_step_time_seconds := _compute_reference_group_step_time_seconds(active_group_id)
+	_reference_active_group_id = active_group_id
+	_reference_group_step_time_seconds = group_step_time_seconds
+	_reference_next_group_switch_time = _reference_step_clock + group_step_time_seconds
+	_reference_group_switch_count += 1
 	for leg_variant in leg_states:
 		if not (leg_variant is Dictionary):
 			continue
@@ -469,7 +515,7 @@ func _update_reference_step_manager(delta: float) -> void:
 			continue
 		if not _leg_desires_reference_step(leg_id, leg_state):
 			continue
-		_begin_reference_step(leg_id, leg_state)
+		_begin_reference_step(leg_id, leg_state, group_step_time_seconds)
 
 func _has_any_reference_step_active() -> bool:
 	for leg_id in LEG_ORDER:
@@ -504,11 +550,10 @@ func _leg_desires_reference_step(leg_id: String, leg_state: Dictionary) -> bool:
 	var min_root_distance_m: float = maxf(float(visual_contract.get("step_min_root_distance_m", 0.48)), 0.10)
 	return locked_foothold.distance_to(anchor_world_position) > trigger_distance_m or locked_foothold.distance_to(root_world_position) < min_root_distance_m
 
-func _begin_reference_step(leg_id: String, leg_state: Dictionary) -> void:
+func _begin_reference_step(leg_id: String, leg_state: Dictionary, duration_seconds: float) -> void:
 	var step_state: Dictionary = _reference_step_states_by_leg_id.get(leg_id, {}) as Dictionary
 	var locked_foothold: Vector3 = leg_state.get("locked_foothold", global_position)
 	var default_anchor_world_position := _compute_default_anchor_world_position(leg_id)
-	var duration_seconds := _compute_reference_step_duration_seconds(leg_id)
 	var prediction: Vector3 = _compute_reference_step_prediction(leg_id, locked_foothold, default_anchor_world_position, duration_seconds)
 	var resolved: Dictionary = _resolve_ground_foothold(leg_id, prediction)
 	step_state["is_stepping"] = true
@@ -670,7 +715,9 @@ func _build_reference_leg_states(runtime_leg_states: Array) -> Array:
 		var step_state: Dictionary = _reference_step_states_by_leg_id.get(leg_id, {}) as Dictionary
 		runtime_leg_state["default_anchor_world_position"] = default_anchor_world_position
 		runtime_leg_state["step_controller_id"] = REFERENCE_STEP_CONTROLLER_ID
+		runtime_leg_state["step_scheduler_id"] = REFERENCE_STEP_SCHEDULER_ID
 		runtime_leg_state["step_desire"] = _leg_desires_reference_step(leg_id, runtime_leg_state)
+		runtime_leg_state["step_duration_seconds"] = float(step_state.get("duration_seconds", 0.0))
 		if not bool(step_state.get("is_stepping", false)):
 			runtime_leg_state["mode"] = "stance"
 			runtime_leg_state["is_grounded"] = true

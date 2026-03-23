@@ -54,7 +54,7 @@ roughness = 0.98
 
 [node name="SpiderCrawlerLab" type="Node3D"]
 script = ExtResource("1_lab_script")
-lab_title = "v39 spider hybrid lab"
+lab_title = "v39 spider lab"
 lab_hint = "Spider follows player  Space Pause/Run  F5 Reset"
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
@@ -155,10 +155,10 @@ offset_bottom = 320.0
 [node name="VBox" type="VBoxContainer" parent="Hud/Root/Panel"]
 
 [node name="Title" type="Label" parent="Hud/Root/Panel/VBox"]
-text = "v39 spider hybrid lab"
+text = "v39 spider lab"
 
 [node name="Status" type="Label" parent="Hud/Root/Panel/VBox"]
-text = "Booting spider crawler lab..."
+text = "Booting spider lab..."
 autowrap_mode = 3
 
 [node name="DebugText" type="Label" parent="Hud/Root/Panel/VBox"]

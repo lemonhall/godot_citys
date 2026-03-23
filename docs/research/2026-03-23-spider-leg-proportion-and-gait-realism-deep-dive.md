@@ -64,20 +64,17 @@ JEB 的 octopedal locomotion 论文把蜘蛛看成两组 quadrupeds，并用更�
 - `city_game/world/creatures/arthropods/CityArthropodLegRuntime.gd`
 - `city_game/world/creatures/arthropods/CitySpiderCrawler.tscn`
 - `city_game/scenes/labs/SpiderCrawlerLab.tscn`
-- `city_game/scenes/labs/SpiderCrawlerMorphologyLab.tscn`
-- `city_game/scenes/labs/SpiderCrawlerGaitLab.tscn`
-- `city_game/scenes/labs/SpiderCrawlerHybridLab.tscn`
 
 工程决策如下：
 
-- 用 `variant_id` 把 spider 切成 `morphology_focus / gait_focus / hybrid_focus`
+- spider 内部仍保留 `variant_id` preset 作为实验参数集，但正式场景入口只保留 `SpiderCrawlerLab.tscn`
 - 把 body 从单一 box 改成 `ProsomaMesh + AbdomenMesh`
 - 把 socket 与 foothold 解耦，形成真正外张的 spider stance
 - 把 knee 从 midpoint 逻辑改成 body-biased `knee_projection_ratio`
 - 给 leg runtime 增加 `previous_foothold + swing_progress`
 - 在 visual sync 里生成 `display_foot_world_position`，让 swing 真正可见
 
-这套改法还不是“终局版蜘蛛”，但已经把问题从“像机械折杆”推进到了“可对比的 spider variants”。
+这套改法还不是“终局版蜘蛛”，但已经把问题从“像机械折杆”推进到了“有明确结构约束的单一 spider lab”。
 
 ## Areas of Consensus
 

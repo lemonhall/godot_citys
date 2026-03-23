@@ -688,17 +688,22 @@ func _update_demo_motion_velocity() -> void:
 		if lateral_direction.length_squared() <= 0.0001:
 			lateral_direction = Vector3.RIGHT
 		lateral_direction = lateral_direction.normalized()
+		var spider_debug_state: Dictionary = spider.get_debug_state() if spider.has_method("get_debug_state") else {}
+		var pounce_active := bool(spider_debug_state.get("pounce_active", false))
 		var attack_signature: Dictionary = spider.get_meta("swarm_attack_signature", {}) as Dictionary
 		var desired_target := player_origin \
 			- approach_direction * float(attack_signature.get("backoff_distance_m", DEMO_STOP_DISTANCE_M)) \
 			+ lateral_direction * float(attack_signature.get("lateral_offset_m", 0.0))
+		if pounce_active:
+			desired_target = player_origin
 		var to_target: Vector3 = desired_target - spider.global_position
 		to_target.y = 0.0
-		if to_target.length() <= DEMO_STOP_DISTANCE_M * 0.35:
+		if to_target.length() <= DEMO_STOP_DISTANCE_M * 0.35 and not pounce_active:
 			if spider.has_method("set_debug_motion_velocity"):
 				spider.set_debug_motion_velocity(Vector3.ZERO)
 			continue
 		var planar_direction: Vector3 = to_target.normalized()
 		if spider.has_method("set_debug_motion_velocity"):
-			spider.set_debug_motion_velocity(planar_direction * DEMO_MOTION_SPEED_MPS)
+			var motion_speed_mps := DEMO_MOTION_SPEED_MPS * 1.15 if pounce_active else DEMO_MOTION_SPEED_MPS
+			spider.set_debug_motion_velocity(planar_direction * motion_speed_mps)
 		spider.look_at(spider.global_position + planar_direction, Vector3.UP)

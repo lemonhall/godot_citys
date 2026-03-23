@@ -37,16 +37,16 @@ const HURTBOX_LOCAL_OFFSET := Vector3(0.0, 0.2, 0.22)
 const HIT_STUN_MIN_SECONDS := 0.5
 const HIT_STUN_MAX_SECONDS := 1.0
 const HIT_STUN_DAMAGE_DURATION_SCALE := 0.18
-const POUNCE_INTERVAL_MIN_SECONDS := 1.8
-const POUNCE_INTERVAL_MAX_SECONDS := 3.2
-const POUNCE_DURATION_MIN_SECONDS := 0.42
-const POUNCE_DURATION_MAX_SECONDS := 0.64
-const POUNCE_SPEED_MULTIPLIER_MIN := 1.45
-const POUNCE_SPEED_MULTIPLIER_MAX := 2.10
-const POUNCE_LIFT_MIN_M := 0.18
-const POUNCE_LIFT_MAX_M := 0.34
-const POUNCE_FORWARD_OFFSET_MIN_M := 0.12
-const POUNCE_FORWARD_OFFSET_MAX_M := 0.34
+const POUNCE_INTERVAL_MIN_SECONDS := 0.85
+const POUNCE_INTERVAL_MAX_SECONDS := 1.65
+const POUNCE_DURATION_MIN_SECONDS := 0.48
+const POUNCE_DURATION_MAX_SECONDS := 0.76
+const POUNCE_SPEED_MULTIPLIER_MIN := 2.20
+const POUNCE_SPEED_MULTIPLIER_MAX := 3.10
+const POUNCE_LIFT_MIN_M := 0.52
+const POUNCE_LIFT_MAX_M := 0.88
+const POUNCE_FORWARD_OFFSET_MIN_M := 0.42
+const POUNCE_FORWARD_OFFSET_MAX_M := 0.96
 const POUNCE_MIN_TRIGGER_SPEED_MPS := 1.2
 const BEHAVIOR_GAIT_CYCLE_SCALE_MIN := 0.92
 const BEHAVIOR_GAIT_CYCLE_SCALE_MAX := 1.10
@@ -1625,7 +1625,7 @@ func _reset_pounce_state() -> void:
 	_schedule_next_pounce(true)
 
 func _schedule_next_pounce(is_initial_schedule: bool = false) -> void:
-	var interval_scale := 0.82 if is_initial_schedule else 1.0
+	var interval_scale := 0.55 if is_initial_schedule else 1.0
 	_pounce_cooldown_remaining_seconds = lerpf(POUNCE_INTERVAL_MIN_SECONDS, POUNCE_INTERVAL_MAX_SECONDS, _behavior_runtime_rng.randf()) * interval_scale
 
 func _begin_pounce() -> void:

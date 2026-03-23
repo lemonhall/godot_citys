@@ -66,6 +66,33 @@ func _run() -> void:
 	if not T.require_true(self, head_vs_tail > 0.1, "Spider swarm behavior contract requires the prosoma to face the movement direction instead of the abdomen leading"):
 		return
 
+	if not T.require_true(self, lab.has_method("start_demo_motion"), "Spider swarm behavior contract requires start_demo_motion() for visibility verification"):
+		return
+	lab.start_demo_motion()
+	var visible_pounce_spider_count := 0
+	var best_body_lift_m := 0.0
+	for spider in spawn_spiders:
+		var baseline_state: Dictionary = spider.get_debug_state()
+		var baseline_body_position := baseline_state.get("body_visual_world_position", spider.global_position) as Vector3
+		var spider_pounced := false
+		var spider_best_lift_m := 0.0
+		for _frame in range(180):
+			await process_frame
+			var debug_state: Dictionary = spider.get_debug_state()
+			var body_position := debug_state.get("body_visual_world_position", spider.global_position) as Vector3
+			spider_best_lift_m = maxf(spider_best_lift_m, body_position.y - baseline_body_position.y)
+			if int(debug_state.get("pounce_total_count", 0)) > 0:
+				spider_pounced = true
+		best_body_lift_m = maxf(best_body_lift_m, spider_best_lift_m)
+		if spider_pounced:
+			visible_pounce_spider_count += 1
+		if visible_pounce_spider_count >= 2 and best_body_lift_m >= 0.5:
+			break
+	if not T.require_true(self, visible_pounce_spider_count >= 2, "Spider swarm behavior contract requires multiple spiders to attempt visible pounces during demo motion"):
+		return
+	if not T.require_true(self, best_body_lift_m >= 0.5, "Spider swarm behavior contract requires pounces to lift the body high enough to read clearly in combat"):
+		return
+
 	lab.queue_free()
 	await process_frame
 	T.pass_and_quit(self)

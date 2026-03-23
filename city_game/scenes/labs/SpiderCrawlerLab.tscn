@@ -108,6 +108,16 @@ shape = SubResource("10_beam_shape")
 material_override = SubResource("13_fixture_material")
 mesh = SubResource("11_beam_mesh")
 
+[node name="CombatRoot" type="Node3D" parent="."]
+
+[node name="Projectiles" type="Node3D" parent="CombatRoot"]
+
+[node name="Grenades" type="Node3D" parent="CombatRoot"]
+
+[node name="LaserBeams" type="Node3D" parent="CombatRoot"]
+
+[node name="Missiles" type="Node3D" parent="CombatRoot"]
+
 [node name="Player" type="CharacterBody3D" parent="."]
 position = Vector3(0, 1.1, 60)
 script = ExtResource("2_player_script")
@@ -168,3 +178,43 @@ autowrap_mode = 3
 [node name="CrawlerRoot" parent="." instance=ExtResource("4_spider_scene")]
 position = Vector3(-26, 0, 0)
 spider_variant_id = "hybrid_focus"
+
+[node name="SwarmRoot" type="Node3D" parent="."]
+
+[node name="SwarmSpawnRoot" type="Node3D" parent="."]
+
+[node name="Spawn01" type="Marker3D" parent="SwarmSpawnRoot"]
+position = Vector3(-18, 0, 60)
+
+[node name="Spawn02" type="Marker3D" parent="SwarmSpawnRoot"]
+position = Vector3(-15, 0, 72)
+
+[node name="Spawn03" type="Marker3D" parent="SwarmSpawnRoot"]
+position = Vector3(-8, 0, 77)
+
+[node name="Spawn04" type="Marker3D" parent="SwarmSpawnRoot"]
+position = Vector3(0, 0, 79)
+
+[node name="Spawn05" type="Marker3D" parent="SwarmSpawnRoot"]
+position = Vector3(8, 0, 77)
+
+[node name="Spawn06" type="Marker3D" parent="SwarmSpawnRoot"]
+position = Vector3(15, 0, 72)
+
+[node name="Spawn07" type="Marker3D" parent="SwarmSpawnRoot"]
+position = Vector3(18, 0, 60)
+
+[node name="Spawn08" type="Marker3D" parent="SwarmSpawnRoot"]
+position = Vector3(15, 0, 48)
+
+[node name="Spawn09" type="Marker3D" parent="SwarmSpawnRoot"]
+position = Vector3(8, 0, 43)
+
+[node name="Spawn10" type="Marker3D" parent="SwarmSpawnRoot"]
+position = Vector3(0, 0, 41)
+
+[node name="Spawn11" type="Marker3D" parent="SwarmSpawnRoot"]
+position = Vector3(-8, 0, 43)
+
+[node name="Spawn12" type="Marker3D" parent="SwarmSpawnRoot"]
+position = Vector3(-15, 0, 48)

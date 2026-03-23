@@ -1,6 +1,7 @@
-[gd_scene format=3 uid="uid://bxrrt3kmudap"]
+[gd_scene load_steps=19 format=3 uid="uid://bxrrt3kmudap"]
 
 [ext_resource type="Script" path="res://city_game/world/creatures/arthropods/CitySpiderCrawler.gd" id="1_spider_script"]
+[ext_resource type="Script" path="res://city_game/world/creatures/arthropods/CitySpiderCrawlerHurtbox.gd" id="2_hurtbox_script"]
 
 [sub_resource type="StandardMaterial3D" id="2_body_material"]
 albedo_color = Color(0.13, 0.13, 0.16, 1)
@@ -26,6 +27,10 @@ roughness = 0.92
 radius = 0.1
 height = 0.2
 
+[sub_resource type="CapsuleShape3D" id="7_hurtbox_shape"]
+radius = 1.1
+height = 1.6
+
 [node name="CitySpiderCrawler" type="Node3D" unique_id=1425064174]
 script = ExtResource("1_spider_script")
 
@@ -39,6 +44,13 @@ mesh = SubResource("1_prosoma_mesh")
 [node name="AbdomenMesh" type="MeshInstance3D" parent="BodyPivot" unique_id=612944447]
 material_override = SubResource("5_abdomen_material")
 mesh = SubResource("6_abdomen_mesh")
+
+[node name="EnemyHurtbox" type="AnimatableBody3D" parent="."]
+sync_to_physics = true
+script = ExtResource("2_hurtbox_script")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="EnemyHurtbox"]
+shape = SubResource("7_hurtbox_shape")
 
 [node name="LegSockets" type="Node3D" parent="." unique_id=123859938]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3204893, 0)

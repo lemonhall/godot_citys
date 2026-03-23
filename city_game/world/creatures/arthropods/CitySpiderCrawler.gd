@@ -25,6 +25,15 @@ const LOWER_LEG_SEGMENT_TOP_RADIUS_M := 0.04
 const LOWER_LEG_SEGMENT_BOTTOM_RADIUS_M := 0.028
 const KNEE_JOINT_RADIUS_M := 0.08
 const FOOT_TIP_RADIUS_M := 0.045
+const PROSOMA_BASE_COLOR := Color(0.13, 0.13, 0.16, 1.0)
+const ABDOMEN_BASE_COLOR := Color(0.18, 0.17, 0.16, 1.0)
+const UPPER_LEG_BASE_COLOR := Color(0.16, 0.16, 0.18, 1.0)
+const LOWER_LEG_BASE_COLOR := Color(0.28, 0.24, 0.22, 1.0)
+const KNEE_BASE_COLOR := Color(0.66, 0.42, 0.22, 1.0)
+const FOOT_BASE_COLOR := Color(0.22, 0.18, 0.16, 1.0)
+const WOUNDED_TINT_COLOR := Color(0.62, 0.18, 0.16, 1.0)
+const DEAD_TINT_COLOR := Color(0.08, 0.05, 0.05, 1.0)
+const HURTBOX_LOCAL_OFFSET := Vector3(0.0, 0.2, -0.22)
 
 const LEG_ORDER := [
 	"lf_front",
@@ -65,10 +74,14 @@ const LEG_STRIDE_SCALES := {
 @export var body_clearance_m := 0.72
 @export var step_height_m := 0.22
 @export var replan_distance_m := 0.58
+@export var max_health := 12.0
+@export_range(0.1, 1.0, 0.05) var heavy_hit_damage_multiplier := 0.45
 
 @onready var body_pivot: Node3D = $BodyPivot
 @onready var prosoma_mesh: MeshInstance3D = $BodyPivot/ProsomaMesh
 @onready var abdomen_mesh: MeshInstance3D = $BodyPivot/AbdomenMesh
+@onready var enemy_hurtbox: AnimatableBody3D = $EnemyHurtbox
+@onready var enemy_hurtbox_shape: CollisionShape3D = $EnemyHurtbox/CollisionShape3D
 @onready var leg_socket_root: Node3D = $LegSockets
 @onready var leg_visual_root: Node3D = $LegVisualRoot
 @onready var foot_debug_root: Node3D = $FootDebugRoot
@@ -99,6 +112,10 @@ var _foot_debug_nodes_by_leg_id: Dictionary = {}
 var _initial_anchor_world_position := Vector3.ZERO
 var _auto_step_enabled := false
 var _debug_motion_velocity := Vector3.ZERO
+var _health := 0.0
+var _dead := false
+var _last_hit_world_position := Vector3.ZERO
+var _last_hit_impulse := Vector3.ZERO
 var _reference_body_visual_initialized := false
 var _reference_last_solver_delta_seconds := REFERENCE_BODY_SMOOTHING_FALLBACK_DELTA_SECONDS
 var _last_runtime_state: Dictionary = {}
@@ -119,6 +136,7 @@ var _foot_tip_mesh: SphereMesh = null
 var _foot_tip_material: StandardMaterial3D = null
 
 func _ready() -> void:
+	add_to_group("city_spider_crawler")
 	_initial_anchor_world_position = global_position
 	_reference_last_body_anchor_world_position = global_position
 	_apply_spider_variant()
@@ -127,13 +145,20 @@ func _ready() -> void:
 	_ensure_leg_visual_nodes()
 	_cache_foot_debug_nodes()
 	_rebuild_runtime()
+	reset_health_state()
 	debug_force_replan_all_legs()
 	_sync_visual_state_from_runtime()
+	_sync_enemy_hurtbox_transform()
 
 func _process(delta: float) -> void:
+	if _dead:
+		return
 	if not _auto_step_enabled:
 		return
 	tick_crawler(delta)
+
+func _physics_process(_delta: float) -> void:
+	_sync_enemy_hurtbox_transform()
 
 func set_auto_step_enabled(enabled: bool) -> void:
 	_auto_step_enabled = enabled
@@ -142,7 +167,7 @@ func set_debug_motion_velocity(velocity: Vector3) -> void:
 	_debug_motion_velocity = velocity
 
 func tick_crawler(delta: float) -> void:
-	if _runtime == null:
+	if _runtime == null or _dead:
 		return
 	var resolved_delta := maxf(delta, 0.0)
 	_reference_last_solver_delta_seconds = resolved_delta
@@ -165,6 +190,7 @@ func reset_crawler_state() -> void:
 	_rebuild_runtime()
 	debug_force_replan_all_legs()
 	_sync_visual_state_from_runtime()
+	_set_hurtbox_enabled(true)
 
 func teleport_body_to_world_position(world_position: Vector3) -> void:
 	global_position = world_position
@@ -206,8 +232,67 @@ func get_debug_state() -> Dictionary:
 	state["debug_motion_velocity"] = _debug_motion_velocity
 	state["auto_step_enabled"] = _auto_step_enabled
 	state["socket_leg_count"] = _socket_offsets_by_leg_id.size()
+	state["health_state"] = get_health_state()
+	state["last_hit_world_position"] = _last_hit_world_position
+	state["last_hit_impulse"] = _last_hit_impulse
+	state["alive"] = not _dead
+	state["hurtbox_enabled"] = enemy_hurtbox_shape != null and not enemy_hurtbox_shape.disabled
 	state["leg_visuals"] = get_leg_visual_state()
 	return state
+
+func get_health_state() -> Dictionary:
+	return {
+		"current": maxf(_health, 0.0),
+		"max": maxf(max_health, 0.0),
+		"ratio": clampf(_health / maxf(max_health, 0.001), 0.0, 1.0),
+		"alive": not _dead,
+		"last_hit_world_position": _last_hit_world_position,
+	}
+
+func get_combat_target_world_position() -> Vector3:
+	if enemy_hurtbox != null:
+		return enemy_hurtbox.global_position
+	if body_pivot != null:
+		return body_pivot.global_position + body_pivot.global_basis.y * 0.18
+	return global_position + Vector3.UP * 0.8
+
+func is_alive() -> bool:
+	return not _dead
+
+func reset_health_state() -> void:
+	_health = maxf(max_health, 1.0)
+	_dead = false
+	_last_hit_world_position = Vector3.ZERO
+	_last_hit_impulse = Vector3.ZERO
+	_set_hurtbox_enabled(true)
+	_update_combat_visual_feedback()
+
+func apply_projectile_hit(projectile_damage: float, hit_position: Vector3, impulse: Vector3) -> Dictionary:
+	if _dead:
+		return {
+			"accepted": false,
+			"reason": "already_dead",
+		}
+	var incoming_damage := maxf(projectile_damage, 0.0)
+	if incoming_damage <= 0.0:
+		return {
+			"accepted": false,
+			"reason": "non_positive_damage",
+		}
+	var resolved_damage := incoming_damage if incoming_damage <= 1.0 else incoming_damage * heavy_hit_damage_multiplier
+	_last_hit_world_position = hit_position
+	_last_hit_impulse = impulse
+	_health = maxf(_health - resolved_damage, 0.0)
+	if _health <= 0.0:
+		_enter_dead_state()
+	else:
+		_update_combat_visual_feedback()
+	return {
+		"accepted": true,
+		"damage": resolved_damage,
+		"current_health": _health,
+		"alive": not _dead,
+	}
 
 func get_profile_contract() -> Dictionary:
 	if _profile == null:
@@ -710,8 +795,7 @@ func _resolve_ground_foothold(_leg_id: String, desired_foothold: Vector3) -> Dic
 		}
 	var ray_start := desired_foothold + Vector3.UP * 24.0
 	var ray_end := desired_foothold + Vector3.DOWN * 24.0
-	var ray_query := PhysicsRayQueryParameters3D.create(ray_start, ray_end)
-	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(ray_query)
+	var hit: Dictionary = _intersect_environment_ray(ray_start, ray_end)
 	if hit.is_empty():
 		var projected := desired_foothold
 		projected.y = 0.0
@@ -793,8 +877,7 @@ func _cast_reference_surface_candidate(candidate: Dictionary) -> Dictionary:
 		return {"success": false}
 	var start := candidate.get("start", Vector3.ZERO) as Vector3
 	var end := candidate.get("end", Vector3.ZERO) as Vector3
-	var ray_query := PhysicsRayQueryParameters3D.create(start, end)
-	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(ray_query)
+	var hit: Dictionary = _intersect_environment_ray(start, end)
 	if hit.is_empty():
 		return {"success": false}
 	return {
@@ -808,6 +891,10 @@ func _sync_visual_state_from_runtime() -> void:
 	if _runtime == null:
 		return
 	_last_runtime_state = _runtime.get_debug_state()
+	if _dead:
+		_last_runtime_state["body_target_transform"] = _last_runtime_state.get("body_target_transform", {})
+		_sync_enemy_hurtbox_transform()
+		return
 	var postprocessed_leg_states := _build_reference_leg_states(_last_runtime_state.get("legs", []))
 	_last_runtime_state["legs"] = postprocessed_leg_states
 	_last_runtime_state["body_target_transform"] = _compute_reference_body_target(postprocessed_leg_states)
@@ -818,6 +905,7 @@ func _sync_visual_state_from_runtime() -> void:
 		var smoothed_transform := _smooth_reference_body_visual_transform(resolved_origin, resolved_up)
 		body_pivot.global_position = smoothed_transform.get("origin", resolved_origin)
 		body_pivot.global_basis = smoothed_transform.get("basis", _build_basis_from_up(resolved_up))
+	_sync_enemy_hurtbox_transform()
 	_sync_foot_debug_nodes(postprocessed_leg_states)
 	_sync_leg_visual_nodes(postprocessed_leg_states)
 
@@ -987,9 +1075,12 @@ func _smooth_reference_body_visual_transform(target_origin: Vector3, target_up: 
 	var current_up := body_pivot.global_basis.y.normalized()
 	if current_up.length_squared() <= 0.0001:
 		current_up = Vector3.UP
+	if current_up.dot(resolved_target_up) < 0.0:
+		resolved_target_up = -resolved_target_up
 	var smoothed_origin := current_origin.lerp(target_origin, centroid_weight)
-	var smoothed_up := current_up.slerp(resolved_target_up, normal_weight).normalized()
-	if smoothed_up.length_squared() <= 0.0001:
+	var blended_up := current_up.lerp(resolved_target_up, normal_weight)
+	var smoothed_up := blended_up.normalized()
+	if smoothed_up.length_squared() <= 0.0001 or not smoothed_up.is_finite():
 		smoothed_up = resolved_target_up
 	return {
 		"origin": smoothed_origin,
@@ -1033,12 +1124,51 @@ func _compute_reference_body_mesh_penetration(mesh_instance: MeshInstance3D, bod
 				bottom_world_y = minf(bottom_world_y, world_corner.y)
 	var ray_origin := mesh_center_world + Vector3.UP * 8.0
 	var ray_end := mesh_center_world + Vector3.DOWN * 8.0
-	var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end)
-	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+	var hit: Dictionary = _intersect_environment_ray(ray_origin, ray_end)
 	if hit.is_empty():
 		return 0.0
 	var ground_y := float((hit.get("position", Vector3.ZERO) as Vector3).y)
 	return maxf(ground_y - bottom_world_y, 0.0)
+
+func _build_self_physics_exclusions() -> Array[RID]:
+	var exclusions: Array[RID] = []
+	if enemy_hurtbox != null:
+		exclusions.append(enemy_hurtbox.get_rid())
+	return exclusions
+
+func _intersect_environment_ray(start: Vector3, end: Vector3, extra_exclusions: Array[RID] = []) -> Dictionary:
+	if get_world_3d() == null or get_world_3d().direct_space_state == null:
+		return {}
+	var exclusions: Array[RID] = _build_self_physics_exclusions()
+	for exclusion in extra_exclusions:
+		if exclusions.has(exclusion):
+			continue
+		exclusions.append(exclusion)
+	for _attempt in range(12):
+		var query := PhysicsRayQueryParameters3D.create(start, end)
+		query.exclude = exclusions
+		var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+		if hit.is_empty():
+			return {}
+		var collider: Object = hit.get("collider", null)
+		if not _should_ignore_environment_collider(collider):
+			return hit
+		if collider is CollisionObject3D:
+			exclusions.append((collider as CollisionObject3D).get_rid())
+			continue
+		return {}
+	return {}
+
+func _should_ignore_environment_collider(collider: Object) -> bool:
+	if collider == null:
+		return false
+	if collider == enemy_hurtbox:
+		return true
+	if collider is Node:
+		var node: Node = collider as Node
+		if node.is_in_group("city_enemy") or node.is_in_group("city_spider_crawler"):
+			return true
+	return false
 
 func _sync_foot_debug_nodes(leg_states: Array) -> void:
 	for leg_variant in leg_states:
@@ -1284,14 +1414,14 @@ func _get_lower_leg_segment_mesh() -> CylinderMesh:
 func _get_upper_leg_material() -> StandardMaterial3D:
 	if _upper_leg_material == null:
 		_upper_leg_material = StandardMaterial3D.new()
-		_upper_leg_material.albedo_color = Color(0.16, 0.16, 0.18, 1.0)
+		_upper_leg_material.albedo_color = UPPER_LEG_BASE_COLOR
 		_upper_leg_material.roughness = 0.94
 	return _upper_leg_material
 
 func _get_lower_leg_material() -> StandardMaterial3D:
 	if _lower_leg_material == null:
 		_lower_leg_material = StandardMaterial3D.new()
-		_lower_leg_material.albedo_color = Color(0.28, 0.24, 0.22, 1.0)
+		_lower_leg_material.albedo_color = LOWER_LEG_BASE_COLOR
 		_lower_leg_material.roughness = 0.92
 	return _lower_leg_material
 
@@ -1305,7 +1435,7 @@ func _get_knee_joint_mesh() -> SphereMesh:
 func _get_knee_joint_material() -> StandardMaterial3D:
 	if _knee_joint_material == null:
 		_knee_joint_material = StandardMaterial3D.new()
-		_knee_joint_material.albedo_color = Color(0.66, 0.42, 0.22, 1.0)
+		_knee_joint_material.albedo_color = KNEE_BASE_COLOR
 		_knee_joint_material.roughness = 0.88
 	return _knee_joint_material
 
@@ -1319,9 +1449,57 @@ func _get_foot_tip_mesh() -> SphereMesh:
 func _get_foot_tip_material() -> StandardMaterial3D:
 	if _foot_tip_material == null:
 		_foot_tip_material = StandardMaterial3D.new()
-		_foot_tip_material.albedo_color = Color(0.22, 0.18, 0.16, 1.0)
+		_foot_tip_material.albedo_color = FOOT_BASE_COLOR
 		_foot_tip_material.roughness = 0.96
 	return _foot_tip_material
+
+func _enter_dead_state() -> void:
+	_dead = true
+	_health = 0.0
+	_auto_step_enabled = false
+	_debug_motion_velocity = Vector3.ZERO
+	_set_hurtbox_enabled(false)
+	_update_combat_visual_feedback()
+
+func _set_hurtbox_enabled(enabled: bool) -> void:
+	if enemy_hurtbox_shape != null:
+		enemy_hurtbox_shape.disabled = not enabled
+
+func _sync_enemy_hurtbox_transform() -> void:
+	if enemy_hurtbox == null:
+		return
+	if body_pivot != null:
+		body_pivot.force_update_transform()
+		enemy_hurtbox.global_transform = Transform3D(body_pivot.global_basis, body_pivot.to_global(HURTBOX_LOCAL_OFFSET))
+	else:
+		enemy_hurtbox.global_position = global_position + HURTBOX_LOCAL_OFFSET
+	enemy_hurtbox.force_update_transform()
+	if enemy_hurtbox_shape != null:
+		enemy_hurtbox_shape.force_update_transform()
+
+func _update_combat_visual_feedback() -> void:
+	var health_ratio := clampf(_health / maxf(max_health, 0.001), 0.0, 1.0)
+	var wound_mix := 1.0 - health_ratio
+	if _dead:
+		wound_mix = 1.0
+	var prosoma_material: StandardMaterial3D = null
+	var abdomen_material: StandardMaterial3D = null
+	if prosoma_mesh != null:
+		prosoma_material = prosoma_mesh.material_override as StandardMaterial3D
+	if abdomen_mesh != null:
+		abdomen_material = abdomen_mesh.material_override as StandardMaterial3D
+	_apply_material_tint(prosoma_material, PROSOMA_BASE_COLOR, wound_mix)
+	_apply_material_tint(abdomen_material, ABDOMEN_BASE_COLOR, wound_mix)
+	_apply_material_tint(_upper_leg_material, UPPER_LEG_BASE_COLOR, wound_mix)
+	_apply_material_tint(_lower_leg_material, LOWER_LEG_BASE_COLOR, wound_mix)
+	_apply_material_tint(_knee_joint_material, KNEE_BASE_COLOR, wound_mix)
+	_apply_material_tint(_foot_tip_material, FOOT_BASE_COLOR, wound_mix)
+
+func _apply_material_tint(material: StandardMaterial3D, base_color: Color, wound_mix: float) -> void:
+	if material == null:
+		return
+	var target_color := WOUNDED_TINT_COLOR if not _dead else DEAD_TINT_COLOR
+	material.albedo_color = base_color.lerp(target_color, clampf(wound_mix, 0.0, 1.0))
 
 func _build_basis_from_up(up_vector: Vector3) -> Basis:
 	var up := up_vector.normalized()

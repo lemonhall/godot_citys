@@ -83,7 +83,7 @@ func _run() -> void:
 	var tracer_state: Dictionary = tracer.get_debug_state()
 	if not T.require_true(self, bool(tracer_state.get("active", false)), "Freshly spawned rifle tracer must report itself active during the short visibility window"):
 		return
-	if not T.require_true(self, float(tracer_state.get("segment_length_m", 0.0)) >= 3.5, "Rifle tracer must expose a non-trivial visible segment length instead of an imperceptible blip"):
+	if not T.require_true(self, float(tracer_state.get("segment_length_m", 0.0)) >= 9.0, "Rifle tracer smoke trail must stay visibly extended after the long-trace visual tuning instead of collapsing back into a short blip"):
 		return
 	await process_frame
 	await physics_frame

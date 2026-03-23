@@ -77,6 +77,15 @@ func _run() -> void:
 		return
 	if not T.require_true(self, float(projectile.get("max_distance_m")) >= 800.0, "Spider crawler lab rifle projectiles must keep the long-range reach contract"):
 		return
+	var tracer_root := lab.get_node_or_null("CombatRoot/ProjectileTracers") as Node3D
+	if not T.require_true(self, tracer_root != null and tracer_root.get_child_count() > 0, "Spider crawler lab rifle feedback contract requires the smoke tracer visual to be mounted under CombatRoot/ProjectileTracers"):
+		return
+	var tracer := tracer_root.get_child(tracer_root.get_child_count() - 1) as Node3D
+	if not T.require_true(self, tracer != null and tracer.has_method("get_debug_state"), "Spider crawler lab smoke tracer visual must expose get_debug_state() for extended-length regression coverage"):
+		return
+	var tracer_state: Dictionary = tracer.get_debug_state()
+	if not T.require_true(self, float(tracer_state.get("segment_length_m", 0.0)) >= 9.0, "Spider crawler lab must reuse the longer rifle smoke trail instead of falling back to the shorter pre-tuning trace"):
+		return
 	await process_frame
 	await physics_frame
 

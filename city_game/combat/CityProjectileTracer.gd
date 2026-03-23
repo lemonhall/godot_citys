@@ -3,8 +3,8 @@ extends Node3D
 const TracerSmokeShader := preload("res://city_game/combat/shaders/CityProjectileTracerSmoke.gdshader")
 
 @export var lifetime_sec := 0.075
-@export var base_segment_length_m := 4.6
-@export var max_segment_length_m := 7.4
+@export var base_segment_length_m := 9.2
+@export var max_segment_length_m := 14.8
 @export var base_segment_width_m := 0.12
 @export var max_segment_width_m := 0.18
 @export var muzzle_clearance_m := 0.45

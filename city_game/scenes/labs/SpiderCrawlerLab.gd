@@ -8,6 +8,13 @@ const SpiderCrawlerScene := preload("res://city_game/world/creatures/arthropods/
 const DEMO_MOTION_SPEED_MPS := 6.0
 const DEMO_STOP_DISTANCE_M := 2.8
 const DEMO_SWARM_RING_RADIUS_M := 3.2
+const SWARM_SPAWN_SEED_BASE := 424242
+const SWARM_BEHAVIOR_SEED_BASE := 6100
+const SWARM_SPAWN_RADIAL_SCALE_MIN := 0.34
+const SWARM_SPAWN_RADIAL_SCALE_MAX := 1.18
+const SWARM_SPAWN_TANGENT_JITTER_M := 8.5
+const SWARM_SPAWN_POSITION_JITTER_M := 5.0
+const SWARM_MIN_SEPARATION_M := 5.2
 const DEMO_TOGGLE_KEY := KEY_SPACE
 const RESET_KEY := KEY_F5
 const LASER_DAMAGE := 1.0
@@ -403,12 +410,14 @@ func _rebuild_spider_swarm() -> void:
 		if marker != null:
 			spawn_markers.append(marker)
 	spawn_markers.sort_custom(func(a: Marker3D, b: Marker3D) -> bool: return a.name < b.name)
+	var spawn_positions := _build_swarm_spawn_positions(spawn_markers)
 	var swarm_index := 1
-	for marker in spawn_markers:
+	for marker_index in range(spawn_markers.size()):
+		var marker := spawn_markers[marker_index]
 		var spider := SpiderCrawlerScene.instantiate() as Node3D
 		if spider == null:
 			continue
-		spider.position = marker.position
+		spider.position = spawn_positions[marker_index] if marker_index < spawn_positions.size() else marker.position
 		swarm_root.add_child(spider)
 		_prepare_spider_for_lab(spider, swarm_index)
 		_spider_swarm.append(spider)
@@ -418,6 +427,11 @@ func _prepare_spider_for_lab(spider: Node3D, swarm_index: int) -> void:
 	if spider == null:
 		return
 	spider.set_meta("swarm_slot_index", swarm_index)
+	var behavior_seed := _compute_swarm_behavior_seed(swarm_index)
+	spider.set_meta("swarm_behavior_seed", behavior_seed)
+	spider.set_meta("swarm_attack_signature", _build_swarm_attack_signature(swarm_index))
+	if spider.has_method("set_behavior_seed"):
+		spider.set_behavior_seed(behavior_seed)
 	if spider.has_method("set_auto_step_enabled"):
 		spider.set_auto_step_enabled(false)
 	if spider.has_method("set_debug_motion_velocity"):
@@ -453,6 +467,72 @@ func _set_swarm_motion_velocity(velocity: Vector3) -> void:
 			continue
 		if spider.has_method("set_debug_motion_velocity"):
 			spider.set_debug_motion_velocity(velocity)
+
+func _build_swarm_spawn_positions(spawn_markers: Array[Marker3D]) -> Array[Vector3]:
+	var spawn_positions: Array[Vector3] = []
+	if spawn_markers.is_empty():
+		return spawn_positions
+	var centroid := Vector3.ZERO
+	var min_x := INF
+	var max_x := -INF
+	var min_z := INF
+	var max_z := -INF
+	for marker in spawn_markers:
+		centroid += marker.position
+		min_x = minf(min_x, marker.position.x)
+		max_x = maxf(max_x, marker.position.x)
+		min_z = minf(min_z, marker.position.z)
+		max_z = maxf(max_z, marker.position.z)
+	centroid /= float(spawn_markers.size())
+	var rng := RandomNumberGenerator.new()
+	rng.seed = SWARM_SPAWN_SEED_BASE
+	for marker in spawn_markers:
+		var base_position := marker.position
+		var radial := Vector3(base_position.x - centroid.x, 0.0, base_position.z - centroid.z)
+		var tangent := Vector3(-radial.z, 0.0, radial.x)
+		if tangent.length_squared() <= 0.0001:
+			tangent = Vector3.RIGHT
+		tangent = tangent.normalized()
+		var accepted_position := base_position
+		for _attempt in range(8):
+			var candidate := centroid + radial * rng.randf_range(SWARM_SPAWN_RADIAL_SCALE_MIN, SWARM_SPAWN_RADIAL_SCALE_MAX)
+			candidate += tangent * rng.randf_range(-SWARM_SPAWN_TANGENT_JITTER_M, SWARM_SPAWN_TANGENT_JITTER_M)
+			candidate += Vector3(
+				rng.randf_range(-SWARM_SPAWN_POSITION_JITTER_M, SWARM_SPAWN_POSITION_JITTER_M),
+				0.0,
+				rng.randf_range(-SWARM_SPAWN_POSITION_JITTER_M, SWARM_SPAWN_POSITION_JITTER_M)
+			)
+			candidate.x = clampf(candidate.x, min_x - 6.0, max_x + 6.0)
+			candidate.z = clampf(candidate.z, min_z - 6.0, max_z + 6.0)
+			if not _is_swarm_spawn_position_valid(candidate, spawn_positions):
+				continue
+			accepted_position = candidate
+			break
+		spawn_positions.append(accepted_position)
+	return spawn_positions
+
+func _is_swarm_spawn_position_valid(candidate: Vector3, existing_positions: Array[Vector3]) -> bool:
+	for existing_position in existing_positions:
+		var planar_delta := Vector2(candidate.x - existing_position.x, candidate.z - existing_position.z)
+		if planar_delta.length() < SWARM_MIN_SEPARATION_M:
+			return false
+	return true
+
+func _compute_swarm_behavior_seed(swarm_index: int) -> int:
+	return 0 if swarm_index <= 0 else SWARM_BEHAVIOR_SEED_BASE + swarm_index * 977
+
+func _build_swarm_attack_signature(swarm_index: int) -> Dictionary:
+	if swarm_index <= 0:
+		return {
+			"lateral_offset_m": 0.0,
+			"backoff_distance_m": DEMO_STOP_DISTANCE_M,
+		}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = SWARM_BEHAVIOR_SEED_BASE + swarm_index * 1481 + 31
+	return {
+		"lateral_offset_m": rng.randf_range(-3.2, 3.2),
+		"backoff_distance_m": rng.randf_range(1.4, 3.8),
+	}
 
 func _spawn_projectile(origin: Vector3, direction: Vector3) -> Node3D:
 	if projectile_root == null:
@@ -601,10 +681,17 @@ func _update_demo_motion_velocity() -> void:
 		var spider := spider_variant as Node3D
 		if spider == null:
 			continue
-		var swarm_slot_index := int(spider.get_meta("swarm_slot_index", 0))
-		var angle := float(swarm_slot_index) * 0.72
-		var desired_ring_radius := DEMO_SWARM_RING_RADIUS_M + float(swarm_slot_index % 3) * 0.45
-		var desired_target: Vector3 = player_origin + Vector3(cos(angle) * desired_ring_radius, 0.0, sin(angle) * desired_ring_radius)
+		var to_player := player_origin - spider.global_position
+		to_player.y = 0.0
+		var approach_direction := to_player.normalized() if to_player.length_squared() > 0.0001 else Vector3.BACK
+		var lateral_direction := Vector3(-approach_direction.z, 0.0, approach_direction.x)
+		if lateral_direction.length_squared() <= 0.0001:
+			lateral_direction = Vector3.RIGHT
+		lateral_direction = lateral_direction.normalized()
+		var attack_signature: Dictionary = spider.get_meta("swarm_attack_signature", {}) as Dictionary
+		var desired_target := player_origin \
+			- approach_direction * float(attack_signature.get("backoff_distance_m", DEMO_STOP_DISTANCE_M)) \
+			+ lateral_direction * float(attack_signature.get("lateral_offset_m", 0.0))
 		var to_target: Vector3 = desired_target - spider.global_position
 		to_target.y = 0.0
 		if to_target.length() <= DEMO_STOP_DISTANCE_M * 0.35:

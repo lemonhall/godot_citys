@@ -33,7 +33,30 @@ const KNEE_BASE_COLOR := Color(0.66, 0.42, 0.22, 1.0)
 const FOOT_BASE_COLOR := Color(0.22, 0.18, 0.16, 1.0)
 const WOUNDED_TINT_COLOR := Color(0.62, 0.18, 0.16, 1.0)
 const DEAD_TINT_COLOR := Color(0.08, 0.05, 0.05, 1.0)
-const HURTBOX_LOCAL_OFFSET := Vector3(0.0, 0.2, -0.22)
+const HURTBOX_LOCAL_OFFSET := Vector3(0.0, 0.2, 0.22)
+const HIT_STUN_MIN_SECONDS := 0.5
+const HIT_STUN_MAX_SECONDS := 1.0
+const HIT_STUN_DAMAGE_DURATION_SCALE := 0.18
+const POUNCE_INTERVAL_MIN_SECONDS := 1.8
+const POUNCE_INTERVAL_MAX_SECONDS := 3.2
+const POUNCE_DURATION_MIN_SECONDS := 0.42
+const POUNCE_DURATION_MAX_SECONDS := 0.64
+const POUNCE_SPEED_MULTIPLIER_MIN := 1.45
+const POUNCE_SPEED_MULTIPLIER_MAX := 2.10
+const POUNCE_LIFT_MIN_M := 0.18
+const POUNCE_LIFT_MAX_M := 0.34
+const POUNCE_FORWARD_OFFSET_MIN_M := 0.12
+const POUNCE_FORWARD_OFFSET_MAX_M := 0.34
+const POUNCE_MIN_TRIGGER_SPEED_MPS := 1.2
+const BEHAVIOR_GAIT_CYCLE_SCALE_MIN := 0.92
+const BEHAVIOR_GAIT_CYCLE_SCALE_MAX := 1.10
+const BEHAVIOR_STEP_DURATION_SCALE_MIN := 0.92
+const BEHAVIOR_STEP_DURATION_SCALE_MAX := 1.14
+const BEHAVIOR_STEP_COOLDOWN_SCALE_MIN := 0.88
+const BEHAVIOR_STEP_COOLDOWN_SCALE_MAX := 1.12
+const BEHAVIOR_LEG_PHASE_JITTER_MAX := 0.08
+const BEHAVIOR_STEP_TRIGGER_JITTER_M := 0.08
+const BEHAVIOR_INITIAL_COOLDOWN_MAX_SECONDS := 0.24
 
 const LEG_ORDER := [
 	"lf_front",
@@ -69,6 +92,7 @@ const LEG_STRIDE_SCALES := {
 }
 
 @export var spider_variant_id := DEFAULT_SPIDER_VARIANT_ID
+@export var behavior_seed := 0
 @export var gait_phase_duration_seconds := 1.6
 @export var gait_duty_factor := 0.62
 @export var body_clearance_m := 0.72
@@ -106,6 +130,7 @@ var _reference_group_switch_count := 0
 var _reference_time_standing_still_seconds := 0.0
 var _reference_body_is_moving := false
 var _reference_last_body_anchor_world_position := Vector3.ZERO
+var _initial_step_cooldown_by_leg_id: Dictionary = {}
 var _reference_step_states_by_leg_id: Dictionary = {}
 var _leg_visual_nodes_by_leg_id: Dictionary = {}
 var _foot_debug_nodes_by_leg_id: Dictionary = {}
@@ -116,6 +141,22 @@ var _health := 0.0
 var _dead := false
 var _last_hit_world_position := Vector3.ZERO
 var _last_hit_impulse := Vector3.ZERO
+var _behavior_profile_rng := RandomNumberGenerator.new()
+var _behavior_runtime_rng := RandomNumberGenerator.new()
+var _gait_cycle_scale := 1.0
+var _step_duration_scale := 1.0
+var _step_cooldown_scale := 1.0
+var _reference_step_clock_bias_seconds := 0.0
+var _hit_stun_remaining_seconds := 0.0
+var _pounce_cooldown_remaining_seconds := 0.0
+var _pounce_elapsed_seconds := 0.0
+var _pounce_duration_seconds := 0.0
+var _pounce_speed_multiplier := 1.0
+var _pounce_lift_peak_m := 0.0
+var _pounce_forward_offset_m := 0.0
+var _current_pounce_lift_m := 0.0
+var _current_pounce_forward_offset_m := 0.0
+var _pounce_total_count := 0
 var _reference_body_visual_initialized := false
 var _reference_last_solver_delta_seconds := REFERENCE_BODY_SMOOTHING_FALLBACK_DELTA_SECONDS
 var _last_runtime_state: Dictionary = {}
@@ -137,9 +178,11 @@ var _foot_tip_material: StandardMaterial3D = null
 
 func _ready() -> void:
 	add_to_group("city_spider_crawler")
+	_ensure_unique_visual_materials()
 	_initial_anchor_world_position = global_position
 	_reference_last_body_anchor_world_position = global_position
 	_apply_spider_variant()
+	_reset_behavior_runtime_state()
 	_cache_leg_socket_offsets()
 	_initialize_reference_step_states()
 	_ensure_leg_visual_nodes()
@@ -166,12 +209,35 @@ func set_auto_step_enabled(enabled: bool) -> void:
 func set_debug_motion_velocity(velocity: Vector3) -> void:
 	_debug_motion_velocity = velocity
 
+func set_behavior_seed(seed_value: int) -> void:
+	behavior_seed = seed_value
+	_apply_spider_variant()
+	_reset_behavior_runtime_state()
+	if not is_inside_tree():
+		return
+	_initialize_reference_step_states()
+	_rebuild_runtime()
+	debug_force_replan_all_legs()
+	_sync_visual_state_from_runtime()
+	_sync_enemy_hurtbox_transform()
+
 func tick_crawler(delta: float) -> void:
 	if _runtime == null or _dead:
 		return
 	var resolved_delta := maxf(delta, 0.0)
 	_reference_last_solver_delta_seconds = resolved_delta
-	global_position += _debug_motion_velocity * resolved_delta
+	if _hit_stun_remaining_seconds > 0.0:
+		_hit_stun_remaining_seconds = maxf(_hit_stun_remaining_seconds - resolved_delta, 0.0)
+		if _is_pounce_active():
+			_cancel_pounce(false)
+		_update_reference_motion_state(resolved_delta)
+		_sync_visual_state_from_runtime()
+		return
+	_update_pounce_state(resolved_delta)
+	var resolved_motion_velocity := _debug_motion_velocity
+	if _is_pounce_active():
+		resolved_motion_velocity *= _pounce_speed_multiplier
+	global_position += resolved_motion_velocity * resolved_delta
 	_update_reference_motion_state(resolved_delta)
 	_reference_step_clock += resolved_delta
 	_update_reference_step_manager(resolved_delta)
@@ -185,7 +251,7 @@ func reset_crawler_state() -> void:
 	_reference_body_visual_initialized = false
 	_reference_last_solver_delta_seconds = REFERENCE_BODY_SMOOTHING_FALLBACK_DELTA_SECONDS
 	_reference_last_body_anchor_world_position = global_position
-	_reference_step_clock = 0.0
+	_reset_behavior_runtime_state()
 	_initialize_reference_step_states()
 	_rebuild_runtime()
 	debug_force_replan_all_legs()
@@ -197,6 +263,7 @@ func teleport_body_to_world_position(world_position: Vector3) -> void:
 	_reference_body_visual_initialized = false
 	_reference_last_solver_delta_seconds = REFERENCE_BODY_SMOOTHING_FALLBACK_DELTA_SECONDS
 	_reference_last_body_anchor_world_position = global_position
+	_reset_behavior_runtime_state()
 	_initialize_reference_step_states()
 	_rebuild_runtime()
 	debug_force_replan_all_legs()
@@ -233,6 +300,17 @@ func get_debug_state() -> Dictionary:
 	state["auto_step_enabled"] = _auto_step_enabled
 	state["socket_leg_count"] = _socket_offsets_by_leg_id.size()
 	state["health_state"] = get_health_state()
+	state["behavior_seed"] = behavior_seed
+	state["gait_cycle_scale"] = _gait_cycle_scale
+	state["step_duration_scale"] = _step_duration_scale
+	state["step_cooldown_scale"] = _step_cooldown_scale
+	state["reference_step_clock_bias_seconds"] = _reference_step_clock_bias_seconds
+	state["hit_stun_remaining_seconds"] = _hit_stun_remaining_seconds
+	state["pounce_active"] = _is_pounce_active()
+	state["pounce_cooldown_remaining_seconds"] = _pounce_cooldown_remaining_seconds
+	state["pounce_total_count"] = _pounce_total_count
+	state["pounce_lift_m"] = _current_pounce_lift_m
+	state["pounce_forward_offset_m"] = _current_pounce_forward_offset_m
 	state["last_hit_world_position"] = _last_hit_world_position
 	state["last_hit_impulse"] = _last_hit_impulse
 	state["alive"] = not _dead
@@ -264,6 +342,8 @@ func reset_health_state() -> void:
 	_dead = false
 	_last_hit_world_position = Vector3.ZERO
 	_last_hit_impulse = Vector3.ZERO
+	_hit_stun_remaining_seconds = 0.0
+	_cancel_pounce(false)
 	_set_hurtbox_enabled(true)
 	_update_combat_visual_feedback()
 
@@ -286,6 +366,8 @@ func apply_projectile_hit(projectile_damage: float, hit_position: Vector3, impul
 	if _health <= 0.0:
 		_enter_dead_state()
 	else:
+		_hit_stun_remaining_seconds = maxf(_hit_stun_remaining_seconds, _compute_hit_stun_duration_seconds(resolved_damage))
+		_cancel_pounce(true)
 		_update_combat_visual_feedback()
 	return {
 		"accepted": true,
@@ -348,6 +430,35 @@ func _apply_spider_variant() -> void:
 	replan_distance_m = float(gait_contract.get("replan_distance_m", replan_distance_m))
 	_apply_body_visual_contract(_active_variant_contract.get("body", {}) as Dictionary)
 	_apply_leg_layout_contract(_active_variant_contract.get("legs", {}) as Dictionary)
+	_apply_behavior_profile_seed()
+
+func _apply_behavior_profile_seed() -> void:
+	_gait_cycle_scale = 1.0
+	_step_duration_scale = 1.0
+	_step_cooldown_scale = 1.0
+	_reference_step_clock_bias_seconds = 0.0
+	_initial_step_cooldown_by_leg_id.clear()
+	_seed_behavior_profile_rng()
+	if behavior_seed == 0:
+		return
+	_gait_cycle_scale = lerpf(BEHAVIOR_GAIT_CYCLE_SCALE_MIN, BEHAVIOR_GAIT_CYCLE_SCALE_MAX, _behavior_profile_rng.randf())
+	_step_duration_scale = lerpf(BEHAVIOR_STEP_DURATION_SCALE_MIN, BEHAVIOR_STEP_DURATION_SCALE_MAX, _behavior_profile_rng.randf())
+	_step_cooldown_scale = lerpf(BEHAVIOR_STEP_COOLDOWN_SCALE_MIN, BEHAVIOR_STEP_COOLDOWN_SCALE_MAX, _behavior_profile_rng.randf())
+	gait_phase_duration_seconds *= _gait_cycle_scale
+	_reference_step_clock_bias_seconds = gait_phase_duration_seconds * _behavior_profile_rng.randf_range(0.0, 0.42)
+	for leg_id in LEG_ORDER:
+		var base_phase: float = float(_phase_offsets_by_leg_id.get(leg_id, LEG_PHASE_OFFSETS.get(leg_id, 0.0)))
+		_phase_offsets_by_leg_id[leg_id] = fposmod(base_phase + _behavior_profile_rng.randf_range(-BEHAVIOR_LEG_PHASE_JITTER_MAX, BEHAVIOR_LEG_PHASE_JITTER_MAX), 1.0)
+		_initial_step_cooldown_by_leg_id[leg_id] = _behavior_profile_rng.randf_range(0.0, BEHAVIOR_INITIAL_COOLDOWN_MAX_SECONDS)
+		var visual_contract: Dictionary = _leg_visual_contracts_by_leg_id.get(leg_id, {}) as Dictionary
+		if visual_contract.is_empty():
+			continue
+		var adjusted_visual_contract := visual_contract.duplicate(true)
+		var base_trigger_distance_m: float = float(adjusted_visual_contract.get("step_trigger_distance_m", 0.42))
+		adjusted_visual_contract["step_trigger_distance_m"] = maxf(base_trigger_distance_m + _behavior_profile_rng.randf_range(-BEHAVIOR_STEP_TRIGGER_JITTER_M, BEHAVIOR_STEP_TRIGGER_JITTER_M), 0.16)
+		var base_duration_gain: float = float(adjusted_visual_contract.get("step_duration_gain", 0.58))
+		adjusted_visual_contract["step_duration_gain"] = maxf(base_duration_gain * lerpf(0.92, 1.08, _behavior_profile_rng.randf()), 0.18)
+		_leg_visual_contracts_by_leg_id[leg_id] = adjusted_visual_contract
 
 func _apply_body_visual_contract(body_contract: Dictionary) -> void:
 	if prosoma_mesh != null:
@@ -552,7 +663,7 @@ func _initialize_reference_step_states() -> void:
 			"default_anchor": Vector3.ZERO,
 			"progress": 0.0,
 			"duration_seconds": 0.22,
-			"cooldown_remaining": 0.0,
+			"cooldown_remaining": float(_initial_step_cooldown_by_leg_id.get(leg_id, 0.0)),
 			"surface_normal": Vector3.UP,
 		}
 
@@ -565,9 +676,10 @@ func _toggle_reference_group_id(group_id: String) -> String:
 	return "B" if group_id == "A" else "A"
 
 func _reset_reference_step_scheduler_state() -> void:
-	_reference_active_group_id = "A"
+	_reference_step_clock = _reference_step_clock_bias_seconds
+	_reference_active_group_id = "A" if (behavior_seed % 2) == 0 else "B"
 	_reference_group_step_time_seconds = _compute_reference_max_step_time_seconds()
-	_reference_next_group_switch_time = _reference_group_step_time_seconds
+	_reference_next_group_switch_time = _reference_step_clock + _reference_group_step_time_seconds
 	_reference_group_switch_count = 0
 	_reference_time_standing_still_seconds = 0.0
 	_reference_body_is_moving = false
@@ -658,7 +770,7 @@ func _advance_reference_step(leg_id: String, step_state: Dictionary, delta: floa
 	_runtime.replan_leg_foothold(leg_id, goal_foothold)
 	step_state["is_stepping"] = false
 	step_state["progress"] = 1.0
-	step_state["cooldown_remaining"] = duration_seconds * 0.55
+	step_state["cooldown_remaining"] = duration_seconds * 0.55 * _step_cooldown_scale
 	_reference_step_states_by_leg_id[leg_id] = step_state
 
 func _leg_desires_reference_step(leg_id: String, leg_state: Dictionary) -> bool:
@@ -700,8 +812,9 @@ func _compute_reference_step_duration_seconds(leg_id: String) -> float:
 	var max_duration_s: float = maxf(float(visual_contract.get("step_duration_max_s", 0.28)), 0.08)
 	var min_duration_s: float = clampf(float(visual_contract.get("step_duration_min_s", 0.14)), 0.05, max_duration_s)
 	if speed_mps <= 0.05:
-		return max_duration_s
-	return clampf(duration_gain / speed_mps, min_duration_s, max_duration_s)
+		return max_duration_s * _step_duration_scale
+	var base_duration_s := clampf(duration_gain / speed_mps, min_duration_s, max_duration_s)
+	return clampf(base_duration_s * _step_duration_scale, min_duration_s * 0.85, max_duration_s * 1.2)
 
 func _compute_reference_step_prediction(leg_id: String, locked_foothold: Vector3, default_anchor_world_position: Vector3, duration_seconds: float) -> Vector3:
 	var visual_contract: Dictionary = _leg_visual_contracts_by_leg_id.get(leg_id, {}) as Dictionary
@@ -972,6 +1085,8 @@ func _compute_reference_body_target(leg_states: Array) -> Dictionary:
 	var leg_centroid_world_position := centroid_components.get("leg_centroid_world_position", default_centroid_world_position) as Vector3
 	var clearance_adjustment_y := _compute_reference_body_obstacle_clearance_adjustment(leg_centroid_world_position, plane_normal)
 	leg_centroid_world_position += Vector3.UP * clearance_adjustment_y
+	var pounce_body_offset := _compute_pounce_body_offset(plane_normal)
+	leg_centroid_world_position += pounce_body_offset
 	if grounded_positions.is_empty():
 		var fallback := _last_stable_body_target_transform.duplicate(true)
 		if (fallback.get("origin", Vector3.ZERO) as Vector3).length_squared() <= 0.0001:
@@ -988,6 +1103,8 @@ func _compute_reference_body_target(leg_states: Array) -> Dictionary:
 				"centroid_normal_offset": centroid_components.get("centroid_normal_offset", Vector3.ZERO),
 				"centroid_tangent_offset": centroid_components.get("centroid_tangent_offset", Vector3.ZERO),
 				"obstacle_clearance_adjustment_y": clearance_adjustment_y,
+				"pounce_body_offset": pounce_body_offset,
+				"pounce_lift_m": _current_pounce_lift_m,
 			}
 		return fallback
 	var resolved := {
@@ -1001,9 +1118,34 @@ func _compute_reference_body_target(leg_states: Array) -> Dictionary:
 		"centroid_normal_offset": centroid_components.get("centroid_normal_offset", Vector3.ZERO),
 		"centroid_tangent_offset": centroid_components.get("centroid_tangent_offset", Vector3.ZERO),
 		"obstacle_clearance_adjustment_y": clearance_adjustment_y,
+		"pounce_body_offset": pounce_body_offset,
+		"pounce_lift_m": _current_pounce_lift_m,
 	}
 	_last_stable_body_target_transform = resolved.duplicate(true)
 	return resolved
+
+func _compute_pounce_body_offset(body_up: Vector3) -> Vector3:
+	if _current_pounce_lift_m <= 0.0 and _current_pounce_forward_offset_m <= 0.0:
+		return Vector3.ZERO
+	var resolved_up := body_up.normalized()
+	if resolved_up.length_squared() <= 0.0001:
+		resolved_up = Vector3.UP
+	var motion_forward := _resolve_body_forward_vector(resolved_up)
+	return resolved_up * _current_pounce_lift_m + motion_forward * _current_pounce_forward_offset_m
+
+func _resolve_body_forward_vector(up_vector: Vector3) -> Vector3:
+	var resolved_up := up_vector.normalized()
+	if resolved_up.length_squared() <= 0.0001:
+		resolved_up = Vector3.UP
+	var forward := _debug_motion_velocity
+	if forward.length_squared() <= 0.0001:
+		forward = -global_basis.z
+	var planar_forward := forward - resolved_up * forward.dot(resolved_up)
+	if planar_forward.length_squared() <= 0.0001:
+		planar_forward = Vector3.FORWARD - resolved_up * Vector3.FORWARD.dot(resolved_up)
+	if planar_forward.length_squared() <= 0.0001:
+		return Vector3.FORWARD
+	return planar_forward.normalized()
 
 func _get_reference_body_up() -> Vector3:
 	return body_pivot.global_basis.y.normalized() if body_pivot != null else Vector3.UP
@@ -1453,11 +1595,93 @@ func _get_foot_tip_material() -> StandardMaterial3D:
 		_foot_tip_material.roughness = 0.96
 	return _foot_tip_material
 
+func _ensure_unique_visual_materials() -> void:
+	if prosoma_mesh != null and prosoma_mesh.material_override is StandardMaterial3D:
+		prosoma_mesh.material_override = (prosoma_mesh.material_override as StandardMaterial3D).duplicate()
+	if abdomen_mesh != null and abdomen_mesh.material_override is StandardMaterial3D:
+		abdomen_mesh.material_override = (abdomen_mesh.material_override as StandardMaterial3D).duplicate()
+
+func _reset_behavior_runtime_state() -> void:
+	_hit_stun_remaining_seconds = 0.0
+	_seed_behavior_runtime_rng()
+	_reference_step_clock = _reference_step_clock_bias_seconds
+	_reset_pounce_state()
+
+func _seed_behavior_profile_rng() -> void:
+	_behavior_profile_rng.seed = _resolve_behavior_rng_seed(17)
+
+func _seed_behavior_runtime_rng() -> void:
+	_behavior_runtime_rng.seed = _resolve_behavior_rng_seed(29)
+
+func _resolve_behavior_rng_seed(offset: int) -> int:
+	return int(maxi(behavior_seed, 0) + offset + 1)
+
+func _compute_hit_stun_duration_seconds(resolved_damage: float) -> float:
+	return clampf(HIT_STUN_MIN_SECONDS + resolved_damage * HIT_STUN_DAMAGE_DURATION_SCALE, HIT_STUN_MIN_SECONDS, HIT_STUN_MAX_SECONDS)
+
+func _reset_pounce_state() -> void:
+	_pounce_total_count = 0
+	_cancel_pounce(false)
+	_schedule_next_pounce(true)
+
+func _schedule_next_pounce(is_initial_schedule: bool = false) -> void:
+	var interval_scale := 0.82 if is_initial_schedule else 1.0
+	_pounce_cooldown_remaining_seconds = lerpf(POUNCE_INTERVAL_MIN_SECONDS, POUNCE_INTERVAL_MAX_SECONDS, _behavior_runtime_rng.randf()) * interval_scale
+
+func _begin_pounce() -> void:
+	_pounce_elapsed_seconds = 0.0
+	_pounce_duration_seconds = lerpf(POUNCE_DURATION_MIN_SECONDS, POUNCE_DURATION_MAX_SECONDS, _behavior_runtime_rng.randf())
+	_pounce_speed_multiplier = lerpf(POUNCE_SPEED_MULTIPLIER_MIN, POUNCE_SPEED_MULTIPLIER_MAX, _behavior_runtime_rng.randf())
+	_pounce_lift_peak_m = lerpf(POUNCE_LIFT_MIN_M, POUNCE_LIFT_MAX_M, _behavior_runtime_rng.randf())
+	_pounce_forward_offset_m = lerpf(POUNCE_FORWARD_OFFSET_MIN_M, POUNCE_FORWARD_OFFSET_MAX_M, _behavior_runtime_rng.randf())
+	_current_pounce_lift_m = 0.0
+	_current_pounce_forward_offset_m = 0.0
+	_pounce_total_count += 1
+
+func _cancel_pounce(schedule_next: bool = true) -> void:
+	_pounce_elapsed_seconds = 0.0
+	_pounce_duration_seconds = 0.0
+	_pounce_speed_multiplier = 1.0
+	_pounce_lift_peak_m = 0.0
+	_pounce_forward_offset_m = 0.0
+	_current_pounce_lift_m = 0.0
+	_current_pounce_forward_offset_m = 0.0
+	if schedule_next:
+		_schedule_next_pounce()
+
+func _is_pounce_active() -> bool:
+	return _pounce_duration_seconds > 0.0 and _pounce_elapsed_seconds < _pounce_duration_seconds
+
+func _update_pounce_state(delta: float) -> void:
+	if _debug_motion_velocity.length() < POUNCE_MIN_TRIGGER_SPEED_MPS:
+		_current_pounce_lift_m = 0.0
+		_current_pounce_forward_offset_m = 0.0
+		return
+	if _is_pounce_active():
+		_pounce_elapsed_seconds = minf(_pounce_elapsed_seconds + delta, _pounce_duration_seconds)
+		var progress := clampf(_pounce_elapsed_seconds / maxf(_pounce_duration_seconds, 0.001), 0.0, 1.0)
+		var spring_wave := sin(progress * PI)
+		_current_pounce_lift_m = spring_wave * _pounce_lift_peak_m
+		_current_pounce_forward_offset_m = spring_wave * _pounce_forward_offset_m
+		if progress >= 1.0:
+			_cancel_pounce(true)
+		return
+	_current_pounce_lift_m = 0.0
+	_current_pounce_forward_offset_m = 0.0
+	if _reference_time_standing_still_seconds > 0.24:
+		return
+	_pounce_cooldown_remaining_seconds = maxf(_pounce_cooldown_remaining_seconds - delta, 0.0)
+	if _pounce_cooldown_remaining_seconds > 0.0:
+		return
+	_begin_pounce()
+
 func _enter_dead_state() -> void:
 	_dead = true
 	_health = 0.0
 	_auto_step_enabled = false
 	_debug_motion_velocity = Vector3.ZERO
+	_hit_stun_remaining_seconds = 0.0
+	_cancel_pounce(false)
 	_set_hurtbox_enabled(false)
 	_update_combat_visual_feedback()
 
@@ -1512,4 +1736,4 @@ func _build_basis_from_up(up_vector: Vector3) -> Basis:
 	if right.length_squared() <= 0.0001:
 		right = Vector3.RIGHT
 	forward = up.cross(right).normalized()
-	return Basis(right, up, -forward).orthonormalized()
+	return Basis(right, up, forward).orthonormalized()

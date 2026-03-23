@@ -15,6 +15,7 @@ const INSPECTION_FARFIELD_ONLY_UPDATE_INTERVAL_SEC := 0.24
 const INSPECTION_FARFIELD_ONLY_PLAYER_REUSE_DISTANCE_M := 256.0
 const REACTIVE_STATIONARY_ASSIGNMENT_REBUILD_INTERVAL_SEC := 0.6
 const REACTIVE_STATIONARY_SPEED_EPSILON_MPS := 0.5
+const PROJECTILE_NOTIFY_FORCE_REBUILD_MIN_INTERVAL_SEC := ASSIGNMENT_REBUILD_INTERVAL_SEC
 const PLAYER_CONTEXT_TELEPORT_DISTANCE_M := 32.0
 const PLAYER_ASSIGNMENT_REBUILD_DISTANCE_M := 32.0
 const PLAYER_ASSIGNMENT_REBUILD_SPEED_DELTA_MPS := 0.1
@@ -180,8 +181,12 @@ func set_player_context(player_position: Vector3, player_velocity: Vector3 = Vec
 	_has_player_context = true
 
 func notify_projectile_event(origin: Vector3, direction: Vector3, range_m: float = 36.0) -> void:
+	var had_reactive_events := _reaction_model.get_event_count() > 0
 	_reaction_model.notify_projectile_event(origin, direction, range_m)
-	_mark_assignment_rebuild_required()
+	if not had_reactive_events:
+		_mark_assignment_rebuild_required()
+		return
+	_mark_assignment_rebuild_required_with_min_interval(PROJECTILE_NOTIFY_FORCE_REBUILD_MIN_INTERVAL_SEC)
 
 func notify_explosion_event(world_position: Vector3, radius_m: float) -> void:
 	_reaction_model.notify_explosion_event(world_position, radius_m)
@@ -938,6 +943,15 @@ func _step_state_refs(states: Array, step_delta: float, mark_render_dirty: bool 
 
 func _mark_assignment_rebuild_required() -> void:
 	_force_assignment_rebuild = true
+
+func _mark_assignment_rebuild_required_with_min_interval(min_interval_sec: float) -> void:
+	if _force_assignment_rebuild:
+		return
+	if not _has_assignment_cache:
+		_force_assignment_rebuild = true
+		return
+	if min_interval_sec <= 0.0 or _assignment_rebuild_elapsed_sec >= min_interval_sec:
+		_force_assignment_rebuild = true
 
 func _mark_chunk_render_dirty(chunk_id: String, farfield_only: bool = false) -> void:
 	if chunk_id == "" or not _chunk_render_snapshots.has(chunk_id):

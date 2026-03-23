@@ -7,6 +7,11 @@ const REACTION_PANIC := "panic"
 const REACTION_FLEE := "flee"
 const OUTER_RING_SAMPLE_BUCKETS := 10
 const FLEE_SPEED_MULTIPLIER := 4.0
+const PROJECTILE_EVENT_TTL_SEC := 0.65
+const GUNSHOT_EVENT_TTL_SEC := 0.85
+const PROJECTILE_EVENT_MERGE_DISTANCE_M := 4.0
+const PROJECTILE_EVENT_MERGE_DIRECTION_DOT := 0.9
+const GUNSHOT_EVENT_MERGE_DISTANCE_M := 12.0
 
 var _events: Array[Dictionary] = []
 var _player_position := Vector3.ZERO
@@ -29,17 +34,17 @@ func set_player_context(player_position: Vector3, player_velocity: Vector3 = Vec
 
 func notify_projectile_event(origin: Vector3, direction: Vector3, range_m: float) -> void:
 	var normalized_direction := direction.normalized() if direction.length_squared() > 0.0001 else Vector3.FORWARD
-	_events.append({
+	_upsert_projectile_event({
 		"type": "projectile",
 		"origin": origin,
 		"direction": normalized_direction,
 		"range_m": maxf(range_m, 1.0),
-		"ttl_sec": 0.65,
+		"ttl_sec": PROJECTILE_EVENT_TTL_SEC,
 	})
-	_events.append({
+	_upsert_gunshot_event({
 		"type": "gunshot",
 		"position": origin,
-		"ttl_sec": 0.85,
+		"ttl_sec": GUNSHOT_EVENT_TTL_SEC,
 	})
 
 func notify_explosion_event(world_position: Vector3, radius_m: float, threat_radius_m: float = -1.0) -> void:
@@ -151,6 +156,44 @@ func _age_events(delta: float) -> void:
 		event["ttl_sec"] = ttl_sec
 		surviving_events.append(event)
 	_events = surviving_events
+
+func _upsert_projectile_event(event: Dictionary) -> void:
+	for event_index in range(_events.size() - 1, -1, -1):
+		var existing_event: Dictionary = _events[event_index]
+		if str(existing_event.get("type", "")) != "projectile":
+			continue
+		if not _can_merge_projectile_event(existing_event, event):
+			continue
+		_events[event_index] = event.duplicate(true)
+		return
+	_events.append(event.duplicate(true))
+
+func _upsert_gunshot_event(event: Dictionary) -> void:
+	for event_index in range(_events.size() - 1, -1, -1):
+		var existing_event: Dictionary = _events[event_index]
+		if str(existing_event.get("type", "")) != "gunshot":
+			continue
+		if not _can_merge_gunshot_event(existing_event, event):
+			continue
+		_events[event_index] = event.duplicate(true)
+		return
+	_events.append(event.duplicate(true))
+
+func _can_merge_projectile_event(existing_event: Dictionary, next_event: Dictionary) -> bool:
+	var existing_origin: Vector3 = existing_event.get("origin", Vector3.ZERO)
+	var next_origin: Vector3 = next_event.get("origin", Vector3.ZERO)
+	if existing_origin.distance_to(next_origin) > PROJECTILE_EVENT_MERGE_DISTANCE_M:
+		return false
+	var existing_direction: Vector3 = existing_event.get("direction", Vector3.FORWARD)
+	var next_direction: Vector3 = next_event.get("direction", Vector3.FORWARD)
+	if existing_direction.length_squared() <= 0.0001 or next_direction.length_squared() <= 0.0001:
+		return true
+	return existing_direction.normalized().dot(next_direction.normalized()) >= PROJECTILE_EVENT_MERGE_DIRECTION_DOT
+
+func _can_merge_gunshot_event(existing_event: Dictionary, next_event: Dictionary) -> bool:
+	var existing_position: Vector3 = existing_event.get("position", Vector3.ZERO)
+	var next_position: Vector3 = next_event.get("position", Vector3.ZERO)
+	return existing_position.distance_to(next_position) <= GUNSHOT_EVENT_MERGE_DISTANCE_M
 
 func _build_command_for_state(state, budget_contract: Dictionary, player_speed_mps: float) -> Dictionary:
 	var best_command: Dictionary = {}

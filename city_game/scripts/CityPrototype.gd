@@ -493,7 +493,7 @@ func _process(delta: float) -> void:
 	_update_lake_player_water_state()
 	_update_minigame_venue_runtimes(delta)
 	var frame_started_usec := Time.get_ticks_usec()
-	update_streaming_for_position(player.global_position, delta)
+	update_streaming_for_position(_get_streaming_focus_position(), delta)
 	_update_task_system(delta)
 	_update_music_road_runtime(delta)
 	_update_npc_interaction_system()
@@ -2799,7 +2799,7 @@ func build_minimap_snapshot() -> Dictionary:
 	if _minimap_projector == null:
 		return {}
 	_minimap_request_count += 1
-	var center_world_position := _get_minimap_center_world_position(_get_active_anchor_position())
+	var center_world_position := _get_minimap_center_world_position(_get_navigation_focus_position())
 	var player_marker_state := _build_navigation_player_marker_state()
 	var player_world_position: Vector3 = player_marker_state.get("world_position", Vector3.ZERO)
 	var player_heading := float(player_marker_state.get("heading_rad", 0.0))
@@ -2828,6 +2828,9 @@ func build_minimap_snapshot() -> Dictionary:
 	return snapshot
 
 func _resolve_minimap_heading_rad() -> float:
+	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime) and _player_drone_runtime.has_method("should_drive_world_streaming") and bool(_player_drone_runtime.should_drive_world_streaming()):
+		if _player_drone_runtime.has_method("get_focus_heading_rad"):
+			return float(_player_drone_runtime.get_focus_heading_rad())
 	if player == null:
 		return 0.0
 	var heading := Vector3.ZERO
@@ -2843,10 +2846,11 @@ func _resolve_minimap_heading_rad() -> float:
 	return atan2(heading.x, -heading.z)
 
 func _build_navigation_player_marker_state() -> Dictionary:
-	if player == null:
+	var focus_position := _get_navigation_focus_position()
+	if focus_position == Vector3.ZERO and player == null:
 		return {}
 	return {
-		"world_position": player.global_position,
+		"world_position": focus_position,
 		"heading_rad": _resolve_minimap_heading_rad(),
 	}
 
@@ -2856,7 +2860,7 @@ func build_minimap_route_overlay(start_position: Vector3, goal_position: Vector3
 	var route_result := plan_route_result(start_position, goal_position, 0, ROUTE_STYLE_DESTINATION)
 	if route_result.is_empty():
 		return {}
-	var overlay := _build_current_minimap_route_overlay(_get_minimap_center_world_position(_get_active_anchor_position()), MINIMAP_WORLD_RADIUS_M)
+	var overlay := _build_current_minimap_route_overlay(_get_minimap_center_world_position(_get_navigation_focus_position()), MINIMAP_WORLD_RADIUS_M)
 	if hud != null and hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
 	return overlay.duplicate(true)
@@ -3269,6 +3273,18 @@ func _snap_player_to_active_surface() -> bool:
 
 func _get_active_anchor_position() -> Vector3:
 	return player.global_position if player != null else Vector3.ZERO
+
+func _get_streaming_focus_position() -> Vector3:
+	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime) and _player_drone_runtime.has_method("should_drive_world_streaming") and bool(_player_drone_runtime.should_drive_world_streaming()):
+		if _player_drone_runtime.has_method("get_focus_world_position"):
+			return _player_drone_runtime.get_focus_world_position()
+	return _get_active_anchor_position()
+
+func _get_navigation_focus_position() -> Vector3:
+	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime) and _player_drone_runtime.has_method("should_drive_world_streaming") and bool(_player_drone_runtime.should_drive_world_streaming()):
+		if _player_drone_runtime.has_method("get_focus_world_position"):
+			return _player_drone_runtime.get_focus_world_position()
+	return _get_active_anchor_position()
 
 func _build_chunk_payload_for_world_position(world_position: Vector3) -> Dictionary:
 	var chunk_key := CityChunkKey.world_to_chunk_key(_world_config, world_position)

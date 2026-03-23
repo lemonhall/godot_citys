@@ -99,6 +99,20 @@ func request_toggle() -> Dictionary:
 func get_visual_root() -> Node3D:
 	return visual_root
 
+func should_drive_world_streaming() -> bool:
+	return _system_state == SYSTEM_STATE_ACTIVE or _system_state == SYSTEM_STATE_RECOVERING
+
+func get_focus_world_position() -> Vector3:
+	return global_position
+
+func get_focus_heading_rad() -> float:
+	var forward := -global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		return rotation.y
+	forward = forward.normalized()
+	return atan2(forward.x, -forward.z)
+
 func get_portability_contract() -> Dictionary:
 	return {
 		"scene_path": SCENE_PATH,
@@ -134,6 +148,8 @@ func get_debug_state() -> Dictionary:
 		"drone_world_position": global_position,
 		"planar_velocity_mps": _planar_velocity_mps,
 		"vertical_velocity_mps": _vertical_velocity_mps,
+		"visual_pitch_deg": rad_to_deg(visual_root.rotation.x) if visual_root != null else 0.0,
+		"visual_roll_deg": rad_to_deg(visual_root.rotation.z) if visual_root != null else 0.0,
 		"last_reject_reason": _last_reject_reason,
 		"scene_path": SCENE_PATH,
 		"runtime_script_path": RUNTIME_SCRIPT_PATH,

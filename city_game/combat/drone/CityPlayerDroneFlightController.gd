@@ -1,14 +1,14 @@
 extends RefCounted
 
-var max_planar_speed_mps := 14.0
-var planar_accel_mps2 := 24.0
-var planar_brake_mps2 := 18.0
+var max_planar_speed_mps := 26.0
+var planar_accel_mps2 := 42.0
+var planar_brake_mps2 := 42.0
 var max_vertical_speed_mps := 6.8
 var vertical_accel_mps2 := 42.0
-var yaw_turn_speed_rad := 4.8
-var visual_response := 6.5
+var yaw_turn_speed_rad := 6.0
+var visual_response := 8.5
 var max_roll_deg := 11.0
-var max_pitch_deg := 8.5
+var max_pitch_deg := 16.0
 
 func step(drone: CharacterBody3D, camera: Camera3D, visual_root: Node3D, delta: float) -> Dictionary:
 	if drone == null or camera == null:
@@ -80,8 +80,11 @@ func _read_input_state() -> Dictionary:
 func _apply_visual_bank(drone: CharacterBody3D, visual_root: Node3D, delta: float) -> void:
 	if visual_root == null:
 		return
-	var local_velocity := drone.global_transform.basis.inverse() * drone.velocity
-	var roll_target := deg_to_rad(clampf((-local_velocity.x / maxf(max_planar_speed_mps, 0.001)) * max_roll_deg, -max_roll_deg, max_roll_deg))
-	var pitch_target := deg_to_rad(clampf((local_velocity.z / maxf(max_planar_speed_mps, 0.001)) * max_pitch_deg, -max_pitch_deg, max_pitch_deg))
+	var right_axis := drone.global_transform.basis.x.normalized()
+	var forward_axis := (-drone.global_transform.basis.z).normalized()
+	var lateral_speed := right_axis.dot(drone.velocity)
+	var forward_speed := forward_axis.dot(drone.velocity)
+	var roll_target := deg_to_rad(clampf((-lateral_speed / maxf(max_planar_speed_mps, 0.001)) * max_roll_deg, -max_roll_deg, max_roll_deg))
+	var pitch_target := deg_to_rad(clampf((-forward_speed / maxf(max_planar_speed_mps, 0.001)) * max_pitch_deg, -max_pitch_deg, max_pitch_deg))
 	visual_root.rotation.z = lerp_angle(visual_root.rotation.z, roll_target, clampf(visual_response * maxf(delta, 0.0), 0.0, 1.0))
 	visual_root.rotation.x = lerp_angle(visual_root.rotation.x, pitch_target, clampf(visual_response * maxf(delta, 0.0), 0.0, 1.0))

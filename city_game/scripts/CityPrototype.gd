@@ -35,6 +35,7 @@ const CityMissileScene := preload("res://city_game/combat/CityMissile.tscn")
 const CityRifleFireEmitterScene := preload("res://city_game/combat/CityRifleFireEmitter.tscn")
 const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesignatorBeam.gd")
 const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
+const CityPlayerDroneScene := preload("res://city_game/combat/drone/CityDroneGunship.tscn")
 const CityHelicopterGunshipWorldEncounterScene := preload("res://city_game/combat/helicopter/CityHelicopterGunshipWorldEncounter.tscn")
 const CityWorldInspectionResolver := preload("res://city_game/world/inspection/CityWorldInspectionResolver.gd")
 const CityBuildingSceneExporter := preload("res://city_game/world/serviceability/CityBuildingSceneExporter.gd")
@@ -162,6 +163,7 @@ var _task_brief_view_model = null
 var _task_pin_projection = null
 var _task_trigger_runtime = null
 var _task_world_marker_runtime: Node3D = null
+var _player_drone_runtime: Node3D = null
 var _helicopter_gunship_encounter_runtime: Node3D = null
 var _helicopter_gunship_pending_reset_task_id := ""
 var _helicopter_gunship_pending_reset_delay_sec := 0.0
@@ -379,6 +381,7 @@ func _ready() -> void:
 	_ensure_interaction_runtimes()
 	_ensure_destination_world_marker()
 	_ensure_task_system_runtimes()
+	_ensure_player_drone_runtime()
 	_ensure_helicopter_gunship_encounter_runtime()
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
@@ -940,6 +943,9 @@ func handle_debug_keypress(keycode: int, physical_keycode: int = 0) -> bool:
 	if keycode == KEY_C:
 		set_control_mode(CONTROL_MODE_INSPECTION if _control_mode == CONTROL_MODE_PLAYER else CONTROL_MODE_PLAYER)
 		return true
+	if keycode == KEY_KP_5 or physical_keycode == KEY_KP_5:
+		_toggle_player_drone_runtime()
+		return true
 	if keycode == KEY_KP_MULTIPLY or physical_keycode == KEY_KP_MULTIPLY:
 		toggle_pedestrians_visible()
 		return true
@@ -1152,10 +1158,71 @@ func get_helicopter_gunship_encounter_state() -> Dictionary:
 		return {}
 	return _helicopter_gunship_encounter_runtime.get_state()
 
+func get_player_drone_debug_state() -> Dictionary:
+	_ensure_player_drone_runtime()
+	if _player_drone_runtime == null or not _player_drone_runtime.has_method("get_debug_state"):
+		return {
+			"system_state": "stowed",
+			"camera_owner": "player",
+			"input_owner": "player",
+			"transition_progress": 0.0,
+			"player_locked": false,
+			"drone_visible": false,
+			"drone_world_position": Vector3.ZERO,
+			"planar_velocity_mps": 0.0,
+			"vertical_velocity_mps": 0.0,
+			"last_reject_reason": "",
+		}
+	return (_player_drone_runtime.get_debug_state() as Dictionary).duplicate(true)
+
 func get_active_helicopter_gunship() -> Node3D:
 	if _helicopter_gunship_encounter_runtime == null or not _helicopter_gunship_encounter_runtime.has_method("get_active_gunship"):
 		return null
 	return _helicopter_gunship_encounter_runtime.get_active_gunship()
+
+func _toggle_player_drone_runtime() -> Dictionary:
+	_ensure_player_drone_runtime()
+	if _player_drone_runtime == null or not _player_drone_runtime.has_method("request_toggle"):
+		return {
+			"accepted": false,
+			"recognized": false,
+			"error": "missing_runtime",
+		}
+	if _full_map_open:
+		return {
+			"accepted": false,
+			"recognized": true,
+			"error": "full_map_open",
+		}
+	if _controls_help_open:
+		return {
+			"accepted": false,
+			"recognized": true,
+			"error": "controls_help_open",
+		}
+	if _is_missile_command_mode_active():
+		return {
+			"accepted": false,
+			"recognized": true,
+			"error": "missile_command_active",
+		}
+	if is_dialogue_active():
+		return {
+			"accepted": false,
+			"recognized": true,
+			"error": "dialogue_active",
+		}
+	if player != null and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle()):
+		return {
+			"accepted": false,
+			"recognized": true,
+			"error": "player_driving_vehicle",
+		}
+	return _player_drone_runtime.request_toggle()
+
+func _is_player_drone_runtime_busy() -> bool:
+	var debug_state: Dictionary = get_player_drone_debug_state()
+	return str(debug_state.get("system_state", "stowed")) != "stowed"
 
 func is_player_driving_vehicle() -> bool:
 	return player != null and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle())
@@ -1389,11 +1456,13 @@ func set_control_mode(mode: String) -> void:
 	if mode != CONTROL_MODE_PLAYER and mode != CONTROL_MODE_INSPECTION:
 		return
 	_control_mode = mode
-	if player != null and player.has_method("set_control_enabled"):
+	var player_drone_busy := _is_player_drone_runtime_busy()
+	if player != null and player.has_method("set_control_enabled") and not player_drone_busy:
 		player.set_control_enabled(true)
 	if player != null and player.has_method("set_speed_profile"):
 		player.set_speed_profile(mode)
-	_set_camera_current(player.get_node_or_null("CameraRig/Camera3D"), true)
+	if not player_drone_busy:
+		_set_camera_current(player.get_node_or_null("CameraRig/Camera3D"), true)
 	_refresh_hud_status({}, true)
 
 func set_pedestrians_visible(should_be_visible: bool) -> void:
@@ -3638,6 +3707,20 @@ func _ensure_helicopter_gunship_encounter_runtime() -> void:
 	var completion_callable := Callable(self, "_on_helicopter_gunship_encounter_completed")
 	if not _helicopter_gunship_encounter_runtime.encounter_completed.is_connected(completion_callable):
 		_helicopter_gunship_encounter_runtime.encounter_completed.connect(completion_callable)
+
+func _ensure_player_drone_runtime() -> void:
+	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime):
+		if _player_drone_runtime.has_method("bind_player_owner"):
+			_player_drone_runtime.bind_player_owner(player)
+		return
+	_player_drone_runtime = get_node_or_null("PlayerDroneRuntime") as Node3D
+	if _player_drone_runtime == null and CityPlayerDroneScene != null:
+		_player_drone_runtime = CityPlayerDroneScene.instantiate() as Node3D
+		if _player_drone_runtime != null:
+			_player_drone_runtime.name = "PlayerDroneRuntime"
+			add_child(_player_drone_runtime)
+	if _player_drone_runtime != null and _player_drone_runtime.has_method("bind_player_owner"):
+		_player_drone_runtime.bind_player_owner(player)
 
 func _ensure_interaction_runtimes() -> void:
 	if _dialogue_runtime == null:

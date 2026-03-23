@@ -1,9 +1,10 @@
 [gd_scene format=3 uid="uid://bqdq4d2phcia"]
 
 [ext_resource type="Script" uid="uid://dwiuj3akqvdio" path="res://city_game/combat/helicopter/CityHelicopterEditorDebugPreview.gd" id="1_editor_debug_preview"]
-[ext_resource type="Script" uid="uid://cw8eya5aqe0ma" path="res://city_game/combat/helicopter/CityHelicopterGunship.gd" id="2_gunship_script"]
+[ext_resource type="Script" path="res://city_game/combat/drone/CityPlayerDroneRuntime.gd" id="2_runtime_script"]
 [ext_resource type="PackedScene" uid="uid://cspg1r7awldny" path="res://city_game/assets/environment/source/aircraft/drone_a.glb" id="3_drone_model"]
 [ext_resource type="Shader" uid="uid://cjfhg4tlk28wb" path="res://city_game/combat/helicopter/CityHelicopterRotorBlur.gdshader" id="4_rotor_blur_shader"]
+[ext_resource type="PackedScene" path="res://city_game/combat/drone/CityPlayerDroneCameraRig.tscn" id="5_camera_rig_scene"]
 
 [sub_resource type="BoxShape3D" id="1_hitbox_shape"]
 size = Vector3(2.2, 0.7, 2.2)
@@ -98,7 +99,7 @@ radius = 0.8
 height = 1.6
 
 [node name="CityDroneGunship" type="CharacterBody3D" unique_id=997283566]
-script = ExtResource("2_gunship_script")
+script = ExtResource("2_runtime_script")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1504325824]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
@@ -185,6 +186,8 @@ material_override = SubResource("9_debug_rotor_preview_material")
 cast_shadow = 0
 mesh = SubResource("10_debug_rotor_preview_mesh")
 script = ExtResource("1_editor_debug_preview")
+
+[node name="CameraRig" parent="." unique_id=921171435 instance=ExtResource("5_camera_rig_scene")]
 
 [node name="DeathFxRoot" type="Node3D" parent="." unique_id=380221737]
 visible = false

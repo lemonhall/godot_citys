@@ -5,6 +5,7 @@ const CityControlsHelpOverlayScript := preload("res://city_game/ui/CityControlsH
 const CityDialoguePanelScript := preload("res://city_game/ui/CityDialoguePanel.gd")
 const CityVehicleRadioBrowserScript := preload("res://city_game/ui/CityVehicleRadioBrowser.gd")
 const CityVehicleRadioQuickOverlayScript := preload("res://city_game/ui/CityVehicleRadioQuickOverlay.gd")
+const SpiderBiteBloodOverlayShader := preload("res://city_game/ui/shaders/SpiderBiteBloodOverlay.gdshader")
 const AUDIO_SAMPLE_RATE := 22050
 
 static var _tennis_feedback_audio_stream_cache: Dictionary = {}
@@ -47,6 +48,15 @@ var _crosshair_state: Dictionary = {
 	"viewport_size": Vector2.ZERO,
 	"world_target": Vector3.ZERO,
 	"aim_down_sights_active": false,
+}
+var _spider_bite_overlay_state: Dictionary = {
+	"visible": false,
+	"intensity": 0.0,
+	"freshness": 0.0,
+	"impact_uv": Vector2(0.5, 0.5),
+	"species_id": "",
+	"event_token": 0,
+	"bite_count": 0,
 }
 var _vehicle_radio_quick_overlay_state: Dictionary = {
 	"visible": false,
@@ -153,6 +163,7 @@ var _last_tennis_feedback_event_token := 0
 
 func _ready() -> void:
 	_ensure_mouse_passthrough()
+	_ensure_spider_bite_blood_overlay_view()
 	_ensure_crosshair_view()
 	_ensure_fps_label()
 	_ensure_soccer_match_hud_view()
@@ -279,6 +290,21 @@ func get_focus_message_state() -> Dictionary:
 
 func get_crosshair_state() -> Dictionary:
 	return _crosshair_state.duplicate(true)
+
+func set_spider_bite_overlay_state(state: Dictionary) -> void:
+	_spider_bite_overlay_state = {
+		"visible": bool(state.get("visible", false)),
+		"intensity": clampf(float(state.get("intensity", 0.0)), 0.0, 1.2),
+		"freshness": clampf(float(state.get("freshness", 0.0)), 0.0, 1.0),
+		"impact_uv": state.get("impact_uv", Vector2(0.5, 0.5)),
+		"species_id": str(state.get("species_id", "")),
+		"event_token": int(state.get("event_token", 0)),
+		"bite_count": int(state.get("bite_count", 0)),
+	}
+	_apply_spider_bite_overlay_state()
+
+func get_spider_bite_overlay_state() -> Dictionary:
+	return _spider_bite_overlay_state.duplicate(true)
 
 func set_vehicle_radio_browser_state(state: Dictionary) -> void:
 	_vehicle_radio_browser_state = {
@@ -436,6 +462,7 @@ func _apply_state() -> void:
 	_apply_debug_text_state()
 	_apply_minimap_state()
 	_apply_crosshair_state()
+	_apply_spider_bite_overlay_state()
 	_apply_fps_overlay_state()
 	_apply_focus_message_state()
 	_apply_interaction_prompt_state()
@@ -475,6 +502,20 @@ func _apply_crosshair_state() -> void:
 	var crosshair_view := get_node_or_null("Root/Crosshair")
 	if crosshair_view != null and crosshair_view.has_method("set_state"):
 		crosshair_view.set_state(_crosshair_state)
+
+func _apply_spider_bite_overlay_state() -> void:
+	var overlay := get_node_or_null("Root/SpiderBiteBloodOverlay") as ColorRect
+	if overlay == null:
+		return
+	var visible := bool(_spider_bite_overlay_state.get("visible", false))
+	overlay.visible = visible
+	var material := overlay.material as ShaderMaterial
+	if material == null:
+		return
+	material.set_shader_parameter("effect_strength", float(_spider_bite_overlay_state.get("intensity", 0.0)))
+	material.set_shader_parameter("freshness", float(_spider_bite_overlay_state.get("freshness", 0.0)))
+	material.set_shader_parameter("impact_uv", _spider_bite_overlay_state.get("impact_uv", Vector2(0.5, 0.5)))
+	material.set_shader_parameter("event_token", float(_spider_bite_overlay_state.get("event_token", 0)))
 
 func _apply_fps_overlay_state() -> void:
 	var fps_label := get_node_or_null("Root/FpsLabel") as Label
@@ -710,6 +751,31 @@ func _ensure_mouse_passthrough() -> void:
 	var missile_command_hud := get_node_or_null("Root/MissileCommandHud") as Control
 	if missile_command_hud != null:
 		missile_command_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var spider_bite_overlay := get_node_or_null("Root/SpiderBiteBloodOverlay") as Control
+	if spider_bite_overlay != null:
+		spider_bite_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+func _ensure_spider_bite_blood_overlay_view() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("SpiderBiteBloodOverlay") != null:
+		return
+	var overlay := ColorRect.new()
+	overlay.name = "SpiderBiteBloodOverlay"
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.offset_left = 0.0
+	overlay.offset_top = 0.0
+	overlay.offset_right = 0.0
+	overlay.offset_bottom = 0.0
+	overlay.color = Color(1.0, 1.0, 1.0, 0.0)
+	overlay.visible = false
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var material := ShaderMaterial.new()
+	material.shader = SpiderBiteBloodOverlayShader
+	overlay.material = material
+	root.add_child(overlay)
+	root.move_child(overlay, 0)
 
 func _ensure_crosshair_view() -> void:
 	var root := get_node_or_null("Root") as Control

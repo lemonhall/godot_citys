@@ -368,6 +368,9 @@ func _refresh_hud() -> void:
 			"world_target": aim_target,
 			"aim_down_sights_active": ads_active,
 		})
+	if hud.has_method("set_spider_bite_overlay_state"):
+		var bite_overlay_state: Dictionary = player.get_spider_bite_feedback_state() if player != null and player.has_method("get_spider_bite_feedback_state") else {}
+		hud.set_spider_bite_overlay_state(bite_overlay_state)
 	if hud.has_method("set_status"):
 		var spider_state: Dictionary = get_crawler_debug_state()
 		var swarm_state: Dictionary = get_swarm_state()
@@ -413,6 +416,8 @@ func _restore_player_state() -> void:
 		player.set_grenade_ready_active(false)
 	if player.has_method("set_weapon_mode"):
 		player.set_weapon_mode("rifle")
+	if player.has_method("reset_spider_bite_feedback_state"):
+		player.reset_spider_bite_feedback_state()
 
 func _connect_player_combat_signals() -> void:
 	if player == null:
@@ -519,6 +524,8 @@ func _prepare_spider_for_lab(spider: Node3D, swarm_index: int) -> void:
 	spider.set_meta("swarm_attack_signature", _build_swarm_attack_signature(swarm_index))
 	if spider.has_method("set_behavior_seed"):
 		spider.set_behavior_seed(behavior_seed)
+	if player != null and spider.has_method("set_bite_victim"):
+		spider.set_bite_victim(player)
 	if spider.has_method("set_auto_step_enabled"):
 		spider.set_auto_step_enabled(false)
 	if spider.has_method("set_debug_motion_velocity"):

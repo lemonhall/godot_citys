@@ -37,6 +37,13 @@ const HURTBOX_LOCAL_OFFSET := Vector3(0.0, 0.2, 0.22)
 const HIT_STUN_MIN_SECONDS := 0.5
 const HIT_STUN_MAX_SECONDS := 1.0
 const HIT_STUN_DAMAGE_DURATION_SCALE := 0.18
+const BITE_RANGE_M := 1.35
+const BITE_VERTICAL_RANGE_M := 1.85
+const BITE_COOLDOWN_MIN_SECONDS := 0.55
+const BITE_COOLDOWN_MAX_SECONDS := 0.95
+const BITE_INTENSITY_MIN := 0.7
+const BITE_INTENSITY_MAX := 1.0
+const BITE_POUNCE_INTENSITY_MULTIPLIER := 1.18
 const POUNCE_INTERVAL_MIN_SECONDS := 0.85
 const POUNCE_INTERVAL_MAX_SECONDS := 1.65
 const POUNCE_DURATION_MIN_SECONDS := 0.48
@@ -148,6 +155,11 @@ var _step_duration_scale := 1.0
 var _step_cooldown_scale := 1.0
 var _reference_step_clock_bias_seconds := 0.0
 var _hit_stun_remaining_seconds := 0.0
+var _bite_victim: Object = null
+var _bite_cooldown_remaining_seconds := 0.0
+var _bite_count := 0
+var _last_bite_world_position := Vector3.ZERO
+var _last_bite_intensity := 0.0
 var _pounce_cooldown_remaining_seconds := 0.0
 var _pounce_elapsed_seconds := 0.0
 var _pounce_duration_seconds := 0.0
@@ -209,6 +221,10 @@ func set_auto_step_enabled(enabled: bool) -> void:
 func set_debug_motion_velocity(velocity: Vector3) -> void:
 	_debug_motion_velocity = velocity
 
+func set_bite_victim(victim: Object) -> void:
+	_bite_victim = victim if victim != self else null
+	_bite_cooldown_remaining_seconds = 0.0
+
 func set_behavior_seed(seed_value: int) -> void:
 	behavior_seed = seed_value
 	_apply_spider_variant()
@@ -234,10 +250,12 @@ func tick_crawler(delta: float) -> void:
 		_sync_visual_state_from_runtime()
 		return
 	_update_pounce_state(resolved_delta)
+	_update_bite_state(resolved_delta)
 	var resolved_motion_velocity := _debug_motion_velocity
 	if _is_pounce_active():
 		resolved_motion_velocity *= _pounce_speed_multiplier
 	global_position += resolved_motion_velocity * resolved_delta
+	_try_bite_victim()
 	_update_reference_motion_state(resolved_delta)
 	_reference_step_clock += resolved_delta
 	_update_reference_step_manager(resolved_delta)
@@ -306,6 +324,11 @@ func get_debug_state() -> Dictionary:
 	state["step_cooldown_scale"] = _step_cooldown_scale
 	state["reference_step_clock_bias_seconds"] = _reference_step_clock_bias_seconds
 	state["hit_stun_remaining_seconds"] = _hit_stun_remaining_seconds
+	state["bite_count"] = _bite_count
+	state["bite_cooldown_remaining_seconds"] = _bite_cooldown_remaining_seconds
+	state["last_bite_world_position"] = _last_bite_world_position
+	state["last_bite_intensity"] = _last_bite_intensity
+	state["bite_victim_bound"] = _bite_victim != null and is_instance_valid(_bite_victim)
 	state["pounce_active"] = _is_pounce_active()
 	state["pounce_cooldown_remaining_seconds"] = _pounce_cooldown_remaining_seconds
 	state["pounce_total_count"] = _pounce_total_count
@@ -343,6 +366,10 @@ func reset_health_state() -> void:
 	_last_hit_world_position = Vector3.ZERO
 	_last_hit_impulse = Vector3.ZERO
 	_hit_stun_remaining_seconds = 0.0
+	_bite_cooldown_remaining_seconds = 0.0
+	_bite_count = 0
+	_last_bite_world_position = Vector3.ZERO
+	_last_bite_intensity = 0.0
 	_cancel_pounce(false)
 	_set_hurtbox_enabled(true)
 	_update_combat_visual_feedback()
@@ -409,6 +436,11 @@ func get_portability_contract() -> Dictionary:
 		"spawn_policy": {
 			"kind": "external_chunk_gate",
 			"default_mode": "lab_always_loaded",
+		},
+		"contact_attack": {
+			"kind": "bite_feedback",
+			"victim_hook_method": "set_bite_victim",
+			"victim_feedback_method": "apply_spider_bite_feedback",
 		},
 		"debug_passthrough": {
 			"method": "get_debug_state",
@@ -1603,6 +1635,7 @@ func _ensure_unique_visual_materials() -> void:
 
 func _reset_behavior_runtime_state() -> void:
 	_hit_stun_remaining_seconds = 0.0
+	_bite_cooldown_remaining_seconds = 0.0
 	_seed_behavior_runtime_rng()
 	_reference_step_clock = _reference_step_clock_bias_seconds
 	_reset_pounce_state()
@@ -1618,6 +1651,46 @@ func _resolve_behavior_rng_seed(offset: int) -> int:
 
 func _compute_hit_stun_duration_seconds(resolved_damage: float) -> float:
 	return clampf(HIT_STUN_MIN_SECONDS + resolved_damage * HIT_STUN_DAMAGE_DURATION_SCALE, HIT_STUN_MIN_SECONDS, HIT_STUN_MAX_SECONDS)
+
+func _update_bite_state(delta: float) -> void:
+	_bite_cooldown_remaining_seconds = maxf(_bite_cooldown_remaining_seconds - maxf(delta, 0.0), 0.0)
+
+func _try_bite_victim() -> void:
+	if _bite_cooldown_remaining_seconds > 0.0:
+		return
+	if _bite_victim == null or not is_instance_valid(_bite_victim):
+		return
+	if not _bite_victim.has_method("apply_spider_bite_feedback"):
+		return
+	var victim_world_position := _resolve_bite_victim_world_position()
+	if victim_world_position == Vector3.INF:
+		return
+	var bite_origin := get_combat_target_world_position()
+	var to_victim := victim_world_position - bite_origin
+	var planar_distance := Vector2(to_victim.x, to_victim.z).length()
+	var vertical_distance := absf(to_victim.y)
+	var bite_range_m := BITE_RANGE_M * (1.15 if _is_pounce_active() else 1.0)
+	if planar_distance > bite_range_m or vertical_distance > BITE_VERTICAL_RANGE_M:
+		return
+	var closeness := clampf(1.0 - (planar_distance / maxf(bite_range_m, 0.001)), 0.0, 1.0)
+	var intensity := lerpf(BITE_INTENSITY_MIN, BITE_INTENSITY_MAX, closeness)
+	if _is_pounce_active():
+		intensity *= BITE_POUNCE_INTENSITY_MULTIPLIER
+	intensity = clampf(intensity, 0.1, 1.2)
+	_last_bite_world_position = bite_origin
+	_last_bite_intensity = intensity
+	_bite_count += 1
+	_bite_cooldown_remaining_seconds = lerpf(BITE_COOLDOWN_MIN_SECONDS, BITE_COOLDOWN_MAX_SECONDS, _behavior_runtime_rng.randf())
+	_bite_victim.call("apply_spider_bite_feedback", bite_origin, intensity, "spider")
+
+func _resolve_bite_victim_world_position() -> Vector3:
+	if _bite_victim == null or not is_instance_valid(_bite_victim):
+		return Vector3.INF
+	if _bite_victim is Node3D:
+		return (_bite_victim as Node3D).global_position
+	if _bite_victim.has_method("get_bite_feedback_world_position"):
+		return _bite_victim.call("get_bite_feedback_world_position")
+	return Vector3.INF
 
 func _reset_pounce_state() -> void:
 	_pounce_total_count = 0

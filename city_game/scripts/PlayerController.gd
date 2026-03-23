@@ -80,6 +80,10 @@ const SPORTS_CAR_SPEED_MULTIPLIER := 2.0
 @export var ground_slam_camera_shake_amplitude_m := 0.18
 @export var vehicle_impact_camera_shake_duration_sec := 0.22
 @export var vehicle_impact_camera_shake_amplitude_m := 0.14
+@export var spider_bite_feedback_duration_sec := 1.75
+@export var spider_bite_camera_shake_duration_sec := 0.24
+@export var spider_bite_camera_shake_amplitude_m := 0.16
+@export var spider_bite_aim_disturbance_deg := 1.8
 @export var vehicle_drive_forward_speed := 42.0
 @export var vehicle_drive_reverse_speed := 14.0
 @export var vehicle_drive_accel := 36.0
@@ -138,6 +142,14 @@ var _active_shockwaves: Array[Dictionary] = []
 var _camera_shake_remaining_sec := 0.0
 var _camera_shake_total_duration_sec := 0.0
 var _camera_shake_amplitude_m := 0.0
+var _spider_bite_feedback_remaining_sec := 0.0
+var _spider_bite_feedback_total_duration_sec := 0.0
+var _spider_bite_feedback_base_intensity := 0.0
+var _spider_bite_feedback_count := 0
+var _spider_bite_feedback_event_token := 0
+var _spider_bite_feedback_species_id := ""
+var _spider_bite_feedback_world_position := Vector3.ZERO
+var _spider_bite_feedback_impact_uv := Vector2(0.5, 0.5)
 var _aim_disturbance_remaining_sec := 0.0
 var _aim_disturbance_total_duration_sec := 0.0
 var _aim_disturbance_amplitude_deg := 0.0
@@ -233,6 +245,7 @@ func _process(delta: float) -> void:
 	_update_traversal_fx(delta)
 	_update_grenade_preview()
 	_update_fishing_preview()
+	_update_spider_bite_feedback(delta)
 	if _collision_resume_process_frames <= 0:
 		return
 	_collision_resume_process_frames -= 1
@@ -424,6 +437,58 @@ func get_weapon_state() -> Dictionary:
 		"driving_vehicle": _driving_vehicle,
 		"fishing_mode_enabled": _fishing_mode_enabled,
 	}
+
+func apply_spider_bite_feedback(world_position: Vector3, intensity: float = 1.0, species_id: String = "spider") -> Dictionary:
+	var resolved_intensity := clampf(intensity, 0.0, 1.2)
+	if resolved_intensity <= 0.0:
+		return get_spider_bite_feedback_state()
+	_spider_bite_feedback_count += 1
+	_spider_bite_feedback_event_token += 1
+	_spider_bite_feedback_species_id = species_id.strip_edges()
+	_spider_bite_feedback_world_position = world_position
+	_spider_bite_feedback_total_duration_sec = maxf(spider_bite_feedback_duration_sec, 0.1)
+	_spider_bite_feedback_remaining_sec = _spider_bite_feedback_total_duration_sec
+	_spider_bite_feedback_base_intensity = clampf(maxf(_spider_bite_feedback_base_intensity * 0.72, resolved_intensity), 0.0, 1.2)
+	_spider_bite_feedback_impact_uv = _resolve_spider_bite_impact_uv(world_position)
+	trigger_camera_shake(
+		spider_bite_camera_shake_duration_sec,
+		spider_bite_camera_shake_amplitude_m * clampf(_spider_bite_feedback_base_intensity, 0.7, 1.15),
+		spider_bite_aim_disturbance_deg * clampf(_spider_bite_feedback_base_intensity, 0.55, 1.0)
+	)
+	return get_spider_bite_feedback_state()
+
+func get_spider_bite_feedback_state() -> Dictionary:
+	var freshness := 0.0
+	if _spider_bite_feedback_total_duration_sec > 0.0:
+		freshness = clampf(_spider_bite_feedback_remaining_sec / _spider_bite_feedback_total_duration_sec, 0.0, 1.0)
+	var intensity := _spider_bite_feedback_base_intensity * pow(freshness, 0.55)
+	var active := _spider_bite_feedback_remaining_sec > 0.0 and intensity > 0.01
+	return {
+		"active": active,
+		"visible": active,
+		"intensity": intensity,
+		"freshness": freshness,
+		"duration_sec": _spider_bite_feedback_total_duration_sec,
+		"remaining_sec": _spider_bite_feedback_remaining_sec,
+		"bite_count": _spider_bite_feedback_count,
+		"event_token": _spider_bite_feedback_event_token,
+		"species_id": _spider_bite_feedback_species_id,
+		"world_position": _spider_bite_feedback_world_position,
+		"impact_uv": _spider_bite_feedback_impact_uv,
+	}
+
+func reset_spider_bite_feedback_state() -> void:
+	_spider_bite_feedback_remaining_sec = 0.0
+	_spider_bite_feedback_total_duration_sec = 0.0
+	_spider_bite_feedback_base_intensity = 0.0
+	_spider_bite_feedback_count = 0
+	_spider_bite_feedback_event_token = 0
+	_spider_bite_feedback_species_id = ""
+	_spider_bite_feedback_world_position = Vector3.ZERO
+	_spider_bite_feedback_impact_uv = Vector2(0.5, 0.5)
+
+func get_bite_feedback_world_position() -> Vector3:
+	return global_position + Vector3.UP * 1.05
 
 func get_rifle_visual_state() -> Dictionary:
 	_ensure_rifle_muzzle_flash()
@@ -1110,6 +1175,27 @@ func trigger_camera_shake(duration_sec: float, amplitude_m: float, aim_disturban
 	_aim_disturbance_total_duration_sec = maxf(duration_sec, 0.0)
 	_aim_disturbance_remaining_sec = maxf(_aim_disturbance_remaining_sec, _aim_disturbance_total_duration_sec)
 	_aim_disturbance_amplitude_deg = maxf(_aim_disturbance_amplitude_deg, aim_disturbance_deg)
+
+func _update_spider_bite_feedback(delta: float) -> void:
+	if _spider_bite_feedback_remaining_sec <= 0.0:
+		_spider_bite_feedback_remaining_sec = 0.0
+		_spider_bite_feedback_total_duration_sec = 0.0 if _spider_bite_feedback_base_intensity <= 0.0 else _spider_bite_feedback_total_duration_sec
+		_spider_bite_feedback_base_intensity = 0.0
+		return
+	_spider_bite_feedback_remaining_sec = maxf(_spider_bite_feedback_remaining_sec - maxf(delta, 0.0), 0.0)
+	if _spider_bite_feedback_remaining_sec > 0.0:
+		return
+	_spider_bite_feedback_total_duration_sec = 0.0
+	_spider_bite_feedback_base_intensity = 0.0
+
+func _resolve_spider_bite_impact_uv(world_position: Vector3) -> Vector2:
+	var local_attack_position: Vector3 = global_transform.affine_inverse() * world_position
+	var x_offset := clampf(local_attack_position.x / 2.4, -1.0, 1.0)
+	var z_offset := clampf(-local_attack_position.z / 2.8, -1.0, 1.0)
+	return Vector2(
+		clampf(0.5 + x_offset * 0.3, 0.14, 0.86),
+		clampf(0.58 - z_offset * 0.22, 0.18, 0.82)
+	)
 
 func _restore_grenade_ready_from_hold() -> void:
 	if not _control_enabled:

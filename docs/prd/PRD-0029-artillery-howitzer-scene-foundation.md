@@ -25,6 +25,7 @@
 - [已由 ECN-0034 变更] 建立正式的 firing solution payload contract：每次 accepted fire 都能留下结构化快照，供后续 projectile、落点动画、弹道与反炮兵链路复用。
 - [已由 ECN-0035 变更] 将 howitzer 正式接入主世界：按下 `KP_8` 后，玩家前方可以直接召唤一门当前 howitzer 实例，并复用 lab 同口径的操炮交互、提示与诸元 HUD。
 - [已由 ECN-0035 变更] 在主世界新增 formal artillery shell ballistic runtime：accepted fire 会生成真实 shell，按 firing solution payload 飞行并在世界中产生正式落点/爆炸结果。
+- [已由 ECN-0036 变更] 建立正式的 gameplay artillery ballistic solver：冻结当前 howitzer 的有效射程包线为 `1.5km~22.5km`，并提供共享的正向落点解算与反向目标点求诸元能力。
 
 ## Non-Goals
 
@@ -32,7 +33,7 @@
 - [已由 ECN-0031 变更] 不在本轮实现炮弹实体、弹道、落点、爆炸、杀伤判定或火控解算；本轮新增范围仅限正式 howitzer runtime 的开火演出与 lab 内的触发交互。
 - [已由 ECN-0030 变更] 不在本轮实现主世界火炮交互 UI、乘员、动画、AI、任务或对话；本轮新增的交互范围仅限 `M777HowitzerLab` 内的近距进入/退出操炮态。
 - [已由 ECN-0034 变更] 不在本轮实现 projectile 级弹道积分、落点效果、杀伤判定、反炮兵雷达或整套硬核火控求解；本轮新增范围仅限 formal firing solution HUD 与 payload snapshot contract。
-- [已由 ECN-0035 变更] 不在本轮实现火炮任务化接入、保存/读档持久化、乘员 AI、装弹动画、地图 pin、目标点求解、预测落点 HUD 或完整硬核火控流程。
+- [已由 ECN-0036 变更] 不在本轮实现气象修正、装药号表、风偏、旋偏、科氏力、mil/mils 火控表、预测落点 HUD 可视化或完整军规级火控流程。
 
 ## User Experience
 
@@ -54,6 +55,9 @@
 14. [已由 ECN-0035 变更] 在主世界中，玩家按下 `KP_8` 后，面前会出现一门当前召唤 howitzer；此后靠近它时，必须看到与 lab 完全同口径的 `按 E 操作炮` 提示。
 15. [已由 ECN-0035 变更] 玩家在主世界进入操炮态后，`E`、`J/L`、`I/K`、`Space`、20m retention、火绳、冷却文案与诸元 HUD 都必须与 lab 共线，而不是主世界重写另一套手感。
 16. [已由 ECN-0035 变更] 主世界 accepted fire 后，玩家必须真的看到 formal artillery shell 飞出去，并在世界某处产生正式落点/爆炸结果，而不是继续只有炮口演出。
+17. [已由 ECN-0036 变更] 当前 howitzer 的 gameplay 射程必须冻结为 `1.5km~22.5km`，既不能贴脸直瞄，也不能一发覆盖整张超大地图。
+18. [已由 ECN-0036 变更] 系统必须能够根据当前 firing solution 预测“如果这一发真的打出去，理论上会落在哪里”，供后续落点 HUD、炮弹实体和弹道学链路共用。
+19. [已由 ECN-0036 变更] 系统必须能够根据“火炮位置 + 目标位置”反向求出世界 bearing 与 pitch；超出 `1.5km~22.5km` 包线时，必须明确拒绝，而不是给玩家一个假的可击中解。
 
 ## Requirements
 
@@ -238,9 +242,70 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
   - `vehicle_result`
 - impact 必须正式接入主世界已有的行人、车辆、建筑和敌对目标爆炸消费链；
 - 反作弊条款：
-  - 不允许把 howitzer shot 偷换成 `CityGrenade` 或 `CityMissile`
-  - 不允许只创建远处爆炸特效而没有 live shell flight runtime
-  - 不允许主世界 howitzer 再写一套与 lab 分叉的 prompt / HUD / ownership 逻辑
+- 不允许把 howitzer shot 偷换成 `CityGrenade` 或 `CityMissile`
+- 不允许只创建远处爆炸特效而没有 live shell flight runtime
+- 不允许主世界 howitzer 再写一套与 lab 分叉的 prompt / HUD / ownership 逻辑
+
+### REQ-0029-014 Gameplay Artillery Ammo Profile Contract
+
+[由 ECN-0036 新增] howitzer 系统必须正式冻结一套 gameplay 级弹种/弹道 profile contract，而不是继续让 `shell_type_id` 只停留在字符串占位。当前默认弹型必须至少满足：
+
+- `shell_type_id = "m795_he"`
+- `display_name`
+- `min_range_m = 1500.0`
+- `max_range_m = 22500.0`
+- `reference_muzzle_velocity_mps`：允许保留公开资料里的参考口径
+- `solver_muzzle_velocity_mps`：供当前 gameplay solver / live shell runtime 使用的正式求解速度
+- `pitch_min_deg`
+- `pitch_max_deg`
+
+当前 howitzer 的 firing solution payload 必须显式绑定该 profile，后续允许扩展更多弹种，但不允许让 solver / shell runtime / future HUD 各自私下猜测射程与速度。
+
+### REQ-0029-015 Forward Ballistic Prediction Contract
+
+[由 ECN-0036 新增] 系统必须提供正式的正向弹道解算接口：给定 `firing_solution`，能够使用共享 gameplay ballistic model 预测该 shot 的理论落点，并至少返回：
+
+- `valid`
+- `shell_type_id`
+- `impact_world_position`
+- `horizontal_distance_m`
+- `slant_distance_m`
+- `flight_time_sec`
+- `launch_velocity_world`
+- `range_state`
+
+该接口的冻结语义为：
+
+- 当前采用 gameplay 级简化 point-mass / no-wind model；
+- 当前 howitzer 的射程 envelope 冻结为 `1.5km~22.5km`；
+- 同一套 model 必须同时服务 future HUD 预测、target solve 验算与 live shell runtime；
+- 不允许 HUD/solver/shell 各自维护不同的 ballistic math。
+
+### REQ-0029-016 Inverse Fire Solution To Target Contract
+
+[由 ECN-0036 新增] 系统必须提供正式的反向求解接口：给定 howitzer 发射点世界坐标与目标点世界坐标，解出当前弹型下可用的世界 bearing 与 pitch。该接口至少满足：
+
+- 超出 `1.5km~22.5km` 水平射程 envelope 时，必须返回明确的 `out_of_range`；
+- 有解时，必须返回：
+  - `world_bearing_deg`
+  - `pitch_deg`
+  - `arc_kind`
+  - `predicted_impact_world_position`
+  - `flight_time_sec`
+- `pitch_deg` 仍必须遵守 howitzer `0-71°` 的正式口径；
+- 接口必须允许 `prefer_high_arc` / `prefer_low_arc` 这类 gameplay 级偏好，但不能返回超出射界或超出 envelope 的伪解。
+
+### REQ-0029-017 Shared Ballistic Model Contract
+
+[由 ECN-0036 新增] howitzer firing solution、forward prediction、inverse solve 与 live shell runtime 必须共享同一套 formal gameplay ballistic model。该 contract 至少包括：
+
+- `CityM777Howitzer.gd` 生成的 firing solution payload 必须显式带出当前 shell profile / solver velocity；
+- `CityArtilleryShell.gd` 的 launch velocity 与 flight integration 必须由共享 ballistic utility 推导，而不是继续直接把旧 payload 当作另一套私有 physics 参数；
+- target solve 的结果必须可被 forward prediction 反算回目标附近，作为正式 round-trip 验算；
+- 不允许出现：
+  - target solve 一套 math
+  - HUD prediction 一套 math
+  - live shell runtime 又一套 math
 
 ## Acceptance
 
@@ -269,3 +334,8 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
 23. [由 ECN-0035 新增] 自动化测试必须证明：主世界 accepted fire 会生成 live artillery shell runtime，shell 的 launch payload 来源于正式 `firing_solution`，并以重力积分方式飞行到 impact。
 24. [由 ECN-0035 新增] 自动化测试必须证明：shell impact 会留下正式 explosion result，并接入主世界的行人/车辆/建筑或敌对目标爆炸消费链，而不是只有一个孤立特效。
 25. [由 ECN-0035 新增] 自动化测试必须证明：howitzer shell 不是 `CityGrenade` / `CityMissile` 的参数换皮，且 world howitzer 不会回退成 lab-only 开火演出。
+26. [由 ECN-0036 新增] 自动化测试必须证明：系统暴露正式 artillery ammo profile contract，且当前默认弹型明确冻结为 `1.5km~22.5km` gameplay envelope，而不是继续让最小/最大射程散落在 magic number 中。
+27. [由 ECN-0036 新增] 自动化测试必须证明：forward ballistic prediction 会基于当前 firing solution 给出结构化 predicted impact result，且 `45°` 附近 shot 的理论极限射程与 `22.5km` envelope 保持一致。
+28. [由 ECN-0036 新增] 自动化测试必须证明：inverse target solve 在目标位于合法 envelope 内时能解出 bearing 与 pitch，在目标位于 `1.5km` 内或 `22.5km` 外时会明确返回 `out_of_range`，而不是给出伪解。
+29. [由 ECN-0036 新增] 自动化测试必须证明：同一 ballistic model 下，`target -> solve -> predict` 的 round-trip 误差被正式限制在可接受阈值内，不能出现解算出诸元却反推不到原目标的分叉。
+30. [由 ECN-0036 新增] 自动化测试必须证明：live artillery shell runtime 使用的 launch velocity / flight model 与 shared ballistic utility 同口径，而不是继续保留旧的私有 `827m/s + gravity` 路径。

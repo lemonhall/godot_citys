@@ -2,6 +2,8 @@ extends Node3D
 
 signal exploded(result: Dictionary)
 
+const CityArtilleryBallisticsScript := preload("res://city_game/combat/artillery/CityArtilleryBallistics.gd")
+
 @export var gravity_mps2 := 9.81
 @export var ballistic_time_scale := 4.0
 @export var max_lifetime_sec := 45.0
@@ -26,6 +28,7 @@ var _last_explosion_result: Dictionary = {}
 var _last_visual_direction := Vector3.ZERO
 var _visual_sync_guard_count := 0
 var _last_visual_sync_guard_reason := ""
+var _ballistics = CityArtilleryBallisticsScript.new()
 
 var _visual_root: Node3D = null
 var _shell_body: MeshInstance3D = null
@@ -43,10 +46,12 @@ func configure_from_firing_solution(firing_solution: Dictionary, owner_node: Nod
 	_player_target = player_target
 	_world_runtime = world_runtime
 	global_position = _firing_solution.get("origin_world_position", Vector3.ZERO) as Vector3
-	var direction := (_firing_solution.get("muzzle_direction_world", Vector3.FORWARD) as Vector3).normalized()
+	_velocity = _ballistics.build_launch_velocity_world(_firing_solution) if _ballistics != null and _ballistics.has_method("build_launch_velocity_world") else Vector3.ZERO
+	var direction := _velocity.normalized()
+	if direction.length_squared() <= 0.0001:
+		direction = (_firing_solution.get("muzzle_direction_world", Vector3.FORWARD) as Vector3).normalized()
 	if direction.length_squared() <= 0.0001:
 		direction = Vector3.FORWARD
-	_velocity = direction * maxf(float(_firing_solution.get("muzzle_velocity_mps", 0.0)), 0.0)
 	_last_visual_direction = direction
 	_distance_travelled_m = 0.0
 	_flight_time_sec = 0.0
@@ -64,6 +69,7 @@ func get_debug_state() -> Dictionary:
 		"distance_travelled_m": _distance_travelled_m,
 		"flight_time_sec": _flight_time_sec,
 		"simulation_time_scale": ballistic_time_scale,
+		"shared_solver_speed_mps": _ballistics.resolve_solver_muzzle_velocity_mps(_firing_solution) if _ballistics != null and _ballistics.has_method("resolve_solver_muzzle_velocity_mps") else 0.0,
 		"firing_solution": _firing_solution.duplicate(true),
 		"visual_sync_guard_count": _visual_sync_guard_count,
 		"last_visual_sync_guard_reason": _last_visual_sync_guard_reason,
@@ -96,8 +102,12 @@ func _physics_process(delta: float) -> void:
 
 func _step_ballistic_flight(simulated_delta: float) -> bool:
 	var start_position := global_position
-	var next_velocity := _velocity + Vector3.DOWN * gravity_mps2 * simulated_delta
-	var end_position := start_position + (_velocity + next_velocity) * 0.5 * simulated_delta
+	var ballistic_step := _ballistics.step_point_mass(start_position, _velocity, simulated_delta, gravity_mps2) if _ballistics != null and _ballistics.has_method("step_point_mass") else {
+		"next_position": start_position + _velocity * simulated_delta,
+		"next_velocity": _velocity,
+	}
+	var next_velocity := ballistic_step.get("next_velocity", _velocity) as Vector3
+	var end_position := ballistic_step.get("next_position", start_position) as Vector3
 	var query := PhysicsRayQueryParameters3D.create(start_position, end_position)
 	query.collide_with_areas = false
 	query.exclude = _build_query_exclusions()

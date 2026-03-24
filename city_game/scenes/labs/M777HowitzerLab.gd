@@ -13,6 +13,7 @@ const HOWITZER_OPERATION_ID := "m777_howitzer"
 @export var neutral_yaw_deg := 0.0
 @export var neutral_pitch_deg := 0.0
 @export var interaction_radius_m := 5.0
+@export var operation_release_radius_m := 20.0
 
 @onready var _howitzer := $ArtilleryRoot/Howitzer as Node3D
 @onready var _player := $Player as CharacterBody3D
@@ -106,11 +107,14 @@ func get_interaction_prompt_state() -> Dictionary:
 	return _interaction_prompt_state.duplicate(true)
 
 func get_operation_state() -> Dictionary:
+	var resolved_release_radius_m := maxf(operation_release_radius_m, interaction_radius_m)
 	return {
 		"active": _operation_active,
 		"within_interaction_range": _last_interaction_distance_m <= interaction_radius_m,
+		"within_operation_release_range": _last_interaction_distance_m <= resolved_release_radius_m,
 		"distance_m": 0.0 if not is_finite(_last_interaction_distance_m) else snappedf(_last_interaction_distance_m, 0.01),
 		"interaction_radius_m": interaction_radius_m,
+		"operation_release_radius_m": resolved_release_radius_m,
 	}
 
 func reset_lab_state() -> void:
@@ -207,7 +211,7 @@ func _refresh_hud() -> void:
 	_sync_interaction_prompt_ui()
 	var lab_state := get_lab_state()
 	var status_text := _build_status_text()
-	var debug_text := "yaw=%.2f deg\npitch=%.2f deg\nbearing=%s %s\noperate=%s  distance=%.2f/%.2f m\nplayer=%s" % [
+	var debug_text := "yaw=%.2f deg\npitch=%.2f deg\nbearing=%s %s\noperate=%s  distance=%.2f m  enter=%.2f m  release=%.2f m\nplayer=%s" % [
 		float(lab_state.get("yaw_deg", 0.0)),
 		float(lab_state.get("pitch_deg", 0.0)),
 		str(_compass_state.get("bearing_text", "000°")),
@@ -215,6 +219,7 @@ func _refresh_hud() -> void:
 		str(bool(get_operation_state().get("active", false))),
 		float(get_operation_state().get("distance_m", 0.0)),
 		interaction_radius_m,
+		float(get_operation_state().get("operation_release_radius_m", operation_release_radius_m)),
 		_player.global_position if _player != null else Vector3.ZERO,
 	]
 	if _hud != null and _hud.has_method("set_status"):
@@ -257,7 +262,8 @@ func _ensure_compass_view() -> void:
 
 func _refresh_operation_context() -> void:
 	_last_interaction_distance_m = _resolve_howitzer_distance_m()
-	if _operation_active and _last_interaction_distance_m > interaction_radius_m:
+	var resolved_release_radius_m := maxf(operation_release_radius_m, interaction_radius_m)
+	if _operation_active and _last_interaction_distance_m > resolved_release_radius_m:
 		_set_operation_active(false)
 
 func _resolve_howitzer_distance_m() -> float:
@@ -284,7 +290,17 @@ func _sync_interaction_prompt_ui() -> void:
 		_hud.set_interaction_prompt_state(_interaction_prompt_state)
 
 func _build_interaction_prompt_state() -> Dictionary:
-	if _operation_active or _last_interaction_distance_m > interaction_radius_m:
+	if _operation_active:
+		return {
+			"visible": true,
+			"owner_kind": "artillery",
+			"prop_id": HOWITZER_OPERATION_ID,
+			"display_name": "M777 Howitzer",
+			"interaction_kind": "operate_artillery",
+			"prompt_text": HOWITZER_CONTROL_HINT_TEXT,
+			"distance_m": snappedf(_last_interaction_distance_m, 0.01),
+		}
+	if _last_interaction_distance_m > interaction_radius_m:
 		return _build_hidden_interaction_prompt_state()
 	return {
 		"visible": true,

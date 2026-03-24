@@ -5,6 +5,8 @@
 验证 `v46` 是否已经把 `M777HowitzerLab` 的操炮输入收口为近距 `E` 交互：
 
 - 只有进入 howitzer `5m` 交互半径才出现 `按 E 操作炮`
+- 进入操炮态后 HUD 是否持续显示 `J/L`、`I/K` 与 `E` 的控制提示
+- 离开 `5m` 但未超过约 `20m` 时是否仍保持操炮态
 - `E` 是否正确进入/退出操炮态
 - `J/L/I/K` 是否只在操炮态激活时才生效
 - lab 是否复用主世界 `PrototypeHud` 的 interaction prompt contract
@@ -14,7 +16,7 @@
 ### 1. 文档冻结追溯
 
 ```powershell
-rg -n "按 E 操作炮|5.0m|J/L|I/K|REQ-0029-007|PrototypeHud" docs/prd/PRD-0029-artillery-howitzer-scene-foundation.md docs/ecn/ECN-0030-artillery-lab-operation-interaction.md docs/plan/v46-index.md docs/plan/v46-artillery-lab-operation-interaction.md docs/plans/2026-03-24-v46-artillery-lab-operation-interaction-design.md
+rg -n "按 E 操作炮|20.0m|5.0m|J/L|I/K|REQ-0029-007|PrototypeHud" docs/prd/PRD-0029-artillery-howitzer-scene-foundation.md docs/ecn/ECN-0030-artillery-lab-operation-interaction.md docs/plan/v46-index.md docs/plan/v46-artillery-lab-operation-interaction.md docs/plans/2026-03-24-v46-artillery-lab-operation-interaction-design.md
 ```
 
 结果：
@@ -23,6 +25,7 @@ rg -n "按 E 操作炮|5.0m|J/L|I/K|REQ-0029-007|PrototypeHud" docs/prd/PRD-0029
 - 五份文档均命中：
   - `REQ-0029-007`
   - `按 E 操作炮`
+  - `20.0m`
   - `5.0m`
   - `J/L` / `I/K`
   - `PrototypeHud`
@@ -66,8 +69,10 @@ foreach($test in $tests){
   - 出生在交互半径外时，HUD prompt 隐藏
   - 进入 `5m` 内后，HUD 出现 `按 E 操作炮`
   - 未进入操炮态前，`J/L` 不会改变 yaw
-  - 按 `E` 后进入操炮态，prompt 隐藏，`J/L` 开始生效
-  - 再按 `E` 退出后，prompt 恢复，`J/L` 再次失效
+  - 按 `E` 后进入操炮态，HUD 持续显示 `J/L`、`I/K` 与 `E` 的控制提示，`J/L` 开始生效
+  - 手动按 `E` 后仍可立即退出操炮态
+  - 离开 `5m` 进入半径但仍在 `20m` 内时，操炮态继续保活
+  - 超过约 `20m` 后自动退出操炮态，`J/L` 再次失效
 - `test_city_m777_howitzer_lab_compass_contract.gd`
   - `M777HowitzerLab` 继续暴露正式 compass / bearing state
   - HUD 切到 `PrototypeHud` 后，lab compass 仍与 `v45` 共享同一方向口径

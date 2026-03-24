@@ -2,7 +2,7 @@
 
 ## Goal
 
-把 `M777HowitzerLab` 的操炮输入从“进场即全局 `J/L/I/K`”改成“近距 `E` 进入操炮态后才拥有输入所有权”的正式交互链。
+把 `M777HowitzerLab` 的操炮输入从“进场即全局 `J/L/I/K`”改成“近距 `E` 进入操炮态后才拥有输入所有权”的正式交互链，并明确操炮态提示可见与 `5m` 进入 / `20m` 脱离的双半径合同。
 
 ## Dependencies
 
@@ -19,6 +19,8 @@
 
 - 交互半径：
   - `5.0m`
+- 操炮保活半径：
+  - `20.0m`
 - 近距 prompt：
   - `按 E 操作炮`
 - 操炮态提示：
@@ -39,6 +41,7 @@
 
 - 给 `M777HowitzerLab` 增加 howitzer 近距检测与操炮态状态机
 - 让 `Hud` 复用 `PrototypeHud` 的 interaction prompt contract
+- 让操炮态下的 HUD prompt 切换为持续可见的控制提示
 - 让 `J/L/I/K` 只在操炮态激活时驱动 howitzer
 - 补 focused contract test 与 verification 文档
 
@@ -54,11 +57,12 @@
 1. 自动化测试必须证明：玩家出生在交互半径外时，HUD prompt 默认隐藏。
 2. 自动化测试必须证明：玩家进入 howitzer `5m` 交互半径后，HUD 出现 `按 E 操作炮`。
 3. 自动化测试必须证明：未进入操炮态前，`J/L/I/K` 不会改变火炮 yaw / pitch。
-4. 自动化测试必须证明：按下 `E` 后进入操炮态，并隐藏共享 `E` prompt，避免与控制提示竞争。
+4. 自动化测试必须证明：按下 `E` 后进入操炮态，HUD 会切换成持续可见的 `按 E 退出操炮  J/L 方位  I/K 高低  R 复位` 控制提示。
 5. 自动化测试必须证明：进入操炮态后，`J/L` 能改变 yaw，`I/K` 能改变 pitch。
-6. 自动化测试必须证明：再次按下 `E` 后退出操炮态，并在玩家仍处于近距时恢复共享 `E` prompt。
-7. 自动化测试必须证明：退出操炮态后，`J/L/I/K` 立即重新失效。
-8. 自动化测试必须证明：lab 的 prompt introspection 走的是 `PrototypeHud.get_interaction_prompt_state()`，而不是额外一套 lab-only HUD 协议。
+6. 自动化测试必须证明：玩家离开 `5m` 进入半径但仍处于约 `20m` 保活半径内时，操炮态不会被误释放。
+7. 自动化测试必须证明：再次按下 `E` 后可手动退出操炮态；或者离炮超过约 `20m` 后会自动退出操炮态。
+8. 自动化测试必须证明：退出操炮态后，`J/L/I/K` 立即重新失效。
+9. 自动化测试必须证明：lab 的 prompt introspection 走的是 `PrototypeHud.get_interaction_prompt_state()`，而不是额外一套 lab-only HUD 协议。
 
 ## Files
 
@@ -75,7 +79,7 @@
 ## Steps
 
 1. Analysis / Doc Freeze
-   - 冻结 5m 交互半径、`E` prompt、操炮态状态机与非目标边界。
+   - 冻结 5m 进入半径、20m 保活半径、`E` prompt、操炮态提示与非目标边界。
 2. TDD Red
    - 先写 `test_city_m777_howitzer_lab_interaction_contract.gd`。
    - 预期第一轮红灯原因：
@@ -85,7 +89,7 @@
      - `Hud` 还未暴露共享 prompt introspection
 3. TDD Green
    - 给 lab 接上 `PrototypeHud` prompt contract；
-   - 实现 howitzer 近距判定、`E` 进入/退出与 `J/L/I/K` gating。
+   - 实现 howitzer 双半径判定、`E` 进入/退出、操炮态 prompt 与 `J/L/I/K` gating。
 4. Refactor
    - 收口 lab 内的 prompt state、operation state 与 status/debug 输出，避免散落在多处。
 5. Verification

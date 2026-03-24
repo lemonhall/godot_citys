@@ -51,6 +51,7 @@ func _run() -> void:
 		"reset_lab_state",
 		"adjust_yaw_degrees",
 		"adjust_pitch_degrees",
+		"request_fire",
 	]:
 		if not T.require_true(self, lab.has_method(required_method), "M777 howitzer lab scene must expose %s()" % required_method):
 			return
@@ -80,6 +81,13 @@ func _run() -> void:
 	if not T.require_true(self, initial_state.get("yaw_deg", null) is float, "M777 howitzer lab state must expose yaw_deg as float"):
 		return
 	if not T.require_true(self, initial_state.get("pitch_deg", null) is float, "M777 howitzer lab state must expose pitch_deg as float"):
+		return
+	var initial_fire_state := initial_state.get("fire_state", {}) as Dictionary
+	if not T.require_true(self, initial_fire_state.get("can_fire", null) is bool, "M777 howitzer lab state must surface the mounted howitzer fire readiness through fire_state.can_fire"):
+		return
+	if not T.require_true(self, initial_fire_state.get("cooldown_sec", null) is float, "M777 howitzer lab state must surface fire_state.cooldown_sec for HUD readiness debugging"):
+		return
+	if not T.require_true(self, initial_state.get("hud_status_text", null) is String, "M777 howitzer lab state must expose hud_status_text so focused tests can verify artillery prompts without peeking into private UI state"):
 		return
 
 	lab.adjust_yaw_degrees(12.0)

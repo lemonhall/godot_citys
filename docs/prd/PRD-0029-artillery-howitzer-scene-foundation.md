@@ -20,11 +20,12 @@
 - 暴露后续可复用的最小 runtime API：设置/读取 yaw、pitch、anchors、debug state。
 - 建立独立 `lab` 场景，允许在不接主世界的情况下调试火炮 scene。
 - [已由 ECN-0030 变更] 在 `lab` 中建立上下文化操炮交互：靠近火炮约 `5m` 时出现 `按 E 操作炮` 提示，进入操炮态后 HUD 必须持续显示 `J/L`、`I/K` 与 `E` 的控制提示，且只有离炮约 `20m` 后才自动脱离操炮态。
+- [已由 ECN-0031 变更] 在正式 `CityM777Howitzer` runtime 中加入可复用的开火演出 contract：`6s` 冷却、炮口火光、烟尘、拉火绳张紧、轻微后坐与正式 weapon fire audio，但不生成炮弹实体。
 
 ## Non-Goals
 
 - 不在本轮接入主世界 registry / landmark / task / full map。
-- 不在本轮实现开火、弹道、装填、炮口焰、后坐、炮弹爆炸。
+- [已由 ECN-0031 变更] 不在本轮实现炮弹实体、弹道、落点、爆炸、杀伤判定或火控解算；本轮新增范围仅限正式 howitzer runtime 的开火演出与 lab 内的触发交互。
 - [已由 ECN-0030 变更] 不在本轮实现主世界火炮交互 UI、乘员、动画、AI、任务或对话；本轮新增的交互范围仅限 `M777HowitzerLab` 内的近距进入/退出操炮态。
 - 不在本轮实现真实火控解算、射表、射界限制或联网同步。
 
@@ -39,6 +40,9 @@
 5. 调试完成后，该 howitzer scene 可以作为后续主世界接入与功能扩展的正式基础。
 6. [已由 ECN-0030 变更] 玩家在 `lab` 中接近火炮约 `5m` 时，会看到共享 HUD prompt：`按 E 操作炮`。
 7. [已由 ECN-0030 变更] 玩家按下 `E` 后进入操炮态，HUD 必须持续显示 `J/L` 调整方位、`I/K` 调整高低、`E` 退出的控制提示；仅当玩家再次按下 `E`，或离炮约 `20m` 后，操炮态才会结束。
+8. [已由 ECN-0031 变更] 玩家进入操炮态后，可在 `20m` 保活范围内按下 `Space` 触发 howitzer 的正式开火演出，而不是 lab-only 假按钮。
+9. [已由 ECN-0031 变更] 每次 accepted fire 都必须给出明显的火光、烟尘、拉火绳绷紧、轻微后坐与 weapon fire audio 反馈，并进入 `6s` 装填冷却。
+10. [已由 ECN-0031 变更] 冷却期间 HUD 必须明确显示 `装填中 X.Xs...`；冷却结束后必须明确显示 `可击发`，而不是让玩家靠猜。
 
 ## Requirements
 
@@ -111,6 +115,31 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
 - 只有手动退出，或离炮约 `20m` 之后，操炮态与 `J/L/I/K` 所有权才会被释放；
 - `lab` 的 prompt 必须复用主世界既有的 HUD prompt contract，而不是再造第三套提示协议。
 
+### REQ-0029-008 Formal Fire Presentation Contract
+
+[由 ECN-0031 新增] 正式 `CityM777Howitzer` runtime 必须内建一条可复用、可测试、非 lab 私货的开火演出 contract：
+
+- scene 必须正式 author 至少两枚开火演出锚点：
+  - `Anchors/MuzzleFxAnchor`
+  - `Anchors/LanyardAnchor`
+- runtime root 必须至少暴露以下 fire API：
+  - `can_fire()`
+  - `request_fire()`
+  - `get_fire_state()`
+- accepted fire 的冻结语义：
+  - 默认冷却为 `6.0s`
+  - 触发炮口火光
+  - 触发短寿命炮口烟尘
+  - 触发拉火绳从“略松”到“瞬间绷紧”的演出
+  - 触发轻微炮身后坐
+  - 触发正式 weapon fire audio
+- rejected fire 的冻结语义：
+  - 冷却期间再次请求必须被拒绝，并暴露明确 cooldown state
+- 反作弊条款：
+  - 不允许通过 runtime 临时生成 projectile / grenade / missile 节点来伪装“开火已实现”
+  - 不允许把上述演出只写在 `M777HowitzerLab` 脚本里，正式 howitzer scene runtime 必须是唯一真源
+  - `get_fire_state()` / `get_debug_state()` 必须显式暴露冷却、火光、烟尘、拉绳、后坐与 weapon fire audio 的 runtime 状态，便于 focused tests 回归
+
 ## Acceptance
 
 1. 自动化测试必须证明：`CityM777Howitzer.tscn` 与对应脚本存在，并且场景文本直接引用正式 `m777_3_parts.glb`。
@@ -126,3 +155,7 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
 11. 自动化测试必须证明：lab scene 启动时存在正式 `PlayerController` 玩家节点与当前玩家相机，而不是只剩一个静态观察相机。
 12. 自动化测试必须证明：正式 howitzer scene 的最终可见包围尺寸已经脱离 `1m` 级缩水资产，达到正式武器平台的最低 world-scale 量级。
 13. [由 ECN-0030 新增] 自动化测试必须证明：只有当玩家进入火炮 `5m` 交互半径时，HUD 才出现 `按 E 操作炮` 提示；进入操炮态后 HUD 会持续显示 `J/L`、`I/K` 与 `E` 的控制提示；`J/L/I/K` 仅在操炮态内生效；离开 `5m` 但未超过约 `20m` 时仍保持操炮态；只有再次按 `E` 或离炮约 `20m` 后才释放操炮态。
+14. [由 ECN-0031 新增] 自动化测试必须证明：正式 howitzer scene author 了 `MuzzleFxAnchor` 与 `LanyardAnchor`，并且 root 暴露 `can_fire()`、`request_fire()` 与 `get_fire_state()`。
+15. [由 ECN-0031 新增] 自动化测试必须证明：accepted fire 会触发正式 runtime 的火光、烟尘、拉火绳张紧、后坐与 weapon fire audio，同时进入默认 `6.0s` 冷却；冷却期间重复 fire 请求会被拒绝。
+16. [由 ECN-0031 新增] 自动化测试必须证明：lab 中只有进入操炮态后，`Space` 才能触发正式 howitzer fire API；HUD 会显示 `Space` 提示、冷却中的 `装填中 X.Xs...` 与冷却完成后的 `可击发`。
+17. [由 ECN-0031 新增] 自动化测试必须证明：本轮 fire presentation 不会生成任何 projectile / grenade / missile 运行时节点，不把“演出反馈”偷换成“弹道链已实现”。

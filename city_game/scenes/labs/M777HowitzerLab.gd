@@ -3,7 +3,7 @@ extends Node3D
 const CityCompassStripScript := preload("res://city_game/ui/CityCompassStrip.gd")
 const CityWorldOrientationScript := preload("res://city_game/world/navigation/CityWorldOrientation.gd")
 const HOWITZER_PROMPT_TEXT := "按 E 操作炮"
-const HOWITZER_CONTROL_HINT_TEXT := "按 E 退出操炮  J/L 方位  I/K 高低  R 复位"
+const HOWITZER_CONTROL_HINT_TEXT := "按 E 退出操炮  J/L 方位  I/K 高低  Space 击发  R 复位"
 const HOWITZER_IDLE_HINT_TEXT := "WASD 移动  鼠标观察  R 复位"
 const HOWITZER_NEARBY_HINT_TEXT := "WASD 移动  鼠标观察  E 操炮  R 复位"
 const HOWITZER_OPERATION_ID := "m777_howitzer"
@@ -72,6 +72,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		if bool(interaction_result.get("handled", false)):
 			get_viewport().set_input_as_handled()
 		return
+	if key_event.keycode == KEY_SPACE:
+		var fire_result := request_fire()
+		if bool(fire_result.get("handled", false)):
+			get_viewport().set_input_as_handled()
+		return
 	if key_event.keycode == KEY_R:
 		reset_lab_state()
 		get_viewport().set_input_as_handled()
@@ -89,10 +94,12 @@ func get_lab_state() -> Dictionary:
 	return {
 		"yaw_deg": yaw_deg,
 		"pitch_deg": pitch_deg,
+		"fire_state": _resolve_howitzer_fire_state(),
 		"anchor_state": _howitzer.get_anchor_state() if _howitzer != null and _howitzer.has_method("get_anchor_state") else {},
 		"compass": get_compass_state(),
 		"operation_state": get_operation_state(),
 		"interaction_prompt_state": get_interaction_prompt_state(),
+		"hud_status_text": _build_status_text(),
 	}
 
 func get_orientation_contract() -> Dictionary:
@@ -162,6 +169,26 @@ func request_primary_interaction() -> Dictionary:
 		"action": "enter_operation",
 	}
 
+func request_fire() -> Dictionary:
+	_refresh_operation_context()
+	if not _operation_active:
+		return {
+			"accepted": false,
+			"handled": false,
+			"error": "operation_inactive",
+		}
+	if _howitzer == null or not _howitzer.has_method("request_fire"):
+		return {
+			"accepted": false,
+			"handled": true,
+			"error": "fire_api_unavailable",
+		}
+	var result := _howitzer.request_fire() as Dictionary
+	var response := result.duplicate(true)
+	response["handled"] = true
+	_refresh_hud()
+	return response
+
 func _capture_initial_player_state() -> void:
 	if _player == null:
 		return
@@ -210,8 +237,9 @@ func _refresh_hud() -> void:
 			compass_view.set_state(_compass_state)
 	_sync_interaction_prompt_ui()
 	var lab_state := get_lab_state()
+	var fire_state := _resolve_howitzer_fire_state()
 	var status_text := _build_status_text()
-	var debug_text := "yaw=%.2f deg\npitch=%.2f deg\nbearing=%s %s\noperate=%s  distance=%.2f m  enter=%.2f m  release=%.2f m\nplayer=%s" % [
+	var debug_text := "yaw=%.2f deg\npitch=%.2f deg\nbearing=%s %s\noperate=%s  distance=%.2f m  enter=%.2f m  release=%.2f m\nfire_ready=%s  cooldown=%.2f s  shots=%d\nplayer=%s" % [
 		float(lab_state.get("yaw_deg", 0.0)),
 		float(lab_state.get("pitch_deg", 0.0)),
 		str(_compass_state.get("bearing_text", "000°")),
@@ -220,6 +248,9 @@ func _refresh_hud() -> void:
 		float(get_operation_state().get("distance_m", 0.0)),
 		interaction_radius_m,
 		float(get_operation_state().get("operation_release_radius_m", operation_release_radius_m)),
+		str(bool(fire_state.get("can_fire", false))),
+		float(fire_state.get("cooldown_sec", 0.0)),
+		int(fire_state.get("fire_count", 0)),
 		_player.global_position if _player != null else Vector3.ZERO,
 	]
 	if _hud != null and _hud.has_method("set_status"):
@@ -297,7 +328,7 @@ func _build_interaction_prompt_state() -> Dictionary:
 			"prop_id": HOWITZER_OPERATION_ID,
 			"display_name": "M777 Howitzer",
 			"interaction_kind": "operate_artillery",
-			"prompt_text": HOWITZER_CONTROL_HINT_TEXT,
+			"prompt_text": _build_operation_prompt_text(),
 			"distance_m": snappedf(_last_interaction_distance_m, 0.01),
 		}
 	if _last_interaction_distance_m > interaction_radius_m:
@@ -325,7 +356,26 @@ func _build_hidden_interaction_prompt_state() -> Dictionary:
 
 func _build_status_text() -> String:
 	if _operation_active:
-		return HOWITZER_CONTROL_HINT_TEXT
+		return _build_operation_prompt_text()
 	if _last_interaction_distance_m <= interaction_radius_m:
 		return HOWITZER_NEARBY_HINT_TEXT
 	return HOWITZER_IDLE_HINT_TEXT
+
+func _build_operation_prompt_text() -> String:
+	return "%s\n%s" % [
+		HOWITZER_CONTROL_HINT_TEXT,
+		_build_fire_readiness_text(),
+	]
+
+func _build_fire_readiness_text() -> String:
+	var fire_state := _resolve_howitzer_fire_state()
+	if fire_state.is_empty():
+		return "击发接口未就绪"
+	if bool(fire_state.get("can_fire", false)):
+		return "可击发"
+	return "装填中 %.1fs..." % maxf(float(fire_state.get("cooldown_sec", 0.0)), 0.0)
+
+func _resolve_howitzer_fire_state() -> Dictionary:
+	if _howitzer != null and _howitzer.has_method("get_fire_state"):
+		return (_howitzer.get_fire_state() as Dictionary).duplicate(true)
+	return {}

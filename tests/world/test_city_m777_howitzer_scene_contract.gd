@@ -5,10 +5,12 @@ const T := preload("res://tests/_test_util.gd")
 const HOWITZER_SCENE_PATH := "res://city_game/combat/artillery/CityM777Howitzer.tscn"
 const HOWITZER_SCRIPT_PATH := "res://city_game/combat/artillery/CityM777Howitzer.gd"
 const HOWITZER_MODEL_PATH := "res://city_game/assets/environment/source/artillery/m777/m777_3_parts.glb"
+const FIRE_AUDIO_PATH := "res://city_game/combat/helicopter/audio/rockt-explosions.wav"
 const MIN_PRESENTED_LENGTH_M := 6.0
 const EXPECTED_PITCH_ZERO_OFFSET_DEG := 14.7
 const MIN_ELEVATION_DEG := 0.0
 const MAX_ELEVATION_DEG := 71.0
+const EXPECTED_FIRE_COOLDOWN_SEC := 6.0
 const WRAPPED_YAW_SAMPLE_DEG := 523.11
 const WRAPPED_YAW_EXPECTED_DEG := 163.11
 
@@ -20,9 +22,16 @@ const REQUIRED_NODE_PATHS := [
 	"Anchors",
 	"Anchors/YawPivotAnchor",
 	"Anchors/PitchPivotAnchor",
+	"Anchors/MuzzleFxAnchor",
+	"Anchors/LanyardAnchor",
 	"ModelRoot/LowerBaseMount/m777_lower_base",
 	"ModelRoot/YawPivot/m777_upper_carriage",
 	"ModelRoot/YawPivot/PitchPivot/m777_gun_assembly",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFlash",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleSmoke",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/Lanyard",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/FireAudio",
 ]
 
 func _init() -> void:
@@ -42,6 +51,10 @@ func _run() -> void:
 	if not T.require_true(self, scene_text.find("[node name=\"YawPivotAnchor\"") >= 0, "M777 howitzer scene must author YawPivotAnchor as a formal Marker3D"):
 		return
 	if not T.require_true(self, scene_text.find("[node name=\"PitchPivotAnchor\"") >= 0, "M777 howitzer scene must author PitchPivotAnchor as a formal Marker3D"):
+		return
+	if not T.require_true(self, scene_text.find("[node name=\"MuzzleFxAnchor\"") >= 0, "M777 howitzer scene must author MuzzleFxAnchor so formal fire presentation has a stable muzzle reference"):
+		return
+	if not T.require_true(self, scene_text.find("[node name=\"LanyardAnchor\"") >= 0, "M777 howitzer scene must author LanyardAnchor so the pull-lanyard presentation is not hard-coded in script"):
 		return
 
 	var scene := load(HOWITZER_SCENE_PATH) as PackedScene
@@ -64,6 +77,9 @@ func _run() -> void:
 		"get_yaw_degrees",
 		"get_pitch_degrees",
 		"get_anchor_state",
+		"can_fire",
+		"request_fire",
+		"get_fire_state",
 		"get_debug_state",
 	]:
 		if not T.require_true(self, howitzer.has_method(required_method), "M777 howitzer root must expose %s()" % required_method):
@@ -92,6 +108,10 @@ func _run() -> void:
 	if not T.require_true(self, anchor_state.get("yaw_anchor_local_position", null) is Vector3, "M777 howitzer anchor state must expose yaw_anchor_local_position as Vector3"):
 		return
 	if not T.require_true(self, anchor_state.get("pitch_anchor_local_position", null) is Vector3, "M777 howitzer anchor state must expose pitch_anchor_local_position as Vector3"):
+		return
+	if not T.require_true(self, anchor_state.get("muzzle_anchor_local_position", null) is Vector3, "M777 howitzer anchor state must expose muzzle_anchor_local_position as Vector3 for formal fire presentation tuning"):
+		return
+	if not T.require_true(self, anchor_state.get("lanyard_anchor_local_position", null) is Vector3, "M777 howitzer anchor state must expose lanyard_anchor_local_position as Vector3 for formal pull-lanyard tuning"):
 		return
 
 	var yaw_pivot := howitzer.get_node("ModelRoot/YawPivot") as Node3D
@@ -151,6 +171,16 @@ func _run() -> void:
 		return
 	var pitch_limits := debug_state.get("pitch_limits_deg", {}) as Dictionary
 	if not T.require_true(self, absf(float(pitch_limits.get("min", -999.0)) - MIN_ELEVATION_DEG) <= 0.001 and absf(float(pitch_limits.get("max", -999.0)) - MAX_ELEVATION_DEG) <= 0.001, "M777 howitzer debug state must expose the calibrated elevation clamp range"):
+		return
+	var fire_state := howitzer.get_fire_state() as Dictionary
+	if not T.require_true(self, bool(fire_state.get("can_fire", false)), "Fresh M777 howitzer runtime must report can_fire=true before any accepted shot"):
+		return
+	if not T.require_true(self, absf(float(fire_state.get("cooldown_duration_sec", 0.0)) - EXPECTED_FIRE_COOLDOWN_SEC) <= 0.001, "M777 howitzer fire contract must freeze the default cooldown at 6.0s"):
+		return
+	var weapon_fire_audio := debug_state.get("weapon_fire_audio", {}) as Dictionary
+	if not T.require_true(self, bool(weapon_fire_audio.get("stream_bound", false)), "M777 howitzer debug state must confirm the formal weapon fire audio stream is bound"):
+		return
+	if not T.require_true(self, str(weapon_fire_audio.get("stream_path", "")) == FIRE_AUDIO_PATH, "M777 howitzer formal weapon fire audio must point at the frozen current artillery placeholder stream"):
 		return
 
 	howitzer.queue_free()

@@ -70,7 +70,7 @@ func _run() -> void:
 	var active_prompt_state: Dictionary = hud.get_interaction_prompt_state()
 	if not T.require_true(self, bool(active_prompt_state.get("visible", false)), "After entering operation mode, the HUD must keep a visible artillery control prompt instead of leaving the player blind"):
 		return
-	if not T.require_true(self, str(active_prompt_state.get("prompt_text", "")).find("J/L") >= 0 and str(active_prompt_state.get("prompt_text", "")).find("I/K") >= 0, "The operation prompt must explicitly show J/L and I/K after pressing E so artillery controls remain learnable in-context"):
+	if not T.require_true(self, str(active_prompt_state.get("prompt_text", "")).find("J/L") >= 0 and str(active_prompt_state.get("prompt_text", "")).find("I/K") >= 0 and str(active_prompt_state.get("prompt_text", "")).find("Space") >= 0, "The operation prompt must explicitly show J/L, I/K and Space after pressing E so artillery traverse, elevation and fire all remain learnable in-context"):
 		return
 
 	_set_key_pressed(KEY_L, true)

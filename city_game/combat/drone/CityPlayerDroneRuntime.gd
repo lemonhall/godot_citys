@@ -790,7 +790,7 @@ func _orient_body_toward_direction(direction: Vector3) -> void:
 	if direction.length_squared() <= 0.0001:
 		return
 	var up_axis := Vector3.UP if absf(direction.normalized().dot(Vector3.UP)) < 0.94 else Vector3.FORWARD
-	look_at(global_position + direction.normalized(), up_axis, true)
+	look_at(global_position + direction.normalized(), up_axis)
 
 func _reset_death_fx() -> void:
 	if death_fx_root != null:

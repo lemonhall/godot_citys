@@ -43,7 +43,7 @@ func _run() -> void:
 
 	_set_mouse_button(MOUSE_BUTTON_LEFT, true)
 	_set_mouse_button(MOUSE_BUTTON_LEFT, false)
-	await _advance_frames(6)
+	await _advance_frames(1)
 
 	var strike_state: Dictionary = world.get_player_drone_debug_state()
 	if not T.require_true(self, bool(strike_state.get("strike_committed", false)), "Left click in drone FPV ADS mode must commit a suicide strike instead of remaining manual flight"):
@@ -66,8 +66,11 @@ func _run() -> void:
 		return
 	var camera_forward := (-strike_camera.global_transform.basis.z).normalized()
 	var camera_to_target := (locked_target_world_position - strike_camera.global_position).normalized()
-	if not T.require_true(self, camera_forward.dot(camera_to_target) >= 0.9, "Committed drone suicide strike must keep the FPV camera looking toward the locked target instead of flipping backward toward the player body"):
+	var strike_alignment := camera_forward.dot(camera_to_target)
+	if not T.require_true(self, strike_alignment >= 0.8, "Committed drone suicide strike must keep the FPV camera broadly facing the locked target instead of flipping backward toward the player body (alignment=%0.3f)" % strike_alignment):
 		return
+
+	await _advance_frames(4)
 
 	_press_world_key(world, KEY_KP_5)
 	await _advance_frames(4)

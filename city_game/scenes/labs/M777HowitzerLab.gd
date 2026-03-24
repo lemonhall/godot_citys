@@ -2,11 +2,17 @@ extends Node3D
 
 const CityCompassStripScript := preload("res://city_game/ui/CityCompassStrip.gd")
 const CityWorldOrientationScript := preload("res://city_game/world/navigation/CityWorldOrientation.gd")
+const HOWITZER_PROMPT_TEXT := "按 E 操作炮"
+const HOWITZER_CONTROL_HINT_TEXT := "按 E 退出操炮  J/L 方位  I/K 高低  R 复位"
+const HOWITZER_IDLE_HINT_TEXT := "WASD 移动  鼠标观察  R 复位"
+const HOWITZER_NEARBY_HINT_TEXT := "WASD 移动  鼠标观察  E 操炮  R 复位"
+const HOWITZER_OPERATION_ID := "m777_howitzer"
 
 @export var yaw_speed_deg_per_sec := 28.0
 @export var pitch_speed_deg_per_sec := 18.0
 @export var neutral_yaw_deg := 0.0
 @export var neutral_pitch_deg := 0.0
+@export var interaction_radius_m := 5.0
 
 @onready var _howitzer := $ArtilleryRoot/Howitzer as Node3D
 @onready var _player := $Player as CharacterBody3D
@@ -14,6 +20,7 @@ const CityWorldOrientationScript := preload("res://city_game/world/navigation/Ci
 @onready var _player_camera := $Player/CameraRig/Camera3D as Camera3D
 @onready var _overview_camera_rig := $LabCameraRig as Node3D
 @onready var _overview_camera := $LabCameraRig/Camera3D as Camera3D
+@onready var _hud := $Hud as CanvasLayer
 @onready var _status_label := $Hud/Root/Panel/VBox/Status as Label
 @onready var _debug_text := $Hud/Root/Panel/VBox/DebugText as Label
 @onready var _hud_root := $Hud/Root as Control
@@ -23,6 +30,9 @@ var _initial_player_rotation := Vector3.ZERO
 var _initial_player_camera_rig_rotation := Vector3.ZERO
 var _world_orientation = CityWorldOrientationScript.new()
 var _compass_state: Dictionary = {}
+var _interaction_prompt_state: Dictionary = _build_hidden_interaction_prompt_state()
+var _operation_active := false
+var _last_interaction_distance_m := INF
 
 func _ready() -> void:
 	_ensure_compass_view()
@@ -32,24 +42,36 @@ func _ready() -> void:
 	_refresh_hud()
 
 func _process(delta: float) -> void:
-	var yaw_input := 0.0
-	if Input.is_key_pressed(KEY_J):
-		yaw_input -= 1.0
-	if Input.is_key_pressed(KEY_L):
-		yaw_input += 1.0
-	var pitch_input := 0.0
-	if Input.is_key_pressed(KEY_I):
-		pitch_input += 1.0
-	if Input.is_key_pressed(KEY_K):
-		pitch_input -= 1.0
-	if absf(yaw_input) > 0.001:
-		adjust_yaw_degrees(yaw_input * yaw_speed_deg_per_sec * delta)
-	if absf(pitch_input) > 0.001:
-		adjust_pitch_degrees(pitch_input * pitch_speed_deg_per_sec * delta)
+	_refresh_operation_context()
+	if _operation_active:
+		var yaw_input := 0.0
+		if Input.is_key_pressed(KEY_J):
+			yaw_input -= 1.0
+		if Input.is_key_pressed(KEY_L):
+			yaw_input += 1.0
+		var pitch_input := 0.0
+		if Input.is_key_pressed(KEY_I):
+			pitch_input += 1.0
+		if Input.is_key_pressed(KEY_K):
+			pitch_input -= 1.0
+		if absf(yaw_input) > 0.001:
+			adjust_yaw_degrees(yaw_input * yaw_speed_deg_per_sec * delta)
+		if absf(pitch_input) > 0.001:
+			adjust_pitch_degrees(pitch_input * pitch_speed_deg_per_sec * delta)
 	_refresh_hud()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
+	if event is not InputEventKey:
+		return
+	var key_event := event as InputEventKey
+	if not key_event.pressed or key_event.echo:
+		return
+	if key_event.keycode == KEY_E:
+		var interaction_result := request_primary_interaction()
+		if bool(interaction_result.get("handled", false)):
+			get_viewport().set_input_as_handled()
+		return
+	if key_event.keycode == KEY_R:
 		reset_lab_state()
 		get_viewport().set_input_as_handled()
 
@@ -68,6 +90,8 @@ func get_lab_state() -> Dictionary:
 		"pitch_deg": pitch_deg,
 		"anchor_state": _howitzer.get_anchor_state() if _howitzer != null and _howitzer.has_method("get_anchor_state") else {},
 		"compass": get_compass_state(),
+		"operation_state": get_operation_state(),
+		"interaction_prompt_state": get_interaction_prompt_state(),
 	}
 
 func get_orientation_contract() -> Dictionary:
@@ -76,10 +100,25 @@ func get_orientation_contract() -> Dictionary:
 func get_compass_state() -> Dictionary:
 	return _compass_state.duplicate(true)
 
+func get_interaction_prompt_state() -> Dictionary:
+	if _hud != null and _hud.has_method("get_interaction_prompt_state"):
+		return _hud.get_interaction_prompt_state()
+	return _interaction_prompt_state.duplicate(true)
+
+func get_operation_state() -> Dictionary:
+	return {
+		"active": _operation_active,
+		"within_interaction_range": _last_interaction_distance_m <= interaction_radius_m,
+		"distance_m": 0.0 if not is_finite(_last_interaction_distance_m) else snappedf(_last_interaction_distance_m, 0.01),
+		"interaction_radius_m": interaction_radius_m,
+	}
+
 func reset_lab_state() -> void:
+	_set_operation_active(false)
 	if _howitzer != null and _howitzer.has_method("set_axis_angles_degrees"):
 		_howitzer.set_axis_angles_degrees(neutral_yaw_deg, neutral_pitch_deg)
 	_restore_player_state()
+	_refresh_operation_context()
 	_refresh_hud()
 
 func adjust_yaw_degrees(delta_deg: float) -> void:
@@ -93,6 +132,31 @@ func adjust_pitch_degrees(delta_deg: float) -> void:
 		return
 	_howitzer.set_pitch_degrees(_howitzer.get_pitch_degrees() + delta_deg)
 	_refresh_hud()
+
+func request_primary_interaction() -> Dictionary:
+	_refresh_operation_context()
+	if _operation_active:
+		_set_operation_active(false)
+		_refresh_hud()
+		return {
+			"success": true,
+			"handled": true,
+			"action": "exit_operation",
+		}
+	if _last_interaction_distance_m > interaction_radius_m:
+		return {
+			"success": false,
+			"handled": false,
+			"error": "out_of_range",
+			"distance_m": _last_interaction_distance_m,
+		}
+	_set_operation_active(true)
+	_refresh_hud()
+	return {
+		"success": true,
+		"handled": true,
+		"action": "enter_operation",
+	}
 
 func _capture_initial_player_state() -> void:
 	if _player == null:
@@ -131,21 +195,36 @@ func _focus_overview_camera() -> void:
 	_overview_camera.look_at(view_target, Vector3.UP, true)
 
 func _refresh_hud() -> void:
-	if _status_label == null or _debug_text == null:
-		return
 	_compass_state = _build_player_compass_state()
-	var compass_view := _hud_root.get_node_or_null("Compass")
-	if compass_view != null and compass_view.has_method("set_state"):
-		compass_view.set_state(_compass_state)
+	if _hud != null and _hud.has_method("set_navigation_state"):
+		_hud.set_navigation_state({
+			"compass": _compass_state,
+		})
+	else:
+		var compass_view := _hud_root.get_node_or_null("Compass")
+		if compass_view != null and compass_view.has_method("set_state"):
+			compass_view.set_state(_compass_state)
+	_sync_interaction_prompt_ui()
 	var lab_state := get_lab_state()
-	_status_label.text = "WASD move  Mouse look  J/L yaw  I/K pitch  R reset"
-	_debug_text.text = "yaw=%.2f deg\npitch=%.2f deg\nbearing=%s %s\nplayer=%s" % [
+	var status_text := _build_status_text()
+	var debug_text := "yaw=%.2f deg\npitch=%.2f deg\nbearing=%s %s\noperate=%s  distance=%.2f/%.2f m\nplayer=%s" % [
 		float(lab_state.get("yaw_deg", 0.0)),
 		float(lab_state.get("pitch_deg", 0.0)),
 		str(_compass_state.get("bearing_text", "000°")),
 		str(_compass_state.get("cardinal_text", "N")),
+		str(bool(get_operation_state().get("active", false))),
+		float(get_operation_state().get("distance_m", 0.0)),
+		interaction_radius_m,
 		_player.global_position if _player != null else Vector3.ZERO,
 	]
+	if _hud != null and _hud.has_method("set_status"):
+		_hud.set_status(status_text)
+	elif _status_label != null:
+		_status_label.text = status_text
+	if _hud != null and _hud.has_method("set_debug_text"):
+		_hud.set_debug_text(debug_text)
+	elif _debug_text != null:
+		_debug_text.text = debug_text
 
 func _build_player_compass_state() -> Dictionary:
 	if _player == null or _world_orientation == null:
@@ -175,3 +254,62 @@ func _ensure_compass_view() -> void:
 	compass.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	compass.visible = false
 	_hud_root.add_child(compass)
+
+func _refresh_operation_context() -> void:
+	_last_interaction_distance_m = _resolve_howitzer_distance_m()
+	if _operation_active and _last_interaction_distance_m > interaction_radius_m:
+		_set_operation_active(false)
+
+func _resolve_howitzer_distance_m() -> float:
+	if _player == null or _howitzer == null:
+		return INF
+	var anchor_world_position := _resolve_interaction_anchor_world_position()
+	var player_position := _player.global_position
+	return Vector2(player_position.x - anchor_world_position.x, player_position.z - anchor_world_position.z).length()
+
+func _resolve_interaction_anchor_world_position() -> Vector3:
+	if _howitzer != null:
+		var yaw_anchor := _howitzer.get_node_or_null("Anchors/YawPivotAnchor") as Node3D
+		if yaw_anchor != null:
+			return yaw_anchor.global_position
+		return _howitzer.global_position
+	return Vector3.ZERO
+
+func _set_operation_active(active: bool) -> void:
+	_operation_active = active
+
+func _sync_interaction_prompt_ui() -> void:
+	_interaction_prompt_state = _build_interaction_prompt_state()
+	if _hud != null and _hud.has_method("set_interaction_prompt_state"):
+		_hud.set_interaction_prompt_state(_interaction_prompt_state)
+
+func _build_interaction_prompt_state() -> Dictionary:
+	if _operation_active or _last_interaction_distance_m > interaction_radius_m:
+		return _build_hidden_interaction_prompt_state()
+	return {
+		"visible": true,
+		"owner_kind": "artillery",
+		"prop_id": HOWITZER_OPERATION_ID,
+		"display_name": "M777 Howitzer",
+		"interaction_kind": "operate_artillery",
+		"prompt_text": HOWITZER_PROMPT_TEXT,
+		"distance_m": snappedf(_last_interaction_distance_m, 0.01),
+	}
+
+func _build_hidden_interaction_prompt_state() -> Dictionary:
+	return {
+		"visible": false,
+		"owner_kind": "artillery",
+		"prop_id": HOWITZER_OPERATION_ID,
+		"display_name": "M777 Howitzer",
+		"interaction_kind": "operate_artillery",
+		"prompt_text": "",
+		"distance_m": 0.0,
+	}
+
+func _build_status_text() -> String:
+	if _operation_active:
+		return HOWITZER_CONTROL_HINT_TEXT
+	if _last_interaction_distance_m <= interaction_radius_m:
+		return HOWITZER_NEARBY_HINT_TEXT
+	return HOWITZER_IDLE_HINT_TEXT

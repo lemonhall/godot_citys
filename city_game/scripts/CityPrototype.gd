@@ -1333,8 +1333,10 @@ func summon_world_howitzer() -> Node3D:
 	_world_howitzer_root.add_child(_active_world_howitzer)
 	var spawn_position := _resolve_world_howitzer_spawn_position()
 	var spawn_forward := _resolve_world_howitzer_spawn_forward()
-	_active_world_howitzer.global_position = spawn_position
-	_active_world_howitzer.look_at(spawn_position + spawn_forward, Vector3.UP, true)
+	var authored_vertical_offset_m := _active_world_howitzer.position.y
+	var root_spawn_position := spawn_position + Vector3.UP * authored_vertical_offset_m
+	_active_world_howitzer.global_position = root_spawn_position
+	_active_world_howitzer.look_at(root_spawn_position + spawn_forward, Vector3.UP, true)
 	_ensure_world_howitzer_operation_controller()
 	_last_artillery_shell_explosion_result.clear()
 	_update_npc_interaction_system()

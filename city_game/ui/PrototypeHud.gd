@@ -561,8 +561,8 @@ func _apply_spider_bite_overlay_state() -> void:
 	var overlay := get_node_or_null("Root/SpiderBiteBloodOverlay") as ColorRect
 	if overlay == null:
 		return
-	var visible := bool(_spider_bite_overlay_state.get("visible", false))
-	overlay.visible = visible
+	var overlay_visible := bool(_spider_bite_overlay_state.get("visible", false))
+	overlay.visible = overlay_visible
 	var material := overlay.material as ShaderMaterial
 	if material == null:
 		return

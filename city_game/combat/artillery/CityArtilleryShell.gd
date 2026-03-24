@@ -23,6 +23,9 @@ var _lifetime_sec := 0.0
 var _exploded := false
 var _explosion_elapsed_sec := 0.0
 var _last_explosion_result: Dictionary = {}
+var _last_visual_direction := Vector3.ZERO
+var _visual_sync_guard_count := 0
+var _last_visual_sync_guard_reason := ""
 
 var _visual_root: Node3D = null
 var _shell_body: MeshInstance3D = null
@@ -44,6 +47,7 @@ func configure_from_firing_solution(firing_solution: Dictionary, owner_node: Nod
 	if direction.length_squared() <= 0.0001:
 		direction = Vector3.FORWARD
 	_velocity = direction * maxf(float(_firing_solution.get("muzzle_velocity_mps", 0.0)), 0.0)
+	_last_visual_direction = direction
 	_distance_travelled_m = 0.0
 	_flight_time_sec = 0.0
 	_lifetime_sec = 0.0
@@ -61,6 +65,8 @@ func get_debug_state() -> Dictionary:
 		"flight_time_sec": _flight_time_sec,
 		"simulation_time_scale": ballistic_time_scale,
 		"firing_solution": _firing_solution.duplicate(true),
+		"visual_sync_guard_count": _visual_sync_guard_count,
+		"last_visual_sync_guard_reason": _last_visual_sync_guard_reason,
 		"last_explosion_result": get_last_explosion_result(),
 	}
 
@@ -236,13 +242,39 @@ func _sync_flight_visual(frame_delta: Vector3, active: bool) -> void:
 		return
 	_visual_root.visible = active
 	_visual_root.global_position = global_position
-	var direction := frame_delta.normalized() if frame_delta.length_squared() > 0.0001 else _velocity.normalized()
+	var direction := Vector3.ZERO
+	if frame_delta.length_squared() > 0.0001:
+		direction = frame_delta.normalized()
+	elif _velocity.length_squared() > 0.0001:
+		direction = _velocity.normalized()
+	else:
+		direction = _last_visual_direction
 	if direction.length_squared() <= 0.0001:
-		direction = Vector3.FORWARD
+		_register_visual_sync_guard("no_valid_direction")
+		return
+	if not direction.is_finite():
+		_register_visual_sync_guard("non_finite_direction")
+		return
+	var look_origin := _visual_root.global_position
+	if not look_origin.is_finite():
+		_register_visual_sync_guard("non_finite_origin")
+		return
+	var look_target := look_origin + direction
+	if not look_target.is_finite():
+		_register_visual_sync_guard("non_finite_look_target")
+		return
+	if look_origin.is_equal_approx(look_target):
+		_register_visual_sync_guard("look_target_same_as_origin")
+		return
+	_last_visual_direction = direction
 	var up_axis := Vector3.UP if absf(direction.dot(Vector3.UP)) < 0.96 else Vector3.FORWARD
-	_visual_root.look_at(global_position + direction, up_axis, true)
+	_visual_root.look_at(look_target, up_axis, true)
 	if _tail_mesh != null:
 		_tail_mesh.position = Vector3(0.0, 0.0, tail_length_m * 0.5)
+
+func _register_visual_sync_guard(reason: String) -> void:
+	_visual_sync_guard_count += 1
+	_last_visual_sync_guard_reason = reason
 
 func _ensure_visuals() -> void:
 	if _visual_root == null or not is_instance_valid(_visual_root):

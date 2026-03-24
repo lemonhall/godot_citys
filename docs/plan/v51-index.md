@@ -44,6 +44,8 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
 | M1 world summon + shared operation | summon、唯一实例、主世界 prompt/HUD/ownership、lab 并轨 controller | focused tests 证明主世界 howitzer summon 与 world/lab 共线操作合同成立 | `tests/world/test_city_world_howitzer_spawn_contract.gd`; `tests/world/test_city_world_howitzer_interaction_contract.gd` | done |
 | M2 ballistic shell | live shell、impact result、主世界爆炸消费链 | focused tests 证明 accepted fire 会生成 live shell 并留下正式 explosion result | `tests/world/test_city_world_howitzer_ballistics_contract.gd`; `tests/e2e/test_city_world_howitzer_flow.gd` | done |
 | M3 verification | focused + e2e + 解析检查 | 受影响 tests 全绿，fresh verification 文档回填追溯矩阵 | `docs/plan/v51-m3-verification-2026-03-24.md` | done |
+| M4 live bugfix stabilization | 修复 live shell `look_at()` warning 与主世界 summon 悬空 | 新增回归测试卡住 shell 无效运动向量朝向保护与 summon authored vertical offset；主世界 howitzer focused + e2e + 解析检查 fresh 全绿 | `docs/plan/v51-m4-verification-2026-03-24.md` | done |
+| M5 live warning follow-up | 补齐 shell `look_target == origin` 的直接 guard | 新增显式 guard debug contract，验证 shell 在 `look_target` 折叠为 origin 时不会再调用 `look_at()`；主世界 ballistic + e2e + 解析检查 fresh 全绿 | `docs/plan/v51-m5-verification-2026-03-25.md` | done |
 
 ## 计划索引
 
@@ -53,9 +55,9 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
 
 | Req ID | V51 Plan | 单元/集成测试 | E2E / 验证命令 | 证据 | 状态 |
 |---|---|---|---|---|---|
-| REQ-0029-011 | `v51-world-howitzer-summon-and-ballistics.md` | `tests/world/test_city_world_howitzer_spawn_contract.gd` | `docs/plan/v51-m3-verification-2026-03-24.md` | `v51-m3-verification-2026-03-24.md` | done |
+| REQ-0029-011 | `v51-world-howitzer-summon-and-ballistics.md` | `tests/world/test_city_world_howitzer_spawn_contract.gd` | `docs/plan/v51-m3-verification-2026-03-24.md`; `docs/plan/v51-m4-verification-2026-03-24.md` | `v51-m3-verification-2026-03-24.md`; `v51-m4-verification-2026-03-24.md` | done |
 | REQ-0029-012 | `v51-world-howitzer-summon-and-ballistics.md` | `tests/world/test_city_world_howitzer_interaction_contract.gd`; 既有 lab focused tests | `tests/e2e/test_city_world_howitzer_flow.gd`; `docs/plan/v51-m3-verification-2026-03-24.md` | `v51-m3-verification-2026-03-24.md` | done |
-| REQ-0029-013 | `v51-world-howitzer-summon-and-ballistics.md` | `tests/world/test_city_world_howitzer_ballistics_contract.gd` | `tests/e2e/test_city_world_howitzer_flow.gd`; `docs/plan/v51-m3-verification-2026-03-24.md` | `v51-m3-verification-2026-03-24.md` | done |
+| REQ-0029-013 | `v51-world-howitzer-summon-and-ballistics.md` | `tests/world/test_city_world_howitzer_ballistics_contract.gd`; `tests/world/test_city_artillery_shell_visual_orientation_contract.gd` | `tests/e2e/test_city_world_howitzer_flow.gd`; `docs/plan/v51-m3-verification-2026-03-24.md`; `docs/plan/v51-m4-verification-2026-03-24.md`; `docs/plan/v51-m5-verification-2026-03-25.md` | `v51-m3-verification-2026-03-24.md`; `v51-m4-verification-2026-03-24.md`; `v51-m5-verification-2026-03-25.md` | done |
 
 ## Closeout 证据口径
 

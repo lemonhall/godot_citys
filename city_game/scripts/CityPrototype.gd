@@ -15,6 +15,7 @@ const CityResolvedTarget := preload("res://city_game/world/model/CityResolvedTar
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
 const CityMinimapProjector := preload("res://city_game/world/map/CityMinimapProjector.gd")
+const CityWorldOrientationScript := preload("res://city_game/world/navigation/CityWorldOrientation.gd")
 const CityMapScreenScene := preload("res://city_game/ui/CityMapScreen.tscn")
 const CityMapPinRegistry := preload("res://city_game/world/map/CityMapPinRegistry.gd")
 const CityVehicleRadioControllerScript := preload("res://city_game/world/radio/CityVehicleRadioController.gd")
@@ -139,6 +140,7 @@ const RIFLE_FIRE_AUDIO_RESTART_MARGIN_SEC := 0.08
 
 var _world_config
 var _world_data: Dictionary = {}
+var _world_orientation = CityWorldOrientationScript.new()
 var _chunk_streamer
 var _navigation_runtime
 var _fast_travel_resolver
@@ -1021,6 +1023,8 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 		if _should_refresh_hud_minimap(true):
 			build_minimap_snapshot()
 			_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
+		if hud.has_method("set_navigation_state"):
+			hud.set_navigation_state(_build_navigation_hud_state())
 		if hud.has_method("set_crosshair_state"):
 			hud.set_crosshair_state(_build_crosshair_state())
 		_last_hud_refresh_tick_usec = Time.get_ticks_usec()
@@ -1071,6 +1075,8 @@ func _refresh_hud_status(snapshot_override: Dictionary = {}, force: bool = false
 	if hud.has_method("set_minimap_snapshot") and _should_refresh_hud_minimap(false):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
 		_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
+	if hud.has_method("set_navigation_state"):
+		hud.set_navigation_state(_build_navigation_hud_state())
 	if hud.has_method("set_crosshair_state"):
 		hud.set_crosshair_state(_build_crosshair_state())
 	if hud.has_method("set_fps_overlay_visible"):
@@ -2344,6 +2350,12 @@ func get_map_screen_state() -> Dictionary:
 		return {}
 	return _map_screen.get_render_state()
 
+func get_world_orientation_contract() -> Dictionary:
+	return _world_orientation.get_orientation_contract() if _world_orientation != null else {}
+
+func get_player_compass_state() -> Dictionary:
+	return _build_player_compass_state()
+
 func get_pin_registry_state() -> Dictionary:
 	if _map_pin_registry == null or not _map_pin_registry.has_method("get_state"):
 		return {}
@@ -2849,9 +2861,34 @@ func _build_navigation_player_marker_state() -> Dictionary:
 	var focus_position := _get_navigation_focus_position()
 	if focus_position == Vector3.ZERO and player == null:
 		return {}
+	var heading_rad := _resolve_minimap_heading_rad()
+	var bearing_deg := 0.0
+	if _world_orientation != null:
+		bearing_deg = _world_orientation.bearing_deg_from_heading_rad(heading_rad)
 	return {
 		"world_position": focus_position,
-		"heading_rad": _resolve_minimap_heading_rad(),
+		"heading_rad": heading_rad,
+		"bearing_deg": bearing_deg,
+	}
+
+func _build_player_compass_state() -> Dictionary:
+	if _world_orientation == null:
+		return {"visible": false}
+	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime) and _player_drone_runtime.has_method("should_drive_world_streaming") and bool(_player_drone_runtime.should_drive_world_streaming()):
+		if _player_drone_runtime.has_method("get_focus_heading_rad"):
+			return _world_orientation.build_compass_state_from_heading_rad(float(_player_drone_runtime.get_focus_heading_rad()), true)
+	if player == null:
+		return _world_orientation.build_compass_state_from_bearing_deg(0.0, false)
+	var forward := -player.global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		forward = Vector3.FORWARD
+	return _world_orientation.build_compass_state_from_world_vector(forward, true)
+
+func _build_navigation_hud_state() -> Dictionary:
+	return {
+		"orientation": get_world_orientation_contract(),
+		"compass": _build_player_compass_state(),
 	}
 
 func build_minimap_route_overlay(start_position: Vector3, goal_position: Vector3) -> Dictionary:

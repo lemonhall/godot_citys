@@ -1,5 +1,8 @@
 extends Node3D
 
+const CityCompassStripScript := preload("res://city_game/ui/CityCompassStrip.gd")
+const CityWorldOrientationScript := preload("res://city_game/world/navigation/CityWorldOrientation.gd")
+
 @export var yaw_speed_deg_per_sec := 28.0
 @export var pitch_speed_deg_per_sec := 18.0
 @export var neutral_yaw_deg := 0.0
@@ -13,12 +16,16 @@ extends Node3D
 @onready var _overview_camera := $LabCameraRig/Camera3D as Camera3D
 @onready var _status_label := $Hud/Root/Panel/VBox/Status as Label
 @onready var _debug_text := $Hud/Root/Panel/VBox/DebugText as Label
+@onready var _hud_root := $Hud/Root as Control
 
 var _initial_player_position := Vector3.ZERO
 var _initial_player_rotation := Vector3.ZERO
 var _initial_player_camera_rig_rotation := Vector3.ZERO
+var _world_orientation = CityWorldOrientationScript.new()
+var _compass_state: Dictionary = {}
 
 func _ready() -> void:
+	_ensure_compass_view()
 	_capture_initial_player_state()
 	reset_lab_state()
 	_focus_overview_camera()
@@ -60,7 +67,14 @@ func get_lab_state() -> Dictionary:
 		"yaw_deg": yaw_deg,
 		"pitch_deg": pitch_deg,
 		"anchor_state": _howitzer.get_anchor_state() if _howitzer != null and _howitzer.has_method("get_anchor_state") else {},
+		"compass": get_compass_state(),
 	}
+
+func get_orientation_contract() -> Dictionary:
+	return _world_orientation.get_orientation_contract() if _world_orientation != null else {}
+
+func get_compass_state() -> Dictionary:
+	return _compass_state.duplicate(true)
 
 func reset_lab_state() -> void:
 	if _howitzer != null and _howitzer.has_method("set_axis_angles_degrees"):
@@ -119,10 +133,45 @@ func _focus_overview_camera() -> void:
 func _refresh_hud() -> void:
 	if _status_label == null or _debug_text == null:
 		return
+	_compass_state = _build_player_compass_state()
+	var compass_view := _hud_root.get_node_or_null("Compass")
+	if compass_view != null and compass_view.has_method("set_state"):
+		compass_view.set_state(_compass_state)
 	var lab_state := get_lab_state()
 	_status_label.text = "WASD move  Mouse look  J/L yaw  I/K pitch  R reset"
-	_debug_text.text = "yaw=%.2f deg\npitch=%.2f deg\nplayer=%s" % [
+	_debug_text.text = "yaw=%.2f deg\npitch=%.2f deg\nbearing=%s %s\nplayer=%s" % [
 		float(lab_state.get("yaw_deg", 0.0)),
 		float(lab_state.get("pitch_deg", 0.0)),
+		str(_compass_state.get("bearing_text", "000°")),
+		str(_compass_state.get("cardinal_text", "N")),
 		_player.global_position if _player != null else Vector3.ZERO,
 	]
+
+func _build_player_compass_state() -> Dictionary:
+	if _player == null or _world_orientation == null:
+		return {"visible": false}
+	var forward := -_player.global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		forward = Vector3.FORWARD
+	return _world_orientation.build_compass_state_from_world_vector(forward, true)
+
+func _ensure_compass_view() -> void:
+	if _hud_root == null:
+		return
+	if _hud_root.get_node_or_null("Compass") != null:
+		return
+	var compass := Control.new()
+	compass.name = "Compass"
+	compass.set_script(CityCompassStripScript)
+	compass.anchor_left = 0.5
+	compass.anchor_top = 0.0
+	compass.anchor_right = 0.5
+	compass.anchor_bottom = 0.0
+	compass.offset_left = -220.0
+	compass.offset_top = 18.0
+	compass.offset_right = 220.0
+	compass.offset_bottom = 82.0
+	compass.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	compass.visible = false
+	_hud_root.add_child(compass)

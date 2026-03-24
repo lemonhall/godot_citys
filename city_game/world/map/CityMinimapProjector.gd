@@ -2,10 +2,12 @@ extends RefCounted
 
 const MAP_SIZE_PX := 220.0
 const DEFAULT_WORLD_RADIUS_M := 1600.0
+const CityWorldOrientationScript := preload("res://city_game/world/navigation/CityWorldOrientation.gd")
 
 var _config
 var _world_data: Dictionary = {}
 var _pedestrian_query = null
+var _world_orientation = CityWorldOrientationScript.new()
 
 func _init(config = null, world_data: Dictionary = {}) -> void:
 	if config != null:
@@ -45,6 +47,7 @@ func build_road_snapshot(center_world_position: Vector3, world_radius_m: float =
 			"z": center_world_position.z,
 		},
 		"road_polylines": road_polylines,
+		"orientation": _world_orientation.get_orientation_contract() if _world_orientation != null else {},
 	}
 
 func build_pedestrian_debug_layer(center_world_position: Vector3, world_radius_m: float = DEFAULT_WORLD_RADIUS_M, visible: bool = false) -> Dictionary:
@@ -122,9 +125,13 @@ func build_pedestrian_debug_layer(center_world_position: Vector3, world_radius_m
 	}
 
 func build_player_marker(center_world_position: Vector3, player_world_position: Vector3, player_heading_rad: float, world_radius_m: float = DEFAULT_WORLD_RADIUS_M) -> Dictionary:
+	var bearing_deg := 0.0
+	if _world_orientation != null:
+		bearing_deg = _world_orientation.bearing_deg_from_heading_rad(player_heading_rad)
 	return {
 		"position": _project_point(Vector2(player_world_position.x, player_world_position.z), center_world_position, world_radius_m),
 		"heading_rad": player_heading_rad,
+		"bearing_deg": bearing_deg,
 	}
 
 func build_pin_overlay(center_world_position: Vector3, pins: Array, world_radius_m: float = DEFAULT_WORLD_RADIUS_M) -> Dictionary:

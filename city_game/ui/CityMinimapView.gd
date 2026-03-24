@@ -13,6 +13,7 @@ func _draw() -> void:
 	var map_size := float(_snapshot.get("map_size_px", size.x))
 	draw_rect(Rect2(Vector2.ZERO, Vector2(map_size, map_size)), Color(0.05, 0.07, 0.09, 0.86), true)
 	draw_rect(Rect2(Vector2.ZERO, Vector2(map_size, map_size)), Color(0.68, 0.73, 0.78, 0.35), false, 2.0)
+	_draw_orientation_badge(map_size)
 
 	for polyline in _snapshot.get("road_polylines", []):
 		var points: PackedVector2Array = polyline
@@ -103,3 +104,41 @@ func _resolve_route_style(route_style_id: String) -> Dictionary:
 		"start": Color(0.25, 0.9, 0.4, 1.0),
 		"goal": Color(1.0, 0.35, 0.35, 1.0),
 	}
+
+func _draw_orientation_badge(map_size: float) -> void:
+	var font := _resolve_font()
+	if font == null or map_size <= 0.001:
+		return
+	var font_size: int = maxi(_resolve_font_size(12), 12)
+	for label_spec in [
+		{"label": "N", "position": Vector2(map_size * 0.5, 14.0)},
+		{"label": "E", "position": Vector2(map_size - 14.0, map_size * 0.5 + 4.0)},
+		{"label": "S", "position": Vector2(map_size * 0.5, map_size - 6.0)},
+		{"label": "W", "position": Vector2(14.0, map_size * 0.5 + 4.0)},
+	]:
+		var label := str(label_spec.get("label", ""))
+		var draw_position: Vector2 = label_spec.get("position", Vector2.ZERO)
+		var label_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+		draw_string(
+			font,
+			draw_position + Vector2(-label_size.x * 0.5, 0.0),
+			label,
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1,
+			font_size,
+			Color(0.9, 0.96, 0.92, 0.72)
+		)
+
+func _resolve_font() -> Font:
+	var font := get_theme_default_font()
+	if font != null:
+		return font
+	return ThemeDB.fallback_font
+
+func _resolve_font_size(default_size: int) -> int:
+	var font_size := get_theme_default_font_size()
+	if font_size > 0:
+		return font_size
+	if ThemeDB.fallback_font_size > 0:
+		return ThemeDB.fallback_font_size
+	return default_size

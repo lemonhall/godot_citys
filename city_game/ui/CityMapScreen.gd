@@ -8,6 +8,7 @@ const ZOOM_STEP_RATIO := 0.82
 const MIN_VIEW_HALF_EXTENT_Y_M := 256.0
 const TASK_PANEL_WIDTH_PX := 320.0
 const TASK_PANEL_MARGIN_PX := 16.0
+const CityWorldOrientationScript := preload("res://city_game/world/navigation/CityWorldOrientation.gd")
 const PIN_ICON_FONT_NAMES := [
 	"Segoe UI Emoji",
 	"Segoe UI Symbol",
@@ -55,6 +56,7 @@ var _drag_active := false
 var _drag_anchor_map_position := Vector2.ZERO
 var _drag_anchor_center_world := Vector2.ZERO
 var _pin_icon_font: Font = null
+var _world_orientation = CityWorldOrientationScript.new()
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -186,6 +188,7 @@ func get_render_state() -> Dictionary:
 		"route_style_id": str(_route_result.get("route_style_id", "destination")),
 		"last_selection_contract": _last_selection_contract.duplicate(true),
 		"player_marker": player_marker,
+		"orientation": _world_orientation.get_orientation_contract() if _world_orientation != null else {},
 		"task_panel": _task_panel_state.duplicate(true),
 	}
 
@@ -250,6 +253,7 @@ func _draw() -> void:
 	_draw_pins()
 	_draw_selection_marker()
 	_draw_player_marker()
+	_draw_orientation_badge(map_rect)
 	draw_line(Vector2(map_rect.end.x + TASK_PANEL_MARGIN_PX * 0.5, 0.0), Vector2(map_rect.end.x + TASK_PANEL_MARGIN_PX * 0.5, size.y), Color(0.84, 0.88, 0.91, 0.15), 1.0)
 
 func _draw_road_network() -> void:
@@ -505,6 +509,8 @@ func _build_player_marker_render_state() -> Dictionary:
 	var world_position: Vector3 = _player_marker.get("world_position", Vector3.ZERO)
 	var render_state := _player_marker.duplicate(true)
 	render_state["position"] = world_to_map(world_position)
+	if _world_orientation != null and not render_state.has("bearing_deg"):
+		render_state["bearing_deg"] = _world_orientation.bearing_deg_from_heading_rad(float(render_state.get("heading_rad", 0.0)))
 	return render_state
 
 func _ensure_task_panel() -> void:
@@ -542,3 +548,41 @@ func _get_map_canvas_rect() -> Rect2:
 
 func _on_task_panel_selected(task_id: String) -> void:
 	task_selected.emit(task_id)
+
+func _draw_orientation_badge(map_rect: Rect2) -> void:
+	var font := _resolve_label_font()
+	if font == null:
+		return
+	var font_size: int = maxi(_resolve_label_font_size(14), 14)
+	for label_spec in [
+		{"label": "N", "position": Vector2(map_rect.get_center().x, map_rect.position.y + 16.0)},
+		{"label": "E", "position": Vector2(map_rect.end.x - 16.0, map_rect.get_center().y + 4.0)},
+		{"label": "S", "position": Vector2(map_rect.get_center().x, map_rect.end.y - 6.0)},
+		{"label": "W", "position": Vector2(map_rect.position.x + 16.0, map_rect.get_center().y + 4.0)},
+	]:
+		var label := str(label_spec.get("label", ""))
+		var draw_position: Vector2 = label_spec.get("position", Vector2.ZERO)
+		var label_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+		draw_string(
+			font,
+			draw_position + Vector2(-label_size.x * 0.5, 0.0),
+			label,
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1,
+			font_size,
+			Color(0.92, 0.97, 0.94, 0.76)
+		)
+
+func _resolve_label_font() -> Font:
+	var font := get_theme_default_font()
+	if font != null:
+		return font
+	return ThemeDB.fallback_font
+
+func _resolve_label_font_size(default_size: int) -> int:
+	var font_size := get_theme_default_font_size()
+	if font_size > 0:
+		return font_size
+	if ThemeDB.fallback_font_size > 0:
+		return ThemeDB.fallback_font_size
+	return default_size

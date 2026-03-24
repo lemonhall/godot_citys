@@ -1,6 +1,7 @@
 extends CanvasLayer
 
 const CityCrosshairViewScript := preload("res://city_game/ui/CityCrosshairView.gd")
+const CityCompassStripScript := preload("res://city_game/ui/CityCompassStrip.gd")
 const CityControlsHelpOverlayScript := preload("res://city_game/ui/CityControlsHelpOverlay.gd")
 const CityDialoguePanelScript := preload("res://city_game/ui/CityDialoguePanel.gd")
 const CityVehicleRadioBrowserScript := preload("res://city_game/ui/CityVehicleRadioBrowser.gd")
@@ -14,6 +15,11 @@ var _status_text := "Booting city skeleton..."
 var _debug_text := ""
 var _debug_expanded := false
 var _minimap_snapshot: Dictionary = {}
+var _navigation_state: Dictionary = {
+	"compass": {
+		"visible": false,
+	},
+}
 var _fps_overlay_state := {
 	"visible": false,
 	"fps": 0.0,
@@ -166,6 +172,7 @@ func _ready() -> void:
 	_ensure_spider_bite_blood_overlay_view()
 	_ensure_crosshair_view()
 	_ensure_fps_label()
+	_ensure_compass_view()
 	_ensure_soccer_match_hud_view()
 	_ensure_tennis_match_hud_view()
 	_ensure_missile_command_hud_view()
@@ -204,8 +211,9 @@ func set_minimap_snapshot(snapshot: Dictionary) -> void:
 	_minimap_snapshot = snapshot.duplicate(false)
 	_apply_minimap_state()
 
-func set_navigation_state(_state: Dictionary) -> void:
-	pass
+func set_navigation_state(state: Dictionary) -> void:
+	_navigation_state = state.duplicate(true)
+	_apply_navigation_state()
 
 func set_focus_message(text: String, duration_sec: float = 10.0) -> void:
 	var trimmed := text.strip_edges()
@@ -269,7 +277,7 @@ func get_minimap_state() -> Dictionary:
 	}
 
 func get_navigation_state() -> Dictionary:
-	return {}
+	return _navigation_state.duplicate(true)
 
 func set_fps_overlay_visible(should_be_visible: bool) -> void:
 	_fps_overlay_state["visible"] = should_be_visible
@@ -461,6 +469,7 @@ func _apply_state() -> void:
 	_apply_status_state()
 	_apply_debug_text_state()
 	_apply_minimap_state()
+	_apply_navigation_state()
 	_apply_crosshair_state()
 	_apply_spider_bite_overlay_state()
 	_apply_fps_overlay_state()
@@ -497,6 +506,11 @@ func _apply_minimap_state() -> void:
 	var minimap_view := get_node_or_null("Root/MinimapFrame/MinimapView")
 	if minimap_view != null and minimap_view.has_method("set_snapshot"):
 		minimap_view.set_snapshot(_minimap_snapshot)
+
+func _apply_navigation_state() -> void:
+	var compass_view := get_node_or_null("Root/Compass")
+	if compass_view != null and compass_view.has_method("set_state"):
+		compass_view.set_state(_navigation_state.get("compass", {}))
 
 func _apply_crosshair_state() -> void:
 	var crosshair_view := get_node_or_null("Root/Crosshair")
@@ -806,6 +820,27 @@ func _ensure_fps_label() -> void:
 	fps_label.visible = false
 	fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(fps_label)
+
+func _ensure_compass_view() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("Compass") != null:
+		return
+	var compass := Control.new()
+	compass.name = "Compass"
+	compass.set_script(CityCompassStripScript)
+	compass.anchor_left = 0.5
+	compass.anchor_top = 0.0
+	compass.anchor_right = 0.5
+	compass.anchor_bottom = 0.0
+	compass.offset_left = -260.0
+	compass.offset_top = 18.0
+	compass.offset_right = 260.0
+	compass.offset_bottom = 86.0
+	compass.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	compass.visible = false
+	root.add_child(compass)
 
 func _ensure_soccer_match_hud_view() -> void:
 	var root := get_node_or_null("Root") as Control

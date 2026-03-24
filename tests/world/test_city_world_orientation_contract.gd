@@ -40,6 +40,16 @@ func _run() -> void:
 		return
 	if not T.require_true(self, bool(orientation_contract.get("north_up", false)), "Shared orientation contract must declare north-up map semantics"):
 		return
+	var near_northwest_compass: Dictionary = orientation.build_compass_state_from_bearing_deg(347.0, true)
+	var near_northwest_labels := _collect_compass_labels(near_northwest_compass)
+	if not T.require_true(self, near_northwest_labels.has("300"), "Compass label contract must keep the 300-degree label visible near 347 degrees instead of letting labels disappear between phase steps"):
+		return
+	if not T.require_true(self, near_northwest_labels.has("330"), "Compass label contract must keep the 330-degree label visible near 347 degrees instead of flickering it on and off with player yaw"):
+		return
+	if not T.require_true(self, near_northwest_labels.has("N"), "Compass label contract must keep the north cardinal label visible near 347 degrees"):
+		return
+	if not T.require_true(self, near_northwest_labels.has("030"), "Compass label contract must keep the 030-degree label visible near 347 degrees instead of dropping all outer labels"):
+		return
 
 	var projector_script := load(MINIMAP_PROJECTOR_SCRIPT_PATH)
 	var projector = projector_script.new()
@@ -102,3 +112,13 @@ func _run() -> void:
 	map_screen.queue_free()
 	await process_frame
 	T.pass_and_quit(self)
+
+func _collect_compass_labels(compass_state: Dictionary) -> Dictionary:
+	var labels := {}
+	for tick_variant in compass_state.get("tick_entries", []):
+		var tick: Dictionary = tick_variant
+		var label := str(tick.get("label", "")).strip_edges()
+		if label == "":
+			continue
+		labels[label] = true
+	return labels

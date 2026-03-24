@@ -81,9 +81,12 @@ func shortest_bearing_delta_deg(from_bearing_deg: float, to_bearing_deg: float) 
 
 func _build_compass_tick_entries(center_bearing_deg: float, half_span_deg: float) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
-	var step_radius := int(ceil(half_span_deg / COMPASS_MINOR_TICK_STEP_DEG))
-	for step_index in range(-step_radius, step_radius + 1):
-		var tick_bearing := normalize_bearing_deg(center_bearing_deg + float(step_index) * COMPASS_MINOR_TICK_STEP_DEG)
+	var start_bearing := center_bearing_deg - half_span_deg
+	var end_bearing := center_bearing_deg + half_span_deg
+	var min_tick_index := int(floor(start_bearing / COMPASS_MINOR_TICK_STEP_DEG))
+	var max_tick_index := int(ceil(end_bearing / COMPASS_MINOR_TICK_STEP_DEG))
+	for tick_index in range(min_tick_index, max_tick_index + 1):
+		var tick_bearing := normalize_bearing_deg(float(tick_index) * COMPASS_MINOR_TICK_STEP_DEG)
 		var delta_deg := shortest_bearing_delta_deg(center_bearing_deg, tick_bearing)
 		if absf(delta_deg) > half_span_deg + 0.001:
 			continue
@@ -101,4 +104,3 @@ func _build_compass_tick_entries(center_bearing_deg: float, half_span_deg: float
 			"label": label,
 		})
 	return entries
-

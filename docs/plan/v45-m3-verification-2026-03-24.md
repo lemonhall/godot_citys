@@ -69,6 +69,7 @@ foreach($test in $tests){
   - 共享 helper 冻结 `北=-Z / 东=+X / 北=0°顺时针增加`
   - minimap 与 full map 的投影几何满足 north-up
   - minimap snapshot 与 full map render state 都显式暴露 orientation contract
+  - compass 绝对刻度标签在 `347°` 这类非整 5/10/30 相位附近仍保持连续可见，不会随着玩家 yaw 变化闪烁消失
 - `test_city_navigation_compass_hud_contract.gd`
   - `CityPrototype` 暴露共享 world orientation contract
   - `PrototypeHud` 挂载正式 `Compass` 控件

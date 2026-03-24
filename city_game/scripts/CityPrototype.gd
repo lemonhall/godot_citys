@@ -2886,6 +2886,13 @@ func _build_crosshair_state() -> Dictionary:
 		var missile_crosshair_state := (_missile_command_venue_runtime.get_crosshair_state() as Dictionary).duplicate(true)
 		if bool(missile_crosshair_state.get("visible", false)):
 			return missile_crosshair_state
+	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime):
+		if _player_drone_runtime.has_method("should_drive_world_streaming") and bool(_player_drone_runtime.should_drive_world_streaming()) and _player_drone_runtime.has_method("get_crosshair_state"):
+			var drone_crosshair_state := (_player_drone_runtime.get_crosshair_state() as Dictionary).duplicate(true)
+			drone_crosshair_state["viewport_size"] = viewport_size
+			if not drone_crosshair_state.has("screen_position"):
+				drone_crosshair_state["screen_position"] = viewport_size * 0.5
+			return drone_crosshair_state
 	if player == null or not player.has_method("get_aim_target_world_position"):
 		return {
 			"visible": false,

@@ -9,6 +9,7 @@ const DRONE_CAMERA_RIG_SCENE_PATH := "res://city_game/combat/drone/CityPlayerDro
 const DRONE_MODEL_PATH := "res://city_game/assets/environment/source/aircraft/drone_a.glb"
 const ROTOR_BLUR_SHADER_PATH := "res://city_game/combat/helicopter/CityHelicopterRotorBlur.gdshader"
 const DRONE_FLIGHT_AUDIO_PATH := "res://city_game/combat/drone/audio/drone-in-flight.wav"
+const DRONE_FPV_OVERLAY_SHADER_PATH := "res://city_game/combat/drone/shaders/CityDroneFpvInfraredOverlay.gdshader"
 
 const REQUIRED_NODE_PATHS := [
 	"CollisionShape3D",
@@ -22,7 +23,12 @@ const REQUIRED_NODE_PATHS := [
 	"RotorBlurRoot/RearLeftRotorBlur",
 	"RotorBlurRoot/RearRightRotorBlur",
 	"CameraRig",
+	"CameraRig/ThirdPersonPose",
+	"CameraRig/FpvPivot",
+	"CameraRig/FpvPivot/FpvPose",
 	"CameraRig/Camera3D",
+	"FpvOverlay",
+	"FpvOverlay/InfraredRect",
 	"RotorAudio",
 ]
 
@@ -51,6 +57,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, ResourceLoader.exists(DRONE_FLIGHT_AUDIO_PATH, "AudioStreamWAV"), "Drone foundation contract requires the formal looped in-flight audio asset under combat/drone/audio"):
 		return
+	if not T.require_true(self, ResourceLoader.exists(DRONE_FPV_OVERLAY_SHADER_PATH, "Shader"), "Drone scene contract requires the formal FPV infrared overlay shader resource"):
+		return
 
 	var scene_text := FileAccess.get_file_as_string(DRONE_SCENE_PATH)
 	if not T.require_true(self, scene_text.find(DRONE_RUNTIME_SCRIPT_PATH) >= 0, "Drone scene must bind CityPlayerDroneRuntime.gd instead of a helicopter combat script"):
@@ -64,6 +72,8 @@ func _run() -> void:
 	if not T.require_true(self, scene_text.find(ROTOR_BLUR_SHADER_PATH) >= 0, "Drone scene must bind the shared rotor blur shader through the scene instead of rebuilding it from code"):
 		return
 	if not T.require_true(self, scene_text.find(DRONE_FLIGHT_AUDIO_PATH) >= 0, "Drone scene must bind the formal looped in-flight audio asset through RotorAudio"):
+		return
+	if not T.require_true(self, scene_text.find(DRONE_FPV_OVERLAY_SHADER_PATH) >= 0, "Drone scene must bind the formal FPV infrared overlay shader through the authored scene"):
 		return
 
 	var scene := load(DRONE_SCENE_PATH) as PackedScene
@@ -98,6 +108,13 @@ func _run() -> void:
 	if not T.require_true(self, str(rotor_audio.stream.resource_path) == DRONE_FLIGHT_AUDIO_PATH, "Drone RotorAudio must point at the formal combat/drone audio asset instead of an ad-hoc root-level file"):
 		return
 
+	var fpv_overlay_rect := drone.get_node_or_null("FpvOverlay/InfraredRect") as ColorRect
+	if not T.require_true(self, fpv_overlay_rect != null and fpv_overlay_rect.material is ShaderMaterial, "Drone scene contract requires an authored InfraredRect ColorRect with ShaderMaterial"):
+		return
+	var fpv_overlay_material := fpv_overlay_rect.material as ShaderMaterial
+	if not T.require_true(self, fpv_overlay_material.shader != null and fpv_overlay_material.shader.resource_path == DRONE_FPV_OVERLAY_SHADER_PATH, "Drone InfraredRect must point at the formal combat/drone FPV overlay shader resource"):
+		return
+
 	var rotor_positions: Array[Vector3] = []
 	for rotor_path in REQUIRED_ROTOR_BLUR_PATHS:
 		var rotor_blur := drone.get_node_or_null(rotor_path) as MeshInstance3D
@@ -119,6 +136,7 @@ func _run() -> void:
 
 	for required_method in [
 		"get_visual_root",
+		"get_crosshair_state",
 		"get_debug_state",
 		"get_portability_contract",
 	]:

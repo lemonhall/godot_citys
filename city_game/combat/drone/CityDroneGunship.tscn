@@ -6,6 +6,7 @@
 [ext_resource type="Shader" uid="uid://cjfhg4tlk28wb" path="res://city_game/combat/helicopter/CityHelicopterRotorBlur.gdshader" id="4_rotor_blur_shader"]
 [ext_resource type="PackedScene" path="res://city_game/combat/drone/CityPlayerDroneCameraRig.tscn" id="5_camera_rig_scene"]
 [ext_resource type="AudioStream" uid="uid://bmlu8pvtq7451" path="res://city_game/combat/drone/audio/drone-in-flight.wav" id="6_rotor_audio"]
+[ext_resource type="Shader" path="res://city_game/combat/drone/shaders/CityDroneFpvInfraredOverlay.gdshader" id="7_fpv_overlay_shader"]
 
 [sub_resource type="BoxShape3D" id="1_hitbox_shape"]
 size = Vector3(2.2, 0.7, 2.2)
@@ -99,6 +100,9 @@ albedo_color = Color(1, 0.427451, 0.168627, 0.44)
 radius = 0.8
 height = 1.6
 
+[sub_resource type="ShaderMaterial" id="15_fpv_overlay_material"]
+shader = ExtResource("7_fpv_overlay_shader")
+
 [node name="CityDroneGunship" type="CharacterBody3D" unique_id=997283566]
 script = ExtResource("2_runtime_script")
 
@@ -190,6 +194,21 @@ script = ExtResource("1_editor_debug_preview")
 
 [node name="CameraRig" parent="." unique_id=921171435 instance=ExtResource("5_camera_rig_scene")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0)
+
+[node name="FpvOverlay" type="CanvasLayer" parent="." unique_id=1285001779]
+visible = false
+layer = 4
+
+[node name="InfraredRect" type="ColorRect" parent="FpvOverlay" unique_id=742678189]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+material = SubResource("15_fpv_overlay_material")
+color = Color(1, 1, 1, 1)
 
 [node name="DeathFxRoot" type="Node3D" parent="." unique_id=380221737]
 visible = false

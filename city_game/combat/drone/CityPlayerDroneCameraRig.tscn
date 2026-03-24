@@ -1,7 +1,15 @@
 [gd_scene format=3]
 
 [node name="CameraRig" type="Node3D"]
-position = Vector3(0, 1.1, 0)
+
+[node name="ThirdPersonPose" type="Marker3D" parent="."]
+position = Vector3(0, 1.75, 8.4)
+rotation = Vector3(-0.13962634, 0, 0)
+
+[node name="FpvPivot" type="Node3D" parent="."]
+position = Vector3(0, 1.62, -0.86)
+
+[node name="FpvPose" type="Marker3D" parent="FpvPivot"]
 
 [node name="Camera3D" type="Camera3D" parent="."]
 position = Vector3(0, 1.75, 8.4)

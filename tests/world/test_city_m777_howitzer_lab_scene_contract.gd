@@ -81,13 +81,27 @@ func _run() -> void:
 		return
 
 	lab.adjust_yaw_degrees(12.0)
-	lab.adjust_pitch_degrees(-5.0)
+	lab.adjust_pitch_degrees(5.0)
 	await process_frame
 
 	var adjusted_state := lab.get_lab_state() as Dictionary
 	if not T.require_true(self, absf(float(adjusted_state.get("yaw_deg", 0.0)) - 12.0) <= 0.01, "M777 howitzer lab must route yaw adjustments into the mounted howitzer runtime state"):
 		return
-	if not T.require_true(self, absf(float(adjusted_state.get("pitch_deg", 0.0)) - -5.0) <= 0.01, "M777 howitzer lab must route pitch adjustments into the mounted howitzer runtime state"):
+	if not T.require_true(self, absf(float(adjusted_state.get("pitch_deg", 0.0)) - 5.0) <= 0.01, "M777 howitzer lab must expose calibrated positive elevation after applying pitch adjustments instead of leaking the model's internal offset angle"):
+		return
+
+	lab.adjust_pitch_degrees(-100.0)
+	await process_frame
+
+	var clamped_low_state := lab.get_lab_state() as Dictionary
+	if not T.require_true(self, absf(float(clamped_low_state.get("pitch_deg", 999.0))) <= 0.01, "M777 howitzer lab must clamp calibrated pitch at 0 degrees instead of allowing negative depression"):
+		return
+
+	lab.adjust_pitch_degrees(120.0)
+	await process_frame
+
+	var clamped_high_state := lab.get_lab_state() as Dictionary
+	if not T.require_true(self, absf(float(clamped_high_state.get("pitch_deg", 0.0)) - 71.0) <= 0.01, "M777 howitzer lab must clamp calibrated pitch at the 71 degree upper elevation limit"):
 		return
 
 	lab.reset_lab_state()

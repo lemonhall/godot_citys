@@ -8,6 +8,9 @@ const GUN_ASSEMBLY_NODE_NAME := "m777_gun_assembly"
 
 @export var initial_yaw_deg := 0.0
 @export var initial_pitch_deg := 0.0
+@export_range(-180.0, 180.0, 0.1) var pitch_zero_offset_deg := 14.7
+@export_range(-180.0, 180.0, 0.1) var min_pitch_deg := 0.0
+@export_range(-180.0, 180.0, 0.1) var max_pitch_deg := 71.0
 
 @onready var _model_root := $ModelRoot as Node3D
 @onready var _lower_base_mount := $ModelRoot/LowerBaseMount as Node3D
@@ -33,12 +36,12 @@ func set_yaw_degrees(value: float) -> void:
 	_apply_axis_angles()
 
 func set_pitch_degrees(value: float) -> void:
-	_pitch_deg = value
+	_pitch_deg = _clamp_pitch_degrees(value)
 	_apply_axis_angles()
 
 func set_axis_angles_degrees(yaw_deg: float, pitch_deg: float) -> void:
 	_yaw_deg = yaw_deg
-	_pitch_deg = pitch_deg
+	_pitch_deg = _clamp_pitch_degrees(pitch_deg)
 	_apply_axis_angles()
 
 func get_yaw_degrees() -> float:
@@ -60,6 +63,12 @@ func get_debug_state() -> Dictionary:
 		"source_asset_path": SOURCE_ASSET_PATH,
 		"yaw_deg": _yaw_deg,
 		"pitch_deg": _pitch_deg,
+		"applied_pitch_pivot_deg": pitch_zero_offset_deg - _pitch_deg,
+		"pitch_zero_offset_deg": pitch_zero_offset_deg,
+		"pitch_limits_deg": {
+			"min": min_pitch_deg,
+			"max": max_pitch_deg,
+		},
 		"mounted_segment_count": _mounted_segment_count,
 		"lower_base_present": get_node_or_null("ModelRoot/LowerBaseMount/%s" % LOWER_BASE_NODE_NAME) != null,
 		"upper_carriage_present": get_node_or_null("ModelRoot/YawPivot/%s" % UPPER_CARRIAGE_NODE_NAME) != null,
@@ -101,4 +110,7 @@ func _apply_axis_angles() -> void:
 	if _yaw_pivot != null:
 		_yaw_pivot.rotation.y = deg_to_rad(_yaw_deg)
 	if _pitch_pivot != null:
-		_pitch_pivot.rotation.x = deg_to_rad(_pitch_deg)
+		_pitch_pivot.rotation.x = deg_to_rad(pitch_zero_offset_deg - _pitch_deg)
+
+func _clamp_pitch_degrees(value: float) -> float:
+	return clampf(value, min_pitch_deg, max_pitch_deg)

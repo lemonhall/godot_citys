@@ -31,6 +31,11 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
 - 正式 runtime pivot：
   - `ModelRoot/YawPivot`
   - `ModelRoot/YawPivot/PitchPivot`
+- 正式 pitch 口径：
+  - `pitch=0°` 表示炮口视觉放平后的真实仰角零位
+  - 正值表示抬高炮口
+  - 最大仰角 `71°`
+  - 模型内部允许保留独立零位校准偏置
 
 ## 里程碑
 
@@ -63,6 +68,8 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
   - 正式 howitzer `.tscn` scene 存在并包裹正式 glb；
   - 正式 howitzer scene 已归一化到 world-scale 火炮尺寸，而不是保持 `1m` 级缩水玩具比例；
   - yaw / pitch 是两级独立 pivot，不是整坨单轴旋转；
+  - `pitch` 对外暴露的是校准后的真实仰角，炮口放平时为 `0°`，正值表示抬高炮口；
+  - `pitch` 被限制在 `0-71°` 射界内；
   - 两枚锚点是 scene-authored `Marker3D`；
   - lab 挂的是正式 howitzer scene，而不是 glb；
   - lab 能通过稳定 API 调 yaw / pitch；
@@ -70,7 +77,7 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
 
 ## ECN 索引
 
-- 暂无
+- [ECN-0029-artillery-pitch-calibration-and-elevation-limit.md](../ecn/ECN-0029-artillery-pitch-calibration-and-elevation-limit.md)
 
 ## 差异列表
 

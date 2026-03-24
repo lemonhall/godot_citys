@@ -6,6 +6,9 @@ const HOWITZER_SCENE_PATH := "res://city_game/combat/artillery/CityM777Howitzer.
 const HOWITZER_SCRIPT_PATH := "res://city_game/combat/artillery/CityM777Howitzer.gd"
 const HOWITZER_MODEL_PATH := "res://city_game/assets/environment/source/artillery/m777/m777_3_parts.glb"
 const MIN_PRESENTED_LENGTH_M := 6.0
+const EXPECTED_PITCH_ZERO_OFFSET_DEG := 14.7
+const MIN_ELEVATION_DEG := 0.0
+const MAX_ELEVATION_DEG := 71.0
 
 const REQUIRED_NODE_PATHS := [
 	"ModelRoot",
@@ -94,16 +97,32 @@ func _run() -> void:
 	var yaw_before := yaw_pivot.rotation.y
 	var pitch_before := pitch_pivot.rotation.x
 
-	howitzer.set_axis_angles_degrees(18.0, -7.0)
+	howitzer.set_axis_angles_degrees(18.0, 12.0)
 	await process_frame
 
 	if not T.require_true(self, absf(yaw_pivot.rotation.y - deg_to_rad(18.0)) <= 0.001, "M777 howitzer yaw API must drive the dedicated YawPivot node around the vertical axis"):
 		return
-	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(-7.0)) <= 0.001, "M777 howitzer pitch API must drive the dedicated PitchPivot node instead of rotating the whole upper assembly root"):
+	if not T.require_true(self, absf(howitzer.get_pitch_degrees() - 12.0) <= 0.001, "M777 howitzer pitch API must expose calibrated elevation degrees instead of leaking the model's internal raw pivot rotation"):
+		return
+	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(EXPECTED_PITCH_ZERO_OFFSET_DEG - 12.0)) <= 0.001, "M777 howitzer positive pitch must raise the barrel, so the raw PitchPivot rotation must move opposite to the calibrated elevation value after applying the zero offset"):
 		return
 	if not T.require_true(self, absf(yaw_pivot.rotation.y - yaw_before) > 0.01, "M777 howitzer yaw API must visibly change yaw pivot rotation"):
 		return
 	if not T.require_true(self, absf(pitch_pivot.rotation.x - pitch_before) > 0.01, "M777 howitzer pitch API must visibly change pitch pivot rotation"):
+		return
+
+	howitzer.set_pitch_degrees(-18.0)
+	await process_frame
+	if not T.require_true(self, absf(howitzer.get_pitch_degrees() - MIN_ELEVATION_DEG) <= 0.001, "M777 howitzer pitch must clamp to 0 degrees instead of allowing negative depression below the current weapon's authored lower bound"):
+		return
+	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(EXPECTED_PITCH_ZERO_OFFSET_DEG)) <= 0.001, "M777 howitzer clamped zero elevation must still preserve the model calibration offset on PitchPivot"):
+		return
+
+	howitzer.set_pitch_degrees(100.0)
+	await process_frame
+	if not T.require_true(self, absf(howitzer.get_pitch_degrees() - MAX_ELEVATION_DEG) <= 0.001, "M777 howitzer pitch must clamp to the 71 degree upper elevation limit instead of allowing unrealistic over-elevation"):
+		return
+	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(EXPECTED_PITCH_ZERO_OFFSET_DEG - MAX_ELEVATION_DEG)) <= 0.001, "M777 howitzer upper elevation clamp must still preserve the correct sign convention, meaning larger elevation raises the barrel instead of lowering it"):
 		return
 
 	var debug_state := howitzer.get_debug_state() as Dictionary
@@ -114,6 +133,11 @@ func _run() -> void:
 	if not T.require_true(self, bool(debug_state.get("upper_carriage_present", false)), "M777 howitzer debug state must confirm the upper carriage mesh is mounted under YawPivot"):
 		return
 	if not T.require_true(self, bool(debug_state.get("gun_assembly_present", false)), "M777 howitzer debug state must confirm the gun assembly mesh is mounted under PitchPivot"):
+		return
+	if not T.require_true(self, absf(float(debug_state.get("pitch_zero_offset_deg", 0.0)) - EXPECTED_PITCH_ZERO_OFFSET_DEG) <= 0.001, "M777 howitzer debug state must expose the model-specific pitch zero calibration offset so authored tuning is inspectable"):
+		return
+	var pitch_limits := debug_state.get("pitch_limits_deg", {}) as Dictionary
+	if not T.require_true(self, absf(float(pitch_limits.get("min", -999.0)) - MIN_ELEVATION_DEG) <= 0.001 and absf(float(pitch_limits.get("max", -999.0)) - MAX_ELEVATION_DEG) <= 0.001, "M777 howitzer debug state must expose the calibrated elevation clamp range"):
 		return
 
 	howitzer.queue_free()

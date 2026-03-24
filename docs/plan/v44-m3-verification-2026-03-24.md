@@ -50,6 +50,11 @@ $godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
 - 正式 `CityM777Howitzer.tscn` 与 `CityM777Howitzer.gd` 存在
 - 场景文本直接引用 `res://city_game/assets/environment/source/artillery/m777/m777_3_parts.glb`
 - 正式 howitzer scene 的最终可见包围尺寸已超过 `6.0m` 的最小 world-scale 护栏，不再是 `1m` 级玩具比例
+- `pitch` API 已改为校准后的真实仰角口径：
+  - 炮口放平时 `pitch=0°`
+  - 正值表示抬高炮口
+  - 模型内部保留 `14.7°` 的零位校准偏置
+  - 对外 `pitch` 被限制在 `0-71°`
 - runtime 层级存在：
   - `ModelRoot/LowerBaseMount/m777_lower_base`
   - `ModelRoot/YawPivot/m777_upper_carriage`
@@ -76,6 +81,8 @@ $godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
 - 正式 `M777HowitzerLab.tscn` 存在
 - lab 挂载的是 `res://city_game/combat/artillery/CityM777Howitzer.tscn`，不是直接挂 `glb`
 - lab 包含正式 `PlayerController` 玩家节点与当前玩家相机
+- lab HUD / state 读取的是校准后的真实仰角，而不是模型内部偏置角
+- lab 对 `pitch` 同步执行 `0-71°` 限位
 - lab 暴露：
   - `get_howitzer()`
   - `get_lab_state()`
@@ -98,4 +105,5 @@ $godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
 ## Closeout Notes
 
 - `v44` 已完成正式火炮 wrapper scene 与独立 lab 的 foundation。
+- `ECN-0029` 已把 `pitch` 语义冻结为“校准后的真实仰角”，并把当前模型俯仰限制冻结为 `0-71°`。
 - 主世界 landmark / task / full map 接入、开火链、音效细化、后坐与交互仍保持为后续版本增量，不属于本轮范围。

@@ -26,14 +26,18 @@
 - [已由 ECN-0035 变更] 将 howitzer 正式接入主世界：按下 `KP_8` 后，玩家前方可以直接召唤一门当前 howitzer 实例，并复用 lab 同口径的操炮交互、提示与诸元 HUD。
 - [已由 ECN-0035 变更] 在主世界新增 formal artillery shell ballistic runtime：accepted fire 会生成真实 shell，按 firing solution payload 飞行并在世界中产生正式落点/爆炸结果。
 - [已由 ECN-0036 变更] 建立正式的 gameplay artillery ballistic solver：冻结当前 howitzer 的有效射程包线为 `1.5km~22.5km`，并提供共享的正向落点解算与反向目标点求诸元能力。
+- [已由 ECN-0037 变更] 在 full map 建立右键上下文菜单与单个 active artillery fire mission marker；选中 `炮击标记` 后，系统必须基于 shared ballistic solver 立即给出 bearing / pitch / range / arc 的正式解算结果或明确的超射程原因。
+- [已由 ECN-0037 变更] 当玩家先在 full map 规划 fire mission 再按 `KP_8` 召唤火炮时，主世界 howitzer 必须优先复用该 mission 冻结的 battery snapshot，而不是偷偷改到新的随机位置，确保地图阶段抄下来的诸元仍然可用。
+- [已由 ECN-0037 变更] 主世界 accepted fire 后必须进入正式 artillery observation closeout：按 actual firing solution 预测落点、预热 impact chunk 周边 page/actor 数据、在炮口演出后切到目标区观察爆炸；即使没有 map mission，free fire 也必须拥有同口径的观察闭环。
 
 ## Non-Goals
 
-- 不在本轮接入主世界 registry / landmark / task / full map。
+- [已由 ECN-0037 变更] 不在本轮接入任务系统、多炮队列、battery roster、landmark/task registry 挂接或 full-map 多级目标管理；本轮新增的 full map 范围仅限单个 artillery fire mission context menu / marker / observer closeout。
 - [已由 ECN-0031 变更] 不在本轮实现炮弹实体、弹道、落点、爆炸、杀伤判定或火控解算；本轮新增范围仅限正式 howitzer runtime 的开火演出与 lab 内的触发交互。
 - [已由 ECN-0030 变更] 不在本轮实现主世界火炮交互 UI、乘员、动画、AI、任务或对话；本轮新增的交互范围仅限 `M777HowitzerLab` 内的近距进入/退出操炮态。
 - [已由 ECN-0034 变更] 不在本轮实现 projectile 级弹道积分、落点效果、杀伤判定、反炮兵雷达或整套硬核火控求解；本轮新增范围仅限 formal firing solution HUD 与 payload snapshot contract。
 - [已由 ECN-0036 变更] 不在本轮实现气象修正、装药号表、风偏、旋偏、科氏力、mil/mils 火控表、预测落点 HUD 可视化或完整军规级火控流程。
+- [已由 ECN-0037 变更] 不在本轮实现自动调炮、自动击发、自动跟踪 shell 的空中弹道摄影机、多人协同观测、弹着修正表或持续驻留的 observer drone。
 
 ## User Experience
 
@@ -58,6 +62,12 @@
 17. [已由 ECN-0036 变更] 当前 howitzer 的 gameplay 射程必须冻结为 `1.5km~22.5km`，既不能贴脸直瞄，也不能一发覆盖整张超大地图。
 18. [已由 ECN-0036 变更] 系统必须能够根据当前 firing solution 预测“如果这一发真的打出去，理论上会落在哪里”，供后续落点 HUD、炮弹实体和弹道学链路共用。
 19. [已由 ECN-0036 变更] 系统必须能够根据“火炮位置 + 目标位置”反向求出世界 bearing 与 pitch；超出 `1.5km~22.5km` 包线时，必须明确拒绝，而不是给玩家一个假的可击中解。
+20. [已由 ECN-0037 变更] 玩家打开 full map 后，必须可以在地图画布上右键唤出上下文菜单；当前菜单至少提供一个正式动作：`炮击标记`。
+21. [已由 ECN-0037 变更] 选择 `炮击标记` 后，地图上必须出现一个醒目的黄色叉叉 artillery marker，并立刻显示该 target 对应的 bearing / pitch / range / arc；若超出射程，UI 也必须明确说明原因，而不是静默失败。
+22. [已由 ECN-0037 变更] 如果玩家是在还未召唤 howitzer 的情况下先做 map planning，系统也必须冻结一份 battery snapshot，确保随后按 `KP_8` 召唤时能把 howitzer 放到与本次 fire mission 共线的位置。
+23. [已由 ECN-0037 变更] 玩家记下地图给出的诸元后，仍然通过既有 howitzer 操炮链手动输入 bearing / pitch，并按 `Space` 正式击发；系统不应偷偷代替玩家自动拨炮。
+24. [已由 ECN-0037 变更] 开炮后，玩家必须先看到 howitzer 自身的击发演出与短暂飞行 closeout；随后画面切到目标区，观察正式 shell impact 与爆炸结果，而不是永远待在炮位原地。
+25. [已由 ECN-0037 变更] 即使玩家没有做 map reverse solve、只是随意打一发，系统也必须仍然给出同口径的炮击观察效果；区别只在于没有预先存在的 fire mission marker 与 map-side 诸元提示。
 
 ## Requirements
 
@@ -307,6 +317,93 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
   - HUD prediction 一套 math
   - live shell runtime 又一套 math
 
+### REQ-0029-018 Full-Map Artillery Context Menu Contract
+
+[由 ECN-0037 新增] `CityMapScreen` 必须为 full map 提供正式右键上下文菜单 contract，而不是继续只支持左键目的地选点。该 contract 至少满足：
+
+- 只有当 right-click 落在 map canvas 内时，才允许弹出上下文菜单；
+- 当前菜单至少包含一个动作：
+  - `artillery_fire_mission`
+  - 文案为 `炮击标记`
+- left-click 目的地导航链必须保持不变，不能因为引入 right-click 而退化；
+- `CityMapScreen.get_render_state()` 必须显式暴露 context menu 的可见性、锚点与 action 列表，便于 focused tests 回归；
+- full map 关闭时，上下文菜单必须自动隐藏，不得把陈旧菜单状态带回正常 gameplay。
+
+### REQ-0029-019 Artillery Fire Mission Marker Contract
+
+[由 ECN-0037 新增] 系统必须提供正式 `artillery fire mission` 地图标记 contract。该 contract 至少满足：
+
+- 同一时刻只允许存在一个 active fire mission marker；
+- marker 必须落在 full map 上被选择的世界坐标；
+- marker 视觉口径冻结为：
+  - 黄色/金色
+  - 叉叉 / cross
+- marker 必须显式保留：
+  - `mission_id`
+  - `target_world_position`
+  - `target_chunk_key`
+  - `target_chunk_id`
+  - `battery_origin_world_position`
+  - `solution_state`
+- 重复设置新的 fire mission 时，旧 marker 必须被替换，而不是无限累积多个炮击点；
+- 该 marker 可以进入 `CityMapPinRegistry` 统一 pin 栈，但不允许绕开 pin 主链另起一套 full-map-only 隐藏列表。
+
+### REQ-0029-020 Map-Side Fire Solution Presentation Contract
+
+[由 ECN-0037 新增] full map 上的 artillery fire mission 必须直接消费 shared ballistic solver，并向玩家显示正式诸元。该 contract 至少满足：
+
+- solver 真源必须继续是 `CityArtilleryBallistics.solve_firing_solution_to_target()`；
+- 优先使用当前 active world howitzer 的 battery origin；若当前还没有 howitzer，则必须使用与 `KP_8` summon 共线的 virtual battery snapshot；
+- in-range 时必须至少显示：
+  - `world_bearing_deg`
+  - `pitch_deg`
+  - `horizontal_distance_m`
+  - `arc_kind`
+- out-of-range 时必须显式显示 formal `range_state` / `reason`，例如 `below_min_range` 或 `above_max_range`；
+- map-side 诸元展示必须与 howitzer HUD 共用 north/bearing / pitch 口径，不允许地图一套角度、操炮 HUD 又一套角度。
+
+### REQ-0029-021 Planned Battery Snapshot And Summon Contract
+
+[由 ECN-0037 新增] 当玩家在尚未召唤 howitzer 时先从地图创建 fire mission，系统必须冻结一份 formal battery snapshot，确保随后召唤 howitzer 时仍与 mission 共线。该 contract 至少包括：
+
+- snapshot 至少保留：
+  - `spawn_root_world_position`
+  - `spawn_forward_world`
+  - `platform_world_position`
+  - `chunk_key`
+  - `chunk_id`
+- active fire mission 存在且当前 world howitzer 不存在时，按 `KP_8` 召唤 howitzer 必须优先使用该 snapshot；
+- 该 snapshot 的目标是让玩家先记诸元再召唤也能成立，而不是要求用户必须先召唤实体炮再看地图；
+- 这条 contract 不代表本轮要做自动调炮或自动击发；玩家仍需手动输入 bearing / pitch。
+
+### REQ-0029-022 Artillery Observation Closeout Contract
+
+[由 ECN-0037 新增] 主世界 accepted fire 后必须建立正式 artillery observation closeout，而不是只在炮位原地结束。该 contract 至少满足：
+
+- closeout 必须直接基于 actual firing solution 预测理论 impact world position；
+- 击发瞬间必须预热 impact chunk 周边的 chunk page / actor page，而不是等切镜时再同步冷加载；
+- closeout 至少分为两个阶段：
+  - `muzzle_stage`：保留 howitzer 自身击发演出与短暂飞行等待；
+  - `impact_stage`：切到目标区 observer camera 观察 impact / explosion result；
+- observer camera 必须在 closeout 完成后归还玩家摄像机 ownership；
+- closeout runtime 必须暴露正式 debug/introspection state，便于验证：
+  - 当前 phase
+  - predicted impact world position
+  - prewarm target chunk
+  - camera owner
+  - active / completed 状态。
+
+### REQ-0029-023 Free-Fire Observation Compatibility Contract
+
+[由 ECN-0037 新增] artillery observation closeout 不能只服务“先在地图上做 reverse solve”的标准流程。该 contract 至少满足：
+
+- 只要主世界 howitzer accepted fire，系统就必须根据 actual firing solution 启动 observation closeout；
+- 即使没有 active fire mission marker，也必须依旧能：
+  - 预测 actual impact
+  - 预热 target chunk
+  - 切到目标区观察爆炸
+- active fire mission 只负责提供 map-side marker / solution / planned battery snapshot，不拥有击发链路的唯一所有权。
+
 ## Acceptance
 
 1. 自动化测试必须证明：`CityM777Howitzer.tscn` 与对应脚本存在，并且场景文本直接引用正式 `m777_3_parts.glb`。
@@ -339,3 +436,9 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
 28. [由 ECN-0036 新增] 自动化测试必须证明：inverse target solve 在目标位于合法 envelope 内时能解出 bearing 与 pitch，在目标位于 `1.5km` 内或 `22.5km` 外时会明确返回 `out_of_range`，而不是给出伪解。
 29. [由 ECN-0036 新增] 自动化测试必须证明：同一 ballistic model 下，`target -> solve -> predict` 的 round-trip 误差被正式限制在可接受阈值内，不能出现解算出诸元却反推不到原目标的分叉。
 30. [由 ECN-0036 新增] 自动化测试必须证明：live artillery shell runtime 使用的 launch velocity / flight model 与 shared ballistic utility 同口径，而不是继续保留旧的私有 `827m/s + gravity` 路径。
+31. [由 ECN-0037 新增] 自动化测试必须证明：full map 支持正式 right-click context menu；地图画布内右键会显示 `炮击标记` 动作，而关闭地图时上下文菜单会被清理。
+32. [由 ECN-0037 新增] 自动化测试必须证明：选择 `炮击标记` 后，系统会留下正式 active fire mission marker，且地图 render state / pin state 能读到黄色 cross 语义、target chunk metadata 与单实例替换策略。
+33. [由 ECN-0037 新增] 自动化测试必须证明：map-side fire mission 会立即调用 shared ballistic solver，并给出 bearing / pitch / range / arc；超出射程时会暴露 formal `reason` 而不是沉默失败。
+34. [由 ECN-0037 新增] 自动化测试必须证明：在“先地图规划、后 `KP_8` 召唤”的流程里，world howitzer 会优先复用本次 fire mission 的 planned battery snapshot，而不是在新的玩家前方随机生成导致诸元失效。
+35. [由 ECN-0037 新增] 自动化测试必须证明：主世界 accepted fire 会启动 observation closeout，留下 predicted impact、prewarm chunk 与 camera ownership 的正式 runtime state，并在 closeout 结束后恢复玩家 camera。
+36. [由 ECN-0037 新增] 自动化测试必须证明：即使没有 active fire mission marker，free fire 也会照样触发同口径的 observation closeout，而不是只剩旧的“炮口响一下”链路。

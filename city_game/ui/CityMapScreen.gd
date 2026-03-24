@@ -2,12 +2,16 @@ extends Control
 
 signal map_world_point_selected(world_position: Vector3)
 signal task_selected(task_id: String)
+signal artillery_fire_mission_requested(world_position: Vector3)
 
 const DRAG_START_THRESHOLD_PX := 6.0
 const ZOOM_STEP_RATIO := 0.82
 const MIN_VIEW_HALF_EXTENT_Y_M := 256.0
 const TASK_PANEL_WIDTH_PX := 320.0
 const TASK_PANEL_MARGIN_PX := 16.0
+const CONTEXT_MENU_WIDTH_PX := 156.0
+const CONTEXT_MENU_ITEM_HEIGHT_PX := 28.0
+const CONTEXT_MENU_PADDING_PX := 8.0
 const CityWorldOrientationScript := preload("res://city_game/world/navigation/CityWorldOrientation.gd")
 const PIN_ICON_FONT_NAMES := [
 	"Segoe UI Emoji",
@@ -33,6 +37,12 @@ const PIN_ICON_GLYPHS := {
 	"tennis": "🎾",
 }
 const CityTaskBriefPanelScene := preload("res://city_game/ui/CityTaskBriefPanel.tscn")
+const CONTEXT_MENU_ACTIONS := [
+	{
+		"action_id": "artillery_fire_mission",
+		"label": "炮击标记",
+	},
+]
 
 var _world_bounds := Rect2()
 var _pins: Array[Dictionary] = []
@@ -42,6 +52,7 @@ var _player_marker: Dictionary = {}
 var _map_open := false
 var _world_paused := false
 var _task_panel_state: Dictionary = {}
+var _artillery_fire_mission_state: Dictionary = {}
 var _road_graph = null
 var _task_brief_panel: Control = null
 var _road_polylines: Array[Dictionary] = []
@@ -57,6 +68,9 @@ var _drag_anchor_map_position := Vector2.ZERO
 var _drag_anchor_center_world := Vector2.ZERO
 var _pin_icon_font: Font = null
 var _world_orientation = CityWorldOrientationScript.new()
+var _context_menu_visible := false
+var _context_menu_canvas_position := Vector2.ZERO
+var _context_menu_world_position := Vector3.ZERO
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -74,6 +88,8 @@ func set_map_open(is_open: bool) -> void:
 	visible = is_open
 	if _task_brief_panel != null:
 		_task_brief_panel.visible = is_open
+	if not is_open:
+		_close_context_menu()
 	if is_open:
 		_ensure_road_cache()
 	queue_redraw()
@@ -119,6 +135,10 @@ func set_task_panel_state(task_panel_state: Dictionary) -> void:
 	_task_panel_state = task_panel_state.duplicate(true)
 	if _task_brief_panel != null and _task_brief_panel.has_method("set_panel_state"):
 		_task_brief_panel.set_panel_state(_task_panel_state)
+	queue_redraw()
+
+func set_artillery_fire_mission_state(artillery_fire_mission_state: Dictionary) -> void:
+	_artillery_fire_mission_state = artillery_fire_mission_state.duplicate(true)
 	queue_redraw()
 
 func select_task(task_id: String) -> void:
@@ -190,6 +210,8 @@ func get_render_state() -> Dictionary:
 		"player_marker": player_marker,
 		"orientation": _world_orientation.get_orientation_contract() if _world_orientation != null else {},
 		"task_panel": _task_panel_state.duplicate(true),
+		"artillery_fire_mission": _artillery_fire_mission_state.duplicate(true),
+		"context_menu": _build_context_menu_state(),
 	}
 
 func _gui_input(event: InputEvent) -> void:
@@ -198,6 +220,17 @@ func _gui_input(event: InputEvent) -> void:
 	var map_rect := _get_map_canvas_rect()
 	if event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
+		if button.button_index == MOUSE_BUTTON_RIGHT and button.pressed and map_rect.has_point(button.position):
+			_open_context_menu(button.position, map_to_world(button.position))
+			accept_event()
+			return
+		if _context_menu_visible and button.button_index == MOUSE_BUTTON_LEFT and button.pressed:
+			var context_action_id := _resolve_context_menu_action_at_canvas_position(button.position)
+			if context_action_id != "":
+				_activate_context_menu_action(context_action_id)
+				accept_event()
+				return
+			_close_context_menu()
 		if not map_rect.has_point(button.position):
 			return
 		if button.button_index == MOUSE_BUTTON_WHEEL_UP and button.pressed:
@@ -254,6 +287,8 @@ func _draw() -> void:
 	_draw_selection_marker()
 	_draw_player_marker()
 	_draw_orientation_badge(map_rect)
+	_draw_artillery_fire_mission_summary(map_rect)
+	_draw_context_menu()
 	draw_line(Vector2(map_rect.end.x + TASK_PANEL_MARGIN_PX * 0.5, 0.0), Vector2(map_rect.end.x + TASK_PANEL_MARGIN_PX * 0.5, size.y), Color(0.84, 0.88, 0.91, 0.15), 1.0)
 
 func _draw_road_network() -> void:
@@ -280,6 +315,9 @@ func _draw_pins() -> void:
 		var world_position: Vector3 = pin.get("world_position", Vector3.ZERO)
 		var pin_position := world_to_map(world_position)
 		var pin_color := _resolve_pin_color(str(pin.get("pin_type", "")))
+		if str(pin.get("pin_type", "")) == "artillery_fire_mission":
+			_draw_cross_pin(pin_position, pin_color)
+			continue
 		var icon_glyph := _resolve_pin_icon_glyph(str(pin.get("icon_id", "")))
 		if icon_glyph == "":
 			draw_circle(pin_position, 5.0, pin_color)
@@ -333,6 +371,8 @@ func _resolve_pin_color(pin_type: String) -> Color:
 			return Color(0.78, 0.82, 0.86, 1.0)
 		"task":
 			return Color(0.96, 0.44, 0.3, 1.0)
+		"artillery_fire_mission":
+			return Color(0.98, 0.82, 0.28, 1.0)
 		"debug":
 			return Color(0.96, 0.82, 0.32, 1.0)
 		"destination":
@@ -548,6 +588,132 @@ func _get_map_canvas_rect() -> Rect2:
 
 func _on_task_panel_selected(task_id: String) -> void:
 	task_selected.emit(task_id)
+
+func _draw_cross_pin(pin_position: Vector2, pin_color: Color) -> void:
+	var shadow_color := Color(0.08, 0.1, 0.12, 0.96)
+	draw_line(pin_position + Vector2(-8.0, -8.0), pin_position + Vector2(8.0, 8.0), shadow_color, 5.0, true)
+	draw_line(pin_position + Vector2(-8.0, 8.0), pin_position + Vector2(8.0, -8.0), shadow_color, 5.0, true)
+	draw_line(pin_position + Vector2(-8.0, -8.0), pin_position + Vector2(8.0, 8.0), pin_color, 2.2, true)
+	draw_line(pin_position + Vector2(-8.0, 8.0), pin_position + Vector2(8.0, -8.0), pin_color, 2.2, true)
+
+func _draw_artillery_fire_mission_summary(map_rect: Rect2) -> void:
+	if not bool(_artillery_fire_mission_state.get("active", false)):
+		return
+	var font := _resolve_label_font()
+	if font == null:
+		return
+	var panel_rect := Rect2(
+		map_rect.position + Vector2(16.0, 16.0),
+		Vector2(minf(map_rect.size.x - 32.0, 360.0), 82.0)
+	)
+	draw_rect(panel_rect, Color(0.08, 0.11, 0.12, 0.88), true)
+	draw_rect(panel_rect, Color(0.98, 0.82, 0.28, 0.34), false, 1.0)
+	var solution_state: Dictionary = _artillery_fire_mission_state.get("solution_state", {})
+	var title_text := "炮击标记"
+	var detail_line_1 := ""
+	var detail_line_2 := ""
+	if bool(solution_state.get("solved", false)):
+		detail_line_1 = "方位 %.1f°  高低 %.1f°" % [
+			float(solution_state.get("world_bearing_deg", 0.0)),
+			float(solution_state.get("pitch_deg", 0.0)),
+		]
+		detail_line_2 = "射程 %.1f km  弹道 %s" % [
+			float(solution_state.get("horizontal_distance_m", 0.0)) / 1000.0,
+			str(solution_state.get("arc_kind", "low")),
+		]
+	else:
+		detail_line_1 = "解算失败"
+		detail_line_2 = str(solution_state.get("reason", "solver_unavailable"))
+	var title_baseline := panel_rect.position + Vector2(12.0, 22.0)
+	var detail_line_1_baseline := panel_rect.position + Vector2(12.0, 45.0)
+	var detail_line_2_baseline := panel_rect.position + Vector2(12.0, 66.0)
+	draw_string(font, title_baseline, title_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1.0, 0.98, 0.92, 1.0))
+	draw_string(font, detail_line_1_baseline, detail_line_1, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.96, 0.86, 0.52, 1.0))
+	draw_string(font, detail_line_2_baseline, detail_line_2, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.84, 0.9, 0.96, 0.94))
+
+func _draw_context_menu() -> void:
+	if not _context_menu_visible:
+		return
+	var font := _resolve_label_font()
+	if font == null:
+		return
+	var menu_rect := _get_context_menu_rect()
+	draw_rect(menu_rect, Color(0.06, 0.08, 0.09, 0.94), true)
+	draw_rect(menu_rect, Color(0.98, 0.82, 0.28, 0.34), false, 1.0)
+	var item_rect := Rect2(
+		menu_rect.position + Vector2(CONTEXT_MENU_PADDING_PX, CONTEXT_MENU_PADDING_PX),
+		Vector2(menu_rect.size.x - CONTEXT_MENU_PADDING_PX * 2.0, CONTEXT_MENU_ITEM_HEIGHT_PX)
+	)
+	for action_variant in CONTEXT_MENU_ACTIONS:
+		var action: Dictionary = action_variant
+		draw_rect(item_rect, Color(0.16, 0.12, 0.04, 0.82), true)
+		draw_string(
+			font,
+			item_rect.position + Vector2(10.0, 18.0),
+			str(action.get("label", "")),
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1,
+			13,
+			Color(0.98, 0.9, 0.64, 1.0)
+		)
+		item_rect.position.y += CONTEXT_MENU_ITEM_HEIGHT_PX + 4.0
+
+func _build_context_menu_state() -> Dictionary:
+	var actions: Array[Dictionary] = []
+	for action_variant in CONTEXT_MENU_ACTIONS:
+		actions.append((action_variant as Dictionary).duplicate(true))
+	return {
+		"visible": _context_menu_visible,
+		"canvas_position": _context_menu_canvas_position,
+		"world_position": _context_menu_world_position,
+		"actions": actions,
+	}
+
+func _open_context_menu(canvas_position: Vector2, world_position: Vector3) -> void:
+	_context_menu_visible = true
+	_context_menu_canvas_position = canvas_position
+	_context_menu_world_position = world_position
+	queue_redraw()
+
+func _close_context_menu() -> void:
+	if not _context_menu_visible:
+		return
+	_context_menu_visible = false
+	_context_menu_canvas_position = Vector2.ZERO
+	_context_menu_world_position = Vector3.ZERO
+	queue_redraw()
+
+func _get_context_menu_rect() -> Rect2:
+	var map_rect := _get_map_canvas_rect()
+	var action_count: int = maxi(CONTEXT_MENU_ACTIONS.size(), 1)
+	var menu_size := Vector2(
+		CONTEXT_MENU_WIDTH_PX,
+		CONTEXT_MENU_PADDING_PX * 2.0 + float(action_count) * CONTEXT_MENU_ITEM_HEIGHT_PX + float(action_count - 1) * 4.0
+	)
+	var menu_position := _context_menu_canvas_position
+	menu_position.x = clampf(menu_position.x, map_rect.position.x + 8.0, map_rect.end.x - menu_size.x - 8.0)
+	menu_position.y = clampf(menu_position.y, map_rect.position.y + 8.0, map_rect.end.y - menu_size.y - 8.0)
+	return Rect2(menu_position, menu_size)
+
+func _resolve_context_menu_action_at_canvas_position(canvas_position: Vector2) -> String:
+	if not _context_menu_visible:
+		return ""
+	var item_rect := Rect2(
+		_get_context_menu_rect().position + Vector2(CONTEXT_MENU_PADDING_PX, CONTEXT_MENU_PADDING_PX),
+		Vector2(CONTEXT_MENU_WIDTH_PX - CONTEXT_MENU_PADDING_PX * 2.0, CONTEXT_MENU_ITEM_HEIGHT_PX)
+	)
+	for action_variant in CONTEXT_MENU_ACTIONS:
+		var action: Dictionary = action_variant
+		if item_rect.has_point(canvas_position):
+			return str(action.get("action_id", ""))
+		item_rect.position.y += CONTEXT_MENU_ITEM_HEIGHT_PX + 4.0
+	return ""
+
+func _activate_context_menu_action(action_id: String) -> void:
+	match action_id:
+		"artillery_fire_mission":
+			artillery_fire_mission_requested.emit(_context_menu_world_position)
+	_close_context_menu()
 
 func _draw_orientation_badge(map_rect: Rect2) -> void:
 	var font := _resolve_label_font()

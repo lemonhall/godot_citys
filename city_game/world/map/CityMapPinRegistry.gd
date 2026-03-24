@@ -52,6 +52,35 @@ func upsert_destination_pin(target: Dictionary) -> Dictionary:
 		"route_target_override": target.duplicate(true),
 	})
 
+func upsert_artillery_fire_mission_pin(mission_state: Dictionary) -> Dictionary:
+	var mission_id := str(mission_state.get("mission_id", "artillery_fire_mission:active"))
+	if not bool(mission_state.get("active", false)):
+		if mission_id != "":
+			_pins_by_id.erase(mission_id)
+		_pins_by_id.erase("artillery_fire_mission:active")
+		return {}
+	var solution_state: Dictionary = mission_state.get("solution_state", {})
+	var subtitle := str(solution_state.get("reason", ""))
+	if bool(solution_state.get("solved", false)):
+		subtitle = "方位 %.1f°  高低 %.1f°" % [
+			float(solution_state.get("world_bearing_deg", 0.0)),
+			float(solution_state.get("pitch_deg", 0.0)),
+		]
+	return register_pin({
+		"pin_id": mission_id,
+		"pin_type": "artillery_fire_mission",
+		"pin_source": "artillery_fire_mission",
+		"visibility_scope": "all",
+		"world_position": mission_state.get("target_world_position", Vector3.ZERO),
+		"title": "炮击标记",
+		"subtitle": subtitle,
+		"priority": 125,
+		"icon_id": "",
+		"is_selectable": true,
+		"route_target_override": {},
+		"marker_style": "cross",
+	})
+
 func register_pin(pin_data: Dictionary) -> Dictionary:
 	var stored := pin_data.duplicate(true)
 	var pin_id := str(stored.get("pin_id", ""))

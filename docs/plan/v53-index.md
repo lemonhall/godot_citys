@@ -37,10 +37,10 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
 
 | 里程碑 | 范围 | DoD | 验证命令/测试 | 状态 |
 |---|---|---|---|---|
-| M0 docs freeze | PRD / ECN / v53 plan 全链冻结 | full map context menu、single active fire mission、planned battery snapshot、observer closeout 与非目标边界全部落文档 | `rg -n "REQ-0029-018|REQ-0029-019|REQ-0029-020|REQ-0029-021|REQ-0029-022|REQ-0029-023|炮击标记|observer closeout|planned battery snapshot" docs/prd/PRD-0029-artillery-howitzer-scene-foundation.md docs/ecn/ECN-0037-artillery-map-fire-mission-and-observer-closeout.md docs/plan/v53-index.md docs/plan/v53-artillery-map-fire-mission.md docs/plans/2026-03-25-v53-artillery-map-fire-mission-design.md` | planned |
-| M1 map fire mission | right-click menu、single marker、solver 展示、planned battery snapshot | focused tests 证明 full map 支持 `炮击标记`，并能留下 formal fire mission state | `tests/world/test_city_map_artillery_context_menu_contract.gd`; `tests/world/test_city_artillery_fire_mission_contract.gd` | planned |
-| M2 observer closeout | accepted fire 预测落点、chunk prewarm、observer camera、free-fire compatibility | focused + e2e 证明 accepted fire 会进入 observer closeout，且 free fire 也能观察 impact | `tests/world/test_city_artillery_fire_mission_observer_closeout_contract.gd`; `tests/e2e/test_city_map_artillery_fire_mission_flow.gd`; `tests/world/test_city_world_howitzer_ballistics_contract.gd` | planned |
-| M3 verification | focused + e2e + 解析检查 | 受影响 tests 全绿，fresh verification 文档回填追溯矩阵 | `docs/plan/v53-m3-verification-2026-03-25.md` | planned |
+| M0 docs freeze | PRD / ECN / v53 plan 全链冻结 | full map context menu、single active fire mission、planned battery snapshot、observer closeout 与非目标边界全部落文档 | `rg -n "REQ-0029-018|REQ-0029-019|REQ-0029-020|REQ-0029-021|REQ-0029-022|REQ-0029-023|炮击标记|observer closeout|planned battery snapshot" docs/prd/PRD-0029-artillery-howitzer-scene-foundation.md docs/ecn/ECN-0037-artillery-map-fire-mission-and-observer-closeout.md docs/plan/v53-index.md docs/plan/v53-artillery-map-fire-mission.md docs/plans/2026-03-25-v53-artillery-map-fire-mission-design.md` | done |
+| M1 map fire mission | right-click menu、single marker、solver 展示、planned battery snapshot | focused tests 证明 full map 支持 `炮击标记`，并能留下 formal fire mission state | `tests/world/test_city_map_artillery_context_menu_contract.gd`; `tests/world/test_city_artillery_fire_mission_contract.gd` | done |
+| M2 observer closeout | accepted fire 预测落点、chunk prewarm、observer camera、free-fire compatibility | focused + e2e 证明 accepted fire 会进入 observer closeout，且 free fire 也能观察 impact | `tests/world/test_city_artillery_fire_mission_observer_closeout_contract.gd`; `tests/e2e/test_city_map_artillery_fire_mission_flow.gd`; `tests/world/test_city_world_howitzer_ballistics_contract.gd` | done |
+| M3 verification | focused + e2e + 解析检查 | 受影响 tests 全绿，fresh verification 文档回填追溯矩阵 | `docs/plan/v53-m3-verification-2026-03-25.md` | done |
 
 ## 计划索引
 
@@ -50,12 +50,12 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
 
 | Req ID | V53 Plan | 单元/集成测试 | E2E / 验证命令 | 证据 | 状态 |
 |---|---|---|---|---|---|
-| REQ-0029-018 | `v53-artillery-map-fire-mission.md` | `tests/world/test_city_map_artillery_context_menu_contract.gd` | `docs/plan/v53-m3-verification-2026-03-25.md` | pending | planned |
-| REQ-0029-019 | `v53-artillery-map-fire-mission.md` | `tests/world/test_city_artillery_fire_mission_contract.gd` | `docs/plan/v53-m3-verification-2026-03-25.md` | pending | planned |
-| REQ-0029-020 | `v53-artillery-map-fire-mission.md` | `tests/world/test_city_artillery_fire_mission_contract.gd` | `docs/plan/v53-m3-verification-2026-03-25.md` | pending | planned |
-| REQ-0029-021 | `v53-artillery-map-fire-mission.md` | `tests/world/test_city_artillery_fire_mission_contract.gd`; `tests/world/test_city_world_howitzer_spawn_contract.gd` | `docs/plan/v53-m3-verification-2026-03-25.md` | pending | planned |
-| REQ-0029-022 | `v53-artillery-map-fire-mission.md` | `tests/world/test_city_artillery_fire_mission_observer_closeout_contract.gd` | `tests/e2e/test_city_map_artillery_fire_mission_flow.gd`; `docs/plan/v53-m3-verification-2026-03-25.md` | pending | planned |
-| REQ-0029-023 | `v53-artillery-map-fire-mission.md` | `tests/world/test_city_artillery_fire_mission_observer_closeout_contract.gd`; `tests/world/test_city_world_howitzer_ballistics_contract.gd` | `docs/plan/v53-m3-verification-2026-03-25.md` | pending | planned |
+| REQ-0029-018 | `v53-artillery-map-fire-mission.md` | `tests/world/test_city_map_artillery_context_menu_contract.gd` | `docs/plan/v53-m3-verification-2026-03-25.md` | `v53-m3-verification-2026-03-25.md` | done |
+| REQ-0029-019 | `v53-artillery-map-fire-mission.md` | `tests/world/test_city_artillery_fire_mission_contract.gd` | `docs/plan/v53-m3-verification-2026-03-25.md` | `v53-m3-verification-2026-03-25.md` | done |
+| REQ-0029-020 | `v53-artillery-map-fire-mission.md` | `tests/world/test_city_artillery_fire_mission_contract.gd` | `docs/plan/v53-m3-verification-2026-03-25.md` | `v53-m3-verification-2026-03-25.md` | done |
+| REQ-0029-021 | `v53-artillery-map-fire-mission.md` | `tests/world/test_city_artillery_fire_mission_contract.gd`; `tests/world/test_city_world_howitzer_spawn_contract.gd` | `docs/plan/v53-m3-verification-2026-03-25.md` | `v53-m3-verification-2026-03-25.md` | done |
+| REQ-0029-022 | `v53-artillery-map-fire-mission.md` | `tests/world/test_city_artillery_fire_mission_observer_closeout_contract.gd` | `tests/e2e/test_city_map_artillery_fire_mission_flow.gd`; `docs/plan/v53-m3-verification-2026-03-25.md` | `v53-m3-verification-2026-03-25.md` | done |
+| REQ-0029-023 | `v53-artillery-map-fire-mission.md` | `tests/world/test_city_artillery_fire_mission_observer_closeout_contract.gd`; `tests/world/test_city_world_howitzer_ballistics_contract.gd` | `docs/plan/v53-m3-verification-2026-03-25.md` | `v53-m3-verification-2026-03-25.md` | done |
 
 ## Closeout 证据口径
 

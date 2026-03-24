@@ -36,6 +36,7 @@ const CityMissileScene := preload("res://city_game/combat/CityMissile.tscn")
 const CityM777HowitzerScene := preload("res://city_game/combat/artillery/CityM777Howitzer.tscn")
 const CityM777HowitzerOperationController := preload("res://city_game/combat/artillery/CityM777HowitzerOperationController.gd")
 const CityArtilleryShell := preload("res://city_game/combat/artillery/CityArtilleryShell.gd")
+const CityArtilleryFireMissionRuntime := preload("res://city_game/combat/artillery/CityArtilleryFireMissionRuntime.gd")
 const CityRifleFireEmitterScene := preload("res://city_game/combat/CityRifleFireEmitter.tscn")
 const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesignatorBeam.gd")
 const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
@@ -257,6 +258,7 @@ var _world_howitzer_root: Node3D = null
 var _artillery_shell_root: Node3D = null
 var _active_world_howitzer: Node3D = null
 var _world_howitzer_operation_controller = null
+var _artillery_fire_mission_runtime: Node3D = null
 var _player_rifle_audio_emitter: AudioStreamPlayer3D = null
 var _player_rifle_audio_play_trigger_count := 0
 var _player_rifle_audio_restart_trigger_count := 0
@@ -354,6 +356,7 @@ func _ready() -> void:
 	_fast_travel_resolver = CityFastTravelResolver.new(_world_config, _world_data)
 	_autodrive_controller = CityAutodriveController.new()
 	_minimap_projector = CityMinimapProjector.new(_world_config, _world_data)
+	_ensure_artillery_fire_mission_runtime()
 	_vehicle_radio_quick_bank = CityRadioQuickBankScript.new()
 	_vehicle_radio_controller = CityVehicleRadioControllerScript.new()
 	_vehicle_radio_catalog_store = CityRadioCatalogStoreScript.new()
@@ -1334,14 +1337,20 @@ func summon_world_howitzer() -> Node3D:
 		return null
 	_active_world_howitzer.name = "WorldHowitzer"
 	_world_howitzer_root.add_child(_active_world_howitzer)
-	var spawn_position := _resolve_world_howitzer_spawn_position()
-	var spawn_forward := _resolve_world_howitzer_spawn_forward()
 	var authored_vertical_offset_m := _active_world_howitzer.position.y
-	var root_spawn_position := spawn_position + Vector3.UP * authored_vertical_offset_m
+	var spawn_snapshot := _get_artillery_fire_mission_spawn_snapshot()
+	var root_spawn_position := spawn_snapshot.get("spawn_root_world_position", Vector3.ZERO) as Vector3
+	var spawn_forward := spawn_snapshot.get("spawn_forward_world", Vector3.ZERO) as Vector3
+	if root_spawn_position == Vector3.ZERO:
+		var spawn_position := _resolve_world_howitzer_spawn_position()
+		root_spawn_position = spawn_position + Vector3.UP * authored_vertical_offset_m
+	if spawn_forward.length_squared() <= 0.0001:
+		spawn_forward = _resolve_world_howitzer_spawn_forward()
 	_active_world_howitzer.global_position = root_spawn_position
 	_active_world_howitzer.look_at(root_spawn_position + spawn_forward, Vector3.UP, true)
 	_ensure_world_howitzer_operation_controller()
 	_last_artillery_shell_explosion_result.clear()
+	_sync_navigation_consumers(true)
 	_update_npc_interaction_system()
 	return _active_world_howitzer
 
@@ -1740,6 +1749,19 @@ func _prewarm_actor_pages_around_spawn() -> void:
 				})
 		chunk_renderer.prewarm_chunk_pages(page_prewarm_entries, false, true)
 
+func _ensure_artillery_fire_mission_runtime() -> void:
+	if _artillery_fire_mission_runtime != null and is_instance_valid(_artillery_fire_mission_runtime):
+		if _artillery_fire_mission_runtime.has_method("configure"):
+			_artillery_fire_mission_runtime.configure(_world_config, chunk_renderer, player)
+		return
+	_artillery_fire_mission_runtime = CityArtilleryFireMissionRuntime.new()
+	if _artillery_fire_mission_runtime == null:
+		return
+	_artillery_fire_mission_runtime.name = "ArtilleryFireMissionRuntime"
+	add_child(_artillery_fire_mission_runtime)
+	if _artillery_fire_mission_runtime.has_method("configure"):
+		_artillery_fire_mission_runtime.configure(_world_config, chunk_renderer, player)
+
 func _ensure_combat_roots() -> void:
 	if _combat_root == null:
 		_combat_root = get_node_or_null("CombatRoot") as Node3D
@@ -2026,6 +2048,8 @@ func _on_player_missile_exploded(result: Dictionary) -> void:
 
 func _on_artillery_shell_exploded(result: Dictionary) -> void:
 	_last_artillery_shell_explosion_result = result.duplicate(true)
+	if _artillery_fire_mission_runtime != null and _artillery_fire_mission_runtime.has_method("notify_shell_exploded"):
+		_artillery_fire_mission_runtime.notify_shell_exploded(result)
 
 func resolve_pedestrian_explosion(world_position: Vector3, lethal_radius_m: float, threat_radius_m: float = -1.0) -> Dictionary:
 	if chunk_renderer == null or not chunk_renderer.has_method("resolve_explosion_impact"):
@@ -2460,6 +2484,37 @@ func is_world_simulation_paused() -> bool:
 func get_controls_help_state() -> Dictionary:
 	return _build_controls_help_state().duplicate(true)
 
+func request_artillery_fire_mission_from_world_point(world_position: Vector3) -> Dictionary:
+	_ensure_artillery_fire_mission_runtime()
+	if _artillery_fire_mission_runtime == null or not _artillery_fire_mission_runtime.has_method("plan_fire_mission"):
+		return {}
+	var clamped_world_position := _clamp_world_position_to_bounds(world_position)
+	var battery_snapshot := _resolve_artillery_battery_snapshot_for_planning()
+	if battery_snapshot.is_empty():
+		return {}
+	var mission_contract := (_artillery_fire_mission_runtime.plan_fire_mission(clamped_world_position, battery_snapshot) as Dictionary).duplicate(true)
+	if mission_contract.is_empty():
+		return {}
+	_sync_artillery_fire_mission_pin()
+	if hud != null and hud.has_method("set_focus_message"):
+		hud.set_focus_message(_build_artillery_fire_mission_focus_message(mission_contract), 8.0)
+	_sync_navigation_consumers(true)
+	return mission_contract
+
+func get_artillery_fire_mission_state() -> Dictionary:
+	if _artillery_fire_mission_runtime == null or not _artillery_fire_mission_runtime.has_method("get_fire_mission_state"):
+		return {}
+	return (_artillery_fire_mission_runtime.get_fire_mission_state() as Dictionary).duplicate(true)
+
+func get_artillery_observation_state() -> Dictionary:
+	if _artillery_fire_mission_runtime == null or not _artillery_fire_mission_runtime.has_method("get_observation_state"):
+		return {
+			"active": false,
+			"phase": "idle",
+			"camera_owner": "player",
+		}
+	return (_artillery_fire_mission_runtime.get_observation_state() as Dictionary).duplicate(true)
+
 func select_map_destination_from_world_point(world_position: Vector3) -> Dictionary:
 	var clamped_world_position := _clamp_world_position_to_bounds(world_position)
 	var resolved_target: Dictionary = _resolve_route_target(clamped_world_position)
@@ -2491,6 +2546,42 @@ func get_map_screen_state() -> Dictionary:
 	if _map_screen == null or not _map_screen.has_method("get_render_state"):
 		return {}
 	return _map_screen.get_render_state()
+
+func _resolve_artillery_battery_snapshot_for_planning() -> Dictionary:
+	_ensure_artillery_fire_mission_runtime()
+	if _artillery_fire_mission_runtime == null:
+		return {}
+	var howitzer := get_active_world_howitzer()
+	if howitzer != null and _artillery_fire_mission_runtime.has_method("build_battery_snapshot_from_world_howitzer"):
+		return (_artillery_fire_mission_runtime.build_battery_snapshot_from_world_howitzer(howitzer) as Dictionary).duplicate(true)
+	if _artillery_fire_mission_runtime.has_method("build_battery_snapshot_from_spawn"):
+		return (_artillery_fire_mission_runtime.build_battery_snapshot_from_spawn(
+			_resolve_world_howitzer_spawn_position(),
+			_resolve_world_howitzer_spawn_forward()
+		) as Dictionary).duplicate(true)
+	return {}
+
+func _get_artillery_fire_mission_spawn_snapshot() -> Dictionary:
+	var mission_state := get_artillery_fire_mission_state()
+	if not bool(mission_state.get("active", false)):
+		return {}
+	return (mission_state.get("battery_snapshot", {}) as Dictionary).duplicate(true)
+
+func _sync_artillery_fire_mission_pin() -> void:
+	if _map_pin_registry == null or not _map_pin_registry.has_method("upsert_artillery_fire_mission_pin"):
+		return
+	_map_pin_registry.upsert_artillery_fire_mission_pin(get_artillery_fire_mission_state())
+
+func _build_artillery_fire_mission_focus_message(mission_state: Dictionary) -> String:
+	var solution_state: Dictionary = mission_state.get("solution_state", {})
+	if bool(solution_state.get("solved", false)):
+		return "炮击标记  方位 %.1f°  高低 %.1f°  射程 %.1fkm" % [
+			float(solution_state.get("world_bearing_deg", 0.0)),
+			float(solution_state.get("pitch_deg", 0.0)),
+			float(solution_state.get("horizontal_distance_m", 0.0)) / 1000.0,
+		]
+	var reason := str(solution_state.get("reason", "solver_unavailable"))
+	return "炮击标记  解算失败  %s" % reason
 
 func get_world_orientation_contract() -> Dictionary:
 	return _world_orientation.get_orientation_contract() if _world_orientation != null else {}
@@ -3623,6 +3714,8 @@ func _setup_map_ui() -> void:
 		_map_screen.set_road_graph(_world_data.get("road_graph"))
 	if _map_screen.has_signal("map_world_point_selected") and not _map_screen.is_connected("map_world_point_selected", Callable(self, "_on_map_world_point_selected")):
 		_map_screen.connect("map_world_point_selected", Callable(self, "_on_map_world_point_selected"))
+	if _map_screen.has_signal("artillery_fire_mission_requested") and not _map_screen.is_connected("artillery_fire_mission_requested", Callable(self, "_on_map_artillery_fire_mission_requested")):
+		_map_screen.connect("artillery_fire_mission_requested", Callable(self, "_on_map_artillery_fire_mission_requested"))
 	if _map_screen.has_signal("task_selected") and not _map_screen.is_connected("task_selected", Callable(self, "_on_task_selected")):
 		_map_screen.connect("task_selected", Callable(self, "_on_task_selected"))
 
@@ -3723,6 +3816,8 @@ func _sync_navigation_consumers(force_minimap_refresh: bool = false) -> void:
 			_map_screen.set_last_selection_contract(_last_map_selection_contract)
 		if _map_screen.has_method("set_task_panel_state"):
 			_map_screen.set_task_panel_state(_build_task_panel_state())
+		if _map_screen.has_method("set_artillery_fire_mission_state"):
+			_map_screen.set_artillery_fire_mission_state(get_artillery_fire_mission_state())
 	if force_minimap_refresh and hud != null and hud.has_method("set_minimap_snapshot"):
 		hud.set_minimap_snapshot(build_minimap_snapshot())
 		_last_minimap_hud_refresh_tick_usec = Time.get_ticks_usec()
@@ -4223,6 +4318,8 @@ func _handle_world_howitzer_fire_input() -> Dictionary:
 	if bool(fire_result.get("accepted", false)):
 		var firing_solution := fire_result.get("firing_solution", {}) as Dictionary
 		if not firing_solution.is_empty():
+			if _artillery_fire_mission_runtime != null and _artillery_fire_mission_runtime.has_method("start_observation_from_firing_solution"):
+				_artillery_fire_mission_runtime.start_observation_from_firing_solution(firing_solution)
 			_spawn_artillery_shell_from_firing_solution(firing_solution)
 	_update_npc_interaction_system()
 	return fire_result
@@ -5190,6 +5287,9 @@ func _clamp_world_position_to_bounds(world_position: Vector3) -> Vector3:
 
 func _on_map_world_point_selected(world_position: Vector3) -> void:
 	select_map_destination_from_world_point(world_position)
+
+func _on_map_artillery_fire_mission_requested(world_position: Vector3) -> void:
+	request_artillery_fire_mission_from_world_point(world_position)
 
 func _step_autodrive(_delta: float) -> void:
 	if _autodrive_controller == null or not _autodrive_controller.has_method("is_active") or not _autodrive_controller.is_active():

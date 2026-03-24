@@ -102,6 +102,8 @@ height = 1.6
 
 [sub_resource type="ShaderMaterial" id="15_fpv_overlay_material"]
 shader = ExtResource("7_fpv_overlay_shader")
+shader_parameter/overlay_mode = 0.0
+shader_parameter/signal_loss_strength = 1.0
 
 [node name="CityDroneGunship" type="CharacterBody3D" unique_id=997283566]
 script = ExtResource("2_runtime_script")
@@ -209,6 +211,24 @@ grow_vertical = 2
 mouse_filter = 2
 material = SubResource("15_fpv_overlay_material")
 color = Color(1, 1, 1, 1)
+
+[node name="NoSignalLabel" type="Label" parent="FpvOverlay" unique_id=912340771]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 96.0
+offset_bottom = -96.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.345098, 1, 0.521569, 1)
+theme_override_colors/font_outline_color = Color(0.0196078, 0.0823529, 0.0313726, 0.95)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 44
+text = "---- NO SIGNAL ----"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="DeathFxRoot" type="Node3D" parent="." unique_id=380221737]
 visible = false

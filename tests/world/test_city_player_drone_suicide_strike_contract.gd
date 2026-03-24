@@ -80,6 +80,20 @@ func _run() -> void:
 	if not T.require_true(self, str(interrupt_attempt_state.get("last_reject_reason", "")) == "strike_committed", "KP5 recovery requests during a committed suicide strike must be explicitly rejected as strike_committed"):
 		return
 
+	var signal_loss_state := await _wait_for_strike_state(world, "signal_loss", 240)
+	if not T.require_true(self, str(signal_loss_state.get("strike_state", "")) == "signal_loss", "Drone suicide strike contract must enter a dedicated signal_loss closeout phase after the blast instead of returning to the player immediately"):
+		return
+	if not T.require_true(self, bool(signal_loss_state.get("signal_loss_active", false)), "Drone suicide strike contract must expose signal_loss_active while the FPV feed is visibly lost"):
+		return
+	if not T.require_true(self, str(signal_loss_state.get("overlay_mode", "")) == "signal_loss", "Drone suicide strike contract must switch the FPV overlay into a signal_loss mode after the blast instead of leaving infrared active"):
+		return
+	if not T.require_true(self, bool(signal_loss_state.get("no_signal_visible", false)), "Drone suicide strike contract must flash a visible NO SIGNAL prompt during the post-blast feed loss window"):
+		return
+	if not T.require_true(self, str(signal_loss_state.get("camera_owner", "")) == "drone", "Drone suicide strike contract must keep the drone camera alive during the post-blast signal loss window instead of cutting away too early"):
+		return
+	if not T.require_true(self, str(signal_loss_state.get("input_owner", "")) == "none", "Drone suicide strike contract must not restore manual control until the signal loss closeout finishes"):
+		return
+
 	var stowed_state := await _wait_for_state(world, "stowed", 360)
 	if not T.require_true(self, str(stowed_state.get("system_state", "")) == "stowed", "Drone suicide strike contract must return the runtime to stowed after the explosion closeout finishes"):
 		return
@@ -118,6 +132,15 @@ func _wait_for_state(world: Node, expected_state: String, max_frames: int) -> Di
 		await process_frame
 		var debug_state: Dictionary = world.get_player_drone_debug_state()
 		if str(debug_state.get("system_state", "")) == expected_state:
+			return debug_state
+	return world.get_player_drone_debug_state()
+
+func _wait_for_strike_state(world: Node, expected_state: String, max_frames: int) -> Dictionary:
+	for _frame_index in range(max_frames):
+		await physics_frame
+		await process_frame
+		var debug_state: Dictionary = world.get_player_drone_debug_state()
+		if str(debug_state.get("strike_state", "")) == expected_state:
 			return debug_state
 	return world.get_player_drone_debug_state()
 

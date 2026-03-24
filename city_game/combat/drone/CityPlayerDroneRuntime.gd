@@ -14,6 +14,7 @@ const STRIKE_STATE_IDLE := "idle"
 const STRIKE_STATE_LOCKED := "locked"
 const STRIKE_STATE_STRIKING := "striking"
 const STRIKE_STATE_EXPLODING := "exploding"
+const STRIKE_STATE_SIGNAL_LOSS := "signal_loss"
 
 @export var deploy_duration_sec := 2.0
 @export var recover_duration_sec := 2.0
@@ -34,6 +35,9 @@ const STRIKE_STATE_EXPLODING := "exploding"
 @export var strike_explosion_radius_m := 16.0
 @export var strike_explosion_damage := 26.0
 @export var strike_explosion_effect_duration_sec := 0.68
+@export var strike_signal_loss_duration_sec := 2.4
+@export var strike_no_signal_visible_duration_sec := 1.0
+@export var strike_no_signal_blink_hz := 5.5
 @export var strike_camera_shake_duration_sec := 0.52
 @export var strike_camera_shake_amplitude_m := 0.48
 
@@ -47,6 +51,7 @@ const STRIKE_STATE_EXPLODING := "exploding"
 @onready var camera: Camera3D = $CameraRig/Camera3D
 @onready var fpv_overlay: CanvasLayer = $FpvOverlay
 @onready var fpv_overlay_rect: ColorRect = $FpvOverlay/InfraredRect
+@onready var no_signal_label: Label = $FpvOverlay/NoSignalLabel
 @onready var death_fx_root: Node3D = $DeathFxRoot
 @onready var death_explosion_ring: MeshInstance3D = $DeathFxRoot/ExplosionRing
 @onready var death_explosion_sphere: MeshInstance3D = $DeathFxRoot/ExplosionSphere
@@ -70,6 +75,7 @@ var _fpv_pitch_rad := 0.0
 var _fpv_yaw_rad := 0.0
 var _locked_target_world_position := Vector3.ZERO
 var _strike_explosion_elapsed_sec := 0.0
+var _strike_signal_loss_elapsed_sec := 0.0
 var _strike_explosion_world_position := Vector3.ZERO
 var _last_strike_result: Dictionary = {}
 
@@ -235,6 +241,10 @@ func get_debug_state() -> Dictionary:
 	var fpv_visible := _is_fpv_active()
 	var crosshair_target := _locked_target_world_position if _locked_target_world_position != Vector3.ZERO else _resolve_crosshair_world_target()
 	var strike_target_distance_m := global_position.distance_to(_locked_target_world_position) if _locked_target_world_position != Vector3.ZERO else 0.0
+	var signal_loss_active := _strike_state == STRIKE_STATE_SIGNAL_LOSS
+	var signal_loss_progress := 0.0
+	if strike_signal_loss_duration_sec > 0.0:
+		signal_loss_progress = clampf(_strike_signal_loss_elapsed_sec / strike_signal_loss_duration_sec, 0.0, 1.0)
 	return {
 		"system_state": _system_state,
 		"camera_owner": _resolve_camera_owner(),
@@ -252,6 +262,11 @@ func get_debug_state() -> Dictionary:
 		"manual_flight_input_enabled": _system_state == SYSTEM_STATE_ACTIVE and _strike_state == STRIKE_STATE_IDLE,
 		"fpv_filter_enabled": fpv_visible,
 		"fpv_crosshair_visible": fpv_visible and _strike_state == STRIKE_STATE_IDLE,
+		"signal_loss_active": signal_loss_active,
+		"signal_loss_progress": signal_loss_progress,
+		"signal_loss_remaining_sec": maxf(strike_signal_loss_duration_sec - _strike_signal_loss_elapsed_sec, 0.0) if signal_loss_active else 0.0,
+		"overlay_mode": _resolve_overlay_mode(),
+		"no_signal_visible": no_signal_label != null and no_signal_label.visible,
 		"fpv_fov_deg": camera.fov if camera != null else 0.0,
 		"fpv_pitch_deg": rad_to_deg(_fpv_pitch_rad),
 		"fpv_yaw_deg": rad_to_deg(_fpv_yaw_rad),
@@ -286,6 +301,7 @@ func _begin_deploy() -> void:
 	_fpv_yaw_rad = 0.0
 	_locked_target_world_position = Vector3.ZERO
 	_strike_explosion_elapsed_sec = 0.0
+	_strike_signal_loss_elapsed_sec = 0.0
 	_strike_explosion_world_position = Vector3.ZERO
 	_last_strike_result.clear()
 	_pending_mouse_yaw_delta_rad = 0.0
@@ -307,6 +323,9 @@ func _begin_recover() -> void:
 	_set_view_mode(VIEW_MODE_THIRD_PERSON)
 	_strike_state = STRIKE_STATE_IDLE
 	_locked_target_world_position = Vector3.ZERO
+	_strike_explosion_elapsed_sec = 0.0
+	_strike_signal_loss_elapsed_sec = 0.0
+	_strike_explosion_world_position = Vector3.ZERO
 	_pending_mouse_yaw_delta_rad = 0.0
 	velocity = Vector3.ZERO
 	_planar_velocity_mps = 0.0
@@ -345,6 +364,8 @@ func _step_active(delta: float) -> void:
 			_step_suicide_strike(delta)
 		STRIKE_STATE_EXPLODING:
 			_step_strike_explosion(delta)
+		STRIKE_STATE_SIGNAL_LOSS:
+			_step_signal_loss_closeout(delta)
 
 func _step_recover(delta: float) -> void:
 	_transition_elapsed_sec = minf(_transition_elapsed_sec + maxf(delta, 0.0), recover_duration_sec)
@@ -357,6 +378,9 @@ func _step_recover(delta: float) -> void:
 		_set_view_mode(VIEW_MODE_THIRD_PERSON)
 		_strike_state = STRIKE_STATE_IDLE
 		_locked_target_world_position = Vector3.ZERO
+		_strike_explosion_elapsed_sec = 0.0
+		_strike_signal_loss_elapsed_sec = 0.0
+		_strike_explosion_world_position = Vector3.ZERO
 		_pending_mouse_yaw_delta_rad = 0.0
 		velocity = Vector3.ZERO
 		_planar_velocity_mps = 0.0
@@ -376,6 +400,8 @@ func _set_drone_visible(should_be_visible: bool) -> void:
 		fpv_overlay.visible = should_be_visible and _is_fpv_active()
 	if fpv_overlay_rect != null:
 		fpv_overlay_rect.visible = should_be_visible and _is_fpv_active()
+	if no_signal_label != null:
+		no_signal_label.visible = false
 	if collision_shape != null:
 		collision_shape.disabled = not should_be_visible
 	if camera != null and not should_be_visible:
@@ -576,6 +602,15 @@ func _sync_fpv_overlay_state() -> void:
 		fpv_overlay.visible = overlay_visible
 	if fpv_overlay_rect != null:
 		fpv_overlay_rect.visible = overlay_visible
+		var overlay_material := fpv_overlay_rect.material as ShaderMaterial
+		if overlay_material != null:
+			overlay_material.set_shader_parameter("overlay_mode", 1.0 if _strike_state == STRIKE_STATE_SIGNAL_LOSS else 0.0)
+			overlay_material.set_shader_parameter("signal_loss_strength", 1.0 if _strike_state == STRIKE_STATE_SIGNAL_LOSS else 0.0)
+	if no_signal_label != null:
+		no_signal_label.visible = overlay_visible and _should_show_no_signal_label()
+		if no_signal_label.visible:
+			var blink_phase := sin(_strike_signal_loss_elapsed_sec * TAU * maxf(strike_no_signal_blink_hz, 0.1))
+			no_signal_label.modulate = Color(0.345098, 1.0, 0.521569, 0.78 + maxf(blink_phase, 0.0) * 0.22)
 
 func _apply_pending_mouse_yaw() -> void:
 	if absf(_pending_mouse_yaw_delta_rad) <= 0.000001:
@@ -616,6 +651,7 @@ func _begin_suicide_strike_lock() -> void:
 	_planar_velocity_mps = 0.0
 	_vertical_velocity_mps = 0.0
 	_strike_explosion_elapsed_sec = 0.0
+	_strike_signal_loss_elapsed_sec = 0.0
 	_strike_explosion_world_position = Vector3.ZERO
 	_last_strike_result.clear()
 	_strike_state = STRIKE_STATE_LOCKED
@@ -672,6 +708,7 @@ func _explode_drone(trigger_kind: String, explosion_world_position: Vector3) -> 
 	_last_strike_result["trigger_kind"] = trigger_kind
 	_last_strike_result["locked_target_world_position"] = _locked_target_world_position
 	_last_strike_result["explosion_world_position"] = explosion_world_position
+	_last_strike_result["signal_loss_duration_sec"] = strike_signal_loss_duration_sec
 	_trigger_strike_camera_shake(explosion_world_position)
 	if collision_shape != null:
 		collision_shape.disabled = true
@@ -714,6 +751,20 @@ func _step_strike_explosion(delta: float) -> void:
 			sphere_material.albedo_color.a = lerpf(0.44, 0.0, progress)
 			sphere_material.emission_energy_multiplier = lerpf(2.4, 0.0, progress)
 	if progress >= 1.0:
+		_enter_signal_loss_closeout()
+
+func _enter_signal_loss_closeout() -> void:
+	_strike_state = STRIKE_STATE_SIGNAL_LOSS
+	_strike_signal_loss_elapsed_sec = 0.0
+	_reset_death_fx()
+
+func _step_signal_loss_closeout(delta: float) -> void:
+	global_position = _strike_explosion_world_position
+	velocity = Vector3.ZERO
+	_planar_velocity_mps = 0.0
+	_vertical_velocity_mps = 0.0
+	_strike_signal_loss_elapsed_sec += maxf(delta, 0.0)
+	if _strike_signal_loss_elapsed_sec >= maxf(strike_signal_loss_duration_sec, 0.001):
 		_complete_strike_closeout()
 
 func _complete_strike_closeout() -> void:
@@ -721,6 +772,8 @@ func _complete_strike_closeout() -> void:
 	_set_view_mode(VIEW_MODE_THIRD_PERSON)
 	_strike_state = STRIKE_STATE_IDLE
 	_locked_target_world_position = Vector3.ZERO
+	_strike_explosion_elapsed_sec = 0.0
+	_strike_signal_loss_elapsed_sec = 0.0
 	_pending_mouse_yaw_delta_rad = 0.0
 	velocity = Vector3.ZERO
 	_planar_velocity_mps = 0.0
@@ -785,6 +838,17 @@ func _resolve_world_runtime() -> Node:
 			return current
 		current = current.get_parent()
 	return null
+
+func _resolve_overlay_mode() -> String:
+	return "signal_loss" if _strike_state == STRIKE_STATE_SIGNAL_LOSS else "infrared"
+
+func _should_show_no_signal_label() -> bool:
+	if _strike_state != STRIKE_STATE_SIGNAL_LOSS:
+		return false
+	if _strike_signal_loss_elapsed_sec > maxf(strike_no_signal_visible_duration_sec, 0.0):
+		return false
+	var blink_step := int(floor(_strike_signal_loss_elapsed_sec * maxf(strike_no_signal_blink_hz, 0.1)))
+	return blink_step % 2 == 0
 
 func _orient_body_toward_direction(direction: Vector3) -> void:
 	if direction.length_squared() <= 0.0001:

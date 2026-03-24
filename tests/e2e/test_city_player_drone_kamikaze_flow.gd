@@ -64,6 +64,16 @@ func _run() -> void:
 	if not T.require_true(self, not bool(strike_state.get("manual_flight_input_enabled", true)), "Kamikaze flow must hand flight motion to autopilot after target lock-on"):
 		return
 
+	var signal_loss_state := await _wait_for_strike_state(world, "signal_loss", 240)
+	if not T.require_true(self, str(signal_loss_state.get("strike_state", "")) == "signal_loss", "Kamikaze flow must pass through a signal_loss FPV closeout window after the blast instead of hard-cutting back to the player"):
+		return
+	if not T.require_true(self, bool(signal_loss_state.get("signal_loss_active", false)), "Kamikaze flow must hold a visible signal_loss overlay after the blast"):
+		return
+	if not T.require_true(self, bool(signal_loss_state.get("no_signal_visible", false)), "Kamikaze flow must visibly flash NO SIGNAL during the post-blast feed loss window"):
+		return
+	if not T.require_true(self, str(signal_loss_state.get("camera_owner", "")) == "drone", "Kamikaze flow must keep the drone camera until the signal loss closeout finishes"):
+		return
+
 	var stowed_state := await _wait_for_state(world, "stowed", 360)
 	if not T.require_true(self, str(stowed_state.get("camera_owner", "")) == "player", "Kamikaze flow must restore player camera ownership after drone detonation closeout"):
 		return
@@ -107,6 +117,15 @@ func _wait_for_state(world: Node, expected_state: String, max_frames: int) -> Di
 		await process_frame
 		var debug_state: Dictionary = world.get_player_drone_debug_state()
 		if str(debug_state.get("system_state", "")) == expected_state:
+			return debug_state
+	return world.get_player_drone_debug_state()
+
+func _wait_for_strike_state(world: Node, expected_state: String, max_frames: int) -> Dictionary:
+	for _frame_index in range(max_frames):
+		await physics_frame
+		await process_frame
+		var debug_state: Dictionary = world.get_player_drone_debug_state()
+		if str(debug_state.get("strike_state", "")) == expected_state:
 			return debug_state
 	return world.get_player_drone_debug_state()
 

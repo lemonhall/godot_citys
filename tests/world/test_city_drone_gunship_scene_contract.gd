@@ -29,6 +29,7 @@ const REQUIRED_NODE_PATHS := [
 	"CameraRig/Camera3D",
 	"FpvOverlay",
 	"FpvOverlay/InfraredRect",
+	"FpvOverlay/NoSignalLabel",
 	"RotorAudio",
 ]
 
@@ -113,6 +114,11 @@ func _run() -> void:
 		return
 	var fpv_overlay_material := fpv_overlay_rect.material as ShaderMaterial
 	if not T.require_true(self, fpv_overlay_material.shader != null and fpv_overlay_material.shader.resource_path == DRONE_FPV_OVERLAY_SHADER_PATH, "Drone InfraredRect must point at the formal combat/drone FPV overlay shader resource"):
+		return
+	var no_signal_label := drone.get_node_or_null("FpvOverlay/NoSignalLabel") as Label
+	if not T.require_true(self, no_signal_label != null and no_signal_label.text.find("NO SIGNAL") >= 0, "Drone scene contract requires an authored NO SIGNAL label in the FPV overlay"):
+		return
+	if not T.require_true(self, no_signal_label.get_theme_font_size("font_size") >= 42, "Drone NO SIGNAL overlay label must be large enough to read during the post-blast feed-loss window"):
 		return
 
 	var rotor_positions: Array[Vector3] = []

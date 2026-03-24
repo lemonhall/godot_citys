@@ -96,8 +96,10 @@ func get_lab_state() -> Dictionary:
 		"yaw_deg": yaw_deg,
 		"pitch_deg": pitch_deg,
 		"fire_state": _resolve_howitzer_fire_state(),
+		"firing_solution_snapshot": _resolve_howitzer_firing_solution_snapshot(),
 		"anchor_state": _howitzer.get_anchor_state() if _howitzer != null and _howitzer.has_method("get_anchor_state") else {},
 		"compass": get_compass_state(),
+		"artillery_solution_state": get_artillery_solution_state(),
 		"operation_state": get_operation_state(),
 		"interaction_prompt_state": get_interaction_prompt_state(),
 		"hud_status_text": _build_status_text(),
@@ -113,6 +115,11 @@ func get_interaction_prompt_state() -> Dictionary:
 	if _hud != null and _hud.has_method("get_interaction_prompt_state"):
 		return _hud.get_interaction_prompt_state()
 	return _interaction_prompt_state.duplicate(true)
+
+func get_artillery_solution_state() -> Dictionary:
+	if _hud != null and _hud.has_method("get_artillery_solution_state"):
+		return _hud.get_artillery_solution_state()
+	return _build_hidden_artillery_solution_state()
 
 func get_operation_state() -> Dictionary:
 	var resolved_release_radius_m := maxf(operation_release_radius_m, interaction_radius_m)
@@ -239,6 +246,8 @@ func _refresh_hud() -> void:
 		var compass_view := _hud_root.get_node_or_null("Compass")
 		if compass_view != null and compass_view.has_method("set_state"):
 			compass_view.set_state(_compass_state)
+	if _hud != null and _hud.has_method("set_artillery_solution_state"):
+		_hud.set_artillery_solution_state(_build_artillery_solution_hud_state())
 	_sync_interaction_prompt_ui()
 	var lab_state := get_lab_state()
 	var fire_state := _resolve_howitzer_fire_state()
@@ -401,3 +410,37 @@ func _resolve_howitzer_fire_state() -> Dictionary:
 	if _howitzer != null and _howitzer.has_method("get_fire_state"):
 		return (_howitzer.get_fire_state() as Dictionary).duplicate(true)
 	return {}
+
+func _resolve_howitzer_firing_solution_snapshot() -> Dictionary:
+	if _howitzer != null and _howitzer.has_method("get_firing_solution_snapshot"):
+		return (_howitzer.get_firing_solution_snapshot() as Dictionary).duplicate(true)
+	return {}
+
+func _build_artillery_solution_hud_state() -> Dictionary:
+	if not _operation_active:
+		return _build_hidden_artillery_solution_state()
+	var firing_solution := _resolve_howitzer_firing_solution_snapshot()
+	if firing_solution.is_empty():
+		return _build_hidden_artillery_solution_state()
+	return {
+		"visible": true,
+		"title": "射击诸元",
+		"yaw_label_text": "方位",
+		"pitch_label_text": "高低",
+		"yaw_bearing_deg": float(firing_solution.get("world_bearing_deg", 0.0)),
+		"pitch_deg": float(firing_solution.get("pitch_deg", 0.0)),
+		"pitch_min_deg": float(firing_solution.get("pitch_min_deg", 0.0)),
+		"pitch_max_deg": float(firing_solution.get("pitch_max_deg", 71.0)),
+	}
+
+func _build_hidden_artillery_solution_state() -> Dictionary:
+	return {
+		"visible": false,
+		"title": "射击诸元",
+		"yaw_label_text": "方位",
+		"pitch_label_text": "高低",
+		"yaw_bearing_deg": 0.0,
+		"pitch_deg": 0.0,
+		"pitch_min_deg": 0.0,
+		"pitch_max_deg": 71.0,
+	}

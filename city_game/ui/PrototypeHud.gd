@@ -1,6 +1,7 @@
 extends CanvasLayer
 
 const CityCrosshairViewScript := preload("res://city_game/ui/CityCrosshairView.gd")
+const CityArtillerySolutionHudScript := preload("res://city_game/ui/CityArtillerySolutionHud.gd")
 const CityCompassStripScript := preload("res://city_game/ui/CityCompassStrip.gd")
 const CityControlsHelpOverlayScript := preload("res://city_game/ui/CityControlsHelpOverlay.gd")
 const CityDialoguePanelScript := preload("res://city_game/ui/CityDialoguePanel.gd")
@@ -19,6 +20,16 @@ var _navigation_state: Dictionary = {
 	"compass": {
 		"visible": false,
 	},
+}
+var _artillery_solution_state: Dictionary = {
+	"visible": false,
+	"title": "射击诸元",
+	"yaw_label_text": "方位",
+	"pitch_label_text": "高低",
+	"yaw_bearing_deg": 0.0,
+	"pitch_deg": 0.0,
+	"pitch_min_deg": 0.0,
+	"pitch_max_deg": 71.0,
 }
 var _fps_overlay_state := {
 	"visible": false,
@@ -173,6 +184,7 @@ func _ready() -> void:
 	_ensure_crosshair_view()
 	_ensure_fps_label()
 	_ensure_compass_view()
+	_ensure_artillery_solution_view()
 	_ensure_soccer_match_hud_view()
 	_ensure_tennis_match_hud_view()
 	_ensure_missile_command_hud_view()
@@ -214,6 +226,25 @@ func set_minimap_snapshot(snapshot: Dictionary) -> void:
 func set_navigation_state(state: Dictionary) -> void:
 	_navigation_state = state.duplicate(true)
 	_apply_navigation_state()
+
+func set_artillery_solution_state(state: Dictionary) -> void:
+	var resolved_pitch_min_deg := float(state.get("pitch_min_deg", 0.0))
+	var resolved_pitch_max_deg := float(state.get("pitch_max_deg", 71.0))
+	if resolved_pitch_max_deg < resolved_pitch_min_deg:
+		var swap_value := resolved_pitch_min_deg
+		resolved_pitch_min_deg = resolved_pitch_max_deg
+		resolved_pitch_max_deg = swap_value
+	_artillery_solution_state = {
+		"visible": bool(state.get("visible", false)),
+		"title": str(state.get("title", "射击诸元")),
+		"yaw_label_text": str(state.get("yaw_label_text", "方位")),
+		"pitch_label_text": str(state.get("pitch_label_text", "高低")),
+		"yaw_bearing_deg": float(state.get("yaw_bearing_deg", 0.0)),
+		"pitch_deg": float(state.get("pitch_deg", 0.0)),
+		"pitch_min_deg": resolved_pitch_min_deg,
+		"pitch_max_deg": resolved_pitch_max_deg,
+	}
+	_apply_artillery_solution_state()
 
 func set_focus_message(text: String, duration_sec: float = 10.0) -> void:
 	var trimmed := text.strip_edges()
@@ -278,6 +309,9 @@ func get_minimap_state() -> Dictionary:
 
 func get_navigation_state() -> Dictionary:
 	return _navigation_state.duplicate(true)
+
+func get_artillery_solution_state() -> Dictionary:
+	return _artillery_solution_state.duplicate(true)
 
 func set_fps_overlay_visible(should_be_visible: bool) -> void:
 	_fps_overlay_state["visible"] = should_be_visible
@@ -470,6 +504,7 @@ func _apply_state() -> void:
 	_apply_debug_text_state()
 	_apply_minimap_state()
 	_apply_navigation_state()
+	_apply_artillery_solution_state()
 	_apply_crosshair_state()
 	_apply_spider_bite_overlay_state()
 	_apply_fps_overlay_state()
@@ -511,6 +546,11 @@ func _apply_navigation_state() -> void:
 	var compass_view := get_node_or_null("Root/Compass")
 	if compass_view != null and compass_view.has_method("set_state"):
 		compass_view.set_state(_navigation_state.get("compass", {}))
+
+func _apply_artillery_solution_state() -> void:
+	var artillery_solution_view := get_node_or_null("Root/ArtillerySolutionHud")
+	if artillery_solution_view != null and artillery_solution_view.has_method("set_state"):
+		artillery_solution_view.set_state(_artillery_solution_state)
 
 func _apply_crosshair_state() -> void:
 	var crosshair_view := get_node_or_null("Root/Crosshair")
@@ -841,6 +881,27 @@ func _ensure_compass_view() -> void:
 	compass.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	compass.visible = false
 	root.add_child(compass)
+
+func _ensure_artillery_solution_view() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if root.get_node_or_null("ArtillerySolutionHud") != null:
+		return
+	var artillery_solution_hud := Control.new()
+	artillery_solution_hud.name = "ArtillerySolutionHud"
+	artillery_solution_hud.set_script(CityArtillerySolutionHudScript)
+	artillery_solution_hud.anchor_left = 1.0
+	artillery_solution_hud.anchor_top = 1.0
+	artillery_solution_hud.anchor_right = 1.0
+	artillery_solution_hud.anchor_bottom = 1.0
+	artillery_solution_hud.offset_left = -420.0
+	artillery_solution_hud.offset_top = -292.0
+	artillery_solution_hud.offset_right = -24.0
+	artillery_solution_hud.offset_bottom = -104.0
+	artillery_solution_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	artillery_solution_hud.visible = false
+	root.add_child(artillery_solution_hud)
 
 func _ensure_soccer_match_hud_view() -> void:
 	var root := get_node_or_null("Root") as Control

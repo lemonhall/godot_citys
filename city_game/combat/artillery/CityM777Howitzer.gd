@@ -2,6 +2,9 @@ extends Node3D
 
 const SOURCE_ASSET_PATH := "res://city_game/assets/environment/source/artillery/m777/m777_3_parts.glb"
 const FIRE_AUDIO_PATH := "res://city_game/combat/helicopter/audio/rockt-explosions.wav"
+const CityWorldOrientationScript := preload("res://city_game/world/navigation/CityWorldOrientation.gd")
+const CityWorldConfigScript := preload("res://city_game/world/model/CityWorldConfig.gd")
+const CityChunkKeyScript := preload("res://city_game/world/streaming/CityChunkKey.gd")
 
 const LOWER_BASE_NODE_NAME := "m777_lower_base"
 const UPPER_CARRIAGE_NODE_NAME := "m777_upper_carriage"
@@ -12,6 +15,8 @@ const GUN_ASSEMBLY_NODE_NAME := "m777_gun_assembly"
 @export_range(-180.0, 180.0, 0.1) var pitch_zero_offset_deg := 14.7
 @export_range(-180.0, 180.0, 0.1) var min_pitch_deg := 0.0
 @export_range(-180.0, 180.0, 0.1) var max_pitch_deg := 71.0
+@export var default_shell_type_id := "he_155mm"
+@export var default_muzzle_velocity_mps := 827.0
 
 @export var fire_cooldown_sec := 2.0
 @export var muzzle_flash_duration_sec := 0.14
@@ -62,6 +67,9 @@ var _authored_lanyard_scale := Vector3.ONE
 var _authored_lanyard_position := Vector3.ZERO
 var _operator_lanyard_target_active := false
 var _operator_lanyard_target_world_position := Vector3.ZERO
+var _world_orientation = CityWorldOrientationScript.new()
+var _world_config = CityWorldConfigScript.new()
+var _last_fired_solution: Dictionary = {}
 
 func _ready() -> void:
 	_mount_segments()
@@ -100,6 +108,12 @@ func get_yaw_degrees() -> float:
 func get_pitch_degrees() -> float:
 	return _pitch_deg
 
+func get_firing_solution_snapshot() -> Dictionary:
+	return _build_firing_solution_snapshot(_fire_count)
+
+func get_last_fired_solution() -> Dictionary:
+	return _last_fired_solution.duplicate(true)
+
 func set_operator_lanyard_target_world_position(world_position: Vector3) -> void:
 	_operator_lanyard_target_active = true
 	_operator_lanyard_target_world_position = world_position
@@ -120,6 +134,8 @@ func request_fire() -> Dictionary:
 			"fire_count": _fire_count,
 		}
 	_fire_count += 1
+	var firing_solution := _build_firing_solution_snapshot(_fire_count)
+	_last_fired_solution = firing_solution.duplicate(true)
 	_fire_cooldown_remaining_sec = maxf(fire_cooldown_sec, 0.001)
 	_muzzle_flash_remaining_sec = maxf(muzzle_flash_duration_sec, 0.01)
 	_muzzle_smoke_remaining_sec = maxf(muzzle_smoke_duration_sec, 0.01)
@@ -134,6 +150,7 @@ func request_fire() -> Dictionary:
 		"accepted": true,
 		"cooldown_sec": _fire_cooldown_remaining_sec,
 		"fire_count": _fire_count,
+		"firing_solution": _last_fired_solution.duplicate(true),
 	}
 
 func get_fire_state() -> Dictionary:
@@ -181,6 +198,8 @@ func get_debug_state() -> Dictionary:
 		"gun_assembly_present": get_node_or_null("ModelRoot/YawPivot/PitchPivot/%s" % GUN_ASSEMBLY_NODE_NAME) != null,
 		"anchor_state": get_anchor_state(),
 		"fire_state": get_fire_state(),
+		"firing_solution_snapshot": get_firing_solution_snapshot(),
+		"last_fired_solution": get_last_fired_solution(),
 		"weapon_fire_audio": {
 			"stream_path": _fire_audio.stream.resource_path if _fire_audio != null and _fire_audio.stream != null else "",
 			"stream_bound": _fire_audio != null and _fire_audio.stream != null,
@@ -189,6 +208,56 @@ func get_debug_state() -> Dictionary:
 			"expected_stream_path": FIRE_AUDIO_PATH,
 		},
 	}
+
+func _build_firing_solution_snapshot(fire_sequence: int = 0) -> Dictionary:
+	var origin_world_position := _resolve_muzzle_origin_world_position()
+	var platform_world_position := _resolve_platform_world_position()
+	var muzzle_direction_world := _resolve_muzzle_world_direction(origin_world_position, platform_world_position)
+	var world_bearing_deg := _world_orientation.bearing_deg_from_world_vector(muzzle_direction_world) if _world_orientation != null else _yaw_deg
+	var chunk_key := CityChunkKeyScript.world_to_chunk_key(_world_config, origin_world_position) if _world_config != null else Vector2i.ZERO
+	var world_bearing_state := _world_orientation.build_compass_state_from_bearing_deg(world_bearing_deg, true) if _world_orientation != null else {}
+	return {
+		"source_kind": "city_m777_howitzer",
+		"fire_count": fire_sequence,
+		"origin_world_position": origin_world_position,
+		"platform_world_position": platform_world_position,
+		"muzzle_direction_world": muzzle_direction_world,
+		"world_bearing_deg": world_bearing_deg,
+		"world_bearing_text": str(world_bearing_state.get("bearing_text", "000°")),
+		"world_cardinal_text": str(world_bearing_state.get("cardinal_text", "N")),
+		"yaw_deg": _yaw_deg,
+		"pitch_deg": _pitch_deg,
+		"pitch_min_deg": min_pitch_deg,
+		"pitch_max_deg": max_pitch_deg,
+		"chunk_key": chunk_key,
+		"chunk_id": _world_config.format_chunk_id(chunk_key) if _world_config != null else "",
+		"shell_type_id": default_shell_type_id,
+		"muzzle_velocity_mps": default_muzzle_velocity_mps,
+	}
+
+func _resolve_muzzle_origin_world_position() -> Vector3:
+	if _muzzle_flash != null:
+		return _muzzle_flash.global_position
+	if _muzzle_smoke != null:
+		return _muzzle_smoke.global_position
+	if _muzzle_anchor != null:
+		return _muzzle_anchor.global_position
+	return global_position
+
+func _resolve_platform_world_position() -> Vector3:
+	if _pitch_pivot != null:
+		return _pitch_pivot.global_position
+	return global_position
+
+func _resolve_muzzle_world_direction(origin_world_position: Vector3, platform_world_position: Vector3) -> Vector3:
+	var direction := origin_world_position - platform_world_position
+	if direction.length_squared() > 0.000001:
+		return direction.normalized()
+	if _muzzle_flash != null:
+		return (-_muzzle_flash.global_transform.basis.z).normalized()
+	if _pitch_pivot != null:
+		return (-_pitch_pivot.global_transform.basis.z).normalized()
+	return (-global_transform.basis.z).normalized()
 
 func _mount_segments() -> void:
 	_sync_pivots_from_anchors()

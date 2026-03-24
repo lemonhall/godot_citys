@@ -896,7 +896,7 @@ func _ensure_artillery_solution_view() -> void:
 	artillery_solution_hud.anchor_right = 1.0
 	artillery_solution_hud.anchor_bottom = 1.0
 	artillery_solution_hud.offset_left = -420.0
-	artillery_solution_hud.offset_top = -292.0
+	artillery_solution_hud.offset_top = -364.0
 	artillery_solution_hud.offset_right = -24.0
 	artillery_solution_hud.offset_bottom = -104.0
 	artillery_solution_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE

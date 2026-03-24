@@ -65,6 +65,12 @@ func _run() -> void:
 		return
 	if not T.require_true(self, absf(float(rendered_state.get("pitch_deg", -999.0)) - 24.5) <= 0.01, "ArtillerySolutionHud view must mirror the shared HUD state's pitch payload"):
 		return
+	var panel := artillery_solution_view.get_node_or_null("Panel") as PanelContainer
+	if not T.require_true(self, panel != null, "ArtillerySolutionHud view must expose a Panel root so the rounded shell layout can be regression tested"):
+		return
+	var required_min_height := panel.get_combined_minimum_size().y
+	if not T.require_true(self, artillery_solution_view.size.y + 0.5 >= required_min_height, "ArtillerySolutionHud outer height must fully contain its combined minimum content height so the rounded panel does not clip the lower strip (outer_height=%.2f required_min_height=%.2f)" % [artillery_solution_view.size.y, required_min_height]):
+		return
 
 	hud.set_artillery_solution_state({"visible": false})
 	await process_frame

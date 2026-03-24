@@ -68,6 +68,7 @@
 5. 自动化测试必须证明：lab scene 挂载正式 howitzer scene，而不是直接引用 `glb`。
 6. 自动化测试必须证明：lab scene 暴露 `get_howitzer()`、`get_lab_state()`、`reset_lab_state()` 和调角入口。
 7. 自动化测试必须证明：lab scene 启动时存在正式 `PlayerController` 玩家与当前玩家相机，而不是只留静态观察镜头。
+8. 自动化测试必须证明：正式 howitzer scene 已把缩水 AI 资产归一化到 world-scale 火炮尺寸，而不是仍然保持玩具比例。
 
 ## Files
 

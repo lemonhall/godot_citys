@@ -49,6 +49,7 @@ $godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
 
 - 正式 `CityM777Howitzer.tscn` 与 `CityM777Howitzer.gd` 存在
 - 场景文本直接引用 `res://city_game/assets/environment/source/artillery/m777/m777_3_parts.glb`
+- 正式 howitzer scene 的最终可见包围尺寸已超过 `6.0m` 的最小 world-scale 护栏，不再是 `1m` 级玩具比例
 - runtime 层级存在：
   - `ModelRoot/LowerBaseMount/m777_lower_base`
   - `ModelRoot/YawPivot/m777_upper_carriage`

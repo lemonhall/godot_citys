@@ -5,6 +5,7 @@ const T := preload("res://tests/_test_util.gd")
 const HOWITZER_SCENE_PATH := "res://city_game/combat/artillery/CityM777Howitzer.tscn"
 const HOWITZER_SCRIPT_PATH := "res://city_game/combat/artillery/CityM777Howitzer.gd"
 const HOWITZER_MODEL_PATH := "res://city_game/assets/environment/source/artillery/m777/m777_3_parts.glb"
+const MIN_PRESENTED_LENGTH_M := 6.0
 
 const REQUIRED_NODE_PATHS := [
 	"ModelRoot",
@@ -71,6 +72,17 @@ func _run() -> void:
 	if not T.require_true(self, visual_root != null and visual_root.name == "ModelRoot", "M777 howitzer contract must expose ModelRoot as the visual root"):
 		return
 
+	var presented_length_m := _measure_presented_length_m(visual_root)
+	if not T.require_true(
+		self,
+		presented_length_m >= MIN_PRESENTED_LENGTH_M,
+		"M777 howitzer formal scene must normalize the AI-generated tiny source asset into a world-scale artillery platform instead of leaving it at toy size (presented=%.3fm min=%.3fm)" % [
+			presented_length_m,
+			MIN_PRESENTED_LENGTH_M,
+		]
+	):
+		return
+
 	var anchor_state := howitzer.get_anchor_state() as Dictionary
 	if not T.require_true(self, anchor_state.get("yaw_anchor_local_position", null) is Vector3, "M777 howitzer anchor state must expose yaw_anchor_local_position as Vector3"):
 		return
@@ -108,3 +120,61 @@ func _run() -> void:
 	await process_frame
 	T.pass_and_quit(self)
 
+func _measure_presented_length_m(root_node: Node) -> float:
+	var visuals: Array = []
+	_collect_visuals(root_node, visuals)
+	var has_any := false
+	var merged := AABB()
+	for visual_variant in visuals:
+		var visual := visual_variant as VisualInstance3D
+		if visual == null:
+			continue
+		var visual_aabb := visual.get_aabb()
+		if visual_aabb.size == Vector3.ZERO:
+			continue
+		var world_aabb := _transform_aabb(visual.global_transform, visual_aabb)
+		if not has_any:
+			merged = world_aabb
+			has_any = true
+		else:
+			merged = merged.merge(world_aabb)
+	if not has_any:
+		return 0.0
+	return maxf(merged.size.x, maxf(merged.size.y, merged.size.z))
+
+func _collect_visuals(node: Node, visuals: Array) -> void:
+	if node is VisualInstance3D:
+		visuals.append(node)
+	for child in node.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		_collect_visuals(child_node, visuals)
+
+func _transform_aabb(transform: Transform3D, aabb: AABB) -> AABB:
+	var corners := [
+		aabb.position,
+		aabb.position + Vector3(aabb.size.x, 0.0, 0.0),
+		aabb.position + Vector3(0.0, aabb.size.y, 0.0),
+		aabb.position + Vector3(0.0, 0.0, aabb.size.z),
+		aabb.position + Vector3(aabb.size.x, aabb.size.y, 0.0),
+		aabb.position + Vector3(aabb.size.x, 0.0, aabb.size.z),
+		aabb.position + Vector3(0.0, aabb.size.y, aabb.size.z),
+		aabb.position + aabb.size,
+	]
+	var first_corner: Vector3 = transform * corners[0]
+	var min_corner := first_corner
+	var max_corner := first_corner
+	for corner in corners:
+		var transformed_corner: Vector3 = transform * corner
+		min_corner = Vector3(
+			minf(min_corner.x, transformed_corner.x),
+			minf(min_corner.y, transformed_corner.y),
+			minf(min_corner.z, transformed_corner.z)
+		)
+		max_corner = Vector3(
+			maxf(max_corner.x, transformed_corner.x),
+			maxf(max_corner.y, transformed_corner.y),
+			maxf(max_corner.z, transformed_corner.z)
+		)
+	return AABB(min_corner, max_corner - min_corner)

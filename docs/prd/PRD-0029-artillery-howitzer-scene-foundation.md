@@ -41,7 +41,7 @@
 
 ### REQ-0029-001 Formal Scene Wrapper
 
-必须提供正式火炮包装场景 `res://city_game/combat/artillery/CityM777Howitzer.tscn`，并由专用脚本驱动。该 scene 必须包装 `res://city_game/assets/environment/source/artillery/m777/m777_3_parts.glb`，不能退回 root 级散装资产或脚本临时拼装。
+必须提供正式火炮包装场景 `res://city_game/combat/artillery/CityM777Howitzer.tscn`，并由专用脚本驱动。该 scene 必须包装 `res://city_game/assets/environment/source/artillery/m777/m777_3_parts.glb`，不能退回 root 级散装资产或脚本临时拼装；同时必须把 AI 生成的缩水 source asset 归一化到可进入主世界的真实武器平台量级，不能保持“玩具炮”尺寸。
 
 ### REQ-0029-002 Three-Part Runtime Hierarchy
 
@@ -97,3 +97,4 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
 6. 自动化测试必须证明：`M777HowitzerLab.tscn` 存在，并且挂载正式火炮 scene，而不是直接实例化 `glb`。
 7. 自动化测试必须证明：lab scene 暴露最小 howitzer 获取 / 状态读取 / 重置接口，并能驱动 yaw / pitch 调试链。
 8. 自动化测试必须证明：lab scene 启动时存在正式 `PlayerController` 玩家节点与当前玩家相机，而不是只剩一个静态观察相机。
+9. 自动化测试必须证明：正式 howitzer scene 的最终可见包围尺寸已经脱离 `1m` 级缩水资产，达到正式武器平台的最低 world-scale 量级。

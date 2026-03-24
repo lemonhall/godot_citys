@@ -59,18 +59,20 @@ func _run() -> void:
 	prompt_state = hud.get_interaction_prompt_state() as Dictionary
 	if not T.require_true(self, str(prompt_state.get("prompt_text", "")).find("J/L") >= 0 and str(prompt_state.get("prompt_text", "")).find("Space") >= 0, "Main-world operation mode must expose the same J/L I/K Space control hint contract as the lab"):
 		return
+	if not T.require_true(self, str(prompt_state.get("prompt_text", "")).find("Shift") >= 0 and str(prompt_state.get("prompt_text", "")).find("0.5") >= 0, "Main-world operation mode must also teach the Shift+J/L/I/K fine-adjust contract so precision traverse and elevation remain learnable in-context"):
+		return
 	var artillery_solution_state := hud.get_artillery_solution_state() as Dictionary
 	if not T.require_true(self, bool(artillery_solution_state.get("visible", false)), "Entering world howitzer operation mode must show the shared artillery solution HUD"):
 		return
 
 	var yaw_before := float(howitzer.get_yaw_degrees())
 	var pitch_before := float(howitzer.get_pitch_degrees())
-	_press_live_key(KEY_L)
+	_press_live_key(world, KEY_L)
 	await _settle_frames(8)
-	_release_live_key(KEY_L)
-	_press_live_key(KEY_I)
+	_release_live_key(world, KEY_L)
+	_press_live_key(world, KEY_I)
 	await _settle_frames(8)
-	_release_live_key(KEY_I)
+	_release_live_key(world, KEY_I)
 	await _settle_frames()
 
 	if not T.require_true(self, float(howitzer.get_yaw_degrees()) > yaw_before + 0.1, "While operating the main-world howitzer, holding L must rotate yaw through the shared controller instead of doing nothing"):
@@ -78,17 +80,35 @@ func _run() -> void:
 	if not T.require_true(self, float(howitzer.get_pitch_degrees()) > pitch_before + 0.1, "While operating the main-world howitzer, holding I must raise pitch through the shared controller instead of doing nothing"):
 		return
 
+	var fine_yaw_before := float(howitzer.get_yaw_degrees())
+	var fine_pitch_before := float(howitzer.get_pitch_degrees())
+	_press_live_key(world, KEY_SHIFT)
+	await _settle_frames(1)
+	_press_live_key(world, KEY_L)
+	await _settle_frames(10)
+	_release_live_key(world, KEY_L)
+	_press_live_key(world, KEY_I)
+	await _settle_frames(10)
+	_release_live_key(world, KEY_I)
+	_release_live_key(world, KEY_SHIFT)
+	await _settle_frames(2)
+	if not T.require_true(self, absf((float(howitzer.get_yaw_degrees()) - fine_yaw_before) - 0.5) <= 0.05, "Inside world howitzer operation mode, Shift+L held across multiple frames must still fine-adjust yaw by exactly one 0.5° step instead of leaking one extra coarse-traverse frame"):
+		return
+	if not T.require_true(self, absf((float(howitzer.get_pitch_degrees()) - fine_pitch_before) - 0.5) <= 0.05, "Inside world howitzer operation mode, Shift+I held across multiple frames must still fine-adjust pitch by exactly one 0.5° step instead of reverting to continuous coarse elevation"):
+		return
+
 	var fire_count_before := int((howitzer.get_fire_state() as Dictionary).get("fire_count", 0))
 	var jump_velocity := float((player.get_mobility_tuning() as Dictionary).get("jump_velocity", 0.0))
 	var player_y_before := player.global_position.y
 	var space_event := _build_key_event(KEY_SPACE, true)
 	Input.parse_input_event(space_event)
+	world._input(space_event)
 	world._unhandled_input(space_event)
 	await _settle_frames(10)
 	var traversal_state := player.get_traversal_state() as Dictionary
 	if not T.require_true(self, float(traversal_state.get("vertical_speed", 0.0)) < jump_velocity * 0.25, "Inside world howitzer operation mode, Space must not leak into player jump ownership"):
 		return
-	_release_live_key(KEY_SPACE)
+	_release_live_key(world, KEY_SPACE)
 	await _settle_frames()
 
 	var fire_state := howitzer.get_fire_state() as Dictionary
@@ -127,11 +147,15 @@ func _build_key_event(keycode: Key, pressed: bool) -> InputEventKey:
 func _press_key(target: Node, keycode: Key) -> void:
 	target._unhandled_input(_build_key_event(keycode, true))
 
-func _press_live_key(keycode: Key) -> void:
-	Input.parse_input_event(_build_key_event(keycode, true))
+func _press_live_key(target: Node, keycode: Key) -> void:
+	var event := _build_key_event(keycode, true)
+	Input.parse_input_event(event)
+	target._input(event)
 
-func _release_live_key(keycode: Key) -> void:
-	Input.parse_input_event(_build_key_event(keycode, false))
+func _release_live_key(target: Node, keycode: Key) -> void:
+	var event := _build_key_event(keycode, false)
+	Input.parse_input_event(event)
+	target._input(event)
 
 func _settle_frames(frame_count: int = 6) -> void:
 	for _frame_index in range(frame_count):

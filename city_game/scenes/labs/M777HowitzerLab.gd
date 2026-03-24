@@ -48,6 +48,10 @@ func _process(delta: float) -> void:
 		_operation_controller.update(delta)
 	_refresh_hud()
 
+func _input(event: InputEvent) -> void:
+	if _operation_controller != null and _operation_controller.has_method("handle_input_event"):
+		_operation_controller.handle_input_event(event)
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is not InputEventKey:
 		return

@@ -1,10 +1,11 @@
 extends RefCounted
 
 const HOWITZER_PROMPT_TEXT := "按 E 操作炮"
-const HOWITZER_CONTROL_HINT_TEXT := "按 E 退出操炮  J/L 方位  I/K 高低  Space 击发  R 复位"
+const HOWITZER_CONTROL_HINT_TEXT := "按 E 退出操炮  J/L 方位  I/K 高低  Shift+J/L/I/K 精调 0.5°  Space 击发  R 复位"
 const HOWITZER_IDLE_HINT_TEXT := "WASD 移动  鼠标观察  R 复位"
 const HOWITZER_NEARBY_HINT_TEXT := "WASD 移动  鼠标观察  E 操炮  R 复位"
 const HOWITZER_OPERATION_ID := "m777_howitzer"
+const FINE_ADJUST_STEP_DEG := 0.5
 
 var yaw_speed_deg_per_sec := 28.0
 var pitch_speed_deg_per_sec := 18.0
@@ -15,31 +16,72 @@ var _howitzer: Node3D = null
 var _player: Node3D = null
 var _operation_active := false
 var _last_interaction_distance_m := INF
+var _fine_adjust_modifier_active := false
+var _pressed_adjust_keys := {
+	"yaw_left": false,
+	"yaw_right": false,
+	"pitch_up": false,
+	"pitch_down": false,
+}
+var _adjust_key_latches := {
+	"yaw_left": false,
+	"yaw_right": false,
+	"pitch_up": false,
+	"pitch_down": false,
+}
 
 func configure(howitzer: Node3D, player: Node3D, config: Dictionary = {}) -> void:
+	var context_changed := _howitzer != howitzer or _player != player
 	_howitzer = howitzer
 	_player = player
 	yaw_speed_deg_per_sec = float(config.get("yaw_speed_deg_per_sec", yaw_speed_deg_per_sec))
 	pitch_speed_deg_per_sec = float(config.get("pitch_speed_deg_per_sec", pitch_speed_deg_per_sec))
 	interaction_radius_m = maxf(float(config.get("interaction_radius_m", interaction_radius_m)), 0.1)
 	operation_release_radius_m = maxf(float(config.get("operation_release_radius_m", operation_release_radius_m)), interaction_radius_m)
+	if context_changed:
+		_reset_input_tracking()
 	refresh_context()
 	_sync_howitzer_operator_lanyard_target()
+
+func handle_input_event(event: InputEvent) -> void:
+	if event is not InputEventKey:
+		return
+	var key_event := event as InputEventKey
+	if key_event.echo:
+		return
+	var pressed := key_event.pressed
+	if _key_event_matches(key_event, KEY_SHIFT):
+		_fine_adjust_modifier_active = pressed
+	if _key_event_matches(key_event, KEY_J):
+		_pressed_adjust_keys["yaw_left"] = pressed
+	if _key_event_matches(key_event, KEY_L):
+		_pressed_adjust_keys["yaw_right"] = pressed
+	if _key_event_matches(key_event, KEY_I):
+		_pressed_adjust_keys["pitch_up"] = pressed
+	if _key_event_matches(key_event, KEY_K):
+		_pressed_adjust_keys["pitch_down"] = pressed
 
 func update(delta: float, prompt_blocked: bool = false) -> void:
 	refresh_context()
 	_sync_howitzer_operator_lanyard_target()
+	var current_key_latches := _build_adjust_key_latches()
 	if prompt_blocked or not _operation_active:
+		_adjust_key_latches = current_key_latches
 		return
+	if _fine_adjust_modifier_active:
+		_apply_fine_adjustment_key_edges(current_key_latches)
+		_adjust_key_latches = current_key_latches
+		return
+	_adjust_key_latches = current_key_latches
 	var yaw_input := 0.0
-	if Input.is_key_pressed(KEY_J):
+	if bool(current_key_latches.get("yaw_left", false)):
 		yaw_input -= 1.0
-	if Input.is_key_pressed(KEY_L):
+	if bool(current_key_latches.get("yaw_right", false)):
 		yaw_input += 1.0
 	var pitch_input := 0.0
-	if Input.is_key_pressed(KEY_I):
+	if bool(current_key_latches.get("pitch_up", false)):
 		pitch_input += 1.0
-	if Input.is_key_pressed(KEY_K):
+	if bool(current_key_latches.get("pitch_down", false)):
 		pitch_input -= 1.0
 	if absf(yaw_input) > 0.001:
 		adjust_yaw_degrees(yaw_input * yaw_speed_deg_per_sec * maxf(delta, 0.0))
@@ -111,6 +153,7 @@ func adjust_pitch_degrees(delta_deg: float) -> void:
 
 func reset_operation() -> void:
 	_set_operation_active(false)
+	_reset_input_tracking()
 
 func get_operation_state() -> Dictionary:
 	var resolved_release_radius_m := maxf(operation_release_radius_m, interaction_radius_m)
@@ -253,3 +296,32 @@ func _resolve_player_lanyard_target_world_position() -> Vector3:
 	if _player.has_method("get_bite_feedback_world_position"):
 		return _player.get_bite_feedback_world_position()
 	return _player.global_position + Vector3.UP * 1.05
+
+func _build_adjust_key_state() -> Dictionary:
+	return {
+		"yaw_left": false,
+		"yaw_right": false,
+		"pitch_up": false,
+		"pitch_down": false,
+	}
+
+func _reset_input_tracking() -> void:
+	_fine_adjust_modifier_active = false
+	_pressed_adjust_keys = _build_adjust_key_state()
+	_adjust_key_latches = _build_adjust_key_state()
+
+func _build_adjust_key_latches() -> Dictionary:
+	return _pressed_adjust_keys.duplicate()
+
+func _key_event_matches(key_event: InputEventKey, expected_keycode: Key) -> bool:
+	return key_event.keycode == expected_keycode or key_event.physical_keycode == expected_keycode
+
+func _apply_fine_adjustment_key_edges(current_key_latches: Dictionary) -> void:
+	if bool(current_key_latches.get("yaw_left", false)) and not bool(_adjust_key_latches.get("yaw_left", false)):
+		adjust_yaw_degrees(-FINE_ADJUST_STEP_DEG)
+	if bool(current_key_latches.get("yaw_right", false)) and not bool(_adjust_key_latches.get("yaw_right", false)):
+		adjust_yaw_degrees(FINE_ADJUST_STEP_DEG)
+	if bool(current_key_latches.get("pitch_up", false)) and not bool(_adjust_key_latches.get("pitch_up", false)):
+		adjust_pitch_degrees(FINE_ADJUST_STEP_DEG)
+	if bool(current_key_latches.get("pitch_down", false)) and not bool(_adjust_key_latches.get("pitch_down", false)):
+		adjust_pitch_degrees(-FINE_ADJUST_STEP_DEG)

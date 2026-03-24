@@ -69,9 +69,9 @@ func _run() -> void:
 		return
 
 	var pre_operation_yaw_deg := float((lab.get_lab_state() as Dictionary).get("yaw_deg", 0.0))
-	_set_key_pressed(KEY_L, true)
+	_set_key_pressed(lab, KEY_L, true)
 	await _advance_frames(12)
-	_set_key_pressed(KEY_L, false)
+	_set_key_pressed(lab, KEY_L, false)
 	var blocked_yaw_deg := float((lab.get_lab_state() as Dictionary).get("yaw_deg", 0.0))
 	if not T.require_true(self, absf(blocked_yaw_deg - pre_operation_yaw_deg) <= 0.01, "Before entering operation mode, J/L must not rotate the howitzer"):
 		return
@@ -86,6 +86,8 @@ func _run() -> void:
 	if not T.require_true(self, bool(active_prompt_state.get("visible", false)), "After entering operation mode, the HUD must keep a visible artillery control prompt instead of leaving the player blind"):
 		return
 	if not T.require_true(self, str(active_prompt_state.get("prompt_text", "")).find("J/L") >= 0 and str(active_prompt_state.get("prompt_text", "")).find("I/K") >= 0 and str(active_prompt_state.get("prompt_text", "")).find("Space") >= 0, "The operation prompt must explicitly show J/L, I/K and Space after pressing E so artillery traverse, elevation and fire all remain learnable in-context"):
+		return
+	if not T.require_true(self, str(active_prompt_state.get("prompt_text", "")).find("Shift") >= 0 and str(active_prompt_state.get("prompt_text", "")).find("0.5") >= 0, "The operation prompt must also explicitly teach Shift+J/L/I/K = 0.5° so fine traverse and elevation remain learnable in-context"):
 		return
 	var active_lanyard_line_state := lanyard_line.get_debug_state() as Dictionary
 	if not T.require_true(self, bool(active_lanyard_line_state.get("visible", false)), "After entering operation mode, the lanyard line must stay visible instead of collapsing into a tiny gun-local stub"):
@@ -103,11 +105,30 @@ func _run() -> void:
 	if not T.require_true(self, float(active_lanyard_line_state.get("min_world_y", -1000000.0)) >= active_line_floor_threshold, "Entering operation mode must keep the lanyard suspended between breech and operator instead of sagging almost to ground because of parent-scale distortion"):
 		return
 
-	_set_key_pressed(KEY_L, true)
+	_set_key_pressed(lab, KEY_L, true)
 	await _advance_frames(12)
-	_set_key_pressed(KEY_L, false)
+	_set_key_pressed(lab, KEY_L, false)
 	var active_yaw_deg := float((lab.get_lab_state() as Dictionary).get("yaw_deg", 0.0))
 	if not T.require_true(self, active_yaw_deg >= blocked_yaw_deg + 0.2, "After entering operation mode, J/L must drive howitzer yaw through the formal lab API"):
+		return
+
+	var fine_yaw_before_deg := float((lab.get_lab_state() as Dictionary).get("yaw_deg", 0.0))
+	var fine_pitch_before_deg := float((lab.get_lab_state() as Dictionary).get("pitch_deg", 0.0))
+	_set_key_pressed(lab, KEY_SHIFT, true)
+	await _advance_frames(1)
+	_set_key_pressed(lab, KEY_L, true)
+	await _advance_frames(10)
+	_set_key_pressed(lab, KEY_L, false)
+	_set_key_pressed(lab, KEY_I, true)
+	await _advance_frames(10)
+	_set_key_pressed(lab, KEY_I, false)
+	_set_key_pressed(lab, KEY_SHIFT, false)
+	await _advance_frames(2)
+	var fine_yaw_after_deg := float((lab.get_lab_state() as Dictionary).get("yaw_deg", 0.0))
+	var fine_pitch_after_deg := float((lab.get_lab_state() as Dictionary).get("pitch_deg", 0.0))
+	if not T.require_true(self, absf((fine_yaw_after_deg - fine_yaw_before_deg) - 0.5) <= 0.05, "Inside operation mode, Shift+L held across multiple frames must still fine-adjust yaw by exactly one 0.5° step instead of reverting to continuous coarse traverse"):
+		return
+	if not T.require_true(self, absf((fine_pitch_after_deg - fine_pitch_before_deg) - 0.5) <= 0.05, "Inside operation mode, Shift+I held across multiple frames must still fine-adjust pitch by exactly one 0.5° step instead of reverting to continuous coarse elevation"):
 		return
 
 	_press_key(lab, KEY_E)
@@ -147,9 +168,9 @@ func _run() -> void:
 		return
 
 	var retained_yaw_before_deg := float((lab.get_lab_state() as Dictionary).get("yaw_deg", 0.0))
-	_set_key_pressed(KEY_L, true)
+	_set_key_pressed(lab, KEY_L, true)
 	await _advance_frames(12)
-	_set_key_pressed(KEY_L, false)
+	_set_key_pressed(lab, KEY_L, false)
 	var retained_yaw_after_deg := float((lab.get_lab_state() as Dictionary).get("yaw_deg", 0.0))
 	if not T.require_true(self, retained_yaw_after_deg >= retained_yaw_before_deg + 0.2, "Inside the wider retention radius, J/L must continue to control howitzer yaw"):
 		return
@@ -164,9 +185,9 @@ func _run() -> void:
 	if not T.require_true(self, not bool(hud.get_interaction_prompt_state().get("visible", false)), "Once the player leaves the wider retention radius, the artillery prompt must fully disappear until they come back near the howitzer"):
 		return
 
-	_set_key_pressed(KEY_L, true)
+	_set_key_pressed(lab, KEY_L, true)
 	await _advance_frames(12)
-	_set_key_pressed(KEY_L, false)
+	_set_key_pressed(lab, KEY_L, false)
 	var post_exit_yaw_deg := float((lab.get_lab_state() as Dictionary).get("yaw_deg", 0.0))
 	if not T.require_true(self, absf(post_exit_yaw_deg - retained_yaw_after_deg) <= 0.01, "After automatically leaving operation mode, J/L must stop affecting howitzer yaw again"):
 		return
@@ -183,13 +204,14 @@ func _press_key(target: Node, keycode: Key) -> void:
 	key_event.physical_keycode = keycode
 	target._unhandled_input(key_event)
 
-func _set_key_pressed(keycode: Key, pressed: bool) -> void:
+func _set_key_pressed(target: Node, keycode: Key, pressed: bool) -> void:
 	var event := InputEventKey.new()
 	event.pressed = pressed
 	event.echo = false
 	event.keycode = keycode
 	event.physical_keycode = keycode
 	Input.parse_input_event(event)
+	target._input(event)
 
 func _advance_frames(frame_count: int) -> void:
 	for _frame_index in range(frame_count):

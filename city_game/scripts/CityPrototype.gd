@@ -584,6 +584,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if DisplayServer.get_name() == "headless":
 		return
 
+func _input(event: InputEvent) -> void:
+	_forward_world_howitzer_operation_input_event(event)
+
 func _handle_missile_command_input(event: InputEvent) -> bool:
 	if _missile_command_venue_runtime == null:
 		return false
@@ -4223,6 +4226,11 @@ func _handle_world_howitzer_fire_input() -> Dictionary:
 			_spawn_artillery_shell_from_firing_solution(firing_solution)
 	_update_npc_interaction_system()
 	return fire_result
+
+func _forward_world_howitzer_operation_input_event(event: InputEvent) -> void:
+	if _world_howitzer_operation_controller == null or not _world_howitzer_operation_controller.has_method("handle_input_event"):
+		return
+	_world_howitzer_operation_controller.handle_input_event(event)
 
 func _get_player_fishing_preview_state() -> Dictionary:
 	if player != null and player.has_method("get_fishing_preview_state"):

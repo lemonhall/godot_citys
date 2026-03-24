@@ -9,6 +9,8 @@ const MIN_PRESENTED_LENGTH_M := 6.0
 const EXPECTED_PITCH_ZERO_OFFSET_DEG := 14.7
 const MIN_ELEVATION_DEG := 0.0
 const MAX_ELEVATION_DEG := 71.0
+const WRAPPED_YAW_SAMPLE_DEG := 523.11
+const WRAPPED_YAW_EXPECTED_DEG := 163.11
 
 const REQUIRED_NODE_PATHS := [
 	"ModelRoot",
@@ -109,6 +111,17 @@ func _run() -> void:
 	if not T.require_true(self, absf(yaw_pivot.rotation.y - yaw_before) > 0.01, "M777 howitzer yaw API must visibly change yaw pivot rotation"):
 		return
 	if not T.require_true(self, absf(pitch_pivot.rotation.x - pitch_before) > 0.01, "M777 howitzer pitch API must visibly change pitch pivot rotation"):
+		return
+
+	howitzer.set_yaw_degrees(WRAPPED_YAW_SAMPLE_DEG)
+	await process_frame
+	if not T.require_true(self, absf(howitzer.get_yaw_degrees() - WRAPPED_YAW_EXPECTED_DEG) <= 0.01, "M777 howitzer yaw must wrap back into the 0-360 degree circle instead of accumulating beyond one full turn"):
+		return
+	if not T.require_true(self, absf(rad_to_deg(yaw_pivot.rotation.y) - WRAPPED_YAW_EXPECTED_DEG) <= 0.01, "M777 howitzer wrapped yaw must still drive YawPivot using the normalized circle angle instead of the raw accumulated turn count"):
+		return
+	howitzer.set_yaw_degrees(360.0)
+	await process_frame
+	if not T.require_true(self, absf(howitzer.get_yaw_degrees()) <= 0.01, "M777 howitzer yaw must resolve an exact 360 degree turn back to 0 instead of exposing a redundant full-turn state"):
 		return
 
 	howitzer.set_pitch_degrees(-18.0)

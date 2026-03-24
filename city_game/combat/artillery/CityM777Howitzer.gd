@@ -32,7 +32,7 @@ func get_visual_root() -> Node3D:
 	return _model_root
 
 func set_yaw_degrees(value: float) -> void:
-	_yaw_deg = value
+	_yaw_deg = _normalize_yaw_degrees(value)
 	_apply_axis_angles()
 
 func set_pitch_degrees(value: float) -> void:
@@ -40,7 +40,7 @@ func set_pitch_degrees(value: float) -> void:
 	_apply_axis_angles()
 
 func set_axis_angles_degrees(yaw_deg: float, pitch_deg: float) -> void:
-	_yaw_deg = yaw_deg
+	_yaw_deg = _normalize_yaw_degrees(yaw_deg)
 	_pitch_deg = _clamp_pitch_degrees(pitch_deg)
 	_apply_axis_angles()
 
@@ -114,3 +114,9 @@ func _apply_axis_angles() -> void:
 
 func _clamp_pitch_degrees(value: float) -> float:
 	return clampf(value, min_pitch_deg, max_pitch_deg)
+
+func _normalize_yaw_degrees(value: float) -> float:
+	var wrapped := fposmod(value, 360.0)
+	if wrapped >= 359.999:
+		return 0.0
+	return wrapped

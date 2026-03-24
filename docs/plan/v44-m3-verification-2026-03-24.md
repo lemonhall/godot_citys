@@ -55,6 +55,9 @@ $godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
   - 正值表示抬高炮口
   - 模型内部保留 `14.7°` 的零位校准偏置
   - 对外 `pitch` 被限制在 `0-71°`
+- `yaw` API 已归一到 `0-360°` 圆周口径：
+  - `523.11°` 会回卷为 `163.11°`
+  - `360°` 会回卷为 `0°`
 - runtime 层级存在：
   - `ModelRoot/LowerBaseMount/m777_lower_base`
   - `ModelRoot/YawPivot/m777_upper_carriage`
@@ -82,6 +85,7 @@ $godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
 - lab 挂载的是 `res://city_game/combat/artillery/CityM777Howitzer.tscn`，不是直接挂 `glb`
 - lab 包含正式 `PlayerController` 玩家节点与当前玩家相机
 - lab HUD / state 读取的是校准后的真实仰角，而不是模型内部偏置角
+- lab HUD / state 读取的是归一化后的圆周 yaw，而不是累计转圈数
 - lab 对 `pitch` 同步执行 `0-71°` 限位
 - lab 暴露：
   - `get_howitzer()`

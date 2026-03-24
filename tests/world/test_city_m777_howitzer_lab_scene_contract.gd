@@ -5,6 +5,8 @@ const T := preload("res://tests/_test_util.gd")
 const LAB_SCENE_PATH := "res://city_game/scenes/labs/M777HowitzerLab.tscn"
 const HOWITZER_SCENE_PATH := "res://city_game/combat/artillery/CityM777Howitzer.tscn"
 const PLAYER_SCRIPT_PATH := "res://city_game/scripts/PlayerController.gd"
+const WRAPPED_YAW_SAMPLE_DEG := 523.11
+const WRAPPED_YAW_EXPECTED_DEG := 163.11
 
 const REQUIRED_NODE_PATHS := [
 	"GroundBody",
@@ -88,6 +90,13 @@ func _run() -> void:
 	if not T.require_true(self, absf(float(adjusted_state.get("yaw_deg", 0.0)) - 12.0) <= 0.01, "M777 howitzer lab must route yaw adjustments into the mounted howitzer runtime state"):
 		return
 	if not T.require_true(self, absf(float(adjusted_state.get("pitch_deg", 0.0)) - 5.0) <= 0.01, "M777 howitzer lab must expose calibrated positive elevation after applying pitch adjustments instead of leaking the model's internal offset angle"):
+		return
+
+	lab.reset_lab_state()
+	lab.adjust_yaw_degrees(WRAPPED_YAW_SAMPLE_DEG)
+	await process_frame
+	var wrapped_yaw_state := lab.get_lab_state() as Dictionary
+	if not T.require_true(self, absf(float(wrapped_yaw_state.get("yaw_deg", 0.0)) - WRAPPED_YAW_EXPECTED_DEG) <= 0.01, "M777 howitzer lab must wrap yaw back into the 0-360 degree circle instead of exposing multi-turn accumulated yaw"):
 		return
 
 	lab.adjust_pitch_degrees(-100.0)

@@ -85,6 +85,7 @@ runtime 必须读取这两个锚点来定位真正的 `YawPivot` 与 `PitchPivot
 - 正值表示抬高炮口，负向不对外暴露
 - 当前模型允许保留一个内部零位校准偏置量
 - 对外 `pitch` 必须被限制在 `0-71°`
+- 对外 `yaw` 必须归一到 `0-360°` 圆周内；跨过整圈后回卷，不继续暴露累计转圈数
 - `get_pitch_degrees()`、`set_pitch_degrees()`、`set_axis_angles_degrees()` 与 lab HUD 都必须共享同一口径，而不是一边显示模型内部角、一边显示真实仰角
 
 ### REQ-0029-005 Lab Scene Contract
@@ -102,9 +103,10 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
 3. 自动化测试必须证明：`m777_lower_base`、`m777_upper_carriage`、`m777_gun_assembly` 在 runtime 中分别处于固定层、yaw 层、pitch 层，而不是重新塌回单层根节点。
 4. 自动化测试必须证明：火炮 scene root 暴露 `REQ-0029-004` 约定的最小 API。
 5. 自动化测试必须证明：调用 yaw / pitch API 会分别改变 `YawPivot` 与 `PitchPivot` 的角度，不会把两级旋转混成单轴。
-6. 自动化测试必须证明：`pitch` API 对外暴露的是校准后的真实仰角；炮口放平时 `pitch=0°`，正值表示抬高炮口，而不是继续暴露模型内部偏置角或把方向写反。
-7. 自动化测试必须证明：`pitch` 被限制在 `0-71°` 射界之内，不能继续无限上抬或下压。
-8. 自动化测试必须证明：`M777HowitzerLab.tscn` 存在，并且挂载正式火炮 scene，而不是直接实例化 `glb`。
-9. 自动化测试必须证明：lab scene 暴露最小 howitzer 获取 / 状态读取 / 重置接口，并能驱动 yaw / pitch 调试链。
-10. 自动化测试必须证明：lab scene 启动时存在正式 `PlayerController` 玩家节点与当前玩家相机，而不是只剩一个静态观察相机。
-11. 自动化测试必须证明：正式 howitzer scene 的最终可见包围尺寸已经脱离 `1m` 级缩水资产，达到正式武器平台的最低 world-scale 量级。
+6. 自动化测试必须证明：`yaw` API 对外暴露的是归一化圆周角，而不是超过 `360°` 的累计转圈数；整圈必须回到 `0°`。
+7. 自动化测试必须证明：`pitch` API 对外暴露的是校准后的真实仰角；炮口放平时 `pitch=0°`，正值表示抬高炮口，而不是继续暴露模型内部偏置角或把方向写反。
+8. 自动化测试必须证明：`pitch` 被限制在 `0-71°` 射界之内，不能继续无限上抬或下压。
+9. 自动化测试必须证明：`M777HowitzerLab.tscn` 存在，并且挂载正式火炮 scene，而不是直接实例化 `glb`。
+10. 自动化测试必须证明：lab scene 暴露最小 howitzer 获取 / 状态读取 / 重置接口，并能驱动 yaw / pitch 调试链。
+11. 自动化测试必须证明：lab scene 启动时存在正式 `PlayerController` 玩家节点与当前玩家相机，而不是只剩一个静态观察相机。
+12. 自动化测试必须证明：正式 howitzer scene 的最终可见包围尺寸已经脱离 `1m` 级缩水资产，达到正式武器平台的最低 world-scale 量级。

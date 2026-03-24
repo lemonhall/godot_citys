@@ -66,11 +66,12 @@
 3. 自动化测试必须证明：`YawPivotAnchor` 与 `PitchPivotAnchor` 是正式 `Marker3D`，并通过 root API 进入 debug state。
 4. 自动化测试必须证明：调用 `set_yaw_degrees()` 只改变 yaw 层，调用 `set_pitch_degrees()` 只改变 pitch 层。
 5. 自动化测试必须证明：`pitch` 对外读写口径已经校准到真实仰角；炮口放平时为 `0°`，正值表示抬高炮口，而不是暴露模型内部偏置角或把正负方向写反。
-6. 自动化测试必须证明：`pitch` 被限制在 `0-71°` 射界之内。
-7. 自动化测试必须证明：lab scene 挂载正式 howitzer scene，而不是直接引用 `glb`。
-8. 自动化测试必须证明：lab scene 暴露 `get_howitzer()`、`get_lab_state()`、`reset_lab_state()` 和调角入口。
-9. 自动化测试必须证明：lab scene 启动时存在正式 `PlayerController` 玩家与当前玩家相机，而不是只留静态观察镜头。
-10. 自动化测试必须证明：正式 howitzer scene 已把缩水 AI 资产归一化到 world-scale 火炮尺寸，而不是仍然保持玩具比例。
+6. 自动化测试必须证明：`yaw` 对外读写口径已归一到 `0-360°`，超过整圈后会回卷，而不是继续累积多圈角度。
+7. 自动化测试必须证明：`pitch` 被限制在 `0-71°` 射界之内。
+8. 自动化测试必须证明：lab scene 挂载正式 howitzer scene，而不是直接引用 `glb`。
+9. 自动化测试必须证明：lab scene 暴露 `get_howitzer()`、`get_lab_state()`、`reset_lab_state()` 和调角入口。
+10. 自动化测试必须证明：lab scene 启动时存在正式 `PlayerController` 玩家与当前玩家相机，而不是只留静态观察镜头。
+11. 自动化测试必须证明：正式 howitzer scene 已把缩水 AI 资产归一化到 world-scale 火炮尺寸，而不是仍然保持玩具比例。
 
 ## Files
 

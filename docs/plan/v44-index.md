@@ -36,6 +36,10 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
   - 正值表示抬高炮口
   - 最大仰角 `71°`
   - 模型内部允许保留独立零位校准偏置
+- 正式 yaw 口径：
+  - `yaw` 对外归一到 `0-360°`
+  - 超过整圈后回卷
+  - `360°` 视为 `0°`
 
 ## 里程碑
 
@@ -68,6 +72,7 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
   - 正式 howitzer `.tscn` scene 存在并包裹正式 glb；
   - 正式 howitzer scene 已归一化到 world-scale 火炮尺寸，而不是保持 `1m` 级缩水玩具比例；
   - yaw / pitch 是两级独立 pivot，不是整坨单轴旋转；
+  - `yaw` 对外暴露的是归一化圆周角，而不是累计转圈数；
   - `pitch` 对外暴露的是校准后的真实仰角，炮口放平时为 `0°`，正值表示抬高炮口；
   - `pitch` 被限制在 `0-71°` 射界内；
   - 两枚锚点是 scene-authored `Marker3D`；

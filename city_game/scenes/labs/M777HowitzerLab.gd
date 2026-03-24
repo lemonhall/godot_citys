@@ -1,6 +1,7 @@
 extends Node3D
 
 const CityCompassStripScript := preload("res://city_game/ui/CityCompassStrip.gd")
+const CityM777HowitzerOperationController := preload("res://city_game/combat/artillery/CityM777HowitzerOperationController.gd")
 const CityWorldOrientationScript := preload("res://city_game/world/navigation/CityWorldOrientation.gd")
 const HOWITZER_PROMPT_TEXT := "按 E 操作炮"
 const HOWITZER_CONTROL_HINT_TEXT := "按 E 退出操炮  J/L 方位  I/K 高低  Space 击发  R 复位"
@@ -30,36 +31,21 @@ var _initial_player_position := Vector3.ZERO
 var _initial_player_rotation := Vector3.ZERO
 var _initial_player_camera_rig_rotation := Vector3.ZERO
 var _world_orientation = CityWorldOrientationScript.new()
+var _operation_controller = null
 var _compass_state: Dictionary = {}
 var _interaction_prompt_state: Dictionary = _build_hidden_interaction_prompt_state()
-var _operation_active := false
-var _last_interaction_distance_m := INF
 
 func _ready() -> void:
 	_ensure_compass_view()
 	_capture_initial_player_state()
+	_configure_operation_controller()
 	reset_lab_state()
 	_focus_overview_camera()
 	_refresh_hud()
 
 func _process(delta: float) -> void:
-	_refresh_operation_context()
-	_sync_howitzer_operator_lanyard_target()
-	if _operation_active:
-		var yaw_input := 0.0
-		if Input.is_key_pressed(KEY_J):
-			yaw_input -= 1.0
-		if Input.is_key_pressed(KEY_L):
-			yaw_input += 1.0
-		var pitch_input := 0.0
-		if Input.is_key_pressed(KEY_I):
-			pitch_input += 1.0
-		if Input.is_key_pressed(KEY_K):
-			pitch_input -= 1.0
-		if absf(yaw_input) > 0.001:
-			adjust_yaw_degrees(yaw_input * yaw_speed_deg_per_sec * delta)
-		if absf(pitch_input) > 0.001:
-			adjust_pitch_degrees(pitch_input * pitch_speed_deg_per_sec * delta)
+	if _operation_controller != null and _operation_controller.has_method("update"):
+		_operation_controller.update(delta)
 	_refresh_hud()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -122,23 +108,24 @@ func get_artillery_solution_state() -> Dictionary:
 	return _build_hidden_artillery_solution_state()
 
 func get_operation_state() -> Dictionary:
-	var resolved_release_radius_m := maxf(operation_release_radius_m, interaction_radius_m)
+	if _operation_controller != null and _operation_controller.has_method("get_operation_state"):
+		return (_operation_controller.get_operation_state() as Dictionary).duplicate(true)
 	return {
-		"active": _operation_active,
-		"within_interaction_range": _last_interaction_distance_m <= interaction_radius_m,
-		"within_operation_release_range": _last_interaction_distance_m <= resolved_release_radius_m,
-		"distance_m": 0.0 if not is_finite(_last_interaction_distance_m) else snappedf(_last_interaction_distance_m, 0.01),
+		"active": false,
+		"within_interaction_range": false,
+		"within_operation_release_range": false,
+		"distance_m": 0.0,
 		"interaction_radius_m": interaction_radius_m,
-		"operation_release_radius_m": resolved_release_radius_m,
+		"operation_release_radius_m": maxf(operation_release_radius_m, interaction_radius_m),
 	}
 
 func reset_lab_state() -> void:
-	_set_operation_active(false)
+	_configure_operation_controller()
+	if _operation_controller != null and _operation_controller.has_method("reset_operation"):
+		_operation_controller.reset_operation()
 	if _howitzer != null and _howitzer.has_method("set_axis_angles_degrees"):
 		_howitzer.set_axis_angles_degrees(neutral_yaw_deg, neutral_pitch_deg)
 	_restore_player_state()
-	_refresh_operation_context()
-	_sync_howitzer_operator_lanyard_target()
 	_refresh_hud()
 
 func adjust_yaw_degrees(delta_deg: float) -> void:
@@ -154,49 +141,24 @@ func adjust_pitch_degrees(delta_deg: float) -> void:
 	_refresh_hud()
 
 func request_primary_interaction() -> Dictionary:
-	_refresh_operation_context()
-	if _operation_active:
-		_set_operation_active(false)
-		_refresh_hud()
-		return {
-			"success": true,
-			"handled": true,
-			"action": "exit_operation",
-		}
-	if _last_interaction_distance_m > interaction_radius_m:
+	if _operation_controller == null or not _operation_controller.has_method("request_primary_interaction"):
 		return {
 			"success": false,
 			"handled": false,
-			"error": "out_of_range",
-			"distance_m": _last_interaction_distance_m,
+			"error": "operation_controller_unavailable",
 		}
-	_set_operation_active(true)
+	var result := (_operation_controller.request_primary_interaction() as Dictionary).duplicate(true)
 	_refresh_hud()
-	return {
-		"success": true,
-		"handled": true,
-		"action": "enter_operation",
-	}
+	return result
 
 func request_fire() -> Dictionary:
-	_refresh_operation_context()
-	if not _operation_active:
+	if _operation_controller == null or not _operation_controller.has_method("request_fire"):
 		return {
 			"accepted": false,
 			"handled": false,
-			"error": "operation_inactive",
+			"error": "operation_controller_unavailable",
 		}
-	if _howitzer == null or not _howitzer.has_method("request_fire"):
-		return {
-			"accepted": false,
-			"handled": true,
-			"error": "fire_api_unavailable",
-		}
-	if _player != null and _player.has_method("consume_jump_input_once"):
-		_player.consume_jump_input_once()
-	var result := _howitzer.request_fire() as Dictionary
-	var response := result.duplicate(true)
-	response["handled"] = true
+	var response := (_operation_controller.request_fire() as Dictionary).duplicate(true)
 	_refresh_hud()
 	return response
 
@@ -305,10 +267,8 @@ func _ensure_compass_view() -> void:
 	_hud_root.add_child(compass)
 
 func _refresh_operation_context() -> void:
-	_last_interaction_distance_m = _resolve_howitzer_distance_m()
-	var resolved_release_radius_m := maxf(operation_release_radius_m, interaction_radius_m)
-	if _operation_active and _last_interaction_distance_m > resolved_release_radius_m:
-		_set_operation_active(false)
+	if _operation_controller != null and _operation_controller.has_method("refresh_context"):
+		_operation_controller.refresh_context()
 
 func _resolve_howitzer_distance_m() -> float:
 	if _player == null or _howitzer == null:
@@ -326,18 +286,16 @@ func _resolve_interaction_anchor_world_position() -> Vector3:
 	return Vector3.ZERO
 
 func _set_operation_active(active: bool) -> void:
-	_operation_active = active
-	_sync_howitzer_operator_lanyard_target()
+	if _operation_controller == null:
+		return
+	if active:
+		_operation_controller.request_primary_interaction()
+	else:
+		_operation_controller.reset_operation()
 
 func _sync_howitzer_operator_lanyard_target() -> void:
-	if _howitzer == null:
-		return
-	if _operation_active:
-		if _howitzer.has_method("set_operator_lanyard_target_world_position"):
-			_howitzer.set_operator_lanyard_target_world_position(_resolve_player_lanyard_target_world_position())
-		return
-	if _howitzer.has_method("clear_operator_lanyard_target_world_position"):
-		_howitzer.clear_operator_lanyard_target_world_position()
+	if _operation_controller != null and _operation_controller.has_method("update"):
+		_operation_controller.update(0.0)
 
 func _resolve_player_lanyard_target_world_position() -> Vector3:
 	if _player == null:
@@ -352,27 +310,9 @@ func _sync_interaction_prompt_ui() -> void:
 		_hud.set_interaction_prompt_state(_interaction_prompt_state)
 
 func _build_interaction_prompt_state() -> Dictionary:
-	if _operation_active:
-		return {
-			"visible": true,
-			"owner_kind": "artillery",
-			"prop_id": HOWITZER_OPERATION_ID,
-			"display_name": "M777 Howitzer",
-			"interaction_kind": "operate_artillery",
-			"prompt_text": _build_operation_prompt_text(),
-			"distance_m": snappedf(_last_interaction_distance_m, 0.01),
-		}
-	if _last_interaction_distance_m > interaction_radius_m:
-		return _build_hidden_interaction_prompt_state()
-	return {
-		"visible": true,
-		"owner_kind": "artillery",
-		"prop_id": HOWITZER_OPERATION_ID,
-		"display_name": "M777 Howitzer",
-		"interaction_kind": "operate_artillery",
-		"prompt_text": HOWITZER_PROMPT_TEXT,
-		"distance_m": snappedf(_last_interaction_distance_m, 0.01),
-	}
+	if _operation_controller != null and _operation_controller.has_method("get_interaction_prompt_state"):
+		return (_operation_controller.get_interaction_prompt_state() as Dictionary).duplicate(true)
+	return _build_hidden_interaction_prompt_state()
 
 func _build_hidden_interaction_prompt_state() -> Dictionary:
 	return {
@@ -386,13 +326,13 @@ func _build_hidden_interaction_prompt_state() -> Dictionary:
 	}
 
 func _build_status_text() -> String:
-	if _operation_active:
-		return _build_operation_prompt_text()
-	if _last_interaction_distance_m <= interaction_radius_m:
-		return HOWITZER_NEARBY_HINT_TEXT
+	if _operation_controller != null and _operation_controller.has_method("get_status_text"):
+		return str(_operation_controller.get_status_text())
 	return HOWITZER_IDLE_HINT_TEXT
 
 func _build_operation_prompt_text() -> String:
+	if _operation_controller != null and _operation_controller.has_method("get_interaction_prompt_state"):
+		return str((_operation_controller.get_interaction_prompt_state() as Dictionary).get("prompt_text", ""))
 	return "%s\n%s" % [
 		HOWITZER_CONTROL_HINT_TEXT,
 		_build_fire_readiness_text(),
@@ -417,21 +357,9 @@ func _resolve_howitzer_firing_solution_snapshot() -> Dictionary:
 	return {}
 
 func _build_artillery_solution_hud_state() -> Dictionary:
-	if not _operation_active:
-		return _build_hidden_artillery_solution_state()
-	var firing_solution := _resolve_howitzer_firing_solution_snapshot()
-	if firing_solution.is_empty():
-		return _build_hidden_artillery_solution_state()
-	return {
-		"visible": true,
-		"title": "射击诸元",
-		"yaw_label_text": "方位",
-		"pitch_label_text": "高低",
-		"yaw_bearing_deg": float(firing_solution.get("world_bearing_deg", 0.0)),
-		"pitch_deg": float(firing_solution.get("pitch_deg", 0.0)),
-		"pitch_min_deg": float(firing_solution.get("pitch_min_deg", 0.0)),
-		"pitch_max_deg": float(firing_solution.get("pitch_max_deg", 71.0)),
-	}
+	if _operation_controller != null and _operation_controller.has_method("get_artillery_solution_state"):
+		return (_operation_controller.get_artillery_solution_state() as Dictionary).duplicate(true)
+	return _build_hidden_artillery_solution_state()
 
 func _build_hidden_artillery_solution_state() -> Dictionary:
 	return {
@@ -444,3 +372,14 @@ func _build_hidden_artillery_solution_state() -> Dictionary:
 		"pitch_min_deg": 0.0,
 		"pitch_max_deg": 71.0,
 	}
+
+func _configure_operation_controller() -> void:
+	if _operation_controller == null:
+		_operation_controller = CityM777HowitzerOperationController.new()
+	if _operation_controller != null and _operation_controller.has_method("configure"):
+		_operation_controller.configure(_howitzer, _player, {
+			"yaw_speed_deg_per_sec": yaw_speed_deg_per_sec,
+			"pitch_speed_deg_per_sec": pitch_speed_deg_per_sec,
+			"interaction_radius_m": interaction_radius_m,
+			"operation_release_radius_m": operation_release_radius_m,
+		})

@@ -23,6 +23,8 @@
 - [已由 ECN-0033 变更] 在正式 `CityM777Howitzer` runtime 中加入可复用的开火演出 contract：`2s` 冷却、炮口火光、烟尘、拉火绳张紧、轻微后坐与正式 weapon fire audio，但不生成炮弹实体。
 - [已由 ECN-0034 变更] 建立正式的射击诸元 HUD contract：只在操炮态显示、复用 shared HUD consumer、直接向玩家显示炮口的世界级 bearing 与当前 pitch。
 - [已由 ECN-0034 变更] 建立正式的 firing solution payload contract：每次 accepted fire 都能留下结构化快照，供后续 projectile、落点动画、弹道与反炮兵链路复用。
+- [已由 ECN-0035 变更] 将 howitzer 正式接入主世界：按下 `KP_8` 后，玩家前方可以直接召唤一门当前 howitzer 实例，并复用 lab 同口径的操炮交互、提示与诸元 HUD。
+- [已由 ECN-0035 变更] 在主世界新增 formal artillery shell ballistic runtime：accepted fire 会生成真实 shell，按 firing solution payload 飞行并在世界中产生正式落点/爆炸结果。
 
 ## Non-Goals
 
@@ -30,6 +32,7 @@
 - [已由 ECN-0031 变更] 不在本轮实现炮弹实体、弹道、落点、爆炸、杀伤判定或火控解算；本轮新增范围仅限正式 howitzer runtime 的开火演出与 lab 内的触发交互。
 - [已由 ECN-0030 变更] 不在本轮实现主世界火炮交互 UI、乘员、动画、AI、任务或对话；本轮新增的交互范围仅限 `M777HowitzerLab` 内的近距进入/退出操炮态。
 - [已由 ECN-0034 变更] 不在本轮实现 projectile 级弹道积分、落点效果、杀伤判定、反炮兵雷达或整套硬核火控求解；本轮新增范围仅限 formal firing solution HUD 与 payload snapshot contract。
+- [已由 ECN-0035 变更] 不在本轮实现火炮任务化接入、保存/读档持久化、乘员 AI、装弹动画、地图 pin、目标点求解、预测落点 HUD 或完整硬核火控流程。
 
 ## User Experience
 
@@ -48,6 +51,9 @@
 11. [已由 ECN-0034 变更] 玩家进入操炮态后，HUD 右下区域必须出现一组正式“射击诸元”标尺，而不是只剩调试文字。
 12. [已由 ECN-0034 变更] 其中 `yaw` 不再显示 howitzer 自身相对回转角，而是直接显示炮口当前在世界坐标系里的 bearing，和 shared north/compass contract 完全同口径。
 13. [已由 ECN-0034 变更] 每次 accepted fire 之后，runtime 必须能读回该发 shot 的 firing solution payload；即使当前还没有 projectile / 弹道演出，这份 payload 也必须能作为未来弹道学与落点系统的正式输入。
+14. [已由 ECN-0035 变更] 在主世界中，玩家按下 `KP_8` 后，面前会出现一门当前召唤 howitzer；此后靠近它时，必须看到与 lab 完全同口径的 `按 E 操作炮` 提示。
+15. [已由 ECN-0035 变更] 玩家在主世界进入操炮态后，`E`、`J/L`、`I/K`、`Space`、20m retention、火绳、冷却文案与诸元 HUD 都必须与 lab 共线，而不是主世界重写另一套手感。
+16. [已由 ECN-0035 变更] 主世界 accepted fire 后，玩家必须真的看到 formal artillery shell 飞出去，并在世界某处产生正式落点/爆炸结果，而不是继续只有炮口演出。
 
 ## Requirements
 
@@ -182,6 +188,60 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
 - payload 必须正式保留 `chunk` 级上下文口径，至少允许读到当前 shot 对应的 `chunk_key` / `chunk_id` 或等价 chunk metadata；如果某 host 暂时无法补足更丰富上下文，也不能让字段定义消失；
 - payload 的目标不是本轮直接做 projectile，而是为后续弹道积分、落点效果、弹种分化与反炮兵链路提供稳定输入；因此不得把这份数据只塞进 debug 文本里，必须提供正式 API。
 
+### REQ-0029-011 Main-World Howitzer Summon Contract
+
+[由 ECN-0035 新增] howitzer 系统必须正式接入 `CityPrototype` 主世界，并满足：
+
+- `CityPrototype` 必须把 `KP_8` 绑定为 debug summon 入口；
+- 按下 `KP_8` 后，必须在玩家当前朝向前方生成一门正式 `CityM777Howitzer.tscn`；
+- 召唤位置必须落在地表，而不是悬空、埋地或停在玩家胶囊体中心；
+- 同一时刻只允许存在一门当前召唤 howitzer；
+- 再次按下 `KP_8` 时，旧 howitzer 必须被替换或重定位，而不是无限累积多个实例；
+- 主世界必须至少暴露：
+  - `get_active_world_howitzer()`
+  - `get_world_howitzer_operation_state()`
+  - `get_active_artillery_shell_count()`
+  - `get_last_artillery_shell_explosion_result()`
+
+### REQ-0029-012 Shared Howitzer Operation Runtime Contract
+
+[由 ECN-0035 新增] `M777HowitzerLab` 与 `CityPrototype` 主世界 howitzer 必须共享同一条正式操炮 runtime/controller，而不是各写一套私有输入逻辑。该 contract 至少包括：
+
+- `E` 进入/退出操炮；
+- `J/L` 调整 yaw；
+- `I/K` 调整 pitch；
+- `Space` 击发；
+- 约 `7m` 交互半径与约 `20m` retention 半径；
+- shared HUD prompt 与 artillery solution HUD 可见性；
+- player `Space` 击发时必须继续复用 jump suppression，避免操炮时角色起跳。
+
+### REQ-0029-013 Artillery Shell Ballistics Contract
+
+[由 ECN-0035 新增] 主世界 accepted fire 必须生成正式 `artillery shell` runtime，而不是继续停留在 muzzle flash / smoke / cooldown 层。该 contract 至少满足：
+
+- shell runtime 只能由 howitzer accepted fire 驱动生成；
+- shell 的 launch state 必须直接来源于 howitzer `firing_solution` payload；
+- shell 必须至少暴露：
+  - `configure_from_firing_solution(firing_solution: Dictionary, owner_node: Node, player_target: Node)`
+  - `get_debug_state()`
+  - `get_last_explosion_result()`
+- shell 必须按重力进行正式飞行积分，并在 impact 或寿命截止时给出结构化 explosion result；
+- shell 允许使用显式 gameplay time-compression 来缩短超远程 flight 的等待时间，但该参数必须是 formal runtime 配置，而不是偷偷改写 payload 的 `muzzle_velocity_mps`；
+- impact result 至少包括：
+  - `trigger_kind`
+  - `world_position`
+  - `radius_m`
+  - `flight_time_sec`
+  - `distance_travelled_m`
+  - `firing_solution`
+  - `pedestrian_result`
+  - `vehicle_result`
+- impact 必须正式接入主世界已有的行人、车辆、建筑和敌对目标爆炸消费链；
+- 反作弊条款：
+  - 不允许把 howitzer shot 偷换成 `CityGrenade` 或 `CityMissile`
+  - 不允许只创建远处爆炸特效而没有 live shell flight runtime
+  - 不允许主世界 howitzer 再写一套与 lab 分叉的 prompt / HUD / ownership 逻辑
+
 ## Acceptance
 
 1. 自动化测试必须证明：`CityM777Howitzer.tscn` 与对应脚本存在，并且场景文本直接引用正式 `m777_3_parts.glb`。
@@ -204,3 +264,8 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
 18. [由 ECN-0034 新增] 自动化测试必须证明：`PrototypeHud` 已挂接正式 artillery solution HUD consumer，且该 consumer 只有在 howitzer 操炮态激活时可见；退出操炮态后必须隐藏。
 19. [由 ECN-0034 新增] 自动化测试必须证明：射击诸元 HUD 中的 `yaw` 显示的是炮口世界 bearing，而不是 howitzer 相对 yaw；当整门炮在世界里整体转向时，HUD yaw 也必须随之变化。
 20. [由 ECN-0034 新增] 自动化测试必须证明：正式 howitzer runtime 暴露 `get_firing_solution_snapshot()` / `get_last_fired_solution()`，且 accepted fire 后留下的 payload 至少包含发射世界坐标、chunk metadata、世界 bearing、pitch、shell type 与 muzzle velocity。
+21. [由 ECN-0035 新增] 自动化测试必须证明：`CityPrototype` 支持按 `KP_8` 在玩家前方召唤正式 howitzer，且同一时刻只维护一个当前实例。
+22. [由 ECN-0035 新增] 自动化测试必须证明：主世界 howitzer 的 prompt、`E` 进退操炮、`J/L`、`I/K`、`Space`、20m retention 与 artillery solution HUD 语义与 lab 共线，而不是另一套私有主世界实现。
+23. [由 ECN-0035 新增] 自动化测试必须证明：主世界 accepted fire 会生成 live artillery shell runtime，shell 的 launch payload 来源于正式 `firing_solution`，并以重力积分方式飞行到 impact。
+24. [由 ECN-0035 新增] 自动化测试必须证明：shell impact 会留下正式 explosion result，并接入主世界的行人/车辆/建筑或敌对目标爆炸消费链，而不是只有一个孤立特效。
+25. [由 ECN-0035 新增] 自动化测试必须证明：howitzer shell 不是 `CityGrenade` / `CityMissile` 的参数换皮，且 world howitzer 不会回退成 lab-only 开火演出。

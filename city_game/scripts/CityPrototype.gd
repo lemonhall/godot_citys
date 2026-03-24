@@ -33,6 +33,9 @@ const CityProjectile := preload("res://city_game/combat/CityProjectile.gd")
 const CityProjectileTracer := preload("res://city_game/combat/CityProjectileTracer.gd")
 const CityGrenade := preload("res://city_game/combat/CityGrenade.gd")
 const CityMissileScene := preload("res://city_game/combat/CityMissile.tscn")
+const CityM777HowitzerScene := preload("res://city_game/combat/artillery/CityM777Howitzer.tscn")
+const CityM777HowitzerOperationController := preload("res://city_game/combat/artillery/CityM777HowitzerOperationController.gd")
+const CityArtilleryShell := preload("res://city_game/combat/artillery/CityArtilleryShell.gd")
 const CityRifleFireEmitterScene := preload("res://city_game/combat/CityRifleFireEmitter.tscn")
 const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesignatorBeam.gd")
 const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
@@ -130,6 +133,9 @@ const HELICOPTER_GUNSHIP_COMPLETION_EVENT_ID := "encounter:helicopter_gunship_v3
 const HELICOPTER_GUNSHIP_REPEATABLE_RESET_DELAY_SEC := 0.35
 const RIFLE_FIRE_AUDIO_RESTART_WINDOW_SEC := 2.55
 const RIFLE_FIRE_AUDIO_RESTART_MARGIN_SEC := 0.08
+const WORLD_HOWITZER_SUMMON_DISTANCE_M := 10.0
+const WORLD_HOWITZER_INTERACTION_RADIUS_M := 7.0
+const WORLD_HOWITZER_RELEASE_RADIUS_M := 20.0
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -247,6 +253,10 @@ var _projectile_root: Node3D = null
 var _projectile_tracer_root: Node3D = null
 var _grenade_root: Node3D = null
 var _missile_root: Node3D = null
+var _world_howitzer_root: Node3D = null
+var _artillery_shell_root: Node3D = null
+var _active_world_howitzer: Node3D = null
+var _world_howitzer_operation_controller = null
 var _player_rifle_audio_emitter: AudioStreamPlayer3D = null
 var _player_rifle_audio_play_trigger_count := 0
 var _player_rifle_audio_restart_trigger_count := 0
@@ -275,6 +285,7 @@ var _inspection_resolver = null
 var _last_laser_designator_result: Dictionary = {}
 var _last_laser_designator_clipboard_text := ""
 var _last_missile_explosion_result: Dictionary = {}
+var _last_artillery_shell_explosion_result: Dictionary = {}
 var _building_scene_exporter = null
 var _building_override_registry = null
 var _building_export_thread: Thread = null
@@ -482,6 +493,7 @@ func _process(delta: float) -> void:
 	_update_vehicle_radio_audio_backend()
 	if _world_simulation_paused:
 		_update_player_rifle_audio_emitter(delta, true)
+		_update_world_howitzer_runtime(delta, true)
 		_update_npc_interaction_system()
 		return
 	_step_autodrive(delta)
@@ -498,6 +510,7 @@ func _process(delta: float) -> void:
 	update_streaming_for_position(_get_streaming_focus_position(), delta)
 	_update_task_system(delta)
 	_update_music_road_runtime(delta)
+	_update_world_howitzer_runtime(delta)
 	_update_npc_interaction_system()
 	var impact_result := _resolve_player_vehicle_pedestrian_impact_impl()
 	if not impact_result.is_empty():
@@ -551,6 +564,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_E:
 			var interaction_result: Dictionary = handle_primary_interaction()
 			if bool(interaction_result.get("success", false)):
+				get_viewport().set_input_as_handled()
+				return
+		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_SPACE:
+			var artillery_fire_result: Dictionary = _handle_world_howitzer_fire_input()
+			if bool(artillery_fire_result.get("handled", false)):
 				get_viewport().set_input_as_handled()
 				return
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_F:
@@ -957,6 +975,8 @@ func handle_debug_keypress(keycode: int, physical_keycode: int = 0) -> bool:
 	if keycode == KEY_KP_DIVIDE or physical_keycode == KEY_KP_DIVIDE:
 		spawn_trauma_enemy()
 		return true
+	if keycode == KEY_KP_8 or physical_keycode == KEY_KP_8:
+		return summon_world_howitzer() != null
 	return false
 
 func _handle_vehicle_radio_action(action_name: String) -> bool:
@@ -1265,6 +1285,9 @@ func get_active_grenade_count() -> int:
 func get_active_missile_count() -> int:
 	return 0 if _missile_root == null else _missile_root.get_child_count()
 
+func get_active_artillery_shell_count() -> int:
+	return 0 if _artillery_shell_root == null else _artillery_shell_root.get_child_count()
+
 func get_active_laser_beam_count() -> int:
 	return 0 if _laser_beam_root == null else _laser_beam_root.get_child_count()
 
@@ -1276,6 +1299,94 @@ func get_last_laser_designator_clipboard_text() -> String:
 
 func get_last_missile_explosion_result() -> Dictionary:
 	return _last_missile_explosion_result.duplicate(true)
+
+func get_last_artillery_shell_explosion_result() -> Dictionary:
+	return _last_artillery_shell_explosion_result.duplicate(true)
+
+func get_active_world_howitzer() -> Node3D:
+	if _active_world_howitzer == null or not is_instance_valid(_active_world_howitzer):
+		return null
+	return _active_world_howitzer
+
+func get_world_howitzer_operation_state() -> Dictionary:
+	if _world_howitzer_operation_controller != null and _world_howitzer_operation_controller.has_method("get_operation_state"):
+		return (_world_howitzer_operation_controller.get_operation_state() as Dictionary).duplicate(true)
+	return {
+		"active": false,
+		"within_interaction_range": false,
+		"within_operation_release_range": false,
+		"distance_m": 0.0,
+		"interaction_radius_m": WORLD_HOWITZER_INTERACTION_RADIUS_M,
+		"operation_release_radius_m": WORLD_HOWITZER_RELEASE_RADIUS_M,
+	}
+
+func summon_world_howitzer() -> Node3D:
+	_ensure_combat_roots()
+	if player == null or CityM777HowitzerScene == null or _world_howitzer_root == null:
+		return null
+	if _active_world_howitzer != null and is_instance_valid(_active_world_howitzer):
+		_active_world_howitzer.queue_free()
+	_active_world_howitzer = CityM777HowitzerScene.instantiate() as Node3D
+	if _active_world_howitzer == null:
+		return null
+	_active_world_howitzer.name = "WorldHowitzer"
+	_world_howitzer_root.add_child(_active_world_howitzer)
+	var spawn_position := _resolve_world_howitzer_spawn_position()
+	var spawn_forward := _resolve_world_howitzer_spawn_forward()
+	_active_world_howitzer.global_position = spawn_position
+	_active_world_howitzer.look_at(spawn_position + spawn_forward, Vector3.UP, true)
+	_ensure_world_howitzer_operation_controller()
+	_last_artillery_shell_explosion_result.clear()
+	_update_npc_interaction_system()
+	return _active_world_howitzer
+
+func _ensure_world_howitzer_operation_controller() -> void:
+	if get_active_world_howitzer() == null:
+		_world_howitzer_operation_controller = null
+		return
+	if _world_howitzer_operation_controller == null:
+		_world_howitzer_operation_controller = CityM777HowitzerOperationController.new()
+	if _world_howitzer_operation_controller != null and _world_howitzer_operation_controller.has_method("configure"):
+		_world_howitzer_operation_controller.configure(_active_world_howitzer, player, {
+			"interaction_radius_m": WORLD_HOWITZER_INTERACTION_RADIUS_M,
+			"operation_release_radius_m": WORLD_HOWITZER_RELEASE_RADIUS_M,
+		})
+
+func _resolve_world_howitzer_spawn_position() -> Vector3:
+	var forward := _resolve_world_howitzer_spawn_forward()
+	var anchor_world := player.global_position + forward * WORLD_HOWITZER_SUMMON_DISTANCE_M
+	return _resolve_surface_world_position(anchor_world, 0.0)
+
+func _resolve_world_howitzer_spawn_forward() -> Vector3:
+	if player == null:
+		return Vector3.FORWARD
+	var forward := -player.global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		return Vector3.FORWARD
+	return forward.normalized()
+
+func _get_world_howitzer_interaction_prompt_state() -> Dictionary:
+	if _world_howitzer_operation_controller != null and _world_howitzer_operation_controller.has_method("get_interaction_prompt_state"):
+		return (_world_howitzer_operation_controller.get_interaction_prompt_state(_is_primary_interaction_prompt_blocked()) as Dictionary).duplicate(true)
+	return {}
+
+func _get_world_howitzer_artillery_solution_state() -> Dictionary:
+	if _world_howitzer_operation_controller != null and _world_howitzer_operation_controller.has_method("get_artillery_solution_state"):
+		return (_world_howitzer_operation_controller.get_artillery_solution_state(_is_primary_interaction_prompt_blocked()) as Dictionary).duplicate(true)
+	return _build_hidden_world_howitzer_artillery_solution_state()
+
+func _build_hidden_world_howitzer_artillery_solution_state() -> Dictionary:
+	return {
+		"visible": false,
+		"title": "射击诸元",
+		"yaw_label_text": "方位",
+		"pitch_label_text": "高低",
+		"yaw_bearing_deg": 0.0,
+		"pitch_deg": 0.0,
+		"pitch_min_deg": 0.0,
+		"pitch_max_deg": 71.0,
+	}
 
 func get_building_generation_contract(building_id: String) -> Dictionary:
 	if chunk_renderer == null or not chunk_renderer.has_method("get_building_generation_contract"):
@@ -1655,6 +1766,18 @@ func _ensure_combat_roots() -> void:
 			_missile_root = Node3D.new()
 			_missile_root.name = "Missiles"
 			_combat_root.add_child(_missile_root)
+	if _world_howitzer_root == null:
+		_world_howitzer_root = _combat_root.get_node_or_null("Howitzers") as Node3D
+		if _world_howitzer_root == null:
+			_world_howitzer_root = Node3D.new()
+			_world_howitzer_root.name = "Howitzers"
+			_combat_root.add_child(_world_howitzer_root)
+	if _artillery_shell_root == null:
+		_artillery_shell_root = _combat_root.get_node_or_null("ArtilleryShells") as Node3D
+		if _artillery_shell_root == null:
+			_artillery_shell_root = Node3D.new()
+			_artillery_shell_root.name = "ArtilleryShells"
+			_combat_root.add_child(_artillery_shell_root)
 	_ensure_player_rifle_audio_emitter()
 
 func get_player_rifle_audio_debug_state() -> Dictionary:
@@ -1870,6 +1993,17 @@ func _spawn_missile(origin: Vector3, direction: Vector3) -> Node3D:
 		missile.exploded.connect(_on_player_missile_exploded)
 	return missile
 
+func _spawn_artillery_shell_from_firing_solution(firing_solution: Dictionary) -> Node3D:
+	_ensure_combat_roots()
+	if _artillery_shell_root == null:
+		return null
+	var shell := CityArtilleryShell.new()
+	if shell.has_signal("exploded"):
+		shell.exploded.connect(_on_artillery_shell_exploded)
+	_artillery_shell_root.add_child(shell)
+	shell.configure_from_firing_solution(firing_solution, _active_world_howitzer, player, self)
+	return shell
+
 func _on_player_grenade_exploded(world_position: Vector3, radius_m: float) -> void:
 	if chunk_renderer != null and chunk_renderer.has_method("resolve_explosion_impact"):
 		chunk_renderer.resolve_explosion_impact(world_position, maxf(radius_m * 0.35, 4.0), radius_m)
@@ -1884,6 +2018,9 @@ func _on_player_missile_exploded(result: Dictionary) -> void:
 		chunk_renderer.resolve_explosion_impact(world_position, maxf(radius_m * 0.42, 5.0), radius_m)
 	if chunk_renderer != null and chunk_renderer.has_method("resolve_vehicle_explosion"):
 		chunk_renderer.resolve_vehicle_explosion(world_position, radius_m)
+
+func _on_artillery_shell_exploded(result: Dictionary) -> void:
+	_last_artillery_shell_explosion_result = result.duplicate(true)
 
 func resolve_pedestrian_explosion(world_position: Vector3, lethal_radius_m: float, threat_radius_m: float = -1.0) -> Dictionary:
 	if chunk_renderer == null or not chunk_renderer.has_method("resolve_explosion_impact"):
@@ -3802,6 +3939,15 @@ func _ensure_interaction_runtimes() -> void:
 	if _interactive_prop_runtime.has_method("setup"):
 		_interactive_prop_runtime.setup(player)
 
+func _update_world_howitzer_runtime(delta: float, prompt_blocked_override: bool = false) -> void:
+	var howitzer := get_active_world_howitzer()
+	if howitzer == null:
+		return
+	_ensure_world_howitzer_operation_controller()
+	var prompt_blocked := prompt_blocked_override or _is_primary_interaction_prompt_blocked()
+	if _world_howitzer_operation_controller != null and _world_howitzer_operation_controller.has_method("update"):
+		_world_howitzer_operation_controller.update(delta, prompt_blocked)
+
 func _update_npc_interaction_system() -> void:
 	_ensure_interaction_runtimes()
 	var prompt_blocked := _is_primary_interaction_prompt_blocked()
@@ -3816,6 +3962,8 @@ func _sync_npc_interaction_ui() -> void:
 		return
 	if hud.has_method("set_interaction_prompt_state"):
 		hud.set_interaction_prompt_state(_resolve_primary_interaction_prompt_state())
+	if (_world_howitzer_operation_controller != null or get_active_world_howitzer() != null) and hud.has_method("set_artillery_solution_state"):
+		hud.set_artillery_solution_state(_get_world_howitzer_artillery_solution_state())
 	if hud.has_method("set_dialogue_panel_state"):
 		hud.set_dialogue_panel_state(_build_dialogue_panel_state())
 
@@ -3826,6 +3974,9 @@ func _is_primary_interaction_prompt_blocked() -> bool:
 	return prompt_blocked
 
 func _resolve_primary_interaction_prompt_state() -> Dictionary:
+	var artillery_state: Dictionary = _get_world_howitzer_interaction_prompt_state()
+	if bool(get_world_howitzer_operation_state().get("active", false)) and bool(artillery_state.get("visible", false)):
+		return artillery_state
 	var npc_state: Dictionary = get_npc_interaction_state()
 	if bool(npc_state.get("visible", false)):
 		npc_state["owner_kind"] = "npc"
@@ -3836,7 +3987,7 @@ func _resolve_primary_interaction_prompt_state() -> Dictionary:
 	if bool(fishing_state.get("visible", false)):
 		fishing_state["owner_kind"] = "fishing_venue"
 	var candidates: Array = []
-	for state_variant in [npc_state, prop_state, fishing_state]:
+	for state_variant in [npc_state, prop_state, fishing_state, artillery_state]:
 		var state: Dictionary = state_variant
 		if bool(state.get("visible", false)):
 			candidates.append(state)
@@ -4022,6 +4173,8 @@ func handle_primary_interaction() -> Dictionary:
 		return fishing_interaction_result
 	var primary_state := _resolve_primary_interaction_prompt_state()
 	var owner_kind := str(primary_state.get("owner_kind", ""))
+	if owner_kind == "artillery":
+		return _handle_world_howitzer_primary_interaction()
 	if owner_kind == "interactive_prop":
 		return _handle_interactive_prop_primary_interaction()
 	if owner_kind == "npc":
@@ -4043,6 +4196,31 @@ func _handle_fishing_primary_interaction() -> Dictionary:
 		_apply_fishing_feedback_from_state(get_fishing_venue_runtime_state())
 		_update_npc_interaction_system()
 	return interaction_result
+
+func _handle_world_howitzer_primary_interaction() -> Dictionary:
+	if _world_howitzer_operation_controller == null or not _world_howitzer_operation_controller.has_method("request_primary_interaction"):
+		return {
+			"success": false,
+			"error": "howitzer_operation_controller_unavailable",
+		}
+	var interaction_result := (_world_howitzer_operation_controller.request_primary_interaction() as Dictionary).duplicate(true)
+	_update_npc_interaction_system()
+	return interaction_result
+
+func _handle_world_howitzer_fire_input() -> Dictionary:
+	if _world_howitzer_operation_controller == null or not _world_howitzer_operation_controller.has_method("request_fire"):
+		return {
+			"accepted": false,
+			"handled": false,
+			"error": "howitzer_operation_controller_unavailable",
+		}
+	var fire_result := (_world_howitzer_operation_controller.request_fire() as Dictionary).duplicate(true)
+	if bool(fire_result.get("accepted", false)):
+		var firing_solution := fire_result.get("firing_solution", {}) as Dictionary
+		if not firing_solution.is_empty():
+			_spawn_artillery_shell_from_firing_solution(firing_solution)
+	_update_npc_interaction_system()
+	return fire_result
 
 func _get_player_fishing_preview_state() -> Dictionary:
 	if player != null and player.has_method("get_fishing_preview_state"):

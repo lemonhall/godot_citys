@@ -4,13 +4,14 @@ const T := preload("res://tests/_test_util.gd")
 
 const HOWITZER_SCENE_PATH := "res://city_game/combat/artillery/CityM777Howitzer.tscn"
 const HOWITZER_SCRIPT_PATH := "res://city_game/combat/artillery/CityM777Howitzer.gd"
+const HOWITZER_LANYARD_SCRIPT_PATH := "res://city_game/combat/artillery/CityArtilleryLanyardLine.gd"
 const HOWITZER_MODEL_PATH := "res://city_game/assets/environment/source/artillery/m777/m777_3_parts.glb"
 const FIRE_AUDIO_PATH := "res://city_game/combat/helicopter/audio/rockt-explosions.wav"
 const MIN_PRESENTED_LENGTH_M := 6.0
 const EXPECTED_PITCH_ZERO_OFFSET_DEG := 14.7
 const MIN_ELEVATION_DEG := 0.0
 const MAX_ELEVATION_DEG := 71.0
-const EXPECTED_FIRE_COOLDOWN_SEC := 6.0
+const EXPECTED_FIRE_COOLDOWN_SEC := 2.0
 const WRAPPED_YAW_SAMPLE_DEG := 523.11
 const WRAPPED_YAW_EXPECTED_DEG := 163.11
 
@@ -43,6 +44,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, ResourceLoader.exists(HOWITZER_SCRIPT_PATH, "Script"), "M777 howitzer contract requires a dedicated runtime script alongside the authored scene"):
 		return
+	if not T.require_true(self, ResourceLoader.exists(HOWITZER_LANYARD_SCRIPT_PATH, "Script"), "M777 howitzer contract requires a dedicated artillery lanyard line script instead of reusing unrelated minigame rope visuals"):
+		return
 	if not T.require_true(self, ResourceLoader.exists(HOWITZER_MODEL_PATH, "PackedScene"), "M777 howitzer contract requires the formal split three-part GLB under the artillery source directory"):
 		return
 
@@ -56,6 +59,8 @@ func _run() -> void:
 	if not T.require_true(self, scene_text.find("[node name=\"MuzzleFxAnchor\"") >= 0, "M777 howitzer scene must author MuzzleFxAnchor so formal fire presentation has a stable muzzle reference"):
 		return
 	if not T.require_true(self, scene_text.find("[node name=\"LanyardAnchor\"") >= 0, "M777 howitzer scene must author LanyardAnchor so the pull-lanyard presentation is not hard-coded in script"):
+		return
+	if not T.require_true(self, scene_text.find(HOWITZER_LANYARD_SCRIPT_PATH) >= 0 and scene_text.find("FishingLineVisual.gd") < 0, "M777 howitzer scene must bind LanyardLine to a dedicated artillery rope script instead of reusing the fishing minigame line visual"):
 		return
 
 	var scene := load(HOWITZER_SCENE_PATH) as PackedScene
@@ -176,7 +181,7 @@ func _run() -> void:
 	var fire_state := howitzer.get_fire_state() as Dictionary
 	if not T.require_true(self, bool(fire_state.get("can_fire", false)), "Fresh M777 howitzer runtime must report can_fire=true before any accepted shot"):
 		return
-	if not T.require_true(self, absf(float(fire_state.get("cooldown_duration_sec", 0.0)) - EXPECTED_FIRE_COOLDOWN_SEC) <= 0.001, "M777 howitzer fire contract must freeze the default cooldown at 6.0s"):
+	if not T.require_true(self, absf(float(fire_state.get("cooldown_duration_sec", 0.0)) - EXPECTED_FIRE_COOLDOWN_SEC) <= 0.001, "M777 howitzer fire contract must freeze the default cooldown at 2.0s"):
 		return
 	var weapon_fire_audio := debug_state.get("weapon_fire_audio", {}) as Dictionary
 	if not T.require_true(self, bool(weapon_fire_audio.get("stream_bound", false)), "M777 howitzer debug state must confirm the formal weapon fire audio stream is bound"):

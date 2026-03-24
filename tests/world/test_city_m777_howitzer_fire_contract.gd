@@ -4,7 +4,7 @@ const T := preload("res://tests/_test_util.gd")
 
 const HOWITZER_SCENE_PATH := "res://city_game/combat/artillery/CityM777Howitzer.tscn"
 const FIRE_AUDIO_PATH := "res://city_game/combat/helicopter/audio/rockt-explosions.wav"
-const EXPECTED_FIRE_COOLDOWN_SEC := 6.0
+const EXPECTED_FIRE_COOLDOWN_SEC := 2.0
 
 func _init() -> void:
 	call_deferred("_run")
@@ -64,11 +64,18 @@ func _run() -> void:
 		return
 	if not T.require_true(self, (baseline_lanyard_line_state.get("start_world_position", Vector3.ZERO) as Vector3).distance_to(lanyard_anchor.global_position) <= 0.02, "Lanyard line must still originate from the authored LanyardAnchor so manual anchor tuning remains the single source of truth"):
 		return
+	if not T.require_true(self, int(baseline_lanyard_line_state.get("sample_count", 0)) >= 8, "Howitzer idle rope baseline must render as a sampled curve instead of a coarse three-point折线"):
+		return
+	var baseline_line_start_world_position := baseline_lanyard_line_state.get("start_world_position", Vector3.ZERO) as Vector3
+	var baseline_line_end_world_position := baseline_lanyard_line_state.get("end_world_position", Vector3.ZERO) as Vector3
+	var baseline_line_floor_threshold := minf(baseline_line_start_world_position.y, baseline_line_end_world_position.y) - 0.15
+	if not T.require_true(self, float(baseline_lanyard_line_state.get("min_world_y", -1000000.0)) >= baseline_line_floor_threshold, "Howitzer idle rope baseline must not droop into a near-ground artifact just because the wrapped scene is scaled up"):
+		return
 
 	var fire_state_before := howitzer.get_fire_state() as Dictionary
 	if not T.require_true(self, bool(fire_state_before.get("can_fire", false)), "Fresh howitzer runtime must start ready to fire"):
 		return
-	if not T.require_true(self, absf(float(fire_state_before.get("cooldown_duration_sec", 0.0)) - EXPECTED_FIRE_COOLDOWN_SEC) <= 0.001, "Howitzer fire contract must freeze the default cooldown at 6.0 seconds"):
+	if not T.require_true(self, absf(float(fire_state_before.get("cooldown_duration_sec", 0.0)) - EXPECTED_FIRE_COOLDOWN_SEC) <= 0.001, "Howitzer fire contract must freeze the default cooldown at 2.0 seconds"):
 		return
 	var fire_count_before := int(fire_state_before.get("fire_count", 0))
 	var node_count_before := _count_descendants(howitzer)

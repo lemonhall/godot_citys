@@ -77,4 +77,6 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
 
 ## 差异列表
 
-- 当前无；真实炮击解算、绝对 bearing、落点/爆炸链与主世界接入留给后续版本。
+- [由 ECN-0033 / v49 superseded] howitzer 默认 fire cooldown 已从 `6.0s` 缩到 `2.0s`，当前正式口径以 `v49` 为准；本页保留的是 `v47` 当时 closeout 的历史冻结结果。
+- [由 ECN-0032 / v48 superseded] howitzer enter radius 已从 `5m` 扩到 `7m`，`LanyardLine` 也将从 minigame rope visual 升级为 artillery 专用连续曲线；本页保留的是 `v47` 当时 closeout 的历史冻结结果。
+- 真实炮击解算、绝对 bearing、落点/爆炸链与主世界接入留给后续版本。

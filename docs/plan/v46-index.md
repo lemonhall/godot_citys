@@ -69,4 +69,5 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
 
 ## 差异列表
 
-- 当前无；火炮绝对 bearing、零位方位、远距炮击交互与火控解算留给后续版本单独设计。
+- [由 ECN-0032 / v48 superseded] howitzer enter radius 已从 `5m` 扩到 `7m`，当前正式口径以 `v48` 为准；本页保留的是 `v46` 当时 closeout 的历史冻结结果。
+- 火炮绝对 bearing、零位方位、远距炮击交互与火控解算留给后续版本单独设计。

@@ -5,7 +5,7 @@
 [ext_resource type="AudioStream" uid="uid://dispupslvkcrk" path="res://city_game/combat/helicopter/audio/rockt-explosions.wav" id="3_fire_audio"]
 [ext_resource type="Shader" uid="uid://c6aqhff6u2q2j" path="res://city_game/combat/artillery/shaders/CityArtilleryMuzzleFlash.gdshader" id="4_flash_shader"]
 [ext_resource type="Shader" uid="uid://bgdhw1f784uxo" path="res://city_game/combat/artillery/shaders/CityArtilleryMuzzleSmoke.gdshader" id="5_smoke_shader"]
-[ext_resource type="Script" path="res://city_game/assets/minigames/fishing/props/FishingLineVisual.gd" id="6_lanyard_line_script"]
+[ext_resource type="Script" path="res://city_game/combat/artillery/CityArtilleryLanyardLine.gd" id="6_lanyard_line_script"]
 
 [sub_resource type="ShaderMaterial" id="6_flash_material"]
 resource_local_to_scene = true
@@ -121,4 +121,4 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.34541282, 0.08429819)
 transform = Transform3D(1, 0, 0, 0, 0.9386857, 0.34477398, 0, -0.34477398, 0.9386857, -0.0001278516, 0.5680229, 0.64017034)
 
 [node name="LanyardAnchor" type="Marker3D" parent="Anchors" unique_id=633395980]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.082, 0.246, 0.018)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0011971176, 0.29134598, -0.23407269)

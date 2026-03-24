@@ -13,7 +13,7 @@ const GUN_ASSEMBLY_NODE_NAME := "m777_gun_assembly"
 @export_range(-180.0, 180.0, 0.1) var min_pitch_deg := 0.0
 @export_range(-180.0, 180.0, 0.1) var max_pitch_deg := 71.0
 
-@export var fire_cooldown_sec := 6.0
+@export var fire_cooldown_sec := 2.0
 @export var muzzle_flash_duration_sec := 0.14
 @export var muzzle_smoke_duration_sec := 1.25
 @export var recoil_duration_sec := 0.26

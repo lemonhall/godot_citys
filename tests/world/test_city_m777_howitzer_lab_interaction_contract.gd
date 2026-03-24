@@ -3,7 +3,8 @@ extends SceneTree
 const T := preload("res://tests/_test_util.gd")
 
 const LAB_SCENE_PATH := "res://city_game/scenes/labs/M777HowitzerLab.tscn"
-const APPROACH_OFFSET := Vector3(0.0, 0.0, 4.2)
+const INSIDE_INTERACTION_OFFSET := Vector3(0.0, 0.0, 6.8)
+const OUTSIDE_INTERACTION_OFFSET := Vector3(0.0, 0.0, 7.25)
 const RETENTION_OFFSET := Vector3(0.0, 0.0, 12.0)
 const RELEASE_OFFSET := Vector3(0.0, 0.0, 22.0)
 
@@ -45,13 +46,24 @@ func _run() -> void:
 	if not T.require_true(self, not bool(initial_prompt_state.get("visible", false)), "Spawned outside interaction radius, the howitzer prompt must stay hidden"):
 		return
 
+	var configured_operation_state: Dictionary = lab.get_operation_state()
+	if not T.require_true(self, absf(float(configured_operation_state.get("interaction_radius_m", 0.0)) - 7.0) <= 0.001, "M777 howitzer lab must freeze the enter-operation radius at 7.0m instead of the earlier tighter 5.0m window"):
+		return
+
 	var anchor := howitzer.get_node_or_null("Anchors/YawPivotAnchor") as Node3D
 	var interaction_anchor := anchor.global_position if anchor != null else howitzer.global_position
-	player.teleport_to_world_position(interaction_anchor + APPROACH_OFFSET)
+	player.teleport_to_world_position(interaction_anchor + OUTSIDE_INTERACTION_OFFSET)
+	await _settle_frames()
+
+	var outside_prompt_state: Dictionary = hud.get_interaction_prompt_state()
+	if not T.require_true(self, not bool(outside_prompt_state.get("visible", false)), "Remaining just outside the frozen 7m interaction radius must keep the howitzer prompt hidden"):
+		return
+
+	player.teleport_to_world_position(interaction_anchor + INSIDE_INTERACTION_OFFSET)
 	await _settle_frames()
 
 	var approach_prompt_state: Dictionary = hud.get_interaction_prompt_state()
-	if not T.require_true(self, bool(approach_prompt_state.get("visible", false)), "Approaching within the frozen 5m radius must surface the E operation prompt"):
+	if not T.require_true(self, bool(approach_prompt_state.get("visible", false)), "Approaching within the frozen 7m radius must surface the E operation prompt"):
 		return
 	if not T.require_true(self, str(approach_prompt_state.get("prompt_text", "")).find("按 E") >= 0, "The howitzer prompt must explicitly teach the player to press E before artillery controls become active"):
 		return
@@ -82,6 +94,13 @@ func _run() -> void:
 		return
 	var operator_anchor_world_position := player.get_bite_feedback_world_position() as Vector3
 	if not T.require_true(self, (active_lanyard_line_state.get("end_world_position", Vector3.ZERO) as Vector3).distance_to(operator_anchor_world_position) <= 0.9, "Entering operation mode must connect the lanyard line to the player-side operator anchor instead of leaving the rope endpoint near the gun"):
+		return
+	if not T.require_true(self, int(active_lanyard_line_state.get("sample_count", 0)) >= 8, "Entering operation mode must render the pull rope as a sampled curve instead of a coarse three-point折线"):
+		return
+	var active_line_start_world_position := active_lanyard_line_state.get("start_world_position", Vector3.ZERO) as Vector3
+	var active_line_end_world_position := active_lanyard_line_state.get("end_world_position", Vector3.ZERO) as Vector3
+	var active_line_floor_threshold := minf(active_line_start_world_position.y, active_line_end_world_position.y) - 0.45
+	if not T.require_true(self, float(active_lanyard_line_state.get("min_world_y", -1000000.0)) >= active_line_floor_threshold, "Entering operation mode must keep the lanyard suspended between breech and operator instead of sagging almost to ground because of parent-scale distortion"):
 		return
 
 	_set_key_pressed(KEY_L, true)
@@ -118,6 +137,13 @@ func _run() -> void:
 	var retained_lanyard_line_state := lanyard_line.get_debug_state() as Dictionary
 	var retained_operator_anchor_world_position := player.get_bite_feedback_world_position() as Vector3
 	if not T.require_true(self, (retained_lanyard_line_state.get("end_world_position", Vector3.ZERO) as Vector3).distance_to(retained_operator_anchor_world_position) <= 0.9, "Inside the wider retention radius, the lanyard line endpoint must continue to follow the moved player instead of staying frozen at the original操炮位置"):
+		return
+	if not T.require_true(self, int(retained_lanyard_line_state.get("sample_count", 0)) >= 8, "Inside the wider retention radius, the lanyard must remain a multi-sample curve instead of collapsing back into a coarse折线"):
+		return
+	var retained_line_start_world_position := retained_lanyard_line_state.get("start_world_position", Vector3.ZERO) as Vector3
+	var retained_line_end_world_position := retained_lanyard_line_state.get("end_world_position", Vector3.ZERO) as Vector3
+	var retained_line_floor_threshold := minf(retained_line_start_world_position.y, retained_line_end_world_position.y) - 0.45
+	if not T.require_true(self, float(retained_lanyard_line_state.get("min_world_y", -1000000.0)) >= retained_line_floor_threshold, "Inside the wider retention radius, the lanyard curve must not droop down near ground level just because the scene root is scaled up"):
 		return
 
 	var retained_yaw_before_deg := float((lab.get_lab_state() as Dictionary).get("yaw_deg", 0.0))

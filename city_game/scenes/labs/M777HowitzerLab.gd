@@ -12,7 +12,7 @@ const HOWITZER_OPERATION_ID := "m777_howitzer"
 @export var pitch_speed_deg_per_sec := 18.0
 @export var neutral_yaw_deg := 0.0
 @export var neutral_pitch_deg := 0.0
-@export var interaction_radius_m := 5.0
+@export var interaction_radius_m := 7.0
 @export var operation_release_radius_m := 20.0
 
 @onready var _howitzer := $ArtilleryRoot/Howitzer as Node3D

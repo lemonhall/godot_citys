@@ -22,6 +22,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("get_last_artillery_shell_explosion_result"), "Artillery observer closeout contract requires artillery shell explosion introspection"):
 		return
+	if not T.require_true(self, world.has_method("get_world_howitzer_operation_state"), "Artillery observer closeout contract requires world howitzer operation-state introspection for observer restore validation"):
+		return
 
 	var player := world.get_node_or_null("Player") as CharacterBody3D
 	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "Artillery observer closeout contract requires the teleportable PlayerController runtime"):
@@ -41,6 +43,9 @@ func _run() -> void:
 
 	_press_key(world, KEY_E)
 	await _settle_frames()
+	var operation_state_before_fire := world.get_world_howitzer_operation_state() as Dictionary
+	if not T.require_true(self, bool(operation_state_before_fire.get("active", false)), "Entering howitzer operation before the shot must activate the formal操炮状态 instead of leaving the player outside the fire-control loop"):
+		return
 
 	howitzer.set_axis_angles_degrees(0.0, 0.0)
 	await _settle_frames()
@@ -63,9 +68,27 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(observation_state.get("prewarm_entry_count", 0)) > 0, "Artillery observer closeout runtime must prewarm at least one target chunk/page entry before the impact cutaway"):
 		return
+	var planned_total_duration_sec := float(observation_state.get("planned_total_duration_sec", 0.0))
+	if not T.require_true(self, planned_total_duration_sec >= 3.0 and planned_total_duration_sec <= 5.0, "Artillery observer closeout must stay within the intended 3-5 second observation envelope instead of restoring too abruptly or lingering too long (planned_total=%0.2fs)" % planned_total_duration_sec):
+		return
 
 	var impact_stage_state := await _wait_for_observation_phase(world, "impact_stage", 240)
 	if not T.require_true(self, str(impact_stage_state.get("camera_owner", "")) == "artillery_observer", "During the impact-stage cutaway, camera ownership must transfer to the artillery observer view instead of staying on the player"):
+		return
+	var observer_camera := world.get_node_or_null("ArtilleryFireMissionRuntime/ObserverRig/ObserverCamera") as Camera3D
+	if not T.require_true(self, observer_camera != null and observer_camera.current, "Impact-stage cutaway must drive a live observer camera node instead of only toggling camera-owner text"):
+		return
+	var predicted_impact_world_position := impact_stage_state.get("predicted_impact_world_position", Vector3.ZERO) as Vector3
+	var observer_forward := (-observer_camera.global_transform.basis.z).normalized()
+	var camera_to_target := (predicted_impact_world_position + Vector3.UP * 4.0) - observer_camera.global_position
+	if not T.require_true(self, camera_to_target.length_squared() > 0.01, "Observer camera contract requires a non-degenerate target vector toward the predicted impact point"):
+		return
+	var observer_alignment := observer_forward.dot(camera_to_target.normalized())
+	if not T.require_true(self, observer_alignment >= 0.82, "Impact-stage observer camera must actually face the predicted impact point instead of flipping away toward the sky (alignment=%0.3f)" % observer_alignment):
+		return
+	if not T.require_true(self, observer_camera.global_position.y >= predicted_impact_world_position.y + 18.0, "Impact-stage observer camera must stay above the target area for a proper俯视 cutaway instead of collapsing to near-ground level"):
+		return
+	if not T.require_true(self, observer_forward.y <= -0.24, "Impact-stage observer camera must keep a downward-looking pitch instead of tilting upward toward the horizon or sun (forward_y=%0.3f)" % observer_forward.y):
 		return
 
 	var explosion_result := await _wait_for_shell_explosion(world, 240)
@@ -76,6 +99,9 @@ func _run() -> void:
 	if not T.require_true(self, not bool(restored_state.get("active", true)), "Artillery observer closeout runtime must finish and clear its active flag after the cutaway completes"):
 		return
 	if not T.require_true(self, str(restored_state.get("camera_owner", "")) == "player", "After the observer closeout completes, camera ownership must return to the player"):
+		return
+	var operation_state_after_restore := world.get_world_howitzer_operation_state() as Dictionary
+	if not T.require_true(self, bool(operation_state_after_restore.get("active", false)), "Observer closeout must return the player to the ongoing操炮状态 instead of silently dropping out of howitzer operation after one shot"):
 		return
 
 	world.queue_free()

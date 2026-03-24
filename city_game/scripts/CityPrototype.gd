@@ -3555,6 +3555,9 @@ func _get_streaming_focus_position() -> Vector3:
 	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime) and _player_drone_runtime.has_method("should_drive_world_streaming") and bool(_player_drone_runtime.should_drive_world_streaming()):
 		if _player_drone_runtime.has_method("get_focus_world_position"):
 			return _player_drone_runtime.get_focus_world_position()
+	if _artillery_fire_mission_runtime != null and is_instance_valid(_artillery_fire_mission_runtime) and _artillery_fire_mission_runtime.has_method("should_drive_world_streaming") and bool(_artillery_fire_mission_runtime.should_drive_world_streaming()):
+		if _artillery_fire_mission_runtime.has_method("get_focus_world_position"):
+			return _artillery_fire_mission_runtime.get_focus_world_position()
 	return _get_active_anchor_position()
 
 func _get_navigation_focus_position() -> Vector3:
@@ -4319,7 +4322,16 @@ func _handle_world_howitzer_fire_input() -> Dictionary:
 		var firing_solution := fire_result.get("firing_solution", {}) as Dictionary
 		if not firing_solution.is_empty():
 			if _artillery_fire_mission_runtime != null and _artillery_fire_mission_runtime.has_method("start_observation_from_firing_solution"):
-				_artillery_fire_mission_runtime.start_observation_from_firing_solution(firing_solution)
+				var observation_state := _artillery_fire_mission_runtime.start_observation_from_firing_solution(firing_solution) as Dictionary
+				var observation_ballistic_time_scale := maxf(float(observation_state.get("shell_ballistic_time_scale", 0.0)), 0.0)
+				if observation_ballistic_time_scale > 0.0:
+					firing_solution["observation_ballistic_time_scale"] = observation_ballistic_time_scale
+				if observation_state.get("predicted_impact_world_position", null) is Vector3:
+					firing_solution["observer_forced_impact_world_position"] = observation_state.get("predicted_impact_world_position", Vector3.ZERO) as Vector3
+					firing_solution["observer_force_predicted_impact"] = true
+				var predicted_flight_time_sec := maxf(float(observation_state.get("flight_time_sec", 0.0)), 0.0)
+				if predicted_flight_time_sec > 0.0:
+					firing_solution["observer_forced_impact_flight_time_sec"] = predicted_flight_time_sec
 			_spawn_artillery_shell_from_firing_solution(firing_solution)
 	_update_npc_interaction_system()
 	return fire_result

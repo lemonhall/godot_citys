@@ -9,6 +9,9 @@ const OBSERVER_CAMERA_OWNER := "artillery_observer"
 
 @export var observer_muzzle_stage_duration_sec := 0.85
 @export var observer_impact_hold_duration_sec := 1.15
+@export var observer_total_duration_min_sec := 3.0
+@export var observer_total_duration_max_sec := 5.0
+@export var observer_pre_impact_lead_duration_sec := 0.7
 @export var observer_height_m := 36.0
 @export var observer_backoff_m := 58.0
 @export var observer_look_at_height_offset_m := 4.0
@@ -41,13 +44,13 @@ func _process(delta: float) -> void:
 		return
 	_maintain_player_lock_position()
 	_observation_phase_elapsed_sec += maxf(delta, 0.0)
+	_observation_state["elapsed_sec"] = _observation_phase_elapsed_sec
 	match str(_observation_state.get("phase", "idle")):
 		"muzzle_stage":
-			if _observation_phase_elapsed_sec >= maxf(observer_muzzle_stage_duration_sec, 0.01):
+			var impact_stage_delay_sec := maxf(float(_observation_state.get("impact_stage_delay_sec", observer_muzzle_stage_duration_sec)), 0.01)
+			if _observation_phase_elapsed_sec >= impact_stage_delay_sec:
 				_enter_impact_stage()
 		"impact_stage":
-			if _latest_shell_explosion_result.is_empty():
-				return
 			var remaining_sec := maxf(float(_observation_state.get("impact_hold_remaining_sec", observer_impact_hold_duration_sec)) - maxf(delta, 0.0), 0.0)
 			_observation_state["impact_hold_remaining_sec"] = remaining_sec
 			if remaining_sec <= 0.0:
@@ -158,6 +161,7 @@ func start_observation_from_firing_solution(firing_solution: Dictionary) -> Dict
 	var predicted_impact_world_position := predicted.get("impact_world_position", firing_solution.get("origin_world_position", Vector3.ZERO)) as Vector3
 	var predicted_chunk_key := _resolve_chunk_key(predicted_impact_world_position)
 	var prewarm_entries := _build_chunk_ring_entries(predicted_chunk_key, prewarm_ring_radius_chunks)
+	var observer_timing := _build_observer_timing_plan(predicted)
 	_prewarm_observation_entries(prewarm_entries)
 	_lock_player_for_observation()
 	_latest_shell_explosion_result.clear()
@@ -170,7 +174,13 @@ func start_observation_from_firing_solution(firing_solution: Dictionary) -> Dict
 		"predicted_impact_chunk_key": predicted_chunk_key,
 		"predicted_impact_chunk_id": _format_chunk_id(predicted_chunk_key),
 		"prewarm_entry_count": prewarm_entries.size(),
-		"impact_hold_remaining_sec": maxf(observer_impact_hold_duration_sec, 0.0),
+		"impact_hold_remaining_sec": float(observer_timing.get("impact_hold_duration_sec", observer_impact_hold_duration_sec)),
+		"impact_hold_duration_sec": float(observer_timing.get("impact_hold_duration_sec", observer_impact_hold_duration_sec)),
+		"impact_stage_delay_sec": float(observer_timing.get("impact_stage_delay_sec", observer_muzzle_stage_duration_sec)),
+		"planned_total_duration_sec": float(observer_timing.get("planned_total_duration_sec", 0.0)),
+		"flight_time_sec": float(predicted.get("flight_time_sec", 0.0)),
+		"shell_ballistic_time_scale": float(observer_timing.get("shell_ballistic_time_scale", 1.0)),
+		"elapsed_sec": 0.0,
 		"firing_solution": firing_solution.duplicate(true),
 		"shell_explosion_result": {},
 	}
@@ -183,11 +193,17 @@ func notify_shell_exploded(result: Dictionary) -> void:
 	if not bool(_observation_state.get("active", false)):
 		return
 	_observation_state["shell_explosion_result"] = _latest_shell_explosion_result.duplicate(true)
-	if str(_observation_state.get("phase", "")) == "impact_stage":
-		_observation_state["impact_hold_remaining_sec"] = maxf(observer_impact_hold_duration_sec, 0.0)
 
 func get_observation_state() -> Dictionary:
 	return _observation_state.duplicate(true)
+
+func should_drive_world_streaming() -> bool:
+	return bool(_observation_state.get("active", false))
+
+func get_focus_world_position() -> Vector3:
+	if not bool(_observation_state.get("active", false)):
+		return Vector3.ZERO
+	return _observation_state.get("predicted_impact_world_position", Vector3.ZERO) as Vector3
 
 func _build_solution_state(result: Dictionary) -> Dictionary:
 	if result.is_empty():
@@ -234,6 +250,11 @@ func _build_idle_observation_state() -> Dictionary:
 		"predicted_impact_chunk_id": "",
 		"prewarm_entry_count": 0,
 		"impact_hold_remaining_sec": 0.0,
+		"impact_hold_duration_sec": 0.0,
+		"impact_stage_delay_sec": 0.0,
+		"planned_total_duration_sec": 0.0,
+		"flight_time_sec": 0.0,
+		"elapsed_sec": 0.0,
 		"firing_solution": {},
 		"shell_explosion_result": {},
 	}
@@ -286,6 +307,32 @@ func _build_chunk_ring_entries(center_chunk_key: Vector2i, ring_radius_chunks: i
 			})
 	return entries
 
+func _build_observer_timing_plan(predicted_result: Dictionary) -> Dictionary:
+	var predicted_flight_time_sec := maxf(float(predicted_result.get("flight_time_sec", 0.0)), 0.0)
+	var planned_total_duration_sec := clampf(
+		maxf(observer_muzzle_stage_duration_sec + observer_pre_impact_lead_duration_sec + observer_impact_hold_duration_sec + 0.6, observer_total_duration_min_sec),
+		maxf(observer_total_duration_min_sec, 0.0),
+		maxf(observer_total_duration_max_sec, observer_total_duration_min_sec)
+	)
+	var desired_impact_delay_sec := clampf(
+		planned_total_duration_sec - maxf(observer_impact_hold_duration_sec, 0.35),
+		maxf(observer_muzzle_stage_duration_sec + 0.35, 0.75),
+		maxf(planned_total_duration_sec - 0.35, observer_muzzle_stage_duration_sec + 0.35)
+	)
+	var impact_stage_delay_sec := clampf(
+		desired_impact_delay_sec - maxf(observer_pre_impact_lead_duration_sec, 0.0),
+		maxf(observer_muzzle_stage_duration_sec, 0.01),
+		maxf(planned_total_duration_sec - 0.35, observer_muzzle_stage_duration_sec)
+	)
+	var impact_hold_duration_sec := maxf(planned_total_duration_sec - impact_stage_delay_sec, 0.35)
+	var shell_ballistic_time_scale := maxf(4.0, predicted_flight_time_sec / maxf(desired_impact_delay_sec, 0.1))
+	return {
+		"impact_stage_delay_sec": impact_stage_delay_sec,
+		"impact_hold_duration_sec": impact_hold_duration_sec,
+		"planned_total_duration_sec": impact_stage_delay_sec + impact_hold_duration_sec,
+		"shell_ballistic_time_scale": shell_ballistic_time_scale,
+	}
+
 func _prewarm_observation_entries(chunk_entries: Array[Dictionary]) -> void:
 	if _chunk_renderer == null or not is_instance_valid(_chunk_renderer):
 		return
@@ -316,10 +363,12 @@ func _maintain_player_lock_position() -> void:
 
 func _enter_impact_stage() -> void:
 	var predicted_impact_world_position := _observation_state.get("predicted_impact_world_position", Vector3.ZERO) as Vector3
+	var firing_solution := _observation_state.get("firing_solution", {}) as Dictionary
+	var observer_planar_direction := _resolve_observer_planar_direction(predicted_impact_world_position, firing_solution)
 	var look_target := predicted_impact_world_position + Vector3.UP * observer_look_at_height_offset_m
-	var observer_origin := predicted_impact_world_position + Vector3.UP * observer_height_m + Vector3.BACK * observer_backoff_m
+	var observer_origin := predicted_impact_world_position + Vector3.UP * observer_height_m - observer_planar_direction * observer_backoff_m
 	_observer_rig.global_position = observer_origin
-	_observer_rig.look_at(look_target, Vector3.UP, true)
+	_observer_rig.look_at(look_target, Vector3.UP)
 	if _player_camera == null:
 		_player_camera = _resolve_player_camera()
 	if _player_camera != null:
@@ -328,8 +377,9 @@ func _enter_impact_stage() -> void:
 	_observation_phase_elapsed_sec = 0.0
 	_observation_state["phase"] = "impact_stage"
 	_observation_state["camera_owner"] = OBSERVER_CAMERA_OWNER
+	_observation_state["elapsed_sec"] = 0.0
 	if not _latest_shell_explosion_result.is_empty():
-		_observation_state["impact_hold_remaining_sec"] = maxf(observer_impact_hold_duration_sec, 0.0)
+		_observation_state["impact_hold_remaining_sec"] = maxf(float(_observation_state.get("impact_hold_duration_sec", observer_impact_hold_duration_sec)), 0.0)
 
 func _complete_observation() -> void:
 	_observer_camera.current = false
@@ -350,3 +400,11 @@ func _resolve_player_camera() -> Camera3D:
 	if _player == null or not is_instance_valid(_player):
 		return null
 	return _player.get_node_or_null("CameraRig/Camera3D") as Camera3D
+
+func _resolve_observer_planar_direction(predicted_impact_world_position: Vector3, firing_solution: Dictionary) -> Vector3:
+	var origin_world_position := firing_solution.get("origin_world_position", predicted_impact_world_position) as Vector3
+	var planar_direction := predicted_impact_world_position - origin_world_position
+	planar_direction.y = 0.0
+	if planar_direction.length_squared() <= 0.0001:
+		planar_direction = Vector3(0.78, 0.0, -0.62)
+	return planar_direction.normalized()

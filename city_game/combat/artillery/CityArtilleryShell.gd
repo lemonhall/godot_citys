@@ -28,6 +28,9 @@ var _last_explosion_result: Dictionary = {}
 var _last_visual_direction := Vector3.ZERO
 var _visual_sync_guard_count := 0
 var _last_visual_sync_guard_reason := ""
+var _forced_impact_enabled := false
+var _forced_impact_world_position := Vector3.ZERO
+var _forced_impact_flight_time_sec := 0.0
 var _ballistics = CityArtilleryBallisticsScript.new()
 
 var _visual_root: Node3D = null
@@ -46,6 +49,7 @@ func configure_from_firing_solution(firing_solution: Dictionary, owner_node: Nod
 	_player_target = player_target
 	_world_runtime = world_runtime
 	global_position = _firing_solution.get("origin_world_position", Vector3.ZERO) as Vector3
+	ballistic_time_scale = maxf(float(_firing_solution.get("observation_ballistic_time_scale", ballistic_time_scale)), 0.001)
 	_velocity = _ballistics.build_launch_velocity_world(_firing_solution) if _ballistics != null and _ballistics.has_method("build_launch_velocity_world") else Vector3.ZERO
 	var direction := _velocity.normalized()
 	if direction.length_squared() <= 0.0001:
@@ -59,6 +63,9 @@ func configure_from_firing_solution(firing_solution: Dictionary, owner_node: Nod
 	_exploded = false
 	_explosion_elapsed_sec = 0.0
 	_last_explosion_result.clear()
+	_forced_impact_world_position = _firing_solution.get("observer_forced_impact_world_position", Vector3.ZERO) as Vector3
+	_forced_impact_flight_time_sec = maxf(float(_firing_solution.get("observer_forced_impact_flight_time_sec", 0.0)), 0.0)
+	_forced_impact_enabled = bool(_firing_solution.get("observer_force_predicted_impact", false)) and _forced_impact_flight_time_sec > 0.0
 	_sync_flight_visual(_velocity, true)
 
 func get_debug_state() -> Dictionary:
@@ -88,6 +95,14 @@ func _physics_process(delta: float) -> void:
 
 	_lifetime_sec += maxf(delta, 0.0)
 	_flight_time_sec += maxf(delta, 0.0) * maxf(ballistic_time_scale, 0.001)
+	if _forced_impact_enabled and _flight_time_sec >= _forced_impact_flight_time_sec:
+		var forced_delta := _forced_impact_world_position - global_position
+		_distance_travelled_m += global_position.distance_to(_forced_impact_world_position)
+		global_position = _forced_impact_world_position
+		_velocity = Vector3.ZERO
+		_sync_flight_visual(forced_delta, true)
+		_explode("forced_predicted_impact")
+		return
 	if _lifetime_sec >= max_lifetime_sec:
 		_explode("max_lifetime")
 		return

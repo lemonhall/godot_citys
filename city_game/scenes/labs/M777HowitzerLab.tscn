@@ -1,0 +1,115 @@
+[gd_scene load_steps=8 format=3 uid="uid://dfl8pt16pp0yg"]
+
+[ext_resource type="Script" path="res://city_game/scenes/labs/M777HowitzerLab.gd" id="1_lab_script"]
+[ext_resource type="PackedScene" uid="uid://bwqj1f6arceu1" path="res://city_game/combat/artillery/CityM777Howitzer.tscn" id="2_howitzer_scene"]
+[ext_resource type="Script" path="res://city_game/scripts/PlayerController.gd" id="3_player_script"]
+
+[sub_resource type="Environment" id="1_lab_environment"]
+background_mode = 2
+background_color = Color(0.701961, 0.807843, 0.886275, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.98, 0.99, 1, 1)
+ambient_light_energy = 0.7
+
+[sub_resource type="BoxShape3D" id="2_ground_shape"]
+size = Vector3(80, 1, 80)
+
+[sub_resource type="StandardMaterial3D" id="4_ground_material"]
+albedo_color = Color(0.319, 0.388, 0.25, 1)
+
+[sub_resource type="BoxMesh" id="3_ground_mesh"]
+size = Vector3(80, 1, 80)
+
+[sub_resource type="CapsuleShape3D" id="5_player_shape"]
+radius = 0.45
+height = 1.1
+
+[sub_resource type="CapsuleMesh" id="6_player_mesh"]
+radius = 0.45
+mid_height = 1.1
+
+[node name="M777HowitzerLab" type="Node3D" unique_id=1372809406]
+script = ExtResource("1_lab_script")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1457025689]
+environment = SubResource("1_lab_environment")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=1604158634]
+transform = Transform3D(0.8829476, 0.31413782, -0.34888536, 0, 0.7431448, 0.6691306, 0.4694716, -0.59080726, 0.6561579, 0, 4.88025, 7.621298)
+light_energy = 1.6
+shadow_enabled = true
+
+[node name="GroundBody" type="StaticBody3D" parent="." unique_id=705211667]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="GroundBody" unique_id=1856187523]
+shape = SubResource("2_ground_shape")
+
+[node name="GroundMesh" type="MeshInstance3D" parent="GroundBody" unique_id=1160757512]
+material_override = SubResource("4_ground_material")
+mesh = SubResource("3_ground_mesh")
+
+[node name="ArtilleryRoot" type="Node3D" parent="." unique_id=576307286]
+
+[node name="Howitzer" parent="ArtilleryRoot" unique_id=613588395 instance=ExtResource("2_howitzer_scene")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.34, 0)
+
+[node name="Player" type="CharacterBody3D" parent="." unique_id=887231104]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 14)
+script = ExtResource("3_player_script")
+min_pitch_deg = -86.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Player" unique_id=1338265412]
+shape = SubResource("5_player_shape")
+
+[node name="Visual" type="MeshInstance3D" parent="Player" unique_id=1817406352]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+mesh = SubResource("6_player_mesh")
+
+[node name="CameraRig" type="Node3D" parent="Player" unique_id=960270331]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.35, 0)
+
+[node name="Camera3D" type="Camera3D" parent="Player/CameraRig" unique_id=183976871]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.4, 6.8)
+current = true
+fov = 65.0
+
+[node name="LabCameraRig" type="Node3D" parent="." unique_id=890207]
+transform = Transform3D(0.81915206, -0.1580991, 0.5513571, 0, 0.9612617, 0.27563736, -0.57357645, -0.2257889, 0.7874195, 6.2, 3.7, 8.4)
+
+[node name="Camera3D" type="Camera3D" parent="LabCameraRig" unique_id=636123243]
+fov = 38.0
+
+[node name="Hud" type="CanvasLayer" parent="." unique_id=1836739175]
+
+[node name="Root" type="Control" parent="Hud" unique_id=1641108546]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Panel" type="PanelContainer" parent="Hud/Root" unique_id=340899262]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 360.0
+offset_bottom = 176.0
+
+[node name="VBox" type="VBoxContainer" parent="Hud/Root/Panel" unique_id=608385279]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Hud/Root/Panel/VBox" unique_id=1636495511]
+layout_mode = 2
+text = "v44 m777 howitzer lab"
+
+[node name="Status" type="Label" parent="Hud/Root/Panel/VBox" unique_id=948778133]
+layout_mode = 2
+text = "Booting M777 howitzer lab..."
+autowrap_mode = 3
+
+[node name="DebugText" type="Label" parent="Hud/Root/Panel/VBox" unique_id=1304352524]
+layout_mode = 2
+autowrap_mode = 3

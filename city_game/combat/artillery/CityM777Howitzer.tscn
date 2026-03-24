@@ -1,0 +1,27 @@
+[gd_scene format=3 uid="uid://bwqj1f6arceu1"]
+
+[ext_resource type="Script" path="res://city_game/combat/artillery/CityM777Howitzer.gd" id="1_howitzer_script"]
+[ext_resource type="PackedScene" uid="uid://dkpk44u5oy713" path="res://city_game/assets/environment/source/artillery/m777/m777_3_parts.glb" id="2_source_asset"]
+
+[node name="CityM777Howitzer" type="Node3D" unique_id=1737026317]
+script = ExtResource("1_howitzer_script")
+
+[node name="ModelRoot" type="Node3D" parent="." unique_id=649281773]
+
+[node name="LowerBaseMount" type="Node3D" parent="ModelRoot" unique_id=1982759832]
+
+[node name="YawPivot" type="Node3D" parent="ModelRoot" unique_id=1233078761]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.29)
+
+[node name="PitchPivot" type="Node3D" parent="ModelRoot/YawPivot" unique_id=1398547172]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.05)
+
+[node name="SourceAsset" parent="ModelRoot" unique_id=183026183 instance=ExtResource("2_source_asset")]
+
+[node name="Anchors" type="Node3D" parent="." unique_id=155477353]
+
+[node name="YawPivotAnchor" type="Marker3D" parent="Anchors" unique_id=1691850120]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.18339898, 0.036200494)
+
+[node name="PitchPivotAnchor" type="Marker3D" parent="Anchors" unique_id=587547894]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.34541282, 0.08429819)

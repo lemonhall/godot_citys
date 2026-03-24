@@ -111,6 +111,22 @@ func _run() -> void:
 	if not T.require_true(self, last_strike_result.get("explosion_world_position", Vector3.ZERO) is Vector3, "Drone suicide strike contract must record the explosion world position in the strike summary"):
 		return
 
+	_press_world_key(world, KEY_KP_5)
+	var redeploy_state := await _wait_for_state(world, "active", 180)
+	if not T.require_true(self, str(redeploy_state.get("system_state", "")) == "active", "Drone suicide strike contract requires a second deploy cycle so post-strike attitude reset can be regression tested"):
+		return
+	var body_pitch_deg := absf(rad_to_deg(runtime.rotation.x))
+	var body_roll_deg := absf(rad_to_deg(runtime.rotation.z))
+	if not T.require_true(self, body_pitch_deg <= 1.0 and body_roll_deg <= 1.0, "Every fresh drone deploy must reset the root aircraft attitude back to level hover instead of inheriting post-strike pitch/roll (pitch=%0.3f roll=%0.3f)" % [body_pitch_deg, body_roll_deg]):
+		return
+	var model_root := runtime.get_node_or_null("ModelRoot") as Node3D
+	if not T.require_true(self, model_root != null, "Drone suicide strike contract requires ModelRoot so fresh-deploy visual attitude can be verified"):
+		return
+	var model_pitch_deg := absf(rad_to_deg(model_root.rotation.x))
+	var model_roll_deg := absf(rad_to_deg(model_root.rotation.z))
+	if not T.require_true(self, model_pitch_deg <= 4.0 and model_roll_deg <= 4.0, "Every fresh drone deploy must also reset the visible drone body back near level hover instead of spawning nose-up or nose-down (pitch=%0.3f roll=%0.3f)" % [model_pitch_deg, model_roll_deg]):
+		return
+
 	world.queue_free()
 	await process_frame
 	T.pass_and_quit(self)

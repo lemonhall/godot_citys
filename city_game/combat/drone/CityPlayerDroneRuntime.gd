@@ -294,7 +294,7 @@ func _begin_deploy() -> void:
 	_transition_target_position = _resolve_hover_anchor()
 	_locked_player_position = _player_owner.global_position
 	global_position = _transition_start_position
-	global_rotation.y = _resolve_player_yaw()
+	_reset_aircraft_attitude(_resolve_player_yaw())
 	_set_view_mode(VIEW_MODE_THIRD_PERSON)
 	_strike_state = STRIKE_STATE_IDLE
 	_fpv_pitch_rad = 0.0
@@ -855,6 +855,16 @@ func _orient_body_toward_direction(direction: Vector3) -> void:
 		return
 	var up_axis := Vector3.UP if absf(direction.normalized().dot(Vector3.UP)) < 0.94 else Vector3.FORWARD
 	look_at(global_position + direction.normalized(), up_axis)
+
+func _reset_aircraft_attitude(yaw_rad: float) -> void:
+	global_rotation = Vector3.ZERO
+	global_rotation.y = yaw_rad
+	if visual_root != null:
+		visual_root.rotation = Vector3.ZERO
+	if rotor_blur_root != null:
+		rotor_blur_root.rotation = Vector3.ZERO
+	if fpv_pivot != null:
+		fpv_pivot.rotation = Vector3.ZERO
 
 func _reset_death_fx() -> void:
 	if death_fx_root != null:

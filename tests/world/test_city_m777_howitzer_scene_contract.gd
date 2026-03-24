@@ -31,6 +31,7 @@ const REQUIRED_NODE_PATHS := [
 	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFlash",
 	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleSmoke",
 	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/Lanyard",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/LanyardLine",
 	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/FireAudio",
 ]
 

@@ -23,7 +23,8 @@ const GUN_ASSEMBLY_NODE_NAME := "m777_gun_assembly"
 @export var smoke_peak_scale := Vector3.ONE * 2.35
 @export var lanyard_idle_scale := Vector3(1.0, 0.9, 1.0)
 @export var lanyard_tension_scale := Vector3(1.0, 1.18, 1.0)
-@export var lanyard_pull_local_offset := Vector3(0.0, 0.0, 0.014)
+@export var lanyard_handle_idle_local_offset := Vector3(0.018, -0.024, 0.006)
+@export var lanyard_pull_local_offset := Vector3(0.022, -0.014, 0.004)
 
 @onready var _model_root := $ModelRoot as Node3D
 @onready var _lower_base_mount := $ModelRoot/LowerBaseMount as Node3D
@@ -38,6 +39,7 @@ const GUN_ASSEMBLY_NODE_NAME := "m777_gun_assembly"
 @onready var _muzzle_flash := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFlash as Node3D
 @onready var _muzzle_smoke := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleSmoke as Node3D
 @onready var _lanyard := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/Lanyard as MeshInstance3D
+@onready var _lanyard_line := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/LanyardLine as Node3D
 @onready var _fire_audio := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/FireAudio as AudioStreamPlayer3D
 
 var _yaw_deg := 0.0
@@ -58,6 +60,8 @@ var _authored_muzzle_flash_scale := Vector3.ONE
 var _authored_muzzle_smoke_scale := Vector3.ONE
 var _authored_lanyard_scale := Vector3.ONE
 var _authored_lanyard_position := Vector3.ZERO
+var _operator_lanyard_target_active := false
+var _operator_lanyard_target_world_position := Vector3.ZERO
 
 func _ready() -> void:
 	_mount_segments()
@@ -95,6 +99,14 @@ func get_yaw_degrees() -> float:
 
 func get_pitch_degrees() -> float:
 	return _pitch_deg
+
+func set_operator_lanyard_target_world_position(world_position: Vector3) -> void:
+	_operator_lanyard_target_active = true
+	_operator_lanyard_target_world_position = world_position
+
+func clear_operator_lanyard_target_world_position() -> void:
+	_operator_lanyard_target_active = false
+	_operator_lanyard_target_world_position = Vector3.ZERO
 
 func can_fire() -> bool:
 	return _fire_cooldown_remaining_sec <= 0.0
@@ -137,6 +149,7 @@ func get_fire_state() -> Dictionary:
 		"audio_trigger_count": _fire_audio_trigger_count,
 		"audio_playing": _fire_audio.playing if _fire_audio != null else false,
 		"lanyard_visible": _lanyard.visible if _lanyard != null else false,
+		"lanyard_line_visible": bool((_lanyard_line.get_debug_state() as Dictionary).get("visible", false)) if _lanyard_line != null and _lanyard_line.has_method("get_debug_state") else false,
 	}
 
 func get_anchor_state() -> Dictionary:
@@ -205,18 +218,17 @@ func _cache_fire_nodes() -> void:
 func _sync_fire_presentation_from_anchors() -> void:
 	if _pitch_pivot == null:
 		return
-	if _muzzle_anchor != null:
-		var muzzle_local := _pitch_pivot.to_local(_muzzle_anchor.global_position)
-		if _muzzle_flash != null:
-			_muzzle_flash.position = muzzle_local
-		if _muzzle_smoke != null:
-			_muzzle_smoke.position = muzzle_local
-	if _lanyard_anchor != null:
-		var lanyard_local := _pitch_pivot.to_local(_lanyard_anchor.global_position)
-		if _lanyard != null:
-			_lanyard.position = lanyard_local
-		if _fire_audio != null:
-			_fire_audio.position = lanyard_local
+	_apply_fire_anchor_transform(_muzzle_flash, _muzzle_anchor)
+	_apply_fire_anchor_transform(_muzzle_smoke, _muzzle_anchor)
+	_apply_fire_anchor_transform(_lanyard, _lanyard_anchor)
+	_apply_fire_anchor_transform(_fire_audio, _lanyard_anchor)
+	if _muzzle_flash_remaining_sec <= 0.0 and _muzzle_smoke_remaining_sec <= 0.0 and _lanyard_pull_remaining_sec <= 0.0 and _recoil_remaining_sec <= 0.0:
+		_capture_fire_authored_state()
+
+func _apply_fire_anchor_transform(target: Node3D, anchor: Marker3D) -> void:
+	if _pitch_pivot == null or target == null or anchor == null:
+		return
+	target.transform = _pitch_pivot.global_transform.affine_inverse() * anchor.global_transform
 
 func _capture_fire_authored_state() -> void:
 	if _gun_assembly != null:
@@ -355,8 +367,17 @@ func _set_lanyard_tension(tension: float) -> void:
 		return
 	var resolved_tension := clampf(tension, 0.0, 1.0)
 	_lanyard.visible = true
-	_lanyard.scale = lanyard_idle_scale.lerp(lanyard_tension_scale, resolved_tension)
-	_lanyard.position = _authored_lanyard_position + lanyard_pull_local_offset * resolved_tension
+	var line_start_world := _pitch_pivot.to_global(_authored_lanyard_position) if _pitch_pivot != null else Vector3.ZERO
+	var line_end_world := _pitch_pivot.to_global(_authored_lanyard_position + lanyard_handle_idle_local_offset + lanyard_pull_local_offset * resolved_tension) if _pitch_pivot != null else Vector3.ZERO
+	if _operator_lanyard_target_active and _pitch_pivot != null:
+		line_end_world = _operator_lanyard_target_world_position
+		_lanyard.position = _pitch_pivot.to_local(line_end_world)
+	else:
+		_lanyard.position = _authored_lanyard_position + lanyard_handle_idle_local_offset + lanyard_pull_local_offset * resolved_tension
+	_lanyard.scale = _authored_lanyard_scale * lanyard_idle_scale.lerp(lanyard_tension_scale, resolved_tension)
+	if _lanyard_line != null and _lanyard_line.has_method("set_line_state") and _pitch_pivot != null:
+		var sag_m := lerpf(0.22, 0.02, resolved_tension) if _operator_lanyard_target_active else lerpf(0.025, 0.0, resolved_tension)
+		_lanyard_line.set_line_state(true, line_start_world, line_end_world, sag_m)
 
 func _play_fire_audio() -> void:
 	if _fire_audio == null or _fire_audio.stream == null:

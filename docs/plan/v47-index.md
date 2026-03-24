@@ -47,6 +47,7 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
 | M0 docs freeze | PRD / ECN / v47 plan 全链冻结 | `Space`、`6.0s`、fire 演出组成、HUD 冷却文案与非目标边界全部落文档 | `rg -n "REQ-0029-008|Space|6.0s|装填中 X.Xs|可击发|MuzzleFxAnchor|LanyardAnchor|projectile / grenade / missile" docs/prd/PRD-0029-artillery-howitzer-scene-foundation.md docs/ecn/ECN-0031-artillery-fire-presentation.md docs/plan/v47-index.md docs/plan/v47-artillery-fire-presentation.md docs/plans/2026-03-24-v47-artillery-fire-presentation-design.md` | done |
 | M1 fire runtime + lab trigger | formal fire API、scene nodes、lab `Space` 交互与 HUD | focused tests 证明 howitzer fire contract 与 lab fire interaction 全部成立 | `tests/world/test_city_m777_howitzer_scene_contract.gd`; `tests/world/test_city_m777_howitzer_lab_scene_contract.gd`; `tests/world/test_city_m777_howitzer_fire_contract.gd`; `tests/world/test_city_m777_howitzer_lab_fire_interaction_contract.gd` | done |
 | M2 verification | focused tests + fresh closeout 文档 | 受影响 tests 全绿，fresh verification 文档回填追溯矩阵 | `docs/plan/v47-m2-verification-2026-03-24.md` | done |
+| M3 live-regression hardening | 修复实机反馈的 Space jump leak 与 fire anchor drift | red-green tests 证明操炮态 `Space` 不再串跳，fire presentation 跟随完整 anchor transform，fresh verification 文档回填 | `docs/plan/v47-m3-verification-2026-03-24.md` | done |
 
 ## 计划索引
 
@@ -56,8 +57,8 @@ PRD 入口：[PRD-0029 Artillery Howitzer Scene Foundation](../prd/PRD-0029-arti
 
 | Req ID | V47 Plan | 单元/集成测试 | E2E / 验证命令 | 证据 | 状态 |
 |---|---|---|---|---|---|
-| REQ-0029-008 | `v47-artillery-fire-presentation.md` | `tests/world/test_city_m777_howitzer_scene_contract.gd`; `tests/world/test_city_m777_howitzer_fire_contract.gd` | `docs/plan/v47-m2-verification-2026-03-24.md` | `v47-m2-verification-2026-03-24.md` | done |
-| REQ-0029-007 | `v47-artillery-fire-presentation.md` | `tests/world/test_city_m777_howitzer_lab_scene_contract.gd`; `tests/world/test_city_m777_howitzer_lab_fire_interaction_contract.gd` | `docs/plan/v47-m2-verification-2026-03-24.md` | `v47-m2-verification-2026-03-24.md` | done |
+| REQ-0029-008 | `v47-artillery-fire-presentation.md` | `tests/world/test_city_m777_howitzer_scene_contract.gd`; `tests/world/test_city_m777_howitzer_fire_contract.gd` | `docs/plan/v47-m3-verification-2026-03-24.md` | `v47-m3-verification-2026-03-24.md` | done |
+| REQ-0029-007 | `v47-artillery-fire-presentation.md` | `tests/world/test_city_m777_howitzer_lab_scene_contract.gd`; `tests/world/test_city_m777_howitzer_lab_fire_interaction_contract.gd` | `docs/plan/v47-m3-verification-2026-03-24.md` | `v47-m3-verification-2026-03-24.md` | done |
 
 ## Closeout 证据口径
 

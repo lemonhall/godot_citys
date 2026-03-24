@@ -44,6 +44,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_refresh_operation_context()
+	_sync_howitzer_operator_lanyard_target()
 	if _operation_active:
 		var yaw_input := 0.0
 		if Input.is_key_pressed(KEY_J):
@@ -130,6 +131,7 @@ func reset_lab_state() -> void:
 		_howitzer.set_axis_angles_degrees(neutral_yaw_deg, neutral_pitch_deg)
 	_restore_player_state()
 	_refresh_operation_context()
+	_sync_howitzer_operator_lanyard_target()
 	_refresh_hud()
 
 func adjust_yaw_degrees(delta_deg: float) -> void:
@@ -183,6 +185,8 @@ func request_fire() -> Dictionary:
 			"handled": true,
 			"error": "fire_api_unavailable",
 		}
+	if _player != null and _player.has_method("consume_jump_input_once"):
+		_player.consume_jump_input_once()
 	var result := _howitzer.request_fire() as Dictionary
 	var response := result.duplicate(true)
 	response["handled"] = true
@@ -314,6 +318,24 @@ func _resolve_interaction_anchor_world_position() -> Vector3:
 
 func _set_operation_active(active: bool) -> void:
 	_operation_active = active
+	_sync_howitzer_operator_lanyard_target()
+
+func _sync_howitzer_operator_lanyard_target() -> void:
+	if _howitzer == null:
+		return
+	if _operation_active:
+		if _howitzer.has_method("set_operator_lanyard_target_world_position"):
+			_howitzer.set_operator_lanyard_target_world_position(_resolve_player_lanyard_target_world_position())
+		return
+	if _howitzer.has_method("clear_operator_lanyard_target_world_position"):
+		_howitzer.clear_operator_lanyard_target_world_position()
+
+func _resolve_player_lanyard_target_world_position() -> Vector3:
+	if _player == null:
+		return Vector3.ZERO
+	if _player.has_method("get_bite_feedback_world_position"):
+		return _player.get_bite_feedback_world_position()
+	return _player.global_position + Vector3.UP * 1.05
 
 func _sync_interaction_prompt_ui() -> void:
 	_interaction_prompt_state = _build_interaction_prompt_state()

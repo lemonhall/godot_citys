@@ -114,6 +114,7 @@ var _movement_locked := false
 var _speed_profile := "player"
 var _stabilization_suspend_frames := 0
 var _collision_resume_process_frames := 0
+var _jump_input_suppressed_until_release := false
 var _weapon_mode := WEAPON_MODE_RIFLE
 var _primary_fire_cooldown_remaining := 0.0
 var _primary_fire_active := false
@@ -390,6 +391,7 @@ func set_control_enabled(enabled: bool) -> void:
 	_control_enabled = enabled
 	if not enabled:
 		_primary_fire_active = false
+		_jump_input_suppressed_until_release = false
 		velocity.x = 0.0
 		velocity.z = 0.0
 		_driving_vehicle_speed_mps = 0.0
@@ -400,6 +402,9 @@ func set_control_enabled(enabled: bool) -> void:
 
 func is_control_enabled() -> bool:
 	return _control_enabled
+
+func consume_jump_input_once() -> void:
+	_jump_input_suppressed_until_release = true
 
 func set_movement_locked(enabled: bool) -> void:
 	_movement_locked = enabled
@@ -1390,6 +1395,10 @@ func _read_water_vertical_input() -> float:
 	return 1.0 if _jump_requested() else 0.0
 
 func _jump_requested() -> bool:
+	if _jump_input_suppressed_until_release:
+		if Input.is_key_pressed(KEY_SPACE) or Input.is_action_pressed("ui_accept"):
+			return false
+		_jump_input_suppressed_until_release = false
 	return Input.is_key_pressed(KEY_SPACE) or Input.is_action_just_pressed("ui_accept")
 
 func _wall_jump_requested() -> bool:

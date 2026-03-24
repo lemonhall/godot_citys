@@ -31,11 +31,14 @@ func _run() -> void:
 	var player := lab.get_node_or_null("Player") as CharacterBody3D
 	var howitzer := lab.get_node_or_null("ArtilleryRoot/Howitzer") as Node3D
 	var hud := lab.get_node_or_null("Hud")
+	var lanyard_line := lab.get_node_or_null("ArtilleryRoot/Howitzer/ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/LanyardLine") as Node3D
 	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "M777 howitzer interaction contract requires the formal lab player teleport API"):
 		return
 	if not T.require_true(self, howitzer != null, "M777 howitzer interaction contract requires the formal howitzer node in the lab hierarchy"):
 		return
 	if not T.require_true(self, hud != null and hud.has_method("get_interaction_prompt_state"), "M777 howitzer interaction contract requires HUD prompt introspection via the shared prompt contract"):
+		return
+	if not T.require_true(self, lanyard_line != null and lanyard_line.has_method("get_debug_state"), "M777 howitzer interaction contract requires a visible lanyard line debug surface so操炮态 can prove the pull-rope really links to the operator"):
 		return
 
 	var initial_prompt_state: Dictionary = hud.get_interaction_prompt_state()
@@ -72,6 +75,14 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(active_prompt_state.get("prompt_text", "")).find("J/L") >= 0 and str(active_prompt_state.get("prompt_text", "")).find("I/K") >= 0 and str(active_prompt_state.get("prompt_text", "")).find("Space") >= 0, "The operation prompt must explicitly show J/L, I/K and Space after pressing E so artillery traverse, elevation and fire all remain learnable in-context"):
 		return
+	var active_lanyard_line_state := lanyard_line.get_debug_state() as Dictionary
+	if not T.require_true(self, bool(active_lanyard_line_state.get("visible", false)), "After entering operation mode, the lanyard line must stay visible instead of collapsing into a tiny gun-local stub"):
+		return
+	if not T.require_true(self, player.has_method("get_bite_feedback_world_position"), "M777 howitzer interaction contract requires PlayerController.get_bite_feedback_world_position() so the operator-side lanyard endpoint can be regression tested"):
+		return
+	var operator_anchor_world_position := player.get_bite_feedback_world_position() as Vector3
+	if not T.require_true(self, (active_lanyard_line_state.get("end_world_position", Vector3.ZERO) as Vector3).distance_to(operator_anchor_world_position) <= 0.9, "Entering operation mode must connect the lanyard line to the player-side operator anchor instead of leaving the rope endpoint near the gun"):
+		return
 
 	_set_key_pressed(KEY_L, true)
 	await _advance_frames(12)
@@ -103,6 +114,10 @@ func _run() -> void:
 		return
 	active_prompt_state = hud.get_interaction_prompt_state()
 	if not T.require_true(self, bool(active_prompt_state.get("visible", false)), "While retained inside the wider operation radius, the control prompt must remain visible"):
+		return
+	var retained_lanyard_line_state := lanyard_line.get_debug_state() as Dictionary
+	var retained_operator_anchor_world_position := player.get_bite_feedback_world_position() as Vector3
+	if not T.require_true(self, (retained_lanyard_line_state.get("end_world_position", Vector3.ZERO) as Vector3).distance_to(retained_operator_anchor_world_position) <= 0.9, "Inside the wider retention radius, the lanyard line endpoint must continue to follow the moved player instead of staying frozen at the original操炮位置"):
 		return
 
 	var retained_yaw_before_deg := float((lab.get_lab_state() as Dictionary).get("yaw_deg", 0.0))

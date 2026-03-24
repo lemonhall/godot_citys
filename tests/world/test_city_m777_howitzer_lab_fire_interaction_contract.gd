@@ -57,13 +57,30 @@ func _run() -> void:
 	var prompt_state := hud.get_interaction_prompt_state() as Dictionary
 	if not T.require_true(self, str(prompt_state.get("prompt_text", "")).find("Space") >= 0, "Entering operation mode must teach the player that Space fires the howitzer"):
 		return
+	if not T.require_true(self, player.has_method("get_traversal_state") and player.has_method("get_mobility_tuning"), "M777 lab fire interaction contract requires PlayerController traversal introspection so fire input can be proven not to leak into jump"):
+		return
+	await _advance_frames(4)
+	if not T.require_true(self, player.is_on_floor(), "Before validating Space fire ownership, the lab player must be settled on the ground"):
+		return
 
-	_press_key(lab, KEY_SPACE)
+	var player_y_before := player.global_position.y
+	var jump_velocity := float((player.get_mobility_tuning() as Dictionary).get("jump_velocity", 0.0))
+	_press_live_key(lab, KEY_SPACE)
+	await _advance_frames(10)
+	var held_traversal_state := player.get_traversal_state() as Dictionary
+	if not T.require_true(self, float(held_traversal_state.get("vertical_speed", 0.0)) < jump_velocity * 0.25, "Inside operation mode, even while Space is still held down for the fire press, PlayerController must not recover jump ownership and launch the lab capsule upward"):
+		return
+	_release_live_key(KEY_SPACE)
 	await _settle_frames()
 
 	var firing_lab_state := lab.get_lab_state() as Dictionary
 	var firing_fire_state := firing_lab_state.get("fire_state", {}) as Dictionary
 	if not T.require_true(self, int(firing_fire_state.get("fire_count", 0)) == initial_fire_count + 1, "Inside operation mode, Space must trigger formal howitzer fire exactly once"):
+		return
+	var traversal_state := player.get_traversal_state() as Dictionary
+	if not T.require_true(self, float(traversal_state.get("vertical_speed", 0.0)) < jump_velocity * 0.25, "Inside operation mode, Space must not leak into PlayerController jump input and launch the lab capsule upward"):
+		return
+	if not T.require_true(self, player.global_position.y <= player_y_before + 0.2, "Inside operation mode, firing with Space must keep the player grounded instead of adding a visible hop on the same button press"):
 		return
 	if not T.require_true(self, not bool(firing_fire_state.get("can_fire", true)), "Accepted lab fire must drive the mounted howitzer into cooldown"):
 		return
@@ -116,6 +133,23 @@ func _press_key(target: Node, keycode: Key) -> void:
 	key_event.keycode = keycode
 	key_event.physical_keycode = keycode
 	target._unhandled_input(key_event)
+
+func _press_live_key(target: Node, keycode: Key) -> void:
+	var key_event := InputEventKey.new()
+	key_event.pressed = true
+	key_event.echo = false
+	key_event.keycode = keycode
+	key_event.physical_keycode = keycode
+	Input.parse_input_event(key_event)
+	target._unhandled_input(key_event)
+
+func _release_live_key(keycode: Key) -> void:
+	var key_event := InputEventKey.new()
+	key_event.pressed = false
+	key_event.echo = false
+	key_event.keycode = keycode
+	key_event.physical_keycode = keycode
+	Input.parse_input_event(key_event)
 
 func _advance_frames(frame_count: int) -> void:
 	for _frame_index in range(frame_count):

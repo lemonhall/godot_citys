@@ -96,9 +96,10 @@ func _physics_process(delta: float) -> void:
 	_lifetime_sec += maxf(delta, 0.0)
 	_flight_time_sec += maxf(delta, 0.0) * maxf(ballistic_time_scale, 0.001)
 	if _forced_impact_enabled and _flight_time_sec >= _forced_impact_flight_time_sec:
-		var forced_delta := _forced_impact_world_position - global_position
-		_distance_travelled_m += global_position.distance_to(_forced_impact_world_position)
-		global_position = _forced_impact_world_position
+		var resolved_forced_impact_world_position := _resolve_forced_impact_world_position()
+		var forced_delta := resolved_forced_impact_world_position - global_position
+		_distance_travelled_m += global_position.distance_to(resolved_forced_impact_world_position)
+		global_position = resolved_forced_impact_world_position
 		_velocity = Vector3.ZERO
 		_sync_flight_visual(forced_delta, true)
 		_explode("forced_predicted_impact")
@@ -123,6 +124,12 @@ func _step_ballistic_flight(simulated_delta: float) -> bool:
 	}
 	var next_velocity := ballistic_step.get("next_velocity", _velocity) as Vector3
 	var end_position := ballistic_step.get("next_position", start_position) as Vector3
+	if _forced_impact_enabled:
+		global_position = end_position
+		_distance_travelled_m += start_position.distance_to(end_position)
+		_velocity = next_velocity
+		_sync_flight_visual(end_position - start_position, true)
+		return false
 	var query := PhysicsRayQueryParameters3D.create(start_position, end_position)
 	query.collide_with_areas = false
 	query.exclude = _build_query_exclusions()
@@ -239,6 +246,11 @@ func _resolve_world_runtime() -> Node:
 			return current
 		current = current.get_parent()
 	return null
+
+func _resolve_forced_impact_world_position() -> Vector3:
+	if _world_runtime != null and is_instance_valid(_world_runtime) and _world_runtime.has_method("resolve_observer_effect_surface_world_position"):
+		return _world_runtime.resolve_observer_effect_surface_world_position(_forced_impact_world_position)
+	return _forced_impact_world_position
 
 func _update_explosion_fx(delta: float) -> void:
 	_explosion_elapsed_sec += maxf(delta, 0.0)

@@ -89,6 +89,9 @@ const FAST_TRAVEL_SHORTCUT_AIR_DROP_HEIGHT_M := 10.0
 const DESTINATION_WORLD_MARKER_RADIUS_M := 8.0
 const DESTINATION_WORLD_MARKER_CLEAR_DISTANCE_M := 10.5
 const DESTINATION_WORLD_MARKER_SURFACE_OFFSET_M := 0.12
+const OBSERVER_EFFECT_SURFACE_SNAP_HEIGHT_OFFSET_M := 0.06
+const OBSERVER_EFFECT_SURFACE_SNAP_UPWARD_PROBE_M := 128.0
+const OBSERVER_EFFECT_SURFACE_SNAP_DOWNWARD_PROBE_M := 256.0
 const ROUTE_STYLE_DESTINATION := "destination"
 const ROUTE_STYLE_TASK_AVAILABLE := "task_available"
 const ROUTE_STYLE_TASK_ACTIVE := "task_active"
@@ -3548,6 +3551,20 @@ func _resolve_surface_world_position(world_position: Vector3, standing_height: f
 		CityChunkGroundSampler.sample_height(local_point, chunk_payload, profile) + standing_height,
 		world_position.z
 	)
+
+func resolve_observer_effect_surface_world_position(world_position: Vector3, height_offset_m: float = OBSERVER_EFFECT_SURFACE_SNAP_HEIGHT_OFFSET_M) -> Vector3:
+	if get_world_3d() != null and get_world_3d().direct_space_state != null:
+		var from_world_position := world_position + Vector3.UP * OBSERVER_EFFECT_SURFACE_SNAP_UPWARD_PROBE_M
+		var to_world_position := world_position + Vector3.DOWN * OBSERVER_EFFECT_SURFACE_SNAP_DOWNWARD_PROBE_M
+		var query := PhysicsRayQueryParameters3D.create(from_world_position, to_world_position)
+		query.collide_with_areas = false
+		query.exclude = [player.get_rid()] if player != null else []
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		if not hit.is_empty():
+			return (hit.get("position", world_position) as Vector3) + Vector3.UP * height_offset_m
+	var fallback_surface_position := _resolve_surface_world_position(world_position, 0.0)
+	fallback_surface_position.y += height_offset_m
+	return fallback_surface_position
 
 func _resolve_nearby_enemy_spawn_world_position(world_position: Vector3, standing_height: float) -> Vector3:
 	var best_position := _resolve_surface_world_position(world_position, standing_height)

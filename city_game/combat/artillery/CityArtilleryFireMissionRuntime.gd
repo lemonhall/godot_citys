@@ -12,9 +12,10 @@ const OBSERVER_CAMERA_OWNER := "artillery_observer"
 @export var observer_total_duration_min_sec := 3.0
 @export var observer_total_duration_max_sec := 5.0
 @export var observer_pre_impact_lead_duration_sec := 0.7
-@export var observer_height_m := 30.0
+@export var observer_height_m := 80.0
 @export var observer_backoff_m := 42.0
 @export var observer_look_at_height_offset_m := 4.0
+@export var observer_surface_snap_height_offset_m := 0.06
 @export var prewarm_ring_radius_chunks := 1
 
 var _world_config = null
@@ -173,6 +174,7 @@ func start_observation_from_firing_solution(firing_solution: Dictionary) -> Dict
 	var prewarm_entries := _build_chunk_ring_entries(predicted_chunk_key, prewarm_ring_radius_chunks)
 	var observer_timing := _build_observer_timing_plan(predicted)
 	_prewarm_observation_entries(prewarm_entries)
+	predicted_impact_world_position = resolve_observer_effect_surface_world_position(predicted_impact_world_position)
 	_lock_player_for_observation()
 	_latest_shell_explosion_result.clear()
 	_observation_phase_elapsed_sec = 0.0
@@ -548,8 +550,9 @@ func _maintain_player_lock_position() -> void:
 		_player.global_position = _locked_player_world_position
 
 func _enter_impact_stage() -> void:
-	var predicted_impact_world_position := _observation_state.get("predicted_impact_world_position", Vector3.ZERO) as Vector3
+	var predicted_impact_world_position := resolve_observer_effect_surface_world_position(_observation_state.get("predicted_impact_world_position", Vector3.ZERO) as Vector3)
 	var firing_solution := _observation_state.get("firing_solution", {}) as Dictionary
+	_observation_state["predicted_impact_world_position"] = predicted_impact_world_position
 	var observer_planar_direction := _resolve_observer_planar_direction(predicted_impact_world_position, firing_solution)
 	var look_target := predicted_impact_world_position + Vector3.UP * observer_look_at_height_offset_m
 	var observer_origin := predicted_impact_world_position + Vector3.UP * observer_height_m - observer_planar_direction * observer_backoff_m
@@ -586,6 +589,21 @@ func _resolve_player_camera() -> Camera3D:
 	if _player == null or not is_instance_valid(_player):
 		return null
 	return _player.get_node_or_null("CameraRig/Camera3D") as Camera3D
+
+func resolve_observer_effect_surface_world_position(world_position: Vector3) -> Vector3:
+	var parent_node := get_parent()
+	if parent_node != null and parent_node.has_method("resolve_observer_effect_surface_world_position"):
+		return parent_node.resolve_observer_effect_surface_world_position(world_position, observer_surface_snap_height_offset_m)
+	if get_world_3d() != null and get_world_3d().direct_space_state != null:
+		var query := PhysicsRayQueryParameters3D.create(
+			world_position + Vector3.UP * 128.0,
+			world_position + Vector3.DOWN * 256.0
+		)
+		query.collide_with_areas = false
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		if not hit.is_empty():
+			return (hit.get("position", world_position) as Vector3) + Vector3.UP * observer_surface_snap_height_offset_m
+	return world_position
 
 func _resolve_observer_planar_direction(predicted_impact_world_position: Vector3, firing_solution: Dictionary) -> Vector3:
 	var origin_world_position := firing_solution.get("origin_world_position", predicted_impact_world_position) as Vector3

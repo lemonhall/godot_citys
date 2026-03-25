@@ -12,8 +12,8 @@ const OBSERVER_CAMERA_OWNER := "artillery_observer"
 @export var observer_total_duration_min_sec := 3.0
 @export var observer_total_duration_max_sec := 5.0
 @export var observer_pre_impact_lead_duration_sec := 0.7
-@export var observer_height_m := 36.0
-@export var observer_backoff_m := 58.0
+@export var observer_height_m := 30.0
+@export var observer_backoff_m := 42.0
 @export var observer_look_at_height_offset_m := 4.0
 @export var prewarm_ring_radius_chunks := 1
 

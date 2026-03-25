@@ -114,6 +114,40 @@ foreach($test in $tests){
 - long-range observer impact chunk 会以 `near` LOD 挂载，而不是因为“离玩家 5km”被错误渲染成一片远距绿色占位地表
 - observer active window 中，player-side chunk 与 impact-side chunk 会同时保活，避免“加载 -> 卸载 -> 再加载”的明显 churn
 
+### 1C. Fine Adjust Precision + KP_8 Safety Retract + Lower Observer Framing
+
+```powershell
+$godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
+$tests=@(
+  'res://tests/world/test_city_world_howitzer_interaction_contract.gd',
+  'res://tests/world/test_city_world_howitzer_spawn_contract.gd',
+  'res://tests/world/test_city_artillery_solution_hud_contract.gd',
+  'res://tests/world/test_city_artillery_fire_mission_observer_closeout_contract.gd',
+  'res://tests/e2e/test_city_world_howitzer_flow.gd',
+  'res://tests/e2e/test_city_map_artillery_fire_mission_flow.gd',
+  'res://tests/e2e/test_city_map_artillery_fire_mission_long_range_observer_flow.gd'
+)
+foreach($test in $tests){
+  & $godot --headless --rendering-driver dummy --path E:\development\godot_citys --script $test
+  if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+}
+& $godot --headless --rendering-driver dummy --path E:\development\godot_citys --quit
+```
+
+结果：
+
+- exit code `0`
+- 7 条 tests 全部输出 `PASS`
+- headless 解析检查 `PASS`
+
+本轮额外证明：
+
+- `Shift+J/L/I/K` fine adjust 已从 `0.5°` 收紧到 `0.1°`，并且跨多帧按住时仍只会触发一个精调 step，不会漏出 coarse traverse/elevation
+- world howitzer 操作提示文案已同步改成 `精调 0.1°`，确保 HUD 内教学文字与真实控制步长一致
+- `KP_8` 在 howitzer 仍处于 `E` 操炮态时，会先清掉 formal operator-lanyard binding 再执行 retract，不再直接把仍在操炮绑定中的火炮节点 queue_free 掉
+- artillery solution HUD 的 yaw strip 已改成 `0.1°` bearing_text，而不是继续把 bearing round 回整数度数
+- observer impact-stage camera framing 已进一步压低到接近“约 30m 高度、较近俯视”的口径；contract 现在同时卡住 overhead height 上界与 planar backoff 上界，避免镜头重新飘远
+
 ### 2. 项目解析检查
 
 ```powershell
@@ -147,3 +181,6 @@ $godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
 - planned battery snapshot 的目标不是自动调炮，而是保证“先地图记诸元，后召唤 howitzer”这条用户路径成立；玩家仍然通过原有 howitzer 操炮链手动输入 bearing / pitch。
 - observer closeout 现在按 predicted shell flight time 做“压缩而非等待”的 timing 计划，并把总观察窗口限制在约 `3s-5s` 后自动切回操炮态。
 - world howitzer debug hotkey 现在保持显式 toggle 语义：有炮时收回，无炮时召唤。
+- `KP_8` 在操炮态下的收炮语义已补成防呆路径：先退出操炮绑定，再收回火炮。
+- main-world howitzer 的精调步长与教学文案现在统一为 `0.1°`；artillery solution HUD 的 yaw bearing 文本也同步显示到 `0.1°`。
+- observer impact-stage framing 已进一步贴近目标区，当前口径约为 `30m` overhead + 更短 backoff；headless 合同已覆盖，但真实渲染下仍建议继续做一次人工观察确认视觉主观感受。

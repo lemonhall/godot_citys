@@ -1,11 +1,11 @@
 extends RefCounted
 
 const HOWITZER_PROMPT_TEXT := "按 E 操作炮"
-const HOWITZER_CONTROL_HINT_TEXT := "按 E 退出操炮  J/L 方位  I/K 高低  Shift+J/L/I/K 精调 0.5°  Space 击发  R 复位"
+const HOWITZER_CONTROL_HINT_TEXT := "按 E 退出操炮  J/L 方位  I/K 高低  Shift+J/L/I/K 精调 0.1°  Space 击发  R 复位"
 const HOWITZER_IDLE_HINT_TEXT := "WASD 移动  鼠标观察  R 复位"
 const HOWITZER_NEARBY_HINT_TEXT := "WASD 移动  鼠标观察  E 操炮  R 复位"
 const HOWITZER_OPERATION_ID := "m777_howitzer"
-const FINE_ADJUST_STEP_DEG := 0.5
+const FINE_ADJUST_STEP_DEG := 0.1
 
 var yaw_speed_deg_per_sec := 28.0
 var pitch_speed_deg_per_sec := 18.0

@@ -59,7 +59,7 @@ func _run() -> void:
 	prompt_state = hud.get_interaction_prompt_state() as Dictionary
 	if not T.require_true(self, str(prompt_state.get("prompt_text", "")).find("J/L") >= 0 and str(prompt_state.get("prompt_text", "")).find("Space") >= 0, "Main-world operation mode must expose the same J/L I/K Space control hint contract as the lab"):
 		return
-	if not T.require_true(self, str(prompt_state.get("prompt_text", "")).find("Shift") >= 0 and str(prompt_state.get("prompt_text", "")).find("0.5") >= 0, "Main-world operation mode must also teach the Shift+J/L/I/K fine-adjust contract so precision traverse and elevation remain learnable in-context"):
+	if not T.require_true(self, str(prompt_state.get("prompt_text", "")).find("Shift") >= 0 and str(prompt_state.get("prompt_text", "")).find("0.1") >= 0, "Main-world operation mode must also teach the Shift+J/L/I/K fine-adjust contract so precision traverse and elevation remain learnable in-context"):
 		return
 	var artillery_solution_state := hud.get_artillery_solution_state() as Dictionary
 	if not T.require_true(self, bool(artillery_solution_state.get("visible", false)), "Entering world howitzer operation mode must show the shared artillery solution HUD"):
@@ -92,9 +92,9 @@ func _run() -> void:
 	_release_live_key(world, KEY_I)
 	_release_live_key(world, KEY_SHIFT)
 	await _settle_frames(2)
-	if not T.require_true(self, absf((float(howitzer.get_yaw_degrees()) - fine_yaw_before) - 0.5) <= 0.05, "Inside world howitzer operation mode, Shift+L held across multiple frames must still fine-adjust yaw by exactly one 0.5° step instead of leaking one extra coarse-traverse frame"):
+	if not T.require_true(self, absf((float(howitzer.get_yaw_degrees()) - fine_yaw_before) - 0.1) <= 0.025, "Inside world howitzer operation mode, Shift+L held across multiple frames must still fine-adjust yaw by exactly one 0.1° step instead of leaking one extra coarse-traverse frame"):
 		return
-	if not T.require_true(self, absf((float(howitzer.get_pitch_degrees()) - fine_pitch_before) - 0.5) <= 0.05, "Inside world howitzer operation mode, Shift+I held across multiple frames must still fine-adjust pitch by exactly one 0.5° step instead of reverting to continuous coarse elevation"):
+	if not T.require_true(self, absf((float(howitzer.get_pitch_degrees()) - fine_pitch_before) - 0.1) <= 0.025, "Inside world howitzer operation mode, Shift+I held across multiple frames must still fine-adjust pitch by exactly one 0.1° step instead of reverting to continuous coarse elevation"):
 		return
 
 	var fire_count_before := int((howitzer.get_fire_state() as Dictionary).get("fire_count", 0))

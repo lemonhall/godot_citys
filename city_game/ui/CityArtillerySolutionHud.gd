@@ -145,10 +145,13 @@ func _apply_state() -> void:
 func _build_yaw_strip_state() -> Dictionary:
 	if _world_orientation == null:
 		return {"visible": false}
-	return _world_orientation.build_compass_state_from_bearing_deg(
-		float(_state.get("yaw_bearing_deg", 0.0)),
+	var resolved_bearing_deg := _world_orientation.normalize_bearing_deg(float(_state.get("yaw_bearing_deg", 0.0)))
+	var compass_state := _world_orientation.build_compass_state_from_bearing_deg(
+		resolved_bearing_deg,
 		bool(_state.get("visible", false))
 	)
+	compass_state["bearing_text"] = "%.1f°" % resolved_bearing_deg
+	return compass_state
 
 func _build_pitch_strip_state() -> Dictionary:
 	var resolved_visible := bool(_state.get("visible", false))

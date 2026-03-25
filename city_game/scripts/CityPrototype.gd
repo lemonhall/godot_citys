@@ -1362,6 +1362,14 @@ func retract_world_howitzer() -> bool:
 		_active_world_howitzer = null
 		_world_howitzer_operation_controller = null
 		return false
+	if _world_howitzer_operation_controller != null:
+		var operation_active := false
+		if _world_howitzer_operation_controller.has_method("get_operation_state"):
+			operation_active = bool((_world_howitzer_operation_controller.get_operation_state() as Dictionary).get("active", false))
+		if operation_active and _world_howitzer_operation_controller.has_method("request_primary_interaction"):
+			_world_howitzer_operation_controller.request_primary_interaction()
+		elif _world_howitzer_operation_controller.has_method("reset_operation"):
+			_world_howitzer_operation_controller.reset_operation()
 	_active_world_howitzer.queue_free()
 	_active_world_howitzer = null
 	_world_howitzer_operation_controller = null

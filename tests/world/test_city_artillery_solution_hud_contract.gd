@@ -39,7 +39,7 @@ func _run() -> void:
 		"title": "射击诸元",
 		"yaw_label_text": "方位",
 		"pitch_label_text": "高低",
-		"yaw_bearing_deg": 87.25,
+		"yaw_bearing_deg": 87.26,
 		"pitch_deg": 24.5,
 		"pitch_min_deg": 0.0,
 		"pitch_max_deg": 71.0,
@@ -49,7 +49,7 @@ func _run() -> void:
 	var visible_state := hud.get_artillery_solution_state() as Dictionary
 	if not T.require_true(self, bool(visible_state.get("visible", false)), "Setting artillery solution HUD visible must actually surface the shared world-level consumer"):
 		return
-	if not T.require_true(self, absf(float(visible_state.get("yaw_bearing_deg", -999.0)) - 87.25) <= 0.01, "Artillery solution HUD state must preserve the pushed world bearing value instead of silently reinterpreting it as relative yaw"):
+	if not T.require_true(self, absf(float(visible_state.get("yaw_bearing_deg", -999.0)) - 87.26) <= 0.01, "Artillery solution HUD state must preserve the pushed world bearing value instead of silently reinterpreting it as relative yaw"):
 		return
 	if not T.require_true(self, absf(float(visible_state.get("pitch_deg", -999.0)) - 24.5) <= 0.01, "Artillery solution HUD state must preserve the pushed pitch value instead of replacing it with another UI-only angle"):
 		return
@@ -61,9 +61,15 @@ func _run() -> void:
 		return
 
 	var rendered_state := artillery_solution_view.get_state() as Dictionary
-	if not T.require_true(self, absf(float(rendered_state.get("yaw_bearing_deg", -999.0)) - 87.25) <= 0.01, "ArtillerySolutionHud view must mirror the shared HUD state's world bearing payload"):
+	if not T.require_true(self, absf(float(rendered_state.get("yaw_bearing_deg", -999.0)) - 87.26) <= 0.01, "ArtillerySolutionHud view must mirror the shared HUD state's world bearing payload"):
 		return
 	if not T.require_true(self, absf(float(rendered_state.get("pitch_deg", -999.0)) - 24.5) <= 0.01, "ArtillerySolutionHud view must mirror the shared HUD state's pitch payload"):
+		return
+	var yaw_strip := artillery_solution_view.get_node_or_null("Panel/Margin/VBox/YawStrip")
+	if not T.require_true(self, yaw_strip != null and yaw_strip.has_method("get_state"), "ArtillerySolutionHud view must expose the YawStrip state so the rendered bearing precision can be regression tested directly"):
+		return
+	var yaw_strip_state := yaw_strip.get_state() as Dictionary
+	if not T.require_true(self, str(yaw_strip_state.get("bearing_text", "")) == "87.3°", "ArtillerySolutionHud yaw strip must render bearing_text to 0.1° precision instead of rounding the artillery bearing back to whole degrees"):
 		return
 	var panel := artillery_solution_view.get_node_or_null("Panel") as PanelContainer
 	if not T.require_true(self, panel != null, "ArtillerySolutionHud view must expose a Panel root so the rounded shell layout can be regression tested"):

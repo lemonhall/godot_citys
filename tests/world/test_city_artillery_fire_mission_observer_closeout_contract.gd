@@ -86,6 +86,11 @@ func _run() -> void:
 	var observer_alignment := observer_forward.dot(camera_to_target.normalized())
 	if not T.require_true(self, observer_alignment >= 0.82, "Impact-stage observer camera must actually face the predicted impact point instead of flipping away toward the sky (alignment=%0.3f)" % observer_alignment):
 		return
+	var observer_planar_distance_m := Vector2(camera_to_target.x, camera_to_target.z).length()
+	if not T.require_true(self, observer_planar_distance_m <= 46.0, "Impact-stage observer camera must cut in close enough to the impact point instead of hanging too far back over the target chunk (planar_distance=%0.2fm)" % observer_planar_distance_m):
+		return
+	if not T.require_true(self, observer_camera.global_position.y <= predicted_impact_world_position.y + 32.0, "Impact-stage observer camera must stay closer to the intended ~30m overhead framing instead of drifting too high above the target area"):
+		return
 	if not T.require_true(self, observer_camera.global_position.y >= predicted_impact_world_position.y + 18.0, "Impact-stage observer camera must stay above the target area for a proper俯视 cutaway instead of collapsing to near-ground level"):
 		return
 	if not T.require_true(self, observer_forward.y <= -0.24, "Impact-stage observer camera must keep a downward-looking pitch instead of tilting upward toward the horizon or sun (forward_y=%0.3f)" % observer_forward.y):

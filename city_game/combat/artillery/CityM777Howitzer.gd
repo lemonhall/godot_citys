@@ -189,6 +189,8 @@ func get_debug_state() -> Dictionary:
 		"source_asset_path": SOURCE_ASSET_PATH,
 		"yaw_deg": _yaw_deg,
 		"pitch_deg": _pitch_deg,
+		"operator_lanyard_target_active": _operator_lanyard_target_active,
+		"operator_lanyard_target_world_position": _operator_lanyard_target_world_position,
 		"applied_pitch_pivot_deg": pitch_zero_offset_deg - _pitch_deg,
 		"pitch_zero_offset_deg": pitch_zero_offset_deg,
 		"pitch_limits_deg": {

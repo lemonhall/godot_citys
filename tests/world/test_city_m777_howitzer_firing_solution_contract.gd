@@ -90,9 +90,9 @@ func _run() -> void:
 
 func _resolve_expected_world_bearing_deg(howitzer: Node3D, orientation) -> float:
 	var pitch_pivot := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot") as Node3D
-	var muzzle_flash := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFlash") as Node3D
-	if pitch_pivot == null or muzzle_flash == null:
+	var muzzle_fx_rig := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig") as Node3D
+	if pitch_pivot == null or muzzle_fx_rig == null:
 		return -999.0
-	var world_direction := muzzle_flash.global_position - pitch_pivot.global_position
+	var world_direction := muzzle_fx_rig.global_position - pitch_pivot.global_position
 	world_direction.y = 0.0
 	return float(orientation.bearing_deg_from_world_vector(world_direction))

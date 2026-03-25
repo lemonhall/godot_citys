@@ -8,7 +8,7 @@ const HOWITZER_LANYARD_SCRIPT_PATH := "res://city_game/combat/artillery/CityArti
 const HOWITZER_MODEL_PATH := "res://city_game/assets/environment/source/artillery/m777/m777_3_parts.glb"
 const FIRE_AUDIO_PATH := "res://city_game/combat/helicopter/audio/rockt-explosions.wav"
 const MIN_PRESENTED_LENGTH_M := 6.0
-const EXPECTED_PITCH_ZERO_OFFSET_DEG := 14.7
+const EXPECTED_PITCH_ZERO_OFFSET_DEG := 0.0
 const MIN_ELEVATION_DEG := 0.0
 const MAX_ELEVATION_DEG := 71.0
 const EXPECTED_FIRE_COOLDOWN_SEC := 2.0
@@ -24,13 +24,21 @@ const REQUIRED_NODE_PATHS := [
 	"Anchors/YawPivotAnchor",
 	"Anchors/PitchPivotAnchor",
 	"Anchors/MuzzleFxAnchor",
+	"Anchors/MuzzleBallisticsAnchor",
 	"Anchors/LanyardAnchor",
+	"Anchors/FireAudioAnchor",
 	"ModelRoot/LowerBaseMount/m777_lower_base",
 	"ModelRoot/YawPivot/m777_upper_carriage",
 	"ModelRoot/YawPivot/PitchPivot/m777_gun_assembly",
 	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot",
-	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFlash",
-	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleSmoke",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleBallisticsProbe",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/FlashBurst",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/FlashBurst/FlashCore",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/FlashBurst/FlashSpout",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/SmokeBurst",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/SmokeBurst/SmokeCloud",
+	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/SmokeBurst/SmokeSpout",
 	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/Lanyard",
 	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/LanyardLine",
 	"ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/FireAudio",
@@ -58,7 +66,13 @@ func _run() -> void:
 		return
 	if not T.require_true(self, scene_text.find("[node name=\"MuzzleFxAnchor\"") >= 0, "M777 howitzer scene must author MuzzleFxAnchor so formal fire presentation has a stable muzzle reference"):
 		return
+	if not T.require_true(self, scene_text.find("[node name=\"MuzzleFxRig\"") >= 0, "M777 howitzer scene must author the rebuilt single-root MuzzleFxRig so muzzle FX only inherit one authored transform source"):
+		return
+	if not T.require_true(self, scene_text.find("[node name=\"MuzzleBallisticsAnchor\"") >= 0, "M777 howitzer scene must author a dedicated MuzzleBallisticsAnchor instead of overloading the FX anchor with ballistic responsibility"):
+		return
 	if not T.require_true(self, scene_text.find("[node name=\"LanyardAnchor\"") >= 0, "M777 howitzer scene must author LanyardAnchor so the pull-lanyard presentation is not hard-coded in script"):
+		return
+	if not T.require_true(self, scene_text.find("[node name=\"FireAudioAnchor\"") >= 0, "M777 howitzer scene must author FireAudioAnchor so shot audio placement is not piggybacking on the lanyard anchor"):
 		return
 	if not T.require_true(self, scene_text.find(HOWITZER_LANYARD_SCRIPT_PATH) >= 0 and scene_text.find("FishingLineVisual.gd") < 0, "M777 howitzer scene must bind LanyardLine to a dedicated artillery rope script instead of reusing the fishing minigame line visual"):
 		return
@@ -117,7 +131,11 @@ func _run() -> void:
 		return
 	if not T.require_true(self, anchor_state.get("muzzle_anchor_local_position", null) is Vector3, "M777 howitzer anchor state must expose muzzle_anchor_local_position as Vector3 for formal fire presentation tuning"):
 		return
+	if not T.require_true(self, anchor_state.get("muzzle_ballistics_anchor_local_position", null) is Vector3, "M777 howitzer anchor state must expose muzzle_ballistics_anchor_local_position as Vector3 for ballistic muzzle tuning"):
+		return
 	if not T.require_true(self, anchor_state.get("lanyard_anchor_local_position", null) is Vector3, "M777 howitzer anchor state must expose lanyard_anchor_local_position as Vector3 for formal pull-lanyard tuning"):
+		return
+	if not T.require_true(self, anchor_state.get("fire_audio_anchor_local_position", null) is Vector3, "M777 howitzer anchor state must expose fire_audio_anchor_local_position as Vector3 for formal shot-audio tuning"):
 		return
 
 	var yaw_pivot := howitzer.get_node("ModelRoot/YawPivot") as Node3D
@@ -132,7 +150,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, absf(howitzer.get_pitch_degrees() - 12.0) <= 0.001, "M777 howitzer pitch API must expose calibrated elevation degrees instead of leaking the model's internal raw pivot rotation"):
 		return
-	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(EXPECTED_PITCH_ZERO_OFFSET_DEG - 12.0)) <= 0.001, "M777 howitzer positive pitch must raise the barrel, so the raw PitchPivot rotation must move opposite to the calibrated elevation value after applying the zero offset"):
+	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(-12.0)) <= 0.001, "M777 howitzer positive pitch must raise the barrel, so the raw PitchPivot rotation must move opposite to the calibrated elevation value without any extra runtime zero-offset correction"):
 		return
 	if not T.require_true(self, absf(yaw_pivot.rotation.y - yaw_before) > 0.01, "M777 howitzer yaw API must visibly change yaw pivot rotation"):
 		return
@@ -154,14 +172,14 @@ func _run() -> void:
 	await process_frame
 	if not T.require_true(self, absf(howitzer.get_pitch_degrees() - MIN_ELEVATION_DEG) <= 0.001, "M777 howitzer pitch must clamp to 0 degrees instead of allowing negative depression below the current weapon's authored lower bound"):
 		return
-	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(EXPECTED_PITCH_ZERO_OFFSET_DEG)) <= 0.001, "M777 howitzer clamped zero elevation must still preserve the model calibration offset on PitchPivot"):
+	if not T.require_true(self, absf(pitch_pivot.rotation.x) <= 0.001, "M777 howitzer clamped zero elevation must leave PitchPivot level instead of applying an extra runtime pitch offset"):
 		return
 
 	howitzer.set_pitch_degrees(100.0)
 	await process_frame
 	if not T.require_true(self, absf(howitzer.get_pitch_degrees() - MAX_ELEVATION_DEG) <= 0.001, "M777 howitzer pitch must clamp to the 71 degree upper elevation limit instead of allowing unrealistic over-elevation"):
 		return
-	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(EXPECTED_PITCH_ZERO_OFFSET_DEG - MAX_ELEVATION_DEG)) <= 0.001, "M777 howitzer upper elevation clamp must still preserve the correct sign convention, meaning larger elevation raises the barrel instead of lowering it"):
+	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(-MAX_ELEVATION_DEG)) <= 0.001, "M777 howitzer upper elevation clamp must keep the correct sign convention without adding a hidden runtime pitch offset"):
 		return
 
 	var debug_state := howitzer.get_debug_state() as Dictionary
@@ -173,7 +191,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, bool(debug_state.get("gun_assembly_present", false)), "M777 howitzer debug state must confirm the gun assembly mesh is mounted under PitchPivot"):
 		return
-	if not T.require_true(self, absf(float(debug_state.get("pitch_zero_offset_deg", 0.0)) - EXPECTED_PITCH_ZERO_OFFSET_DEG) <= 0.001, "M777 howitzer debug state must expose the model-specific pitch zero calibration offset so authored tuning is inspectable"):
+	if not T.require_true(self, absf(float(debug_state.get("pitch_zero_offset_deg", 999.0)) - EXPECTED_PITCH_ZERO_OFFSET_DEG) <= 0.001, "M777 howitzer debug state must expose that runtime pitch zero offset has been cleared back to 0 so editor and runtime stay aligned"):
 		return
 	var pitch_limits := debug_state.get("pitch_limits_deg", {}) as Dictionary
 	if not T.require_true(self, absf(float(pitch_limits.get("min", -999.0)) - MIN_ELEVATION_DEG) <= 0.001 and absf(float(pitch_limits.get("max", -999.0)) - MAX_ELEVATION_DEG) <= 0.001, "M777 howitzer debug state must expose the calibrated elevation clamp range"):
@@ -195,7 +213,7 @@ func _run() -> void:
 
 func _measure_presented_length_m(root_node: Node) -> float:
 	var visuals: Array = []
-	_collect_visuals(root_node, visuals)
+	_collect_visuals(root_node, visuals, root_node)
 	var has_any := false
 	var merged := AABB()
 	for visual_variant in visuals:
@@ -215,14 +233,16 @@ func _measure_presented_length_m(root_node: Node) -> float:
 		return 0.0
 	return maxf(merged.size.x, maxf(merged.size.y, merged.size.z))
 
-func _collect_visuals(node: Node, visuals: Array) -> void:
+func _collect_visuals(node: Node, visuals: Array, root_node: Node) -> void:
+	if node != root_node and node is Node3D and str((node as Node3D).name).contains("Burst"):
+		return
 	if node is VisualInstance3D:
 		visuals.append(node)
 	for child in node.get_children():
 		var child_node := child as Node
 		if child_node == null:
 			continue
-		_collect_visuals(child_node, visuals)
+		_collect_visuals(child_node, visuals, root_node)
 
 func _transform_aabb(transform: Transform3D, aabb: AABB) -> AABB:
 	var corners := [

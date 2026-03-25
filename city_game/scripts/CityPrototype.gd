@@ -1351,7 +1351,7 @@ func summon_world_howitzer() -> Node3D:
 	if spawn_forward.length_squared() <= 0.0001:
 		spawn_forward = _resolve_world_howitzer_spawn_forward()
 	_active_world_howitzer.global_position = root_spawn_position
-	_active_world_howitzer.look_at(root_spawn_position + spawn_forward, Vector3.UP, true)
+	_active_world_howitzer.look_at(root_spawn_position + spawn_forward, Vector3.UP, false)
 	_ensure_world_howitzer_operation_controller()
 	_last_world_howitzer_operation_active_for_fire_mission = false
 	_refresh_artillery_fire_mission_solution_for_current_operation()

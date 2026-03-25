@@ -5,7 +5,7 @@
 [ext_resource type="AudioStream" uid="uid://dispupslvkcrk" path="res://city_game/combat/helicopter/audio/rockt-explosions.wav" id="3_fire_audio"]
 [ext_resource type="Shader" uid="uid://c6aqhff6u2q2j" path="res://city_game/combat/artillery/shaders/CityArtilleryMuzzleFlash.gdshader" id="4_flash_shader"]
 [ext_resource type="Shader" uid="uid://bgdhw1f784uxo" path="res://city_game/combat/artillery/shaders/CityArtilleryMuzzleSmoke.gdshader" id="5_smoke_shader"]
-[ext_resource type="Script" path="res://city_game/combat/artillery/CityArtilleryLanyardLine.gd" id="6_lanyard_line_script"]
+[ext_resource type="Script" uid="uid://d2i6mrvqj24d4" path="res://city_game/combat/artillery/CityArtilleryLanyardLine.gd" id="6_lanyard_line_script"]
 
 [sub_resource type="ShaderMaterial" id="6_flash_material"]
 resource_local_to_scene = true
@@ -68,26 +68,32 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.05)
 
 [node name="FirePresentationRoot" type="Node3D" parent="ModelRoot/YawPivot/PitchPivot" unique_id=1491047771]
 
-[node name="MuzzleFlash" type="Node3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot" unique_id=188307591]
+[node name="MuzzleBallisticsProbe" type="Marker3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot" unique_id=1073135855]
+editor_description = "运行时弹道探针。它只由脚本从 Anchors/MuzzleBallisticsAnchor 复制 transform，用来提供炮弹发射原点与前向方向。不要手调这个 probe；要改弹道原点，请改 authored 的 MuzzleBallisticsAnchor。"
+
+[node name="MuzzleFxRig" type="Node3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot" unique_id=411347099]
+editor_description = "运行时炮口 FX 单根节点。它完整继承 Anchors/MuzzleFxAnchor 的 transform，是火焰/烟雾唯一的空间真源。不要再让多个 FX 节点分别直接吸 authored 锚点。"
+
+[node name="FlashBurst" type="Node3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig" unique_id=815721287]
 visible = false
 
-[node name="Core" type="MeshInstance3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFlash" unique_id=123821548]
+[node name="FlashCore" type="MeshInstance3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/FlashBurst" unique_id=1149810040]
 material_override = SubResource("6_flash_material")
 mesh = SubResource("1_flash_core_mesh")
 
-[node name="Cone" type="MeshInstance3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFlash" unique_id=176030551]
+[node name="FlashSpout" type="MeshInstance3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/FlashBurst" unique_id=1539352761]
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0.14)
 material_override = SubResource("6_flash_material")
 mesh = SubResource("2_flash_cone_mesh")
 
-[node name="MuzzleSmoke" type="Node3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot" unique_id=960731176]
+[node name="SmokeBurst" type="Node3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig" unique_id=338935290]
 visible = false
 
-[node name="Cloud" type="MeshInstance3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleSmoke" unique_id=273118954]
+[node name="SmokeCloud" type="MeshInstance3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/SmokeBurst" unique_id=512790415]
 material_override = SubResource("7_smoke_material")
 mesh = SubResource("3_smoke_cloud_mesh")
 
-[node name="Jet" type="MeshInstance3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleSmoke" unique_id=1441144038]
+[node name="SmokeSpout" type="MeshInstance3D" parent="ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/SmokeBurst" unique_id=1216271177]
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0.11)
 material_override = SubResource("7_smoke_material")
 mesh = SubResource("4_smoke_jet_mesh")
@@ -109,16 +115,29 @@ attenuation_filter_cutoff_hz = 20500.0
 [node name="SourceAsset" parent="ModelRoot" unique_id=183026183 instance=ExtResource("2_source_asset")]
 
 [node name="Anchors" type="Node3D" parent="." unique_id=155477353]
+editor_description = "Authoring 锚点总根。这里只放单一职责的可视化调节点，运行时会把这些 transform 复制到 pivot / FX / 弹道 / 音频节点。以后手调请优先改这里，不要直接改 FirePresentationRoot 下面的运行时附着节点。"
 transform = Transform3D(10, 0, 0, 0, 10, 0, 0, 0, 10, 0, 3.4, 0)
 
 [node name="YawPivotAnchor" type="Marker3D" parent="Anchors" unique_id=1691850120]
+editor_description = "Yaw 轴 authored 锚点。它定义 ModelRoot/YawPivot 的本地安装位置，只负责火炮水平回转轴的装配基准。改它会整体改变上车架与炮管回转中心，不负责 muzzle FX、弹道原点、火绳或音频。"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.18339898, 0.036200494)
 
 [node name="PitchPivotAnchor" type="Marker3D" parent="Anchors" unique_id=587547894]
+editor_description = "Pitch 轴 authored 锚点。它定义 ModelRoot/YawPivot/PitchPivot 的本地安装位置，只负责炮管俯仰轴的装配基准。改它会影响炮管绕哪个点抬升/下压，但不应该被拿去兼顾 muzzle FX、弹道原点、火绳或音频。"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.34541282, 0.08429819)
 
 [node name="MuzzleFxAnchor" type="Marker3D" parent="Anchors" unique_id=1449674370]
-transform = Transform3D(1, 0, 0, 0, 0.9386857, 0.34477398, 0, -0.34477398, 0.9386857, -0.0001278516, 0.5680229, 0.64017034)
+editor_description = "炮口 FX authored 锚点。它只负责运行时 MuzzleFxRig 的位置和朝向，而 FlashBurst / SmokeBurst 都只是这个 rig 下面的局部几何。只要你想调炮口火焰/烟雾从哪里喷、朝哪边喷，就改这里；它不应该再承担弹道原点、音频、火绳或任何自动吸附到 visible tip 的责任。"
+transform = Transform3D(1, 0, 0, 0, 0.9855944, 0.16912594, 0, -0.16912594, 0.9855944, -0.0001278516, 0.5680229, 0.64017034)
+
+[node name="MuzzleBallisticsAnchor" type="Marker3D" parent="Anchors" unique_id=600762278]
+editor_description = "弹道 authored 锚点。它只负责炮弹发射原点与前向方向，运行时会复制到 MuzzleBallisticsProbe，再由 solver / fire mission / projectile 起点使用。改这里会影响射击诸元反解、发射原点与命中链；它不应该拖着 muzzle flash/smoke 一起移动。"
+transform = Transform3D(1, 0, 0, 0, 0.7576448, -0.65266716, 0, 0.65266716, 0.7576448, -0.0001278516, 0.5680229, 0.64017034)
 
 [node name="LanyardAnchor" type="Marker3D" parent="Anchors" unique_id=633395980]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0011971176, 0.29134598, -0.23407269)
+editor_description = "火绳 authored 锚点。它只负责 Lanyard / LanyardLine 的炮身附着起点，也就是玩家拉火绳时那根绳子从炮上哪里出发。改这里只应影响火绳视觉与绳线起点，不应该顺带改变 FireAudio 或弹道原点。"
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0011971176, 0.29134598, -0.25388214)
+
+[node name="FireAudioAnchor" type="Marker3D" parent="Anchors" unique_id=620801666]
+editor_description = "开火音频 authored 锚点。它只负责 FireAudio 的 3D 空间位置，用来决定炮声从炮体哪个位置发出。改这里只应影响音源位置与衰减感受，不应该带动火绳、muzzle FX 或弹道原点。"
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0011971176, 0.29134598, -0.25388214)

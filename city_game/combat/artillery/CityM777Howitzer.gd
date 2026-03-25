@@ -13,7 +13,7 @@ const GUN_ASSEMBLY_NODE_NAME := "m777_gun_assembly"
 
 @export var initial_yaw_deg := 0.0
 @export var initial_pitch_deg := 0.0
-@export_range(-180.0, 180.0, 0.1) var pitch_zero_offset_deg := 14.7
+@export_range(-180.0, 180.0, 0.1) var pitch_zero_offset_deg := 0.0
 @export_range(-180.0, 180.0, 0.1) var min_pitch_deg := 0.0
 @export_range(-180.0, 180.0, 0.1) var max_pitch_deg := 71.0
 @export var default_shell_type_id := "m795_he"
@@ -38,10 +38,14 @@ const GUN_ASSEMBLY_NODE_NAME := "m777_gun_assembly"
 @onready var _pitch_pivot := $ModelRoot/YawPivot/PitchPivot as Node3D
 @onready var _yaw_anchor := $Anchors/YawPivotAnchor as Marker3D
 @onready var _pitch_anchor := $Anchors/PitchPivotAnchor as Marker3D
-@onready var _muzzle_anchor := $Anchors/MuzzleFxAnchor as Marker3D
+@onready var _muzzle_fx_anchor := $Anchors/MuzzleFxAnchor as Marker3D
+@onready var _muzzle_ballistics_anchor := $Anchors/MuzzleBallisticsAnchor as Marker3D
 @onready var _lanyard_anchor := $Anchors/LanyardAnchor as Marker3D
-@onready var _muzzle_flash := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFlash as Node3D
-@onready var _muzzle_smoke := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleSmoke as Node3D
+@onready var _fire_audio_anchor := $Anchors/FireAudioAnchor as Marker3D
+@onready var _muzzle_ballistics_probe := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleBallisticsProbe as Marker3D
+@onready var _muzzle_fx_rig := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig as Node3D
+@onready var _flash_burst := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/FlashBurst as Node3D
+@onready var _smoke_burst := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/SmokeBurst as Node3D
 @onready var _lanyard := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/Lanyard as MeshInstance3D
 @onready var _lanyard_line := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/LanyardLine as Node3D
 @onready var _fire_audio := $ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/FireAudio as AudioStreamPlayer3D
@@ -59,11 +63,13 @@ var _lanyard_pull_remaining_sec := 0.0
 var _gun_assembly: Node3D = null
 var _flash_materials: Array[ShaderMaterial] = []
 var _smoke_materials: Array[ShaderMaterial] = []
+var _authored_gun_assembly_transform := Transform3D.IDENTITY
 var _authored_gun_assembly_position := Vector3.ZERO
-var _authored_muzzle_flash_scale := Vector3.ONE
-var _authored_muzzle_smoke_scale := Vector3.ONE
+var _authored_flash_burst_scale := Vector3.ONE
+var _authored_smoke_burst_scale := Vector3.ONE
 var _authored_lanyard_scale := Vector3.ONE
 var _authored_lanyard_position := Vector3.ZERO
+var _current_recoil_envelope := 0.0
 var _operator_lanyard_target_active := false
 var _operator_lanyard_target_world_position := Vector3.ZERO
 var _ballistics = CityArtilleryBallisticsScript.new()
@@ -74,10 +80,10 @@ var _last_fired_solution: Dictionary = {}
 func _ready() -> void:
 	_mount_segments()
 	_cache_fire_nodes()
+	set_axis_angles_degrees(initial_yaw_deg, initial_pitch_deg)
 	_sync_fire_presentation_from_anchors()
 	_capture_fire_authored_state()
 	_reset_fire_presentation_visuals()
-	set_axis_angles_degrees(initial_yaw_deg, initial_pitch_deg)
 
 func _process(delta: float) -> void:
 	_update_fire_presentation(delta)
@@ -176,11 +182,14 @@ func get_anchor_state() -> Dictionary:
 	return {
 		"yaw_anchor_local_position": _yaw_anchor.position if _yaw_anchor != null else Vector3.ZERO,
 		"pitch_anchor_local_position": _pitch_anchor.position if _pitch_anchor != null else Vector3.ZERO,
-		"muzzle_anchor_local_position": _muzzle_anchor.position if _muzzle_anchor != null else Vector3.ZERO,
+		"muzzle_anchor_local_position": _muzzle_fx_anchor.position if _muzzle_fx_anchor != null else Vector3.ZERO,
+		"muzzle_ballistics_anchor_local_position": _muzzle_ballistics_anchor.position if _muzzle_ballistics_anchor != null else Vector3.ZERO,
 		"lanyard_anchor_local_position": _lanyard_anchor.position if _lanyard_anchor != null else Vector3.ZERO,
+		"fire_audio_anchor_local_position": _fire_audio_anchor.position if _fire_audio_anchor != null else Vector3.ZERO,
 		"yaw_pivot_local_position": _yaw_pivot.position if _yaw_pivot != null else Vector3.ZERO,
 		"pitch_pivot_local_position": _pitch_pivot.position if _pitch_pivot != null else Vector3.ZERO,
-		"muzzle_presentation_local_position": _muzzle_flash.position if _muzzle_flash != null else Vector3.ZERO,
+		"muzzle_presentation_local_position": _muzzle_fx_rig.position if _muzzle_fx_rig != null else Vector3.ZERO,
+		"muzzle_ballistics_probe_local_position": _muzzle_ballistics_probe.position if _muzzle_ballistics_probe != null else Vector3.ZERO,
 		"lanyard_presentation_local_position": _lanyard.position if _lanyard != null else Vector3.ZERO,
 	}
 
@@ -191,7 +200,7 @@ func get_debug_state() -> Dictionary:
 		"pitch_deg": _pitch_deg,
 		"operator_lanyard_target_active": _operator_lanyard_target_active,
 		"operator_lanyard_target_world_position": _operator_lanyard_target_world_position,
-		"applied_pitch_pivot_deg": pitch_zero_offset_deg - _pitch_deg,
+		"applied_pitch_pivot_deg": -_pitch_deg,
 		"pitch_zero_offset_deg": pitch_zero_offset_deg,
 		"pitch_limits_deg": {
 			"min": min_pitch_deg,
@@ -217,8 +226,8 @@ func get_debug_state() -> Dictionary:
 func _build_firing_solution_snapshot(fire_sequence: int = 0) -> Dictionary:
 	var origin_world_position := _resolve_muzzle_origin_world_position()
 	var platform_world_position := _resolve_platform_world_position()
-	var presentation_direction_world := _resolve_muzzle_world_direction(origin_world_position, platform_world_position)
-	var world_bearing_deg := _world_orientation.bearing_deg_from_world_vector(presentation_direction_world) if _world_orientation != null else _yaw_deg
+	var world_bearing_deg := _resolve_world_bearing_deg_from_muzzle_origin(origin_world_position, platform_world_position)
+	var presentation_direction_world := _build_world_direction_from_bearing_and_pitch(world_bearing_deg, _pitch_deg)
 	var chunk_key := CityChunkKeyScript.world_to_chunk_key(_world_config, origin_world_position) if _world_config != null else Vector2i.ZERO
 	var world_bearing_state := _world_orientation.build_compass_state_from_bearing_deg(world_bearing_deg, true) if _world_orientation != null else {}
 	var shell_profile := _resolve_shell_profile()
@@ -269,12 +278,18 @@ func _resolve_shell_profile() -> Dictionary:
 	return shell_profile
 
 func _resolve_muzzle_origin_world_position() -> Vector3:
-	if _muzzle_flash != null:
-		return _muzzle_flash.global_position
-	if _muzzle_smoke != null:
-		return _muzzle_smoke.global_position
-	if _muzzle_anchor != null:
-		return _muzzle_anchor.global_position
+	if _muzzle_ballistics_probe != null:
+		return _muzzle_ballistics_probe.global_position
+	if _muzzle_ballistics_anchor != null:
+		return _muzzle_ballistics_anchor.global_position
+	if _muzzle_fx_anchor != null:
+		return _muzzle_fx_anchor.global_position
+	if _muzzle_fx_rig != null:
+		return _muzzle_fx_rig.global_position
+	if _flash_burst != null:
+		return _flash_burst.global_position
+	if _smoke_burst != null:
+		return _smoke_burst.global_position
 	return global_position
 
 func _resolve_platform_world_position() -> Vector3:
@@ -282,15 +297,45 @@ func _resolve_platform_world_position() -> Vector3:
 		return _pitch_pivot.global_position
 	return global_position
 
+func _resolve_world_bearing_deg_from_muzzle_origin(origin_world_position: Vector3, platform_world_position: Vector3) -> float:
+	var planar_direction := origin_world_position - platform_world_position
+	planar_direction.y = 0.0
+	if planar_direction.length_squared() > 0.000001 and _world_orientation != null:
+		return _world_orientation.bearing_deg_from_world_vector(planar_direction)
+	if _pitch_pivot != null and _world_orientation != null:
+		var pivot_forward := -_pitch_pivot.global_transform.basis.z
+		pivot_forward.y = 0.0
+		if pivot_forward.length_squared() > 0.000001:
+			return _world_orientation.bearing_deg_from_world_vector(pivot_forward)
+	return _yaw_deg
+
+func _build_world_direction_from_bearing_and_pitch(world_bearing_deg: float, pitch_deg: float) -> Vector3:
+	var heading_rad := _world_orientation.heading_rad_from_bearing_deg(world_bearing_deg) if _world_orientation != null else deg_to_rad(world_bearing_deg)
+	var pitch_rad := deg_to_rad(pitch_deg)
+	var horizontal_scale := cos(pitch_rad)
+	return Vector3(
+		sin(heading_rad) * horizontal_scale,
+		sin(pitch_rad),
+		-cos(heading_rad) * horizontal_scale
+	).normalized()
+
 func _resolve_muzzle_world_direction(origin_world_position: Vector3, platform_world_position: Vector3) -> Vector3:
-	if _muzzle_flash != null:
-		return (-_muzzle_flash.global_transform.basis.z).normalized()
-	if _muzzle_smoke != null:
-		return (-_muzzle_smoke.global_transform.basis.z).normalized()
+	if _muzzle_ballistics_probe != null:
+		var probe_direction := -_muzzle_ballistics_probe.global_transform.basis.z
+		if probe_direction.length_squared() > 0.000001:
+			return probe_direction.normalized()
+	if _muzzle_ballistics_anchor != null:
+		var anchor_direction := -_muzzle_ballistics_anchor.global_transform.basis.z
+		if anchor_direction.length_squared() > 0.000001:
+			return anchor_direction.normalized()
+	if _muzzle_fx_rig != null:
+		var fx_rig_direction := -_muzzle_fx_rig.global_transform.basis.z
+		if fx_rig_direction.length_squared() > 0.000001:
+			return fx_rig_direction.normalized()
 	if _pitch_pivot != null:
 		return (-_pitch_pivot.global_transform.basis.z).normalized()
-	if _muzzle_anchor != null:
-		return (-_muzzle_anchor.global_transform.basis.z).normalized()
+	if _muzzle_fx_anchor != null:
+		return (-_muzzle_fx_anchor.global_transform.basis.z).normalized()
 	var direction := origin_world_position - platform_world_position
 	if direction.length_squared() > 0.000001:
 		return direction.normalized()
@@ -318,16 +363,19 @@ func _sync_pivots_from_anchors() -> void:
 
 func _cache_fire_nodes() -> void:
 	_gun_assembly = get_node_or_null("ModelRoot/YawPivot/PitchPivot/%s" % GUN_ASSEMBLY_NODE_NAME) as Node3D
-	_flash_materials = _collect_shader_materials(_muzzle_flash)
-	_smoke_materials = _collect_shader_materials(_muzzle_smoke)
+	if _gun_assembly != null:
+		_authored_gun_assembly_transform = _gun_assembly.transform
+		_authored_gun_assembly_position = _gun_assembly.position
+	_flash_materials = _collect_shader_materials(_flash_burst)
+	_smoke_materials = _collect_shader_materials(_smoke_burst)
 
 func _sync_fire_presentation_from_anchors() -> void:
 	if _pitch_pivot == null:
 		return
-	_apply_fire_anchor_transform(_muzzle_flash, _muzzle_anchor)
-	_apply_fire_anchor_transform(_muzzle_smoke, _muzzle_anchor)
+	_apply_fire_anchor_transform(_muzzle_fx_rig, _muzzle_fx_anchor)
+	_apply_fire_anchor_transform(_muzzle_ballistics_probe, _muzzle_ballistics_anchor)
 	_apply_fire_anchor_transform(_lanyard, _lanyard_anchor)
-	_apply_fire_anchor_transform(_fire_audio, _lanyard_anchor)
+	_apply_fire_anchor_transform(_fire_audio, _fire_audio_anchor)
 	if _muzzle_flash_remaining_sec <= 0.0 and _muzzle_smoke_remaining_sec <= 0.0 and _lanyard_pull_remaining_sec <= 0.0 and _recoil_remaining_sec <= 0.0:
 		_capture_fire_authored_state()
 
@@ -338,11 +386,12 @@ func _apply_fire_anchor_transform(target: Node3D, anchor: Marker3D) -> void:
 
 func _capture_fire_authored_state() -> void:
 	if _gun_assembly != null:
+		_authored_gun_assembly_transform = _gun_assembly.transform
 		_authored_gun_assembly_position = _gun_assembly.position
-	if _muzzle_flash != null:
-		_authored_muzzle_flash_scale = _muzzle_flash.scale
-	if _muzzle_smoke != null:
-		_authored_muzzle_smoke_scale = _muzzle_smoke.scale
+	if _flash_burst != null:
+		_authored_flash_burst_scale = _flash_burst.scale
+	if _smoke_burst != null:
+		_authored_smoke_burst_scale = _smoke_burst.scale
 	if _lanyard != null:
 		_authored_lanyard_scale = _lanyard.scale
 		_authored_lanyard_position = _lanyard.position
@@ -386,7 +435,8 @@ func _apply_axis_angles() -> void:
 	if _yaw_pivot != null:
 		_yaw_pivot.rotation.y = deg_to_rad(_yaw_deg)
 	if _pitch_pivot != null:
-		_pitch_pivot.rotation.x = deg_to_rad(pitch_zero_offset_deg - _pitch_deg)
+		_pitch_pivot.rotation.x = deg_to_rad(-_pitch_deg)
+	_apply_gun_assembly_recoil_transform()
 
 func _update_fire_presentation(delta: float) -> void:
 	var resolved_delta := maxf(delta, 0.0)
@@ -442,9 +492,9 @@ func _update_lanyard(delta: float) -> void:
 func _set_muzzle_flash_strength(strength: float) -> void:
 	var resolved_strength := clampf(strength, 0.0, 1.0)
 	var active := resolved_strength > 0.01
-	if _muzzle_flash != null:
-		_muzzle_flash.visible = active
-		_muzzle_flash.scale = _authored_muzzle_flash_scale * lerpf(0.55, 1.22, resolved_strength)
+	if _flash_burst != null:
+		_flash_burst.visible = active
+		_flash_burst.scale = _authored_flash_burst_scale * lerpf(0.55, 1.22, resolved_strength)
 	for material in _flash_materials:
 		if material == null:
 			continue
@@ -453,9 +503,9 @@ func _set_muzzle_flash_strength(strength: float) -> void:
 func _set_muzzle_smoke_state(strength: float, heat: float, progress: float) -> void:
 	var resolved_strength := clampf(strength, 0.0, 1.0)
 	var active := resolved_strength > 0.01
-	if _muzzle_smoke != null:
-		_muzzle_smoke.visible = active
-		_muzzle_smoke.scale = _authored_muzzle_smoke_scale * smoke_idle_scale.lerp(smoke_peak_scale, clampf(progress, 0.0, 1.0))
+	if _smoke_burst != null:
+		_smoke_burst.visible = active
+		_smoke_burst.scale = _authored_smoke_burst_scale * smoke_idle_scale.lerp(smoke_peak_scale, clampf(progress, 0.0, 1.0))
 	for material in _smoke_materials:
 		if material == null:
 			continue
@@ -465,8 +515,14 @@ func _set_muzzle_smoke_state(strength: float, heat: float, progress: float) -> v
 func _set_recoil_envelope(envelope: float) -> void:
 	if _gun_assembly == null:
 		return
-	var resolved_envelope := clampf(envelope, 0.0, 1.0)
-	_gun_assembly.position = _authored_gun_assembly_position + recoil_local_offset * resolved_envelope
+	_current_recoil_envelope = clampf(envelope, 0.0, 1.0)
+	_apply_gun_assembly_recoil_transform()
+
+func _apply_gun_assembly_recoil_transform() -> void:
+	if _gun_assembly == null:
+		return
+	var recoil_position := _authored_gun_assembly_position + recoil_local_offset * _current_recoil_envelope
+	_gun_assembly.transform = Transform3D(_authored_gun_assembly_transform.basis, recoil_position)
 
 func _set_lanyard_tension(tension: float) -> void:
 	if _lanyard == null:

@@ -1,11 +1,13 @@
 extends SceneTree
 
 const T := preload("res://tests/_test_util.gd")
+const OrientationScript := preload("res://city_game/world/navigation/CityWorldOrientation.gd")
 
 const CITY_SCENE_PATH := "res://city_game/scenes/CityPrototype.tscn"
 const HOWITZER_SCENE_PATH := "res://city_game/combat/artillery/CityM777Howitzer.tscn"
 const HOWITZER_SCRIPT_PATH := "res://city_game/combat/artillery/CityM777Howitzer.gd"
 const APPROACH_OFFSET := Vector3(0.0, 0.0, 4.2)
+const MAX_BARREL_TO_PLAYER_FORWARD_BEARING_DELTA_DEG := 10.0
 
 func _init() -> void:
 	call_deferred("_run")
@@ -31,6 +33,7 @@ func _run() -> void:
 		return
 
 	var player := world.get_node_or_null("Player") as Node3D
+	var orientation := OrientationScript.new()
 	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "World howitzer spawn contract requires the main world player node with teleport support"):
 		return
 	var authored_vertical_offset_m := _resolve_howitzer_authored_vertical_offset_m()
@@ -44,6 +47,8 @@ func _run() -> void:
 
 	var howitzer := world.get_active_world_howitzer() as Node3D
 	if not T.require_true(self, howitzer != null and howitzer.has_method("get_fire_state"), "KP_8 summon must instantiate the formal CityM777Howitzer runtime in the main world"):
+		return
+	if not _require_visible_barrel_faces_player_forward(orientation, player, howitzer, "Fresh summon"):
 		return
 
 	var spawned_howitzers := _collect_howitzer_nodes(world)
@@ -114,6 +119,8 @@ func _run() -> void:
 	howitzer = world.get_active_world_howitzer() as Node3D
 	if not T.require_true(self, howitzer != null, "After re-summoning, CityPrototype must still expose the currently active howitzer instance"):
 		return
+	if not _require_visible_barrel_faces_player_forward(orientation, player, howitzer, "Re-summon"):
+		return
 	spawned_howitzers = _collect_howitzer_nodes(world)
 	if not T.require_true(self, spawned_howitzers.size() == 1, "Re-summoning must replace or reposition the current howitzer instead of accumulating multiple world instances"):
 		return
@@ -156,6 +163,61 @@ func _collect_howitzer_nodes(root_node: Node) -> Array[Node3D]:
 
 func _horizontal_distance(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()
+
+func _require_visible_barrel_faces_player_forward(orientation, player: Node3D, howitzer: Node3D, label: String) -> bool:
+	var player_forward := -player.global_transform.basis.z
+	player_forward.y = 0.0
+	var barrel_probe := _resolve_visible_barrel_probe(howitzer)
+	var barrel_direction_world := barrel_probe.get("direction_world", Vector3.ZERO) as Vector3
+	barrel_direction_world.y = 0.0
+	if not T.require_true(self, player_forward.length_squared() > 0.0001 and barrel_direction_world.length_squared() > 0.0001, "%s world howitzer summon must produce measurable planar forward vectors for both player and barrel" % label):
+		return false
+	var player_bearing_deg := float(orientation.bearing_deg_from_world_vector(player_forward.normalized()))
+	var barrel_bearing_deg := float(orientation.bearing_deg_from_world_vector(barrel_direction_world.normalized()))
+	var bearing_delta_deg := absf(float(orientation.shortest_bearing_delta_deg(player_bearing_deg, barrel_bearing_deg)))
+	return T.require_true(self, bearing_delta_deg <= MAX_BARREL_TO_PLAYER_FORWARD_BEARING_DELTA_DEG, "%s summoned howitzer barrel must face roughly the same direction as the player's summon forward instead of starting out turned back toward the operator (player=%0.2f barrel=%0.2f delta=%0.2f)" % [label, player_bearing_deg, barrel_bearing_deg, bearing_delta_deg])
+
+func _resolve_visible_barrel_probe(howitzer: Node3D) -> Dictionary:
+	var pitch_pivot := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot") as Node3D
+	var gun_assembly := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/m777_gun_assembly") as VisualInstance3D
+	if pitch_pivot == null or gun_assembly == null:
+		return {}
+	var pivot_world_position := pitch_pivot.global_position
+	var aabb := gun_assembly.get_aabb()
+	var axis_index := _resolve_long_axis_index(aabb.size)
+	var local_tip_point := _resolve_forward_face_center_local(aabb, gun_assembly.transform, axis_index)
+	var world_tip_point: Vector3 = gun_assembly.global_transform * local_tip_point
+	var direction_world := world_tip_point - pivot_world_position
+	return {
+		"direction_world": direction_world.normalized(),
+		"length_m": direction_world.length(),
+	}
+
+func _resolve_long_axis_index(size: Vector3) -> int:
+	if size.y >= size.x and size.y >= size.z:
+		return 1
+	if size.z >= size.x and size.z >= size.y:
+		return 2
+	return 0
+
+func _resolve_forward_face_center_local(aabb: AABB, local_transform: Transform3D, axis_index: int) -> Vector3:
+	var local_face_min := aabb.position + aabb.size * 0.5
+	var local_face_max := local_face_min
+	match axis_index:
+		0:
+			local_face_min.x = aabb.position.x
+			local_face_max.x = aabb.position.x + aabb.size.x
+		1:
+			local_face_min.y = aabb.position.y
+			local_face_max.y = aabb.position.y + aabb.size.y
+		2:
+			local_face_min.z = aabb.position.z
+			local_face_max.z = aabb.position.z + aabb.size.z
+	var parent_face_min: Vector3 = local_transform * local_face_min
+	var parent_face_max: Vector3 = local_transform * local_face_max
+	if parent_face_max.length_squared() >= parent_face_min.length_squared():
+		return local_face_max
+	return local_face_min
 
 func _build_key_event(keycode: Key, pressed: bool) -> InputEventKey:
 	var key_event := InputEventKey.new()

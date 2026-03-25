@@ -75,9 +75,9 @@ func update(delta: float, prompt_blocked: bool = false) -> void:
 	_adjust_key_latches = current_key_latches
 	var yaw_input := 0.0
 	if bool(current_key_latches.get("yaw_left", false)):
-		yaw_input -= 1.0
-	if bool(current_key_latches.get("yaw_right", false)):
 		yaw_input += 1.0
+	if bool(current_key_latches.get("yaw_right", false)):
+		yaw_input -= 1.0
 	var pitch_input := 0.0
 	if bool(current_key_latches.get("pitch_up", false)):
 		pitch_input += 1.0
@@ -318,9 +318,9 @@ func _key_event_matches(key_event: InputEventKey, expected_keycode: Key) -> bool
 
 func _apply_fine_adjustment_key_edges(current_key_latches: Dictionary) -> void:
 	if bool(current_key_latches.get("yaw_left", false)) and not bool(_adjust_key_latches.get("yaw_left", false)):
-		adjust_yaw_degrees(-FINE_ADJUST_STEP_DEG)
-	if bool(current_key_latches.get("yaw_right", false)) and not bool(_adjust_key_latches.get("yaw_right", false)):
 		adjust_yaw_degrees(FINE_ADJUST_STEP_DEG)
+	if bool(current_key_latches.get("yaw_right", false)) and not bool(_adjust_key_latches.get("yaw_right", false)):
+		adjust_yaw_degrees(-FINE_ADJUST_STEP_DEG)
 	if bool(current_key_latches.get("pitch_up", false)) and not bool(_adjust_key_latches.get("pitch_up", false)):
 		adjust_pitch_degrees(FINE_ADJUST_STEP_DEG)
 	if bool(current_key_latches.get("pitch_down", false)) and not bool(_adjust_key_latches.get("pitch_down", false)):

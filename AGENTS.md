@@ -274,6 +274,30 @@ CityPrototype
   - 行人：`pedestrian_query -> streamer -> tier controller -> renderer`
   - 车辆：`vehicle_query -> streamer -> tier controller -> renderer`
 
+## 作者场景 / 锚点 / 视觉基线 Contract
+
+- authored 锚点是人类可视化 authoring 的真源，不是脚本补偿的缓冲区
+  - 典型例子：`MuzzleFxAnchor`、`MuzzleBallisticsAnchor`、`LanyardAnchor`、`FireAudioAnchor`
+  - AI 不得为了“让 runtime 看起来对”而擅自挪 authored 锚点；这会直接破坏所见即所得，后续人类在 editor 里调出来的位置将不再可信
+
+- 禁止对 authored visual hierarchy 追加 runtime-only 视觉校正
+  - 典型禁令：对 mesh / assembly / muzzle visual 额外做脚本里的 yaw/pitch/translation 补偿，只让 runtime 看起来像对的
+  - 原因：editor 看见的是 A，runtime 实际跑的是 B，debug 会迅速失去坐标系，任何锚点、火焰、火绳、音频、弹道问题都会互相污染
+
+- 如果 editor 与 runtime 不一致，先查装配语义，不要先改锚点
+  - 优先检查：`reparent(..., keep_global_transform)` 是否把 source asset 的 local/global 语义打散
+  - 优先检查：source asset 到正式 pivot / mount 的基线 transform 是否缺失
+  - 优先检查：FX / probe / audio 是否在复制同一套 authored contract，而不是各自偷偷补偿
+
+- 视觉校正必须固化回 scene / authored local transform，而不是留在 GDScript 公式里
+  - 合法修复：新增或调整 scene 里的 mount / pivot / local transform，让 runtime 直接消费 authored 基线
+  - 非法修复：在脚本里再加一个 `*_visual_correction_*`、`build_*_correction_basis()`、`sync_*_visual_transform()` 之类的运行时补丁
+
+- 本次 `CityM777Howitzer` 事故的已知根因要牢记
+  - 曾经存在 `gun_assembly` 的 runtime-only visual correction，导致可见炮管姿态与 authored anchors / FX / probe 脱节
+  - `reparent(..., true/false)` 与 source asset local transform 的语义没有先被钉死，就开始在上层补偿，结果把“根因在装配链”伪装成了“锚点不对”
+  - 以后遇到同类问题，先做边界定位：source scene -> mounted runtime hierarchy -> authored anchors -> FX/probe consumers；禁止直接上补偿
+
 ## 导航、任务与世界圈提示 Contract
 
 - 先统一上游 target/route，再区分 UI 或 marker 表现

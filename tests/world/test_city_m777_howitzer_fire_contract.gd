@@ -27,16 +27,20 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 
-	var muzzle_flash := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFlash") as Node3D
-	var muzzle_smoke := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleSmoke") as Node3D
+	var muzzle_fx_rig := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig") as Node3D
+	var flash_burst := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/FlashBurst") as Node3D
+	var smoke_burst := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleFxRig/SmokeBurst") as Node3D
 	var lanyard := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/Lanyard") as MeshInstance3D
 	var lanyard_line := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/LanyardLine") as Node3D
 	var fire_audio := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/FireAudio") as AudioStreamPlayer3D
+	var muzzle_ballistics_probe := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/FirePresentationRoot/MuzzleBallisticsProbe") as Node3D
 	var gun_assembly := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot/m777_gun_assembly") as Node3D
 	var pitch_pivot := howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot") as Node3D
 	var muzzle_anchor := howitzer.get_node_or_null("Anchors/MuzzleFxAnchor") as Marker3D
+	var muzzle_ballistics_anchor := howitzer.get_node_or_null("Anchors/MuzzleBallisticsAnchor") as Marker3D
 	var lanyard_anchor := howitzer.get_node_or_null("Anchors/LanyardAnchor") as Marker3D
-	if not T.require_true(self, muzzle_flash != null and muzzle_smoke != null and lanyard != null and lanyard_line != null and fire_audio != null and gun_assembly != null and pitch_pivot != null and muzzle_anchor != null and lanyard_anchor != null, "M777 fire contract requires authored formal fire presentation nodes and fire anchors in the howitzer scene"):
+	var fire_audio_anchor := howitzer.get_node_or_null("Anchors/FireAudioAnchor") as Marker3D
+	if not T.require_true(self, muzzle_fx_rig != null and flash_burst != null and smoke_burst != null and lanyard != null and lanyard_line != null and fire_audio != null and muzzle_ballistics_probe != null and gun_assembly != null and pitch_pivot != null and muzzle_anchor != null and muzzle_ballistics_anchor != null and lanyard_anchor != null and fire_audio_anchor != null, "M777 fire contract requires the rebuilt MuzzleFxRig hierarchy plus the single-responsibility fire anchors in the howitzer scene"):
 		return
 	if not T.require_true(self, lanyard_line.has_method("set_line_state") and lanyard_line.has_method("get_debug_state"), "M777 fire contract requires a dedicated line-style lanyard visual so the pull rope stays visible instead of relying only on a tiny cylinder handle"):
 		return
@@ -52,12 +56,14 @@ func _run() -> void:
 
 	var pitch_inverse := pitch_pivot.global_transform.affine_inverse()
 	var expected_muzzle_local := pitch_inverse * muzzle_anchor.global_transform
+	var expected_ballistics_local := pitch_inverse * muzzle_ballistics_anchor.global_transform
 	var expected_lanyard_local := pitch_inverse * lanyard_anchor.global_transform
-	if not _require_transform_close(self, muzzle_flash.transform, expected_muzzle_local, "MuzzleFlash must inherit the full authored MuzzleFxAnchor transform so muzzle fire can be aligned in-editor without code-side hard-coding"):
+	var expected_fire_audio_local := pitch_inverse * fire_audio_anchor.global_transform
+	if not _require_transform_close(self, muzzle_fx_rig.transform, expected_muzzle_local, "MuzzleFxRig must inherit the full authored MuzzleFxAnchor transform so the FX anchor stays the single WYSIWYG source of truth"):
 		return
-	if not _require_transform_close(self, muzzle_smoke.transform, expected_muzzle_local, "MuzzleSmoke must inherit the same authored MuzzleFxAnchor transform as MuzzleFlash so the smoke jet stays co-registered with the muzzle"):
+	if not _require_transform_close(self, muzzle_ballistics_probe.transform, expected_ballistics_local, "MuzzleBallisticsProbe must inherit the authored MuzzleBallisticsAnchor transform so ballistic origin tuning is isolated from visual FX tuning"):
 		return
-	if not _require_transform_close(self, fire_audio.transform, expected_lanyard_local, "FireAudio must inherit the authored LanyardAnchor transform so the shot audio originates from the breech-side interaction point rather than a stale default offset"):
+	if not _require_transform_close(self, fire_audio.transform, expected_fire_audio_local, "FireAudio must inherit the authored FireAudioAnchor transform so the shot audio no longer piggybacks on the lanyard anchor"):
 		return
 	var baseline_lanyard_line_state := lanyard_line.get_debug_state() as Dictionary
 	if not T.require_true(self, bool(baseline_lanyard_line_state.get("visible", false)), "Howitzer idle state must keep a baseline lanyard line visible so the pull rope can actually be seen before and after firing"):
@@ -104,7 +110,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, int(fire_state.get("audio_trigger_count", 0)) >= 1, "Accepted howitzer fire must trigger formal weapon fire audio at least once"):
 		return
-	if not T.require_true(self, muzzle_flash.visible and muzzle_smoke.visible and lanyard.visible, "Accepted howitzer fire must visibly expose the authored fire presentation nodes instead of leaving them dormant"):
+	if not T.require_true(self, flash_burst.visible and smoke_burst.visible and lanyard.visible, "Accepted howitzer fire must visibly expose the rebuilt FX burst nodes instead of leaving them dormant"):
 		return
 	var lanyard_line_state := lanyard_line.get_debug_state() as Dictionary
 	if not T.require_true(self, bool(lanyard_line_state.get("visible", false)), "Accepted howitzer fire must drive a visible line-style lanyard visual instead of leaving the rope effectively invisible from gameplay camera distance"):
@@ -154,6 +160,18 @@ func _require_transform_close(tree: SceneTree, actual: Transform3D, expected: Tr
 	if actual.origin.distance_to(expected.origin) > tolerance:
 		T.fail_and_quit(tree, "%s (origin actual=%s expected=%s)" % [message, actual.origin, expected.origin])
 		return false
+	for basis_index in 3:
+		var actual_axis := actual.basis[basis_index]
+		var expected_axis := expected.basis[basis_index]
+		if actual_axis.length_squared() <= 0.000001 or expected_axis.length_squared() <= 0.000001:
+			T.fail_and_quit(tree, "%s (basis[%d] degenerate actual=%s expected=%s)" % [message, basis_index, actual_axis, expected_axis])
+			return false
+		if actual_axis.normalized().distance_to(expected_axis.normalized()) > tolerance:
+			T.fail_and_quit(tree, "%s (basis[%d] actual=%s expected=%s)" % [message, basis_index, actual_axis.normalized(), expected_axis.normalized()])
+			return false
+	return true
+
+func _require_basis_close(tree: SceneTree, actual: Transform3D, expected: Transform3D, message: String, tolerance: float = 0.001) -> bool:
 	for basis_index in 3:
 		var actual_axis := actual.basis[basis_index]
 		var expected_axis := expected.basis[basis_index]

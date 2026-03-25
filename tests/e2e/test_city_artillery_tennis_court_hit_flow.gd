@@ -152,22 +152,22 @@ func _run() -> void:
 		return
 	var field_driven_firing_solution := live_firing_solution.duplicate(true)
 	field_driven_firing_solution.erase("muzzle_direction_world")
+	var live_muzzle_direction_world := live_firing_solution.get("muzzle_direction_world", Vector3.ZERO) as Vector3
+	var live_direction_pitch_deg := rad_to_deg(asin(clampf(live_muzzle_direction_world.normalized().y, -1.0, 1.0))) if live_muzzle_direction_world.length_squared() > 0.0001 else 0.0
 	var field_driven_prediction := ballistics.predict_impact_from_firing_solution(field_driven_firing_solution, {
 		"impact_plane_y": target_world_position.y,
 	}) as Dictionary
-	if not T.require_true(self, bool(field_driven_prediction.get("valid", false)), "The live artillery bearing/pitch readout must still define a valid ballistic prediction when evaluated directly against the tennis-court surface plane"):
+	if not T.require_true(self, bool(field_driven_prediction.get("valid", false)), "The live artillery bearing/pitch readout must still define a valid ballistic prediction when evaluated directly against the tennis-court surface plane (reason=%s displayed_pitch=%0.2f muzzle_pitch=%0.2f origin=%s target_y=%0.2f)" % [str(field_driven_prediction.get("reason", "")), desired_pitch_deg, live_direction_pitch_deg, str(live_firing_solution.get("origin_world_position", Vector3.ZERO)), target_world_position.y]):
 		return
 	var field_driven_impact := field_driven_prediction.get("impact_world_position", Vector3.INF) as Vector3
-	if not T.require_true(self, field_driven_impact.distance_to(target_world_position) <= LIVE_SOLUTION_TARGET_TOLERANCE_M, "The live artillery HUD bearing/pitch already fails to round-trip back to the tennis-court target even before the shell snapshot's muzzle direction is considered (field_delta=%0.2fm)" % field_driven_impact.distance_to(target_world_position)):
-		return
 	var live_prediction := ballistics.predict_impact_from_firing_solution(live_firing_solution, {
 		"impact_plane_y": target_world_position.y,
 	}) as Dictionary
-	if not T.require_true(self, bool(live_prediction.get("valid", false)), "The live howitzer firing solution must still produce a valid ballistic impact prediction against the tennis-court surface plane"):
+	if not T.require_true(self, bool(live_prediction.get("valid", false)), "The live howitzer firing solution must still produce a valid ballistic impact prediction against the tennis-court surface plane (reason=%s displayed_pitch=%0.2f muzzle_pitch=%0.2f world_bearing=%0.2f)" % [str(live_prediction.get("reason", "")), desired_pitch_deg, live_direction_pitch_deg, live_world_bearing_deg]):
 		return
 	var live_predicted_impact := live_prediction.get("impact_world_position", Vector3.INF) as Vector3
-	var live_muzzle_direction_world := live_firing_solution.get("muzzle_direction_world", Vector3.ZERO) as Vector3
-	var live_direction_pitch_deg := rad_to_deg(asin(clampf(live_muzzle_direction_world.normalized().y, -1.0, 1.0))) if live_muzzle_direction_world.length_squared() > 0.0001 else 0.0
+	if not T.require_true(self, field_driven_impact.distance_to(target_world_position) <= LIVE_SOLUTION_TARGET_TOLERANCE_M, "The live artillery HUD bearing/pitch already fails to round-trip back to the tennis-court target even before the shell snapshot's muzzle direction is considered (field_delta=%0.2fm live_delta=%0.2fm displayed_pitch=%0.2f muzzle_pitch=%0.2f origin=%s)" % [field_driven_impact.distance_to(target_world_position), live_predicted_impact.distance_to(target_world_position), desired_pitch_deg, live_direction_pitch_deg, str(live_firing_solution.get("origin_world_position", Vector3.ZERO))]):
+		return
 	if not T.require_true(self, live_predicted_impact.distance_to(target_world_position) <= LIVE_SOLUTION_TARGET_TOLERANCE_M, "The live howitzer firing solution diverges from the planned tennis-court target before shell launch, which points to a mismatch inside the shell snapshot itself (field_delta=%0.2fm live_delta=%0.2fm muzzle_pitch=%0.2f displayed_pitch=%0.2f)" % [field_driven_impact.distance_to(target_world_position), live_predicted_impact.distance_to(target_world_position), live_direction_pitch_deg, desired_pitch_deg]):
 		return
 

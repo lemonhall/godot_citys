@@ -217,8 +217,8 @@ func get_debug_state() -> Dictionary:
 func _build_firing_solution_snapshot(fire_sequence: int = 0) -> Dictionary:
 	var origin_world_position := _resolve_muzzle_origin_world_position()
 	var platform_world_position := _resolve_platform_world_position()
-	var muzzle_direction_world := _resolve_muzzle_world_direction(origin_world_position, platform_world_position)
-	var world_bearing_deg := _world_orientation.bearing_deg_from_world_vector(muzzle_direction_world) if _world_orientation != null else _yaw_deg
+	var presentation_direction_world := _resolve_muzzle_world_direction(origin_world_position, platform_world_position)
+	var world_bearing_deg := _world_orientation.bearing_deg_from_world_vector(presentation_direction_world) if _world_orientation != null else _yaw_deg
 	var chunk_key := CityChunkKeyScript.world_to_chunk_key(_world_config, origin_world_position) if _world_config != null else Vector2i.ZERO
 	var world_bearing_state := _world_orientation.build_compass_state_from_bearing_deg(world_bearing_deg, true) if _world_orientation != null else {}
 	var shell_profile := _resolve_shell_profile()
@@ -228,7 +228,8 @@ func _build_firing_solution_snapshot(fire_sequence: int = 0) -> Dictionary:
 			"fire_count": fire_sequence,
 			"origin_world_position": origin_world_position,
 			"platform_world_position": platform_world_position,
-			"muzzle_direction_world": muzzle_direction_world,
+			"muzzle_direction_world": presentation_direction_world,
+			"presentation_muzzle_direction_world": presentation_direction_world,
 			"world_bearing_deg": world_bearing_deg,
 			"world_bearing_text": str(world_bearing_state.get("bearing_text", "000°")),
 			"world_cardinal_text": str(world_bearing_state.get("cardinal_text", "N")),
@@ -250,7 +251,7 @@ func _build_firing_solution_snapshot(fire_sequence: int = 0) -> Dictionary:
 		"chunk_id": _world_config.format_chunk_id(chunk_key) if _world_config != null else "",
 		"yaw_deg": _yaw_deg,
 	}) as Dictionary
-	firing_solution["muzzle_direction_world"] = muzzle_direction_world
+	firing_solution["presentation_muzzle_direction_world"] = presentation_direction_world
 	firing_solution["world_bearing_text"] = str(world_bearing_state.get("bearing_text", "000°"))
 	firing_solution["world_cardinal_text"] = str(world_bearing_state.get("cardinal_text", "N"))
 	firing_solution["shell_profile"] = shell_profile.duplicate(true)
@@ -282,13 +283,17 @@ func _resolve_platform_world_position() -> Vector3:
 	return global_position
 
 func _resolve_muzzle_world_direction(origin_world_position: Vector3, platform_world_position: Vector3) -> Vector3:
+	if _muzzle_flash != null:
+		return (-_muzzle_flash.global_transform.basis.z).normalized()
+	if _muzzle_smoke != null:
+		return (-_muzzle_smoke.global_transform.basis.z).normalized()
+	if _pitch_pivot != null:
+		return (-_pitch_pivot.global_transform.basis.z).normalized()
+	if _muzzle_anchor != null:
+		return (-_muzzle_anchor.global_transform.basis.z).normalized()
 	var direction := origin_world_position - platform_world_position
 	if direction.length_squared() > 0.000001:
 		return direction.normalized()
-	if _muzzle_flash != null:
-		return (-_muzzle_flash.global_transform.basis.z).normalized()
-	if _pitch_pivot != null:
-		return (-_pitch_pivot.global_transform.basis.z).normalized()
 	return (-global_transform.basis.z).normalized()
 
 func _mount_segments() -> void:

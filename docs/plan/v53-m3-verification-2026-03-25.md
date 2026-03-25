@@ -148,6 +148,36 @@ foreach($test in $tests){
 - artillery solution HUD 的 yaw strip 已改成 `0.1°` bearing_text，而不是继续把 bearing round 回整数度数
 - observer impact-stage camera framing 已进一步压低到接近“约 30m 高度、较近俯视”的口径；contract 现在同时卡住 overhead height 上界与 planar backoff 上界，避免镜头重新飘远
 
+### 1D. Live Howitzer Accuracy Closeout + Tennis-Court Hit Verification
+
+```powershell
+$godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
+& $godot --headless --rendering-driver dummy --path E:\development\godot_citys --script 'res://tests/e2e/test_city_artillery_tennis_court_hit_flow.gd'
+```
+
+结果：
+
+- exit code `0`
+- `test_city_artillery_tennis_court_hit_flow.gd` 输出 `PASS`
+
+为避免只得到“通过/失败”的二元口径，本轮还额外跑了一次一次性量化脚本，对同一条“出生地附近布炮 -> 网球场为 target -> 真炮 live solve -> 发射 -> 着弹”链路直接测量数值偏差。
+
+量化结果：
+
+- `solver_target_delta_m = 0.001`
+- `field_target_delta_m = 0.0`
+- `live_target_delta_m = 0.0`
+- `impact_target_delta_m = 0.279`
+- `impact_vs_live_prediction_delta_m = 0.280`
+- 当次 firing data：`bearing = 100.643°`，`pitch = 7.338°`
+
+本轮直接证明：
+
+- “地图先标点、操炮后解算”新语义下，mission solver 已可在 live howitzer 上收敛到近似 `0m`
+- live howitzer HUD bearing/pitch 字段与 live shell snapshot 已重新统一，不再出现 `~70m` 或 `~5.3km` 级别的自相矛盾
+- 真正 shell impact 与 live predictor 的剩余误差已收敛到约 `0.28m`，在当前“仅重力、无风偏、无空气阻力”的理想环境中，可视为接近 `0m`
+- 当前 residual 更像数值积分 / ray impact / frame-step 级别误差，而不是 solver / yaw / pitch / origin 主链错误
+
 ### 2. 项目解析检查
 
 ```powershell
@@ -184,3 +214,10 @@ $godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
 - `KP_8` 在操炮态下的收炮语义已补成防呆路径：先退出操炮绑定，再收回火炮。
 - main-world howitzer 的精调步长与教学文案现在统一为 `0.1°`；artillery solution HUD 的 yaw bearing 文本也同步显示到 `0.1°`。
 - observer impact-stage framing 已进一步贴近目标区，当前口径约为 `30m` overhead + 更短 backoff；headless 合同已覆盖，但真实渲染下仍建议继续做一次人工观察确认视觉主观感受。
+- artillery fire mission 现在正式分成两段：地图右键只留下 target marker；只有 `8` 召唤真炮并 `E` 进入操炮后，才会基于 live howitzer 解算诸元；退出操炮后再次回到 `待操炮解算`。
+- 本轮精度修复的根因有两层：
+  - 不能再把 `platform -> muzzle` 的位置差向量当成 `muzzle_direction_world`；那会把炮口位置偏移误当成弹道方向
+  - 也不能盲信视觉节点 basis 作为物理发射方向；当前资源里它与真实 ballistic pitch 不一致
+- 当前正式口径是：
+  - firing solution 里的物理发射方向，必须以 live `world_bearing_deg + pitch_deg` 为真源
+  - live fire mission solve 必须对真实 spawned howitzer 做短迭代取样，读取候选角度下的真实 muzzle origin，再回修 solver；只靠 reference howitzer 几何近似会残留几十米系统性偏差

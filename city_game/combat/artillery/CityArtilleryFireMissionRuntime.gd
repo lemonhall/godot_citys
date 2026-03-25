@@ -157,7 +157,7 @@ func refresh_active_fire_mission_solution_from_world_howitzer(howitzer: Node3D, 
 	if live_battery_snapshot.is_empty():
 		return _set_active_fire_mission_solution_pending()
 	var target_world_position := _fire_mission_state.get("target_world_position", Vector3.ZERO) as Vector3
-	var solved_solution := _solve_fire_mission_solution_for_battery(target_world_position, live_battery_snapshot)
+	var solved_solution := _solve_fire_mission_solution_from_live_howitzer(target_world_position, howitzer, live_battery_snapshot)
 	_fire_mission_state["resolved_battery_snapshot"] = live_battery_snapshot.duplicate(true)
 	_fire_mission_state["solution_state"] = _build_solution_state(solved_solution).duplicate(true)
 	return _fire_mission_state.duplicate(true)
@@ -379,6 +379,56 @@ func _solve_fire_mission_solution_for_battery(target_world_position: Vector3, ba
 			break
 		current_origin_world_position = refined_origin_world_position
 	return solved_solution
+
+func _solve_fire_mission_solution_from_live_howitzer(target_world_position: Vector3, howitzer: Node3D, battery_snapshot: Dictionary) -> Dictionary:
+	if howitzer == null or not is_instance_valid(howitzer):
+		return _solve_fire_mission_solution_for_battery(target_world_position, battery_snapshot)
+	if not howitzer.has_method("get_firing_solution_snapshot") or not howitzer.has_method("set_axis_angles_degrees"):
+		return _solve_fire_mission_solution_for_battery(target_world_position, battery_snapshot)
+	var original_yaw_deg := float(howitzer.get_yaw_degrees()) if howitzer.has_method("get_yaw_degrees") else 0.0
+	var original_pitch_deg := float(howitzer.get_pitch_degrees()) if howitzer.has_method("get_pitch_degrees") else 0.0
+	var spawn_forward_world := battery_snapshot.get("spawn_forward_world", Vector3.FORWARD) as Vector3
+	spawn_forward_world.y = 0.0
+	if spawn_forward_world.length_squared() <= 0.0001:
+		spawn_forward_world = Vector3.FORWARD
+	spawn_forward_world = spawn_forward_world.normalized()
+	var sampled_snapshot := (howitzer.get_firing_solution_snapshot() as Dictionary).duplicate(true)
+	var sampled_origin_world_position := sampled_snapshot.get("origin_world_position", battery_snapshot.get("platform_world_position", target_world_position)) as Vector3
+	var sampled_platform_world_position := sampled_snapshot.get("platform_world_position", battery_snapshot.get("platform_world_position", sampled_origin_world_position)) as Vector3
+	var solved_solution: Dictionary = {}
+	for _iteration in range(3):
+		solved_solution = (_ballistics.solve_firing_solution_to_target(
+			sampled_origin_world_position,
+			target_world_position,
+			{
+				"platform_world_position": sampled_platform_world_position,
+			}
+		) as Dictionary).duplicate(true)
+		if not bool(solved_solution.get("solved", false)):
+			howitzer.set_axis_angles_degrees(original_yaw_deg, original_pitch_deg)
+			return solved_solution
+		var candidate_local_yaw_deg := _resolve_local_yaw_deg_from_world_bearing(
+			spawn_forward_world,
+			float(solved_solution.get("world_bearing_deg", 0.0))
+		)
+		howitzer.set_axis_angles_degrees(candidate_local_yaw_deg, float(solved_solution.get("pitch_deg", 0.0)))
+		var candidate_snapshot := (howitzer.get_firing_solution_snapshot() as Dictionary).duplicate(true)
+		var candidate_origin_world_position := candidate_snapshot.get("origin_world_position", sampled_origin_world_position) as Vector3
+		var candidate_platform_world_position := candidate_snapshot.get("platform_world_position", sampled_platform_world_position) as Vector3
+		if candidate_origin_world_position.distance_to(sampled_origin_world_position) <= 0.01:
+			sampled_origin_world_position = candidate_origin_world_position
+			sampled_platform_world_position = candidate_platform_world_position
+			break
+		sampled_origin_world_position = candidate_origin_world_position
+		sampled_platform_world_position = candidate_platform_world_position
+	howitzer.set_axis_angles_degrees(original_yaw_deg, original_pitch_deg)
+	return (_ballistics.solve_firing_solution_to_target(
+		sampled_origin_world_position,
+		target_world_position,
+		{
+			"platform_world_position": sampled_platform_world_position,
+		}
+	) as Dictionary).duplicate(true)
 
 func _resolve_reference_muzzle_origin_world_position(battery_snapshot: Dictionary, solved_solution: Dictionary) -> Vector3:
 	var platform_world_position := battery_snapshot.get("platform_world_position", Vector3.ZERO) as Vector3

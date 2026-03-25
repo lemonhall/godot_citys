@@ -78,13 +78,11 @@ func _run() -> void:
 
 	var mission_state := world.get_artillery_fire_mission_state() as Dictionary
 	var solution_state: Dictionary = mission_state.get("solution_state", {})
-	if not T.require_true(self, bool(solution_state.get("solved", false)), "The tennis-court artillery flow requires an in-range solved bearing/pitch solution before any firing begins"):
+	if not T.require_true(self, not bool(solution_state.get("solved", false)), "The tennis-court artillery flow must keep the mission pending after target marking instead of solving firing data before a real spawned howitzer is being operated"):
 		return
-	var planned_range_m := float(solution_state.get("horizontal_distance_m", 0.0))
-	if not T.require_true(self, planned_range_m >= EXPECTED_RANGE_MIN_M and planned_range_m <= EXPECTED_RANGE_MAX_M, "The tennis-court artillery fixture must stay in the intended ~5km band instead of accidentally becoming a short-range shot (range=%0.2fm)" % planned_range_m):
+	if not T.require_true(self, str(solution_state.get("reason", "")) == "requires_live_howitzer_operation", "Pending tennis-court artillery state must explain that the live howitzer still needs to be spawned and operated before solving firing data"):
 		return
-	var mission_predicted_impact := solution_state.get("predicted_impact_world_position", Vector3.INF) as Vector3
-	if not T.require_true(self, mission_predicted_impact.distance_to(target_world_position) <= MISSION_TARGET_TOLERANCE_M, "The inverse-solver stage already misses the tennis-court target before the howitzer is even summoned (solver_delta=%0.2fm)" % mission_predicted_impact.distance_to(target_world_position)):
+	if not T.require_true(self, (mission_state.get("resolved_battery_snapshot", {}) as Dictionary).is_empty(), "Before the howitzer is spawned and operated, the tennis-court flow must not fabricate a live solved battery snapshot"):
 		return
 
 	var battery_snapshot: Dictionary = mission_state.get("battery_snapshot", {})
@@ -102,6 +100,25 @@ func _run() -> void:
 	if not T.require_true(self, howitzer != null and howitzer.has_method("set_axis_angles_degrees") and howitzer.has_method("get_firing_solution_snapshot"), "The tennis-court artillery flow requires the summoned howitzer runtime and its live firing solution snapshot API"):
 		return
 	if not T.require_true(self, howitzer.global_position.distance_to(planned_spawn_root_world_position) <= 0.75, "The summoned howitzer must reuse the planned spawn snapshot for the tennis-court mission instead of drifting away from the spawn-area battery plan"):
+		return
+
+	var yaw_anchor := howitzer.get_node_or_null("Anchors/YawPivotAnchor") as Node3D
+	var anchor_world := yaw_anchor.global_position if yaw_anchor != null else howitzer.global_position
+	player.teleport_to_world_position(anchor_world + APPROACH_OFFSET)
+	await _settle_frames()
+
+	_press_key(world, KEY_E)
+	await _settle_frames()
+
+	mission_state = await _wait_for_solved_fire_mission(world, 120)
+	solution_state = mission_state.get("solution_state", {})
+	if not T.require_true(self, bool(solution_state.get("solved", false)), "After entering操炮状态, the tennis-court artillery flow must solve firing data from the real spawned howitzer instead of keeping the mission pending"):
+		return
+	var planned_range_m := float(solution_state.get("horizontal_distance_m", 0.0))
+	if not T.require_true(self, planned_range_m >= EXPECTED_RANGE_MIN_M and planned_range_m <= EXPECTED_RANGE_MAX_M, "The tennis-court artillery fixture must stay in the intended ~5km band once solved from the real spawned gun instead of accidentally becoming a short-range shot (range=%0.2fm)" % planned_range_m):
+		return
+	var mission_predicted_impact := solution_state.get("predicted_impact_world_position", Vector3.INF) as Vector3
+	if not T.require_true(self, mission_predicted_impact.distance_to(target_world_position) <= MISSION_TARGET_TOLERANCE_M, "The live-howitzer inverse-solver stage already misses the tennis-court target before any shell is launched (solver_delta=%0.2fm)" % mission_predicted_impact.distance_to(target_world_position)):
 		return
 
 	var desired_world_bearing_deg := float(solution_state.get("world_bearing_deg", 0.0))
@@ -154,14 +171,6 @@ func _run() -> void:
 	if not T.require_true(self, live_predicted_impact.distance_to(target_world_position) <= LIVE_SOLUTION_TARGET_TOLERANCE_M, "The live howitzer firing solution diverges from the planned tennis-court target before shell launch, which points to a mismatch inside the shell snapshot itself (field_delta=%0.2fm live_delta=%0.2fm muzzle_pitch=%0.2f displayed_pitch=%0.2f)" % [field_driven_impact.distance_to(target_world_position), live_predicted_impact.distance_to(target_world_position), live_direction_pitch_deg, desired_pitch_deg]):
 		return
 
-	var yaw_anchor := howitzer.get_node_or_null("Anchors/YawPivotAnchor") as Node3D
-	var anchor_world := yaw_anchor.global_position if yaw_anchor != null else howitzer.global_position
-	player.teleport_to_world_position(anchor_world + APPROACH_OFFSET)
-	await _settle_frames()
-
-	_press_key(world, KEY_E)
-	await _settle_frames()
-
 	var space_event := _build_key_event(KEY_SPACE, true)
 	Input.parse_input_event(space_event)
 	world._unhandled_input(space_event)
@@ -211,6 +220,16 @@ func _wait_for_shell_explosion(world: Node, max_frames: int) -> Dictionary:
 		if not result.is_empty():
 			return result
 	return {}
+
+func _wait_for_solved_fire_mission(world: Node, max_frames: int) -> Dictionary:
+	for _frame in range(max_frames):
+		await physics_frame
+		await process_frame
+		var state := world.get_artillery_fire_mission_state() as Dictionary
+		var solution_state: Dictionary = state.get("solution_state", {})
+		if bool(solution_state.get("solved", false)):
+			return state
+	return world.get_artillery_fire_mission_state() as Dictionary
 
 func _build_key_event(keycode: Key, pressed: bool) -> InputEventKey:
 	var key_event := InputEventKey.new()

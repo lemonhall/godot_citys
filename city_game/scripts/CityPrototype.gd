@@ -259,6 +259,7 @@ var _artillery_shell_root: Node3D = null
 var _active_world_howitzer: Node3D = null
 var _world_howitzer_operation_controller = null
 var _artillery_fire_mission_runtime: Node3D = null
+var _last_world_howitzer_operation_active_for_fire_mission := false
 var _player_rifle_audio_emitter: AudioStreamPlayer3D = null
 var _player_rifle_audio_play_trigger_count := 0
 var _player_rifle_audio_restart_trigger_count := 0
@@ -1352,6 +1353,8 @@ func summon_world_howitzer() -> Node3D:
 	_active_world_howitzer.global_position = root_spawn_position
 	_active_world_howitzer.look_at(root_spawn_position + spawn_forward, Vector3.UP, true)
 	_ensure_world_howitzer_operation_controller()
+	_last_world_howitzer_operation_active_for_fire_mission = false
+	_refresh_artillery_fire_mission_solution_for_current_operation()
 	_last_artillery_shell_explosion_result.clear()
 	_sync_navigation_consumers(true)
 	_update_npc_interaction_system()
@@ -1373,6 +1376,8 @@ func retract_world_howitzer() -> bool:
 	_active_world_howitzer.queue_free()
 	_active_world_howitzer = null
 	_world_howitzer_operation_controller = null
+	_last_world_howitzer_operation_active_for_fire_mission = false
+	_refresh_artillery_fire_mission_solution_for_current_operation()
 	_last_artillery_shell_explosion_result.clear()
 	_sync_navigation_consumers(true)
 	_update_npc_interaction_system()
@@ -2524,7 +2529,8 @@ func request_artillery_fire_mission_from_world_point(world_position: Vector3) ->
 	var battery_snapshot := _resolve_artillery_battery_snapshot_for_planning()
 	if battery_snapshot.is_empty():
 		return {}
-	var mission_contract := (_artillery_fire_mission_runtime.plan_fire_mission(clamped_world_position, battery_snapshot) as Dictionary).duplicate(true)
+	_artillery_fire_mission_runtime.plan_fire_mission(clamped_world_position, battery_snapshot)
+	var mission_contract := _refresh_artillery_fire_mission_solution_for_current_operation()
 	if mission_contract.is_empty():
 		return {}
 	_sync_artillery_fire_mission_pin()
@@ -2612,8 +2618,28 @@ func _build_artillery_fire_mission_focus_message(mission_state: Dictionary) -> S
 			float(solution_state.get("pitch_deg", 0.0)),
 			float(solution_state.get("horizontal_distance_m", 0.0)) / 1000.0,
 		]
+	if str(solution_state.get("reason", "")) == "requires_live_howitzer_operation":
+		return "炮击标记  已标定目标  按 8 召唤火炮  按 E 操炮后解算诸元"
 	var reason := str(solution_state.get("reason", "solver_unavailable"))
 	return "炮击标记  解算失败  %s" % reason
+
+func _is_world_howitzer_operation_active() -> bool:
+	if _world_howitzer_operation_controller == null or not _world_howitzer_operation_controller.has_method("get_operation_state"):
+		return false
+	return bool((_world_howitzer_operation_controller.get_operation_state() as Dictionary).get("active", false))
+
+func _refresh_artillery_fire_mission_solution_for_current_operation() -> Dictionary:
+	_ensure_artillery_fire_mission_runtime()
+	if _artillery_fire_mission_runtime == null or not _artillery_fire_mission_runtime.has_method("refresh_active_fire_mission_solution_from_world_howitzer"):
+		return get_artillery_fire_mission_state()
+	var howitzer := get_active_world_howitzer()
+	var operation_active := _is_world_howitzer_operation_active()
+	var mission_state := (_artillery_fire_mission_runtime.refresh_active_fire_mission_solution_from_world_howitzer(howitzer, operation_active) as Dictionary).duplicate(true)
+	if mission_state.is_empty():
+		return get_artillery_fire_mission_state()
+	_sync_artillery_fire_mission_pin()
+	_sync_navigation_consumers(true)
+	return mission_state
 
 func get_world_orientation_contract() -> Dictionary:
 	return _world_orientation.get_orientation_contract() if _world_orientation != null else {}
@@ -4112,11 +4138,18 @@ func _ensure_interaction_runtimes() -> void:
 func _update_world_howitzer_runtime(delta: float, prompt_blocked_override: bool = false) -> void:
 	var howitzer := get_active_world_howitzer()
 	if howitzer == null:
+		if _last_world_howitzer_operation_active_for_fire_mission:
+			_last_world_howitzer_operation_active_for_fire_mission = false
+			_refresh_artillery_fire_mission_solution_for_current_operation()
 		return
 	_ensure_world_howitzer_operation_controller()
 	var prompt_blocked := prompt_blocked_override or _is_primary_interaction_prompt_blocked()
 	if _world_howitzer_operation_controller != null and _world_howitzer_operation_controller.has_method("update"):
 		_world_howitzer_operation_controller.update(delta, prompt_blocked)
+	var operation_active := _is_world_howitzer_operation_active()
+	if operation_active != _last_world_howitzer_operation_active_for_fire_mission:
+		_last_world_howitzer_operation_active_for_fire_mission = operation_active
+		_refresh_artillery_fire_mission_solution_for_current_operation()
 
 func _update_npc_interaction_system() -> void:
 	_ensure_interaction_runtimes()
@@ -4374,6 +4407,8 @@ func _handle_world_howitzer_primary_interaction() -> Dictionary:
 			"error": "howitzer_operation_controller_unavailable",
 		}
 	var interaction_result := (_world_howitzer_operation_controller.request_primary_interaction() as Dictionary).duplicate(true)
+	_last_world_howitzer_operation_active_for_fire_mission = _is_world_howitzer_operation_active()
+	_refresh_artillery_fire_mission_solution_for_current_operation()
 	_update_npc_interaction_system()
 	return interaction_result
 

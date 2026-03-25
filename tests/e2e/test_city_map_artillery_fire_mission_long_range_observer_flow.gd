@@ -55,7 +55,9 @@ func _run() -> void:
 
 	var mission_state := world.get_artillery_fire_mission_state() as Dictionary
 	var solution_state: Dictionary = mission_state.get("solution_state", {})
-	if not T.require_true(self, bool(solution_state.get("solved", false)), "Long-range artillery observer flow requires an in-range solved bearing/pitch solution"):
+	if not T.require_true(self, not bool(solution_state.get("solved", false)), "Long-range artillery observer flow must keep the mission pending after target marking instead of showing solved firing data before the player enters操炮状态"):
+		return
+	if not T.require_true(self, str(solution_state.get("reason", "")) == "requires_live_howitzer_operation", "Pending long-range artillery mission state must explain that live howitzer operation is still required before solving firing data"):
 		return
 
 	world.set_full_map_open(false)
@@ -81,6 +83,17 @@ func _run() -> void:
 	await _settle_frames()
 
 	_press_key(world, KEY_E)
+	await _settle_frames()
+
+	mission_state = await _wait_for_solved_fire_mission(world, 120)
+	solution_state = mission_state.get("solution_state", {})
+	if not T.require_true(self, bool(solution_state.get("solved", false)), "After entering操炮状态, long-range artillery observer flow must expose solved firing data from the real spawned howitzer"):
+		return
+
+	var desired_world_bearing_deg := float(solution_state.get("world_bearing_deg", 0.0))
+	var desired_pitch_deg := float(solution_state.get("pitch_deg", 0.0))
+	var local_yaw_deg := await _resolve_live_local_yaw_deg(howitzer, desired_world_bearing_deg, desired_pitch_deg)
+	howitzer.set_axis_angles_degrees(local_yaw_deg, desired_pitch_deg)
 	await _settle_frames()
 
 	var space_event := _build_key_event(KEY_SPACE, true)
@@ -148,6 +161,30 @@ func _wait_for_observation_restore(world: Node, max_frames: int) -> Dictionary:
 			return state
 	return world.get_artillery_observation_state() as Dictionary
 
+func _wait_for_solved_fire_mission(world: Node, max_frames: int) -> Dictionary:
+	for _frame_index in range(max_frames):
+		await physics_frame
+		await process_frame
+		var state := world.get_artillery_fire_mission_state() as Dictionary
+		var solution_state: Dictionary = state.get("solution_state", {})
+		if bool(solution_state.get("solved", false)):
+			return state
+	return world.get_artillery_fire_mission_state() as Dictionary
+
+func _resolve_live_local_yaw_deg(howitzer: Node3D, desired_world_bearing_deg: float, desired_pitch_deg: float) -> float:
+	howitzer.set_axis_angles_degrees(0.0, desired_pitch_deg)
+	await _settle_frames()
+	var zero_yaw_snapshot := howitzer.get_firing_solution_snapshot() as Dictionary
+	var zero_yaw_world_bearing_deg := float(zero_yaw_snapshot.get("world_bearing_deg", 0.0))
+	howitzer.set_axis_angles_degrees(1.0, desired_pitch_deg)
+	await _settle_frames()
+	var plus_one_yaw_snapshot := howitzer.get_firing_solution_snapshot() as Dictionary
+	var plus_one_yaw_world_bearing_deg := float(plus_one_yaw_snapshot.get("world_bearing_deg", 0.0))
+	var positive_step_world_bearing_delta_deg := _shortest_bearing_delta_deg(zero_yaw_world_bearing_deg, plus_one_yaw_world_bearing_deg)
+	var desired_world_bearing_delta_deg := _shortest_bearing_delta_deg(zero_yaw_world_bearing_deg, desired_world_bearing_deg)
+	var local_yaw_sign := 1.0 if positive_step_world_bearing_delta_deg >= 0.0 else -1.0
+	return fposmod(desired_world_bearing_delta_deg * local_yaw_sign + 360.0, 360.0)
+
 func _build_key_event(keycode: Key, pressed: bool) -> InputEventKey:
 	var key_event := InputEventKey.new()
 	key_event.pressed = pressed
@@ -166,3 +203,6 @@ func _settle_frames(frame_count: int = 6) -> void:
 	for _frame_index in range(frame_count):
 		await physics_frame
 		await process_frame
+
+func _shortest_bearing_delta_deg(from_bearing_deg: float, to_bearing_deg: float) -> float:
+	return fposmod(to_bearing_deg - from_bearing_deg + 540.0, 360.0) - 180.0

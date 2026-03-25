@@ -621,6 +621,9 @@ func _draw_artillery_fire_mission_summary(map_rect: Rect2) -> void:
 			float(solution_state.get("horizontal_distance_m", 0.0)) / 1000.0,
 			str(solution_state.get("arc_kind", "low")),
 		]
+	elif str(solution_state.get("reason", "")) == "requires_live_howitzer_operation":
+		detail_line_1 = "待操炮解算"
+		detail_line_2 = "按 8 召唤火炮  靠近按 E 操炮"
 	else:
 		detail_line_1 = "解算失败"
 		detail_line_2 = str(solution_state.get("reason", "solver_unavailable"))

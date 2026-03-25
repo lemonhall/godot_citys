@@ -66,6 +66,8 @@ func upsert_artillery_fire_mission_pin(mission_state: Dictionary) -> Dictionary:
 			float(solution_state.get("world_bearing_deg", 0.0)),
 			float(solution_state.get("pitch_deg", 0.0)),
 		]
+	elif subtitle == "requires_live_howitzer_operation":
+		subtitle = "待操炮解算"
 	return register_pin({
 		"pin_id": mission_id,
 		"pin_type": "artillery_fire_mission",

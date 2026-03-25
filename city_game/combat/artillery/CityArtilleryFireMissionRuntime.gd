@@ -110,8 +110,6 @@ func plan_fire_mission(target_world_position: Vector3, battery_snapshot: Diction
 	if battery_snapshot.is_empty():
 		_fire_mission_state = _build_inactive_fire_mission_state()
 		return {}
-	var solved_solution := _solve_fire_mission_solution_for_battery(target_world_position, battery_snapshot)
-	var solution_state := _build_solution_state(solved_solution)
 	var target_chunk_key := _resolve_chunk_key(target_world_position)
 	_fire_mission_state = {
 		"active": true,
@@ -120,7 +118,8 @@ func plan_fire_mission(target_world_position: Vector3, battery_snapshot: Diction
 		"target_chunk_key": target_chunk_key,
 		"target_chunk_id": _format_chunk_id(target_chunk_key),
 		"battery_snapshot": battery_snapshot.duplicate(true),
-		"solution_state": solution_state.duplicate(true),
+		"resolved_battery_snapshot": {},
+		"solution_state": _build_pending_solution_state().duplicate(true),
 	}
 	return _fire_mission_state.duplicate(true)
 
@@ -134,12 +133,7 @@ func build_fire_mission_pin() -> Dictionary:
 	if not bool(_fire_mission_state.get("active", false)):
 		return {}
 	var solution_state: Dictionary = _fire_mission_state.get("solution_state", {})
-	var subtitle := str(solution_state.get("reason", ""))
-	if bool(solution_state.get("solved", false)):
-		subtitle = "方位 %.1f°  高低 %.1f°" % [
-			float(solution_state.get("world_bearing_deg", 0.0)),
-			float(solution_state.get("pitch_deg", 0.0)),
-		]
+	var subtitle := _build_solution_subtitle(solution_state)
 	return {
 		"pin_id": str(_fire_mission_state.get("mission_id", MISSION_ID)),
 		"pin_type": "artillery_fire_mission",
@@ -153,6 +147,20 @@ func build_fire_mission_pin() -> Dictionary:
 		"is_selectable": true,
 		"marker_style": "cross",
 	}
+
+func refresh_active_fire_mission_solution_from_world_howitzer(howitzer: Node3D, operation_active: bool) -> Dictionary:
+	if not bool(_fire_mission_state.get("active", false)):
+		return {}
+	if not operation_active or howitzer == null or not is_instance_valid(howitzer):
+		return _set_active_fire_mission_solution_pending()
+	var live_battery_snapshot := build_battery_snapshot_from_world_howitzer(howitzer)
+	if live_battery_snapshot.is_empty():
+		return _set_active_fire_mission_solution_pending()
+	var target_world_position := _fire_mission_state.get("target_world_position", Vector3.ZERO) as Vector3
+	var solved_solution := _solve_fire_mission_solution_for_battery(target_world_position, live_battery_snapshot)
+	_fire_mission_state["resolved_battery_snapshot"] = live_battery_snapshot.duplicate(true)
+	_fire_mission_state["solution_state"] = _build_solution_state(solved_solution).duplicate(true)
+	return _fire_mission_state.duplicate(true)
 
 func start_observation_from_firing_solution(firing_solution: Dictionary) -> Dictionary:
 	if firing_solution.is_empty():
@@ -246,6 +254,37 @@ func _build_solution_state(result: Dictionary) -> Dictionary:
 		"predicted_impact_world_position": result.get("predicted_impact_world_position", Vector3.ZERO),
 	}
 
+func _build_pending_solution_state(reason: String = "requires_live_howitzer_operation") -> Dictionary:
+	return {
+		"solved": false,
+		"reason": reason,
+		"range_state": "pending_live_battery",
+		"world_bearing_deg": 0.0,
+		"pitch_deg": 0.0,
+		"horizontal_distance_m": 0.0,
+		"flight_time_sec": 0.0,
+		"arc_kind": "",
+		"predicted_impact_world_position": Vector3.ZERO,
+	}
+
+func _build_solution_subtitle(solution_state: Dictionary) -> String:
+	if bool(solution_state.get("solved", false)):
+		return "方位 %.1f°  高低 %.1f°" % [
+			float(solution_state.get("world_bearing_deg", 0.0)),
+			float(solution_state.get("pitch_deg", 0.0)),
+		]
+	var reason := str(solution_state.get("reason", ""))
+	if reason == "requires_live_howitzer_operation":
+		return "待操炮解算"
+	return reason
+
+func _set_active_fire_mission_solution_pending(reason: String = "requires_live_howitzer_operation") -> Dictionary:
+	if not bool(_fire_mission_state.get("active", false)):
+		return {}
+	_fire_mission_state["resolved_battery_snapshot"] = {}
+	_fire_mission_state["solution_state"] = _build_pending_solution_state(reason).duplicate(true)
+	return _fire_mission_state.duplicate(true)
+
 func _build_inactive_fire_mission_state() -> Dictionary:
 	return {
 		"active": false,
@@ -254,6 +293,7 @@ func _build_inactive_fire_mission_state() -> Dictionary:
 		"target_chunk_key": Vector2i.ZERO,
 		"target_chunk_id": "",
 		"battery_snapshot": {},
+		"resolved_battery_snapshot": {},
 		"solution_state": {},
 	}
 
@@ -282,10 +322,11 @@ func _capture_reference_offsets() -> void:
 	var reference_howitzer := CityM777HowitzerScene.instantiate() as Node3D
 	if reference_howitzer == null:
 		return
+	var authored_root_vertical_offset_m := reference_howitzer.position.y
 	add_child(reference_howitzer)
 	reference_howitzer.position = Vector3(0.0, -10000.0, 0.0)
 	_reference_geometry_ready = false
-	_reference_root_vertical_offset_m = reference_howitzer.position.y
+	_reference_root_vertical_offset_m = authored_root_vertical_offset_m
 	_reference_pitch_zero_offset_deg = float(reference_howitzer.get("pitch_zero_offset_deg"))
 	var yaw_anchor := reference_howitzer.get_node_or_null("Anchors/YawPivotAnchor") as Node3D
 	var pitch_anchor := reference_howitzer.get_node_or_null("Anchors/PitchPivotAnchor") as Node3D
@@ -300,7 +341,7 @@ func _capture_reference_offsets() -> void:
 	if pitch_pivot != null and muzzle_anchor != null:
 		_reference_muzzle_local_transform = pitch_pivot.global_transform.affine_inverse() * muzzle_anchor.global_transform
 		_reference_geometry_ready = true
-	reference_howitzer.reparent(self, false)
+	remove_child(reference_howitzer)
 	reference_howitzer.queue_free()
 
 func _ensure_observer_camera() -> void:

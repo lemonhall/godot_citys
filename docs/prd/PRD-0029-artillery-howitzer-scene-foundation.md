@@ -29,6 +29,7 @@
 - [已由 ECN-0037 变更] 在 full map 建立右键上下文菜单与单个 active artillery fire mission marker；选中 `炮击标记` 后，系统必须基于 shared ballistic solver 立即给出 bearing / pitch / range / arc 的正式解算结果或明确的超射程原因。
 - [已由 ECN-0037 变更] 当玩家先在 full map 规划 fire mission 再按 `KP_8` 召唤火炮时，主世界 howitzer 必须优先复用该 mission 冻结的 battery snapshot，而不是偷偷改到新的随机位置，确保地图阶段抄下来的诸元仍然可用。
 - [已由 ECN-0037 变更] 主世界 accepted fire 后必须进入正式 artillery observation closeout：按 actual firing solution 预测落点、预热 impact chunk 周边 page/actor 数据、在炮口演出后切到目标区观察爆炸；即使没有 map mission，free fire 也必须拥有同口径的观察闭环。
+- [已由 ECN-0039 变更] 当 `player drone active + FPV ADS active` 时，玩家按 `T` 必须可以直接把无人机准星落点送入同一条 artillery fire mission 主链，形成正式的无人机校炮入口；该入口不得生成第二套 marker / solver / battery snapshot 状态。
 
 ## Non-Goals
 
@@ -68,6 +69,8 @@
 23. [已由 ECN-0037 变更] 玩家记下地图给出的诸元后，仍然通过既有 howitzer 操炮链手动输入 bearing / pitch，并按 `Space` 正式击发；系统不应偷偷代替玩家自动拨炮。
 24. [已由 ECN-0037 变更] 开炮后，玩家必须先看到 howitzer 自身的击发演出与短暂飞行 closeout；随后画面切到目标区，观察正式 shell impact 与爆炸结果，而不是永远待在炮位原地。
 25. [已由 ECN-0037 变更] 即使玩家没有做 map reverse solve、只是随意打一发，系统也必须仍然给出同口径的炮击观察效果；区别只在于没有预先存在的 fire mission marker 与 map-side 诸元提示。
+26. [已由 ECN-0039 变更] 当 `player drone active + FPV ADS active` 时，玩家按 `T` 必须直接创建或更新同一枚黄色炮击黄叉，而不是被迫重新打开 full map 走右键流程。
+27. [已由 ECN-0039 变更] 若当前 live howitzer 操炮 active，无人机 `T` 校准后的新 target 必须立即刷新 bearing / pitch；若非无人机 FPV 场景，则 `T` 的既有快捷语义必须保持。
 
 ## Requirements
 
@@ -407,6 +410,23 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
 - 唯一例外是“player drone active + howitzer 操炮 active”的复合模式；该模式下 free fire 也必须跳过 observer closeout，保留玩家对无人机观察链的连续控制；
 - active fire mission 只负责提供 map-side marker / solution / planned battery snapshot，不拥有击发链路的唯一所有权。
 
+### REQ-0029-024 Drone Crosshair Fire Mission Calibration Contract
+
+[由 ECN-0039 新增] 系统必须提供正式的“无人机准星校炮”入口，把 drone FPV world target 接入现有 artillery fire mission 主链。该 contract 至少满足：
+
+- 当且仅当 `player drone active + FPV ADS active` 时，按 `T` 才切换为 artillery fire mission calibration 语义；
+- 该入口必须复用正式 `request_artillery_fire_mission_from_world_point()` 或等价的单一 host 真源，不允许复制第二套 planner / marker / solver state；
+- 首次按 `T` 时：
+  - 若当前没有 active fire mission
+  - 必须创建正式 single active yellow cross；
+- 再次按 `T` 时：
+  - 若当前已有 active fire mission
+  - 必须更新同一份 formal mission target，而不是累积多个黄叉；
+- 若当前 live howitzer 操炮 active，则新的 target 必须立刻刷新 solved bearing / pitch / range；
+- 若当前 howitzer 尚未操炮，则新的 target 必须继续保持 `requires_live_howitzer_operation` pending 口径；
+- full map render state、pin registry、focus message 必须继续消费同一份 fire mission state；不允许新增 drone-only 黄叉或 drone-only 解算面板；
+- 本轮不要求按 `T` 时自动打开 full map，也不要求自动拨炮或自动击发。
+
 ## Acceptance
 
 1. 自动化测试必须证明：`CityM777Howitzer.tscn` 与对应脚本存在，并且场景文本直接引用正式 `m777_3_parts.glb`。
@@ -447,3 +467,5 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
 36. [由 ECN-0037 新增] 自动化测试必须证明：即使没有 active fire mission marker，free fire 也会照样触发同口径的 observation closeout，而不是只剩旧的“炮口响一下”链路。
 37. [由 ECN-0038 新增] 自动化测试必须证明：当 `player drone active + howitzer 操炮 active` 同时成立时，accepted fire 不会启动 observer closeout；shell 与 impact 仍然存在，但 camera ownership 不得被 observer runtime 抢走。
 38. [由 ECN-0038 新增] 自动化测试必须证明：当 `player drone active + howitzer 操炮 active` 同时成立时，按下 `E` 不会退出 howitzer 操炮态；该输入必须继续归 active drone 的上升控制所有。
+39. [由 ECN-0039 新增] 自动化测试必须证明：`player drone active + FPV ADS active` 下按 `T` 会创建或更新正式 artillery fire mission，且 `target_world_position` 与无人机准星 `world_target` 对齐，而不是落入另一套私有 target state。
+40. [由 ECN-0039 新增] 自动化测试必须证明：重复按 `T` 只会更新单个 active yellow-cross fire mission；若当前 live howitzer 操炮 active，则 solved bearing / pitch 会随新 target 刷新；非无人机 FPV 场景下，`T` 的既有快捷语义不回退。

@@ -555,6 +555,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if key_event.pressed and not key_event.echo and key_event.keycode == KEY_T:
+			var drone_artillery_shortcut := _handle_drone_artillery_fire_mission_shortcut()
+			if bool(drone_artillery_shortcut.get("handled", false)):
+				get_viewport().set_input_as_handled()
+				return
 			if _handle_fast_travel_shortcut():
 				get_viewport().set_input_as_handled()
 				return
@@ -2565,6 +2569,45 @@ func request_artillery_fire_mission_from_world_point(world_position: Vector3) ->
 		hud.set_focus_message(_build_artillery_fire_mission_focus_message(mission_contract), 8.0)
 	_sync_navigation_consumers(true)
 	return mission_contract
+
+func _handle_drone_artillery_fire_mission_shortcut() -> Dictionary:
+	_ensure_player_drone_runtime()
+	if _player_drone_runtime == null or not is_instance_valid(_player_drone_runtime) or not _is_player_drone_runtime_active():
+		return {
+			"handled": false,
+		}
+	if not _player_drone_runtime.has_method("get_crosshair_state"):
+		return {
+			"handled": false,
+		}
+	var crosshair_state := (_player_drone_runtime.get_crosshair_state() as Dictionary).duplicate(true)
+	if not bool(crosshair_state.get("aim_down_sights_active", false)):
+		return {
+			"handled": false,
+		}
+	var world_target := crosshair_state.get("world_target", Vector3.ZERO) as Vector3
+	if world_target == Vector3.ZERO:
+		if hud != null and hud.has_method("set_focus_message"):
+			hud.set_focus_message("炮击标记  无有效准星落点", 3.0)
+		return {
+			"handled": true,
+			"accepted": false,
+			"reason": "missing_world_target",
+		}
+	var mission_contract := request_artillery_fire_mission_from_world_point(world_target)
+	if mission_contract.is_empty():
+		if hud != null and hud.has_method("set_focus_message"):
+			hud.set_focus_message("炮击标记  标定失败", 3.0)
+		return {
+			"handled": true,
+			"accepted": false,
+			"reason": "planning_failed",
+		}
+	return {
+		"handled": true,
+		"accepted": true,
+		"mission_contract": mission_contract.duplicate(true),
+	}
 
 func get_artillery_fire_mission_state() -> Dictionary:
 	if _artillery_fire_mission_runtime == null or not _artillery_fire_mission_runtime.has_method("get_fire_mission_state"):

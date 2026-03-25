@@ -28,7 +28,12 @@ var _observation_phase_elapsed_sec := 0.0
 var _latest_shell_explosion_result: Dictionary = {}
 var _locked_player_world_position := Vector3.ZERO
 var _reference_platform_local_offset := Vector3.ZERO
+var _reference_yaw_anchor_local_offset := Vector3.ZERO
+var _reference_pitch_pivot_local_offset := Vector3.ZERO
+var _reference_muzzle_local_transform := Transform3D.IDENTITY
 var _reference_root_vertical_offset_m := 0.0
+var _reference_pitch_zero_offset_deg := 0.0
+var _reference_geometry_ready := false
 
 @onready var _observer_rig := Node3D.new()
 @onready var _observer_camera := Camera3D.new()
@@ -105,10 +110,7 @@ func plan_fire_mission(target_world_position: Vector3, battery_snapshot: Diction
 	if battery_snapshot.is_empty():
 		_fire_mission_state = _build_inactive_fire_mission_state()
 		return {}
-	var solved_solution := _ballistics.solve_firing_solution_to_target(
-		battery_snapshot.get("platform_world_position", target_world_position) as Vector3,
-		target_world_position
-	) if _ballistics != null and _ballistics.has_method("solve_firing_solution_to_target") else {}
+	var solved_solution := _solve_fire_mission_solution_for_battery(target_world_position, battery_snapshot)
 	var solution_state := _build_solution_state(solved_solution)
 	var target_chunk_key := _resolve_chunk_key(target_world_position)
 	_fire_mission_state = {
@@ -280,10 +282,25 @@ func _capture_reference_offsets() -> void:
 	var reference_howitzer := CityM777HowitzerScene.instantiate() as Node3D
 	if reference_howitzer == null:
 		return
+	add_child(reference_howitzer)
+	reference_howitzer.position = Vector3(0.0, -10000.0, 0.0)
+	_reference_geometry_ready = false
 	_reference_root_vertical_offset_m = reference_howitzer.position.y
+	_reference_pitch_zero_offset_deg = float(reference_howitzer.get("pitch_zero_offset_deg"))
+	var yaw_anchor := reference_howitzer.get_node_or_null("Anchors/YawPivotAnchor") as Node3D
 	var pitch_anchor := reference_howitzer.get_node_or_null("Anchors/PitchPivotAnchor") as Node3D
+	var pitch_pivot := reference_howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot") as Node3D
+	var muzzle_anchor := reference_howitzer.get_node_or_null("Anchors/MuzzleFxAnchor") as Node3D
+	if yaw_anchor != null:
+		_reference_yaw_anchor_local_offset = yaw_anchor.position
 	if pitch_anchor != null:
 		_reference_platform_local_offset = pitch_anchor.position
+	if yaw_anchor != null and pitch_anchor != null:
+		_reference_pitch_pivot_local_offset = pitch_anchor.position - yaw_anchor.position
+	if pitch_pivot != null and muzzle_anchor != null:
+		_reference_muzzle_local_transform = pitch_pivot.global_transform.affine_inverse() * muzzle_anchor.global_transform
+		_reference_geometry_ready = true
+	reference_howitzer.reparent(self, false)
 	reference_howitzer.queue_free()
 
 func _ensure_observer_camera() -> void:
@@ -299,6 +316,68 @@ func _ensure_observer_camera() -> void:
 func _rotate_reference_offset_yaw(local_offset: Vector3, forward_world: Vector3) -> Vector3:
 	var yaw_rad := atan2(-forward_world.x, -forward_world.z)
 	return Basis(Vector3.UP, yaw_rad) * local_offset
+
+func _solve_fire_mission_solution_for_battery(target_world_position: Vector3, battery_snapshot: Dictionary) -> Dictionary:
+	if _ballistics == null or not _ballistics.has_method("solve_firing_solution_to_target"):
+		return {}
+	var platform_world_position := battery_snapshot.get("platform_world_position", target_world_position) as Vector3
+	var current_origin_world_position := platform_world_position
+	var solved_solution: Dictionary = {}
+	for _iteration in range(3):
+		solved_solution = (_ballistics.solve_firing_solution_to_target(
+			current_origin_world_position,
+			target_world_position,
+			{
+				"platform_world_position": platform_world_position,
+			}
+		) as Dictionary).duplicate(true)
+		if not bool(solved_solution.get("solved", false)):
+			return solved_solution
+		var refined_origin_world_position := _resolve_reference_muzzle_origin_world_position(battery_snapshot, solved_solution)
+		if refined_origin_world_position.distance_to(current_origin_world_position) <= 0.01:
+			break
+		current_origin_world_position = refined_origin_world_position
+	return solved_solution
+
+func _resolve_reference_muzzle_origin_world_position(battery_snapshot: Dictionary, solved_solution: Dictionary) -> Vector3:
+	var platform_world_position := battery_snapshot.get("platform_world_position", Vector3.ZERO) as Vector3
+	if not _reference_geometry_ready:
+		return platform_world_position
+	var spawn_root_world_position := battery_snapshot.get("spawn_root_world_position", platform_world_position) as Vector3
+	var spawn_forward_world := battery_snapshot.get("spawn_forward_world", Vector3.FORWARD) as Vector3
+	spawn_forward_world.y = 0.0
+	if spawn_forward_world.length_squared() <= 0.0001:
+		spawn_forward_world = Vector3.FORWARD
+	spawn_forward_world = spawn_forward_world.normalized()
+	var desired_world_bearing_deg := float(solved_solution.get("world_bearing_deg", 0.0))
+	var desired_pitch_deg := float(solved_solution.get("pitch_deg", 0.0))
+	var local_yaw_deg := _resolve_local_yaw_deg_from_world_bearing(spawn_forward_world, desired_world_bearing_deg)
+	var root_basis := _build_root_basis_from_forward(spawn_forward_world)
+	var yaw_basis := root_basis * Basis(Vector3.UP, deg_to_rad(local_yaw_deg))
+	var pitch_basis := yaw_basis * Basis(Vector3.RIGHT, deg_to_rad(_reference_pitch_zero_offset_deg - desired_pitch_deg))
+	var pitch_pivot_world_position := spawn_root_world_position + root_basis * (
+		_reference_yaw_anchor_local_offset + Basis(Vector3.UP, deg_to_rad(local_yaw_deg)) * _reference_pitch_pivot_local_offset
+	)
+	return (Transform3D(pitch_basis, pitch_pivot_world_position) * _reference_muzzle_local_transform).origin
+
+func _build_root_basis_from_forward(forward_world: Vector3) -> Basis:
+	var resolved_forward := forward_world
+	resolved_forward.y = 0.0
+	if resolved_forward.length_squared() <= 0.0001:
+		resolved_forward = Vector3.FORWARD
+	return Basis(Vector3.UP, atan2(-resolved_forward.x, -resolved_forward.z))
+
+func _resolve_world_bearing_deg_from_forward(forward_world: Vector3) -> float:
+	var resolved_forward := forward_world
+	resolved_forward.y = 0.0
+	if resolved_forward.length_squared() <= 0.0001:
+		resolved_forward = Vector3.FORWARD
+	resolved_forward = resolved_forward.normalized()
+	return fposmod(rad_to_deg(atan2(resolved_forward.x, -resolved_forward.z)), 360.0)
+
+func _resolve_local_yaw_deg_from_world_bearing(spawn_forward_world: Vector3, desired_world_bearing_deg: float) -> float:
+	var zero_local_world_bearing_deg := _resolve_world_bearing_deg_from_forward(spawn_forward_world)
+	return fposmod(zero_local_world_bearing_deg - desired_world_bearing_deg + 360.0, 360.0)
 
 func _resolve_chunk_key(world_position: Vector3) -> Vector2i:
 	if _world_config == null:

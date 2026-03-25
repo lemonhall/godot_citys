@@ -382,6 +382,8 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
 
 - closeout 必须直接基于 actual firing solution 预测理论 impact world position；
 - 击发瞬间必须预热 impact chunk 周边的 chunk page / actor page，而不是等切镜时再同步冷加载；
+- 若当前同时满足 `howitzer 操炮 active` 与 `player drone active`，则本条 closeout 必须显式跳过；此时 accepted fire 仍要保留炮口演出、shell 生成与 impact 结果，但不能抢走无人机观察视角；
+- 若当前同时满足 `howitzer 操炮 active` 与 `player drone active`，则 `E` 不得再退出 howitzer 操炮态；该键位必须让给 active drone 的上升输入，直到玩家先收回无人机或以其他正式方式结束复合态；
 - closeout 至少分为两个阶段：
   - `muzzle_stage`：保留 howitzer 自身击发演出与短暂飞行等待；
   - `impact_stage`：切到目标区 observer camera 观察 impact / explosion result；
@@ -402,6 +404,7 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
   - 预测 actual impact
   - 预热 target chunk
   - 切到目标区观察爆炸
+- 唯一例外是“player drone active + howitzer 操炮 active”的复合模式；该模式下 free fire 也必须跳过 observer closeout，保留玩家对无人机观察链的连续控制；
 - active fire mission 只负责提供 map-side marker / solution / planned battery snapshot，不拥有击发链路的唯一所有权。
 
 ## Acceptance
@@ -442,3 +445,5 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
 34. [由 ECN-0037 新增] 自动化测试必须证明：在“先地图规划、后 `KP_8` 召唤”的流程里，world howitzer 会优先复用本次 fire mission 的 planned battery snapshot，而不是在新的玩家前方随机生成导致诸元失效。
 35. [由 ECN-0037 新增] 自动化测试必须证明：主世界 accepted fire 会启动 observation closeout，留下 predicted impact、prewarm chunk 与 camera ownership 的正式 runtime state，并在 closeout 结束后恢复玩家 camera。
 36. [由 ECN-0037 新增] 自动化测试必须证明：即使没有 active fire mission marker，free fire 也会照样触发同口径的 observation closeout，而不是只剩旧的“炮口响一下”链路。
+37. [由 ECN-0038 新增] 自动化测试必须证明：当 `player drone active + howitzer 操炮 active` 同时成立时，accepted fire 不会启动 observer closeout；shell 与 impact 仍然存在，但 camera ownership 不得被 observer runtime 抢走。
+38. [由 ECN-0038 新增] 自动化测试必须证明：当 `player drone active + howitzer 操炮 active` 同时成立时，按下 `E` 不会退出 howitzer 操炮态；该输入必须继续归 active drone 的上升控制所有。

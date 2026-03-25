@@ -1259,8 +1259,27 @@ func _toggle_player_drone_runtime() -> Dictionary:
 		}
 	return _player_drone_runtime.request_toggle()
 
+func _peek_player_drone_debug_state() -> Dictionary:
+	var runtime := _player_drone_runtime
+	if runtime == null or not is_instance_valid(runtime):
+		runtime = get_node_or_null("PlayerDroneRuntime") as Node3D
+	if runtime == null or not runtime.has_method("get_debug_state"):
+		return {
+			"system_state": "stowed",
+			"camera_owner": "player",
+			"input_owner": "player",
+			"transition_progress": 0.0,
+			"player_locked": false,
+			"drone_visible": false,
+			"drone_world_position": Vector3.ZERO,
+			"planar_velocity_mps": 0.0,
+			"vertical_velocity_mps": 0.0,
+			"last_reject_reason": "",
+		}
+	return (runtime.get_debug_state() as Dictionary).duplicate(true)
+
 func _is_player_drone_runtime_busy() -> bool:
-	var debug_state: Dictionary = get_player_drone_debug_state()
+	var debug_state: Dictionary = _peek_player_drone_debug_state()
 	return str(debug_state.get("system_state", "stowed")) != "stowed"
 
 func is_player_driving_vehicle() -> bool:
@@ -1420,7 +1439,12 @@ func _resolve_world_howitzer_spawn_forward() -> Vector3:
 
 func _get_world_howitzer_interaction_prompt_state() -> Dictionary:
 	if _world_howitzer_operation_controller != null and _world_howitzer_operation_controller.has_method("get_interaction_prompt_state"):
-		return (_world_howitzer_operation_controller.get_interaction_prompt_state(_is_primary_interaction_prompt_blocked()) as Dictionary).duplicate(true)
+		var prompt_state := (_world_howitzer_operation_controller.get_interaction_prompt_state(_is_primary_interaction_prompt_blocked()) as Dictionary).duplicate(true)
+		if _is_world_howitzer_drone_composite_operation_active() and bool(prompt_state.get("visible", false)):
+			var prompt_text := str(prompt_state.get("prompt_text", ""))
+			if prompt_text.find("按 E 退出操炮") >= 0:
+				prompt_state["prompt_text"] = prompt_text.replace("按 E 退出操炮", "KP5 收无人机后按 E 退出操炮")
+		return prompt_state
 	return {}
 
 func _get_world_howitzer_artillery_solution_state() -> Dictionary:
@@ -2630,6 +2654,12 @@ func _is_world_howitzer_operation_active() -> bool:
 	if _world_howitzer_operation_controller == null or not _world_howitzer_operation_controller.has_method("get_operation_state"):
 		return false
 	return bool((_world_howitzer_operation_controller.get_operation_state() as Dictionary).get("active", false))
+
+func _is_player_drone_runtime_active() -> bool:
+	return str(_peek_player_drone_debug_state().get("system_state", "stowed")) == "active"
+
+func _is_world_howitzer_drone_composite_operation_active() -> bool:
+	return _is_world_howitzer_operation_active() and _is_player_drone_runtime_active()
 
 func _refresh_artillery_fire_mission_solution_for_current_operation() -> Dictionary:
 	_ensure_artillery_fire_mission_runtime()
@@ -4388,6 +4418,12 @@ func handle_primary_interaction() -> Dictionary:
 			"success": false,
 			"error": "player_driving_vehicle",
 		}
+	if _is_world_howitzer_drone_composite_operation_active():
+		return {
+			"success": false,
+			"handled": false,
+			"error": "drone_composite_preserves_operation",
+		}
 	var fishing_interaction_result: Dictionary = _handle_fishing_primary_interaction()
 	if bool(fishing_interaction_result.get("handled", false)):
 		return fishing_interaction_result
@@ -4418,6 +4454,12 @@ func _handle_fishing_primary_interaction() -> Dictionary:
 	return interaction_result
 
 func _handle_world_howitzer_primary_interaction() -> Dictionary:
+	if _is_world_howitzer_drone_composite_operation_active():
+		return {
+			"success": false,
+			"handled": false,
+			"error": "drone_composite_preserves_operation",
+		}
 	if _world_howitzer_operation_controller == null or not _world_howitzer_operation_controller.has_method("request_primary_interaction"):
 		return {
 			"success": false,
@@ -4440,7 +4482,7 @@ func _handle_world_howitzer_fire_input() -> Dictionary:
 	if bool(fire_result.get("accepted", false)):
 		var firing_solution := fire_result.get("firing_solution", {}) as Dictionary
 		if not firing_solution.is_empty():
-			if _artillery_fire_mission_runtime != null and _artillery_fire_mission_runtime.has_method("start_observation_from_firing_solution"):
+			if not _is_world_howitzer_drone_composite_operation_active() and _artillery_fire_mission_runtime != null and _artillery_fire_mission_runtime.has_method("start_observation_from_firing_solution"):
 				var observation_state := _artillery_fire_mission_runtime.start_observation_from_firing_solution(firing_solution) as Dictionary
 				var observation_ballistic_time_scale := maxf(float(observation_state.get("shell_ballistic_time_scale", 0.0)), 0.0)
 				if observation_ballistic_time_scale > 0.0:

@@ -185,8 +185,8 @@
   - `D` 右移
 - 垂直输入冻结为：
   - `E` 上升
-  - `Space` 上升
   - `Q` 下降
+  - `Space` 不再承担无人机抬升语义；该键位必须让位给更高优先级的 howitzer `Space` 击发链，避免无人机与操炮复合模式发生输入抢占
 - 平面移动坐标系冻结为：
   - 基于 drone chase camera yaw 的相对平面
 - 自稳定语义冻结为：
@@ -202,7 +202,8 @@
 **验收口径**：
 
 - 自动化测试至少断言：`W/A/S/D` 影响的是 camera-relative planar velocity，而不是玩家身体移动。
-- 自动化测试至少断言：`E` / `Space` 提供上升输入，`Q` 提供下降输入。
+- 自动化测试至少断言：`E` 提供上升输入，`Q` 提供下降输入。
+- 自动化测试至少断言：active drone 下单独按 `Space` 不会再触发无人机抬升，确保该键位可以在与 howitzer 复合操作时继续归 howitzer `Space` 击发所有。
 - 自动化测试至少断言：无人机在释放输入后会回到 near-zero velocity hover，而不是继续漂移或立刻硬停。
 - 反作弊条款：不得把 active drone 仅实现成“一个 inspection camera 沿着位移向量移动”。
 

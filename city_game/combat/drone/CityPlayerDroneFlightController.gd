@@ -63,7 +63,7 @@ func _read_input_state() -> Dictionary:
 	if planar_input.length_squared() > 1.0:
 		planar_input = planar_input.normalized()
 	var vertical_input := 0.0
-	if Input.is_key_pressed(KEY_E) or Input.is_key_pressed(KEY_SPACE) or Input.is_action_pressed("ui_accept"):
+	if Input.is_key_pressed(KEY_E):
 		vertical_input += 1.0
 	if Input.is_key_pressed(KEY_Q):
 		vertical_input -= 1.0

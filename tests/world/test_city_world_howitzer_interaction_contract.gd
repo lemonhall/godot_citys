@@ -78,7 +78,8 @@ func _run() -> void:
 	_release_live_key(world, KEY_I)
 	await _settle_frames()
 
-	if not T.require_true(self, float(howitzer.get_yaw_degrees()) > yaw_before + 0.1, "While operating the main-world howitzer, holding L must rotate yaw through the shared controller instead of doing nothing"):
+	var coarse_yaw_delta_deg := _shortest_yaw_delta_deg(yaw_before, float(howitzer.get_yaw_degrees()))
+	if not T.require_true(self, absf(coarse_yaw_delta_deg) > 0.1, "While operating the main-world howitzer, holding L must rotate yaw through the shared controller instead of doing nothing"):
 		return
 	if not T.require_true(self, float(howitzer.get_pitch_degrees()) > pitch_before + 0.1, "While operating the main-world howitzer, holding I must raise pitch through the shared controller instead of doing nothing"):
 		return
@@ -95,7 +96,8 @@ func _run() -> void:
 	_release_live_key(world, KEY_I)
 	_release_live_key(world, KEY_SHIFT)
 	await _settle_frames(2)
-	if not T.require_true(self, absf((float(howitzer.get_yaw_degrees()) - fine_yaw_before) - 0.1) <= 0.025, "Inside world howitzer operation mode, Shift+L held across multiple frames must still fine-adjust yaw by exactly one 0.1° step instead of leaking one extra coarse-traverse frame"):
+	var fine_yaw_delta_deg := _shortest_yaw_delta_deg(fine_yaw_before, float(howitzer.get_yaw_degrees()))
+	if not T.require_true(self, absf(absf(fine_yaw_delta_deg) - 0.1) <= 0.025, "Inside world howitzer operation mode, Shift+L held across multiple frames must still fine-adjust yaw by exactly one 0.1° step instead of leaking one extra coarse-traverse frame"):
 		return
 	if not T.require_true(self, absf((float(howitzer.get_pitch_degrees()) - fine_pitch_before) - 0.1) <= 0.025, "Inside world howitzer operation mode, Shift+I held across multiple frames must still fine-adjust pitch by exactly one 0.1° step instead of reverting to continuous coarse elevation"):
 		return
@@ -164,3 +166,6 @@ func _settle_frames(frame_count: int = 6) -> void:
 	for _frame_index in range(frame_count):
 		await physics_frame
 		await process_frame
+
+func _shortest_yaw_delta_deg(from_deg: float, to_deg: float) -> float:
+	return fposmod(to_deg - from_deg + 540.0, 360.0) - 180.0

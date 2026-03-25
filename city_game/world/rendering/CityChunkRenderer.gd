@@ -464,10 +464,12 @@ func _notification(what: int) -> void:
 	_ambient_simulation_frozen = false
 	_clear_scene_landmark_far_proxies()
 
-func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0, player_context: Dictionary = {}) -> void:
+func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta: float = 0.0, player_context: Dictionary = {}, focus_context: Dictionary = {}) -> void:
 	if _config == null:
 		return
-	_last_player_position = player_position
+	var lod_focus_position := focus_context.get("lod_focus_position", player_position) as Vector3
+	var ambient_focus_position := focus_context.get("ambient_focus_position", player_position) as Vector3
+	_last_player_position = lod_focus_position
 	if not _has_prewarmed_initial_pages \
 			and _chunk_scenes.is_empty() \
 			and _prepared_payloads.is_empty() \
@@ -492,7 +494,7 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta
 			continue
 		new_entries.append(entry)
 	new_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return _distance_to_entry(player_position, a) < _distance_to_entry(player_position, b)
+		return _distance_to_entry(lod_focus_position, a) < _distance_to_entry(lod_focus_position, b)
 	)
 	for entry in new_entries:
 		_pending_prepare[str(entry.get("chunk_id", ""))] = entry
@@ -543,27 +545,27 @@ func sync_streaming(active_chunk_entries: Array, player_position: Vector3, delta
 	_prune_terrain_job_waiters(target_chunk_ids)
 	if not _detailed_streaming_diagnostics_enabled:
 		_process_streaming_queues_once_per_frame()
-		_update_lod_states(player_position)
-		_sync_persistent_scene_landmarks(player_position)
-		_sync_scene_landmark_far_proxies(player_position)
-		_update_pedestrian_crowd(player_position, delta)
-		_update_vehicle_traffic(player_position, delta)
+		_update_lod_states(lod_focus_position)
+		_sync_persistent_scene_landmarks(lod_focus_position)
+		_sync_scene_landmark_far_proxies(lod_focus_position)
+		_update_pedestrian_crowd(ambient_focus_position, delta)
+		_update_vehicle_traffic(ambient_focus_position, delta)
 		return
 	var queue_started_usec := Time.get_ticks_usec()
 	_process_streaming_queues_once_per_frame()
 	_record_renderer_sync_queue_sample(Time.get_ticks_usec() - queue_started_usec)
 	var lod_started_usec := Time.get_ticks_usec()
-	_update_lod_states(player_position)
+	_update_lod_states(lod_focus_position)
 	_record_renderer_sync_lod_sample(Time.get_ticks_usec() - lod_started_usec)
-	_sync_persistent_scene_landmarks(player_position)
+	_sync_persistent_scene_landmarks(lod_focus_position)
 	var far_proxy_started_usec := Time.get_ticks_usec()
-	_sync_scene_landmark_far_proxies(player_position)
+	_sync_scene_landmark_far_proxies(lod_focus_position)
 	_record_renderer_sync_far_proxy_sample(Time.get_ticks_usec() - far_proxy_started_usec)
 	var crowd_started_usec := Time.get_ticks_usec()
-	_update_pedestrian_crowd(player_position, delta)
+	_update_pedestrian_crowd(ambient_focus_position, delta)
 	_record_renderer_sync_crowd_sample(Time.get_ticks_usec() - crowd_started_usec)
 	var traffic_started_usec := Time.get_ticks_usec()
-	_update_vehicle_traffic(player_position, delta)
+	_update_vehicle_traffic(ambient_focus_position, delta)
 	_record_renderer_sync_traffic_sample(Time.get_ticks_usec() - traffic_started_usec)
 
 func get_chunk_ids() -> Array[String]:

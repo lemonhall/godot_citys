@@ -29,10 +29,16 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("get_chunk_streamer"), "Long-range artillery observer flow requires chunk-streamer introspection"):
 		return
+	if not T.require_true(self, world.has_method("get_chunk_renderer"), "Long-range artillery observer flow requires chunk-renderer introspection"):
+		return
 
 	var player := world.get_node_or_null("Player") as CharacterBody3D
 	if not T.require_true(self, player != null and player.has_method("teleport_to_world_position"), "Long-range artillery observer flow requires the formal PlayerController runtime"):
 		return
+	var player_chunk_streamer = world.get_chunk_streamer()
+	var player_chunk_id := ""
+	if player_chunk_streamer != null and player_chunk_streamer.has_method("get_streaming_snapshot"):
+		player_chunk_id = str((player_chunk_streamer.get_streaming_snapshot() as Dictionary).get("current_chunk_id", ""))
 
 	world.set_full_map_open(true)
 	await process_frame
@@ -97,9 +103,14 @@ func _run() -> void:
 	if not T.require_true(self, str(impact_stage_state.get("camera_owner", "")) == "artillery_observer", "Long-range artillery observer flow must cut to the observer camera during impact stage"):
 		return
 	var predicted_impact_chunk_id := str(impact_stage_state.get("predicted_impact_chunk_id", ""))
-	var chunk_streamer = world.get_chunk_streamer()
-	var streaming_snapshot := chunk_streamer.get_streaming_snapshot() as Dictionary if chunk_streamer != null and chunk_streamer.has_method("get_streaming_snapshot") else {}
-	if not T.require_true(self, str(streaming_snapshot.get("current_chunk_id", "")) == predicted_impact_chunk_id, "Long-range artillery observer flow must retarget world streaming to the predicted impact chunk instead of leaving streaming anchored on the player position"):
+	var chunk_renderer = world.get_chunk_renderer()
+	var rendered_chunk_ids: Array = chunk_renderer.get_chunk_ids() if chunk_renderer != null and chunk_renderer.has_method("get_chunk_ids") else []
+	if not T.require_true(self, rendered_chunk_ids.has(predicted_impact_chunk_id), "Long-range artillery observer flow must actively mount the predicted impact chunk for the observer cutaway instead of leaving it unrendered"):
+		return
+	if not T.require_true(self, player_chunk_id == "" or rendered_chunk_ids.has(player_chunk_id), "Long-range artillery observer flow must keep the player-side chunk mounted during observer closeout instead of unloading the whole local world and causing churn"):
+		return
+	var impact_chunk_stats := chunk_renderer.get_chunk_scene_stats(predicted_impact_chunk_id) as Dictionary if chunk_renderer != null and chunk_renderer.has_method("get_chunk_scene_stats") else {}
+	if not T.require_true(self, str(impact_chunk_stats.get("lod_mode", "")) == "near", "Long-range artillery observer flow must render the target chunk in near LOD for the top-down cutaway instead of showing a far-distance green placeholder"):
 		return
 
 	var restored_state := await _wait_for_observation_restore(world, 360)

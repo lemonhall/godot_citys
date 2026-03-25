@@ -205,6 +205,21 @@ func get_focus_world_position() -> Vector3:
 		return Vector3.ZERO
 	return _observation_state.get("predicted_impact_world_position", Vector3.ZERO) as Vector3
 
+func should_extend_render_window() -> bool:
+	return bool(_observation_state.get("active", false))
+
+func get_forced_render_chunk_entries() -> Array[Dictionary]:
+	if not bool(_observation_state.get("active", false)):
+		return []
+	var predicted_chunk_key := _observation_state.get("predicted_impact_chunk_key", Vector2i.ZERO) as Vector2i
+	return _build_chunk_ring_entries(predicted_chunk_key, prewarm_ring_radius_chunks)
+
+func should_drive_chunk_renderer_focus() -> bool:
+	return bool(_observation_state.get("active", false))
+
+func get_chunk_renderer_focus_world_position() -> Vector3:
+	return get_focus_world_position()
+
 func _build_solution_state(result: Dictionary) -> Dictionary:
 	if result.is_empty():
 		return {

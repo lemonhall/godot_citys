@@ -80,6 +80,40 @@ foreach($test in $tests){
 - `5km` 级 long-range observer flow 已证明不会再把 streaming 焦点留在玩家身边导致目标区灰屏
 - long-range observer runtime 已显式暴露 predicted shell flight time，并把真实长弹道压缩进 `3s-5s` 观察窗口，而不是跟着 `45s max_lifetime` 拖到超时
 
+### 1B. Howitzer Toggle + Dual-Window Observer Render Regression
+
+```powershell
+$godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
+$tests=@(
+  'res://tests/world/test_city_world_howitzer_spawn_contract.gd',
+  'res://tests/world/test_city_world_howitzer_interaction_contract.gd',
+  'res://tests/world/test_city_m777_howitzer_fire_contract.gd',
+  'res://tests/world/test_city_artillery_fire_mission_contract.gd',
+  'res://tests/world/test_city_artillery_fire_mission_observer_closeout_contract.gd',
+  'res://tests/e2e/test_city_world_howitzer_flow.gd',
+  'res://tests/e2e/test_city_map_artillery_fire_mission_flow.gd',
+  'res://tests/e2e/test_city_map_artillery_fire_mission_long_range_observer_flow.gd'
+)
+foreach($test in $tests){
+  & $godot --headless --rendering-driver dummy --path E:\development\godot_citys --script $test
+  if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+}
+& $godot --headless --rendering-driver dummy --path E:\development\godot_citys --quit
+```
+
+结果：
+
+- exit code `0`
+- 8 条 tests 全部输出 `PASS`
+- headless 解析检查 `PASS`
+
+本轮额外证明：
+
+- `KP_8` 已从“重复召唤/重摆放”改成正式 summon/retract toggle；第二次按下会收回火炮，第三次才重新召唤
+- observer closeout 不再通过改写主 streaming focus 去卸载玩家周边窗口，而是把玩家窗口与 target impact ring 合并成 dual-window render set
+- long-range observer impact chunk 会以 `near` LOD 挂载，而不是因为“离玩家 5km”被错误渲染成一片远距绿色占位地表
+- observer active window 中，player-side chunk 与 impact-side chunk 会同时保活，避免“加载 -> 卸载 -> 再加载”的明显 churn
+
 ### 2. 项目解析检查
 
 ```powershell
@@ -107,8 +141,9 @@ $godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
 
 - `v53` 的 observer closeout 没有另起一套假爆炸链，而是直接复用了 accepted fire 的 actual firing solution 与 live shell runtime。
 - observer camera framing 已改成按 firing solution 的炮位 -> 落点平面方向回推，并以正式俯视角对准落点；不再使用固定世界 `Vector3.BACK` 偏移。
-- observer closeout 现在会把 world streaming focus 暂时切到 predicted impact chunk，避免 long-range cutaway 落在未挂载区域而只看到一片灰。
+- observer closeout 不再抢占主 world streaming focus；现在是继续保留玩家 streaming 窗口，同时给 renderer 追加 predicted impact ring 并单独用 target focus 驱动 target chunk 的 LOD。
 - long-range shell 即使目标 chunk collider 还没及时参与射线相交，也会按 predicted impact world position 做强制预测落点 closeout，不再拖到 `CityArtilleryShell.max_lifetime_sec = 45` 才超时爆炸。
 - 本轮没有把 full map destination selection 打坏：既有 `left-click destination`、pan/zoom 与 map pause contract 仍保持 green。
 - planned battery snapshot 的目标不是自动调炮，而是保证“先地图记诸元，后召唤 howitzer”这条用户路径成立；玩家仍然通过原有 howitzer 操炮链手动输入 bearing / pitch。
 - observer closeout 现在按 predicted shell flight time 做“压缩而非等待”的 timing 计划，并把总观察窗口限制在约 `3s-5s` 后自动切回操炮态。
+- world howitzer debug hotkey 现在保持显式 toggle 语义：有炮时收回，无炮时召唤。

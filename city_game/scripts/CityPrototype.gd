@@ -982,6 +982,9 @@ func handle_debug_keypress(keycode: int, physical_keycode: int = 0) -> bool:
 		spawn_trauma_enemy()
 		return true
 	if keycode == KEY_KP_8 or physical_keycode == KEY_KP_8:
+		if _active_world_howitzer != null and is_instance_valid(_active_world_howitzer):
+			retract_world_howitzer()
+			return true
 		return summon_world_howitzer() != null
 	return false
 
@@ -1353,6 +1356,25 @@ func summon_world_howitzer() -> Node3D:
 	_sync_navigation_consumers(true)
 	_update_npc_interaction_system()
 	return _active_world_howitzer
+
+func retract_world_howitzer() -> bool:
+	if _active_world_howitzer == null or not is_instance_valid(_active_world_howitzer):
+		_active_world_howitzer = null
+		_world_howitzer_operation_controller = null
+		return false
+	_active_world_howitzer.queue_free()
+	_active_world_howitzer = null
+	_world_howitzer_operation_controller = null
+	_last_artillery_shell_explosion_result.clear()
+	_sync_navigation_consumers(true)
+	_update_npc_interaction_system()
+	return true
+
+func toggle_world_howitzer() -> Node3D:
+	if _active_world_howitzer != null and is_instance_valid(_active_world_howitzer):
+		retract_world_howitzer()
+		return _active_world_howitzer
+	return summon_world_howitzer()
 
 func _ensure_world_howitzer_operation_controller() -> void:
 	if get_active_world_howitzer() == null:
@@ -2354,11 +2376,13 @@ func update_streaming_for_position(world_position: Vector3, delta: float = 0.0) 
 	_record_update_streaming_chunk_streamer_sample(Time.get_ticks_usec() - chunk_streamer_started_usec)
 	if chunk_renderer != null and chunk_renderer.has_method("sync_streaming"):
 		var renderer_sync_started_usec := Time.get_ticks_usec()
+		var renderer_chunk_entries := _build_chunk_renderer_active_chunk_entries(_chunk_streamer.get_active_chunk_entries())
 		chunk_renderer.sync_streaming(
-			_chunk_streamer.get_active_chunk_entries(),
-			world_position,
+			renderer_chunk_entries,
+			_get_chunk_renderer_focus_position(world_position),
 			delta,
-			_build_pedestrian_player_context()
+			_build_pedestrian_player_context(),
+			_build_chunk_renderer_focus_context(world_position)
 		)
 		_record_update_streaming_renderer_sync_sample(Time.get_ticks_usec() - renderer_sync_started_usec)
 	var is_headless := DisplayServer.get_name() == "headless"
@@ -3555,10 +3579,45 @@ func _get_streaming_focus_position() -> Vector3:
 	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime) and _player_drone_runtime.has_method("should_drive_world_streaming") and bool(_player_drone_runtime.should_drive_world_streaming()):
 		if _player_drone_runtime.has_method("get_focus_world_position"):
 			return _player_drone_runtime.get_focus_world_position()
-	if _artillery_fire_mission_runtime != null and is_instance_valid(_artillery_fire_mission_runtime) and _artillery_fire_mission_runtime.has_method("should_drive_world_streaming") and bool(_artillery_fire_mission_runtime.should_drive_world_streaming()):
-		if _artillery_fire_mission_runtime.has_method("get_focus_world_position"):
-			return _artillery_fire_mission_runtime.get_focus_world_position()
 	return _get_active_anchor_position()
+
+func _build_chunk_renderer_active_chunk_entries(base_entries: Array) -> Array[Dictionary]:
+	var merged_entries: Dictionary = {}
+	for entry_variant in base_entries:
+		if not (entry_variant is Dictionary):
+			continue
+		var entry: Dictionary = entry_variant
+		var chunk_id := str(entry.get("chunk_id", ""))
+		if chunk_id == "":
+			continue
+		merged_entries[chunk_id] = entry.duplicate(true)
+	if _artillery_fire_mission_runtime != null and is_instance_valid(_artillery_fire_mission_runtime) and _artillery_fire_mission_runtime.has_method("should_extend_render_window") and bool(_artillery_fire_mission_runtime.should_extend_render_window()):
+		if _artillery_fire_mission_runtime.has_method("get_forced_render_chunk_entries"):
+			var observer_entries := _artillery_fire_mission_runtime.get_forced_render_chunk_entries() as Array
+			for observer_entry_variant in observer_entries:
+				if not (observer_entry_variant is Dictionary):
+					continue
+				var observer_entry: Dictionary = observer_entry_variant
+				var observer_chunk_id := str(observer_entry.get("chunk_id", ""))
+				if observer_chunk_id == "":
+					continue
+				merged_entries[observer_chunk_id] = observer_entry.duplicate(true)
+	var merged_array: Array[Dictionary] = []
+	for merged_entry_variant in merged_entries.values():
+		merged_array.append(merged_entry_variant as Dictionary)
+	return merged_array
+
+func _get_chunk_renderer_focus_position(default_world_position: Vector3) -> Vector3:
+	if _artillery_fire_mission_runtime != null and is_instance_valid(_artillery_fire_mission_runtime) and _artillery_fire_mission_runtime.has_method("should_drive_chunk_renderer_focus") and bool(_artillery_fire_mission_runtime.should_drive_chunk_renderer_focus()):
+		if _artillery_fire_mission_runtime.has_method("get_chunk_renderer_focus_world_position"):
+			return _artillery_fire_mission_runtime.get_chunk_renderer_focus_world_position()
+	return default_world_position
+
+func _build_chunk_renderer_focus_context(default_world_position: Vector3) -> Dictionary:
+	return {
+		"lod_focus_position": _get_chunk_renderer_focus_position(default_world_position),
+		"ambient_focus_position": default_world_position,
+	}
 
 func _get_navigation_focus_position() -> Vector3:
 	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime) and _player_drone_runtime.has_method("should_drive_world_streaming") and bool(_player_drone_runtime.should_drive_world_streaming()):

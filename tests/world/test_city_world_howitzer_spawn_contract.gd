@@ -59,8 +59,18 @@ func _run() -> void:
 	player.rotation.y = deg_to_rad(90.0)
 	await _settle_frames()
 
+	var recalled: bool = world.handle_debug_keypress(KEY_KP_8, KEY_KP_8)
+	if not T.require_true(self, recalled, "Pressing KP_8 again must still be accepted as the world howitzer toggle shortcut"):
+		return
+	await _settle_frames()
+	if not T.require_true(self, world.get_active_world_howitzer() == null, "Pressing KP_8 a second time must retract the currently summoned howitzer instead of silently respawning or leaving it in place"):
+		return
+	spawned_howitzers = _collect_howitzer_nodes(world)
+	if not T.require_true(self, spawned_howitzers.is_empty(), "Retracting the world howitzer must remove the active howitzer instance instead of leaving hidden duplicates in the scene tree"):
+		return
+
 	var respawned: bool = world.handle_debug_keypress(KEY_KP_8, KEY_KP_8)
-	if not T.require_true(self, respawned, "Pressing KP_8 again must still be accepted as the howitzer summon shortcut"):
+	if not T.require_true(self, respawned, "After retracting, pressing KP_8 again must summon the world howitzer back"):
 		return
 	await _settle_frames()
 

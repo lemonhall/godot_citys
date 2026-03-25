@@ -46,6 +46,7 @@
 - 读取 drone FPV 准星 world target
 - 复用正式 artillery fire mission request host
 - 保证重复标定只更新单个黄叉
+- 在 `drone + howitzer` 复合击发链里继续复用既有 shell impact contract，保证跳过 observer camera 时仍能把炮弹收敛到已解算 target 区域
 - 补 focused tests、e2e 与 verification 文档
 
 不做什么：
@@ -54,7 +55,7 @@
 - 不改 ballistic solver 本体
 - 不改 full map 右键菜单表现
 - 不做自动开图、自动拨炮或自动击发
-- 不改 observer / shell / explosion 既有逻辑
+- 不重写 observer / shell / explosion 的表现层；只允许复用已有 shell impact contract，不能另造 drone-only 弹着链路
 
 ## Acceptance
 
@@ -65,6 +66,7 @@
 5. 自动化测试必须证明：在 live howitzer 操炮 active 时，按 `T` 更新 target 会立刻刷新 solved bearing / pitch。
 6. 自动化测试必须证明：无人机重标定后，howitzer 操炮 ownership 与 artillery HUD 仍保持。
 7. 自动化测试必须证明：非无人机 FPV 场景下，`T` 的既有 fast-travel shortcut 不回退。
+8. 自动化测试必须证明：`player drone active + howitzer 操炮 active` 的复合击发链即使跳过 observer closeout，也仍会给 shell payload 注入 forced-impact / prewarm 所需 contract，而不是退回任意物理碰撞。
 
 ## Files
 
@@ -77,6 +79,7 @@
 - Create: `tests/world/test_city_drone_artillery_target_marking_contract.gd`
 - Create: `tests/e2e/test_city_drone_artillery_recalibration_flow.gd`
 - Create: `docs/plan/v55-m3-verification-2026-03-26.md`
+- Create: `docs/plan/v55-m4-verification-2026-03-26.md`
 
 ## Steps
 

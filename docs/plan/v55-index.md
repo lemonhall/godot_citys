@@ -39,6 +39,7 @@ PRD 入口：
 | M1 red tests | focused contract + e2e 红测 | 至少锁住无人机 `T` 标定/更新黄叉，以及 live howitzer solved refresh | `tests/world/test_city_drone_artillery_target_marking_contract.gd`; `tests/e2e/test_city_drone_artillery_recalibration_flow.gd` | done |
 | M2 implementation | `CityPrototype` 最小 host 改动 | `T` 标定链通过，且不破坏 map fire mission / fast travel / composite operation | 同上 + 既有 focused regressions | done |
 | M3 verification | focused + e2e + 解析检查 | fresh verification 文档回填追溯矩阵 | `docs/plan/v55-m3-verification-2026-03-26.md` | done |
+| M4 composite shell contract fix | `drone + howitzer` 复合击发不再丢失 shell impact contract | 跳过 observer camera closeout 时，仍保留 forced-impact / chunk prewarm / time-scale payload，且单独操炮 observer closeout 不回退 | `tests/world/test_city_world_howitzer_drone_composite_contract.gd`; `tests/e2e/test_city_drone_assisted_artillery_operation_flow.gd`; `tests/e2e/test_city_map_artillery_fire_mission_flow.gd`; `tests/world/test_city_artillery_fire_mission_observer_closeout_contract.gd`; `tests/world/test_city_world_howitzer_ballistics_contract.gd`; `docs/plan/v55-m4-verification-2026-03-26.md` | done |
 
 ## 计划索引
 
@@ -50,7 +51,7 @@ PRD 入口：
 |---|---|---|---|---|---|
 | REQ-0029-019 | `v55-drone-crosshair-artillery-fire-mission.md` | `tests/world/test_city_drone_artillery_target_marking_contract.gd` | `docs/plan/v55-m3-verification-2026-03-26.md` | `v55-m3-verification-2026-03-26.md` | done |
 | REQ-0029-020 | `v55-drone-crosshair-artillery-fire-mission.md` | `tests/world/test_city_drone_artillery_target_marking_contract.gd` | `tests/e2e/test_city_drone_artillery_recalibration_flow.gd`; `docs/plan/v55-m3-verification-2026-03-26.md` | `v55-m3-verification-2026-03-26.md` | done |
-| REQ-0029-024 | `v55-drone-crosshair-artillery-fire-mission.md` | `tests/world/test_city_drone_artillery_target_marking_contract.gd` | `tests/e2e/test_city_drone_artillery_recalibration_flow.gd`; `docs/plan/v55-m3-verification-2026-03-26.md` | `v55-m3-verification-2026-03-26.md` | done |
+| REQ-0029-024 | `v55-drone-crosshair-artillery-fire-mission.md` | `tests/world/test_city_drone_artillery_target_marking_contract.gd`; `tests/world/test_city_world_howitzer_drone_composite_contract.gd` | `tests/e2e/test_city_drone_artillery_recalibration_flow.gd`; `tests/e2e/test_city_drone_assisted_artillery_operation_flow.gd`; `docs/plan/v55-m3-verification-2026-03-26.md`; `docs/plan/v55-m4-verification-2026-03-26.md` | `v55-m3-verification-2026-03-26.md`; `v55-m4-verification-2026-03-26.md` | done |
 
 ## Closeout 证据口径
 

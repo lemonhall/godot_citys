@@ -4525,20 +4525,29 @@ func _handle_world_howitzer_fire_input() -> Dictionary:
 	if bool(fire_result.get("accepted", false)):
 		var firing_solution := fire_result.get("firing_solution", {}) as Dictionary
 		if not firing_solution.is_empty():
-			if not _is_world_howitzer_drone_composite_operation_active() and _artillery_fire_mission_runtime != null and _artillery_fire_mission_runtime.has_method("start_observation_from_firing_solution"):
-				var observation_state := _artillery_fire_mission_runtime.start_observation_from_firing_solution(firing_solution) as Dictionary
-				var observation_ballistic_time_scale := maxf(float(observation_state.get("shell_ballistic_time_scale", 0.0)), 0.0)
-				if observation_ballistic_time_scale > 0.0:
-					firing_solution["observation_ballistic_time_scale"] = observation_ballistic_time_scale
-				if observation_state.get("predicted_impact_world_position", null) is Vector3:
-					firing_solution["observer_forced_impact_world_position"] = observation_state.get("predicted_impact_world_position", Vector3.ZERO) as Vector3
-					firing_solution["observer_force_predicted_impact"] = true
-				var predicted_flight_time_sec := maxf(float(observation_state.get("flight_time_sec", 0.0)), 0.0)
-				if predicted_flight_time_sec > 0.0:
-					firing_solution["observer_forced_impact_flight_time_sec"] = predicted_flight_time_sec
+			var composite_operation_active := _is_world_howitzer_drone_composite_operation_active()
+			if _artillery_fire_mission_runtime != null:
+				if composite_operation_active and _artillery_fire_mission_runtime.has_method("prepare_shell_impact_contract_from_firing_solution"):
+					var shell_impact_contract := _artillery_fire_mission_runtime.prepare_shell_impact_contract_from_firing_solution(firing_solution) as Dictionary
+					firing_solution = _resolve_prepared_artillery_firing_solution(firing_solution, shell_impact_contract)
+				elif not composite_operation_active and _artillery_fire_mission_runtime.has_method("start_observation_from_firing_solution"):
+					var observation_state := _artillery_fire_mission_runtime.start_observation_from_firing_solution(firing_solution) as Dictionary
+					firing_solution = _resolve_prepared_artillery_firing_solution(firing_solution, observation_state)
+			fire_result["firing_solution"] = firing_solution.duplicate(true)
+			_last_artillery_shell_explosion_result.clear()
 			_spawn_artillery_shell_from_firing_solution(firing_solution)
 	_update_npc_interaction_system()
 	return fire_result
+
+func _resolve_prepared_artillery_firing_solution(firing_solution: Dictionary, prepared_state: Dictionary) -> Dictionary:
+	if firing_solution.is_empty():
+		return {}
+	if prepared_state.is_empty():
+		return firing_solution.duplicate(true)
+	var prepared_firing_solution := prepared_state.get("prepared_firing_solution", {}) as Dictionary
+	if prepared_firing_solution.is_empty():
+		return firing_solution.duplicate(true)
+	return prepared_firing_solution.duplicate(true)
 
 func _forward_world_howitzer_operation_input_event(event: InputEvent) -> void:
 	if _world_howitzer_operation_controller == null or not _world_howitzer_operation_controller.has_method("handle_input_event"):

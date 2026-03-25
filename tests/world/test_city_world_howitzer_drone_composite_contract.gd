@@ -3,6 +3,7 @@ extends SceneTree
 const T := preload("res://tests/_test_util.gd")
 
 const APPROACH_OFFSET := Vector3(0.0, 0.0, 4.2)
+const SHELL_SCRIPT_PATH := "res://city_game/combat/artillery/CityArtilleryShell.gd"
 
 func _init() -> void:
 	call_deferred("_run")
@@ -27,6 +28,8 @@ func _run() -> void:
 	if not T.require_true(self, world.has_method("get_artillery_observation_state"), "World howitzer drone composite contract requires artillery observation introspection"):
 		return
 	if not T.require_true(self, world.has_method("get_last_artillery_shell_explosion_result"), "World howitzer drone composite contract requires artillery shell explosion introspection"):
+		return
+	if not T.require_true(self, world.has_method("get_active_artillery_shell_count"), "World howitzer drone composite contract requires live shell-count introspection"):
 		return
 
 	var player := world.get_node_or_null("Player") as CharacterBody3D
@@ -142,8 +145,26 @@ func _run() -> void:
 	if not T.require_true(self, not bool(observation_state.get("active", false)), "Drone-assisted composite contract must skip observer closeout when drone active and howitzer operation active are both true"):
 		return
 
+	if not T.require_true(self, int(world.get_active_artillery_shell_count()) >= 1, "Drone-assisted composite contract must still spawn a live artillery shell runtime even when observer closeout is skipped"):
+		return
+	var shell := _find_shell_node(world)
+	if not T.require_true(self, shell != null and shell.has_method("get_debug_state"), "Drone-assisted composite contract must expose the spawned artillery shell runtime so the composite launch payload can be verified"):
+		return
+	var shell_state := shell.get_debug_state() as Dictionary
+	var shell_firing_solution := shell_state.get("firing_solution", {}) as Dictionary
+	if not T.require_true(self, bool(shell_firing_solution.get("observer_force_predicted_impact", false)), "Drone-assisted composite contract must still stamp the shell payload with observer_force_predicted_impact so the skipped camera closeout does not also skip the solved target impact"):
+		return
+	if not T.require_true(self, shell_firing_solution.get("observer_forced_impact_world_position", null) is Vector3, "Drone-assisted composite contract must still stamp the shell payload with a forced impact world position"):
+		return
+	if not T.require_true(self, maxf(float(shell_firing_solution.get("observer_forced_impact_flight_time_sec", 0.0)), 0.0) > 0.0, "Drone-assisted composite contract must still stamp the shell payload with a forced impact flight time once observer closeout is skipped"):
+		return
+	if not T.require_true(self, maxf(float(shell_firing_solution.get("observation_ballistic_time_scale", 0.0)), 0.0) > 0.0, "Drone-assisted composite contract must still stamp the shell payload with the observation ballistic time scale so composite shots keep their target-area timing contract"):
+		return
+
 	var explosion_result := await _wait_for_shell_explosion(world, 360)
 	if not T.require_true(self, not explosion_result.is_empty(), "Drone-assisted composite contract must still produce the artillery shell impact result even when observer closeout is skipped"):
+		return
+	if not T.require_true(self, str(explosion_result.get("trigger_kind", "")) == "forced_predicted_impact", "Drone-assisted composite contract must still resolve the shell through forced_predicted_impact instead of falling back to an arbitrary physics collision once observer closeout is skipped"):
 		return
 
 	operation_state = world.get_world_howitzer_operation_state() as Dictionary
@@ -174,6 +195,18 @@ func _wait_for_shell_explosion(world: Node, max_frames: int) -> Dictionary:
 		if not result.is_empty():
 			return result
 	return {}
+
+func _find_shell_node(root_node: Node) -> Node3D:
+	for node_variant: Variant in root_node.find_children("*", "Node3D", true, false):
+		var node := node_variant as Node3D
+		if node == null:
+			continue
+		var script: Variant = node.get_script()
+		if script == null:
+			continue
+		if str(script.resource_path) == SHELL_SCRIPT_PATH:
+			return node
+	return null
 
 func _build_key_event(keycode: Key, pressed: bool) -> InputEventKey:
 	var key_event := InputEventKey.new()

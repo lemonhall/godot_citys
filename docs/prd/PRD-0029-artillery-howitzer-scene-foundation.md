@@ -407,7 +407,8 @@ lab 必须允许直接驱动火炮 yaw / pitch，并暴露最小查询/重置接
   - 预测 actual impact
   - 预热 target chunk
   - 切到目标区观察爆炸
-- 唯一例外是“player drone active + howitzer 操炮 active”的复合模式；该模式下 free fire 也必须跳过 observer closeout，保留玩家对无人机观察链的连续控制；
+- 唯一例外是“player drone active + howitzer 操炮 active”的复合模式；该模式下 free fire 也必须跳过 observer camera closeout，保留玩家对无人机观察链的连续控制；
+- 但“跳过 observer closeout”只允许跳过 camera ownership / closeout return；不得同时跳过 actual impact prediction、shell forced-impact contract 或 target chunk prewarm；
 - active fire mission 只负责提供 map-side marker / solution / planned battery snapshot，不拥有击发链路的唯一所有权。
 
 ### REQ-0029-024 Drone Crosshair Fire Mission Calibration Contract

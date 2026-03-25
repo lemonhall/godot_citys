@@ -163,7 +163,7 @@ func refresh_active_fire_mission_solution_from_world_howitzer(howitzer: Node3D, 
 	_fire_mission_state["solution_state"] = _build_solution_state(solved_solution).duplicate(true)
 	return _fire_mission_state.duplicate(true)
 
-func start_observation_from_firing_solution(firing_solution: Dictionary) -> Dictionary:
+func prepare_shell_impact_contract_from_firing_solution(firing_solution: Dictionary) -> Dictionary:
 	if firing_solution.is_empty():
 		return {}
 	var predicted := _ballistics.predict_impact_from_firing_solution(firing_solution, {
@@ -175,13 +175,15 @@ func start_observation_from_firing_solution(firing_solution: Dictionary) -> Dict
 	var observer_timing := _build_observer_timing_plan(predicted)
 	_prewarm_observation_entries(prewarm_entries)
 	predicted_impact_world_position = resolve_observer_effect_surface_world_position(predicted_impact_world_position)
-	_lock_player_for_observation()
-	_latest_shell_explosion_result.clear()
-	_observation_phase_elapsed_sec = 0.0
-	_observation_state = {
-		"active": true,
-		"phase": "muzzle_stage",
-		"camera_owner": "player",
+	var predicted_flight_time_sec := maxf(float(predicted.get("flight_time_sec", 0.0)), 0.0)
+	var shell_ballistic_time_scale := maxf(float(observer_timing.get("shell_ballistic_time_scale", 1.0)), 0.001)
+	var prepared_firing_solution := firing_solution.duplicate(true)
+	prepared_firing_solution["observation_ballistic_time_scale"] = shell_ballistic_time_scale
+	prepared_firing_solution["observer_forced_impact_world_position"] = predicted_impact_world_position
+	if predicted_flight_time_sec > 0.0:
+		prepared_firing_solution["observer_force_predicted_impact"] = true
+		prepared_firing_solution["observer_forced_impact_flight_time_sec"] = predicted_flight_time_sec
+	return {
 		"predicted_impact_world_position": predicted_impact_world_position,
 		"predicted_impact_chunk_key": predicted_chunk_key,
 		"predicted_impact_chunk_id": _format_chunk_id(predicted_chunk_key),
@@ -190,10 +192,36 @@ func start_observation_from_firing_solution(firing_solution: Dictionary) -> Dict
 		"impact_hold_duration_sec": float(observer_timing.get("impact_hold_duration_sec", observer_impact_hold_duration_sec)),
 		"impact_stage_delay_sec": float(observer_timing.get("impact_stage_delay_sec", observer_muzzle_stage_duration_sec)),
 		"planned_total_duration_sec": float(observer_timing.get("planned_total_duration_sec", 0.0)),
-		"flight_time_sec": float(predicted.get("flight_time_sec", 0.0)),
-		"shell_ballistic_time_scale": float(observer_timing.get("shell_ballistic_time_scale", 1.0)),
+		"flight_time_sec": predicted_flight_time_sec,
+		"shell_ballistic_time_scale": shell_ballistic_time_scale,
+		"prepared_firing_solution": prepared_firing_solution.duplicate(true),
+	}
+
+func start_observation_from_firing_solution(firing_solution: Dictionary) -> Dictionary:
+	var shell_impact_contract := prepare_shell_impact_contract_from_firing_solution(firing_solution)
+	if shell_impact_contract.is_empty():
+		return {}
+	_lock_player_for_observation()
+	_latest_shell_explosion_result.clear()
+	_observation_phase_elapsed_sec = 0.0
+	var prepared_firing_solution := shell_impact_contract.get("prepared_firing_solution", firing_solution) as Dictionary
+	_observation_state = {
+		"active": true,
+		"phase": "muzzle_stage",
+		"camera_owner": "player",
+		"predicted_impact_world_position": shell_impact_contract.get("predicted_impact_world_position", Vector3.ZERO),
+		"predicted_impact_chunk_key": shell_impact_contract.get("predicted_impact_chunk_key", Vector2i.ZERO),
+		"predicted_impact_chunk_id": str(shell_impact_contract.get("predicted_impact_chunk_id", "")),
+		"prewarm_entry_count": int(shell_impact_contract.get("prewarm_entry_count", 0)),
+		"impact_hold_remaining_sec": float(shell_impact_contract.get("impact_hold_remaining_sec", observer_impact_hold_duration_sec)),
+		"impact_hold_duration_sec": float(shell_impact_contract.get("impact_hold_duration_sec", observer_impact_hold_duration_sec)),
+		"impact_stage_delay_sec": float(shell_impact_contract.get("impact_stage_delay_sec", observer_muzzle_stage_duration_sec)),
+		"planned_total_duration_sec": float(shell_impact_contract.get("planned_total_duration_sec", 0.0)),
+		"flight_time_sec": float(shell_impact_contract.get("flight_time_sec", 0.0)),
+		"shell_ballistic_time_scale": float(shell_impact_contract.get("shell_ballistic_time_scale", 1.0)),
 		"elapsed_sec": 0.0,
-		"firing_solution": firing_solution.duplicate(true),
+		"firing_solution": prepared_firing_solution.duplicate(true),
+		"prepared_firing_solution": prepared_firing_solution.duplicate(true),
 		"shell_explosion_result": {},
 	}
 	return _observation_state.duplicate(true)

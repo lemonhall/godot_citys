@@ -32,6 +32,7 @@ var _reference_yaw_anchor_local_offset := Vector3.ZERO
 var _reference_pitch_pivot_local_offset := Vector3.ZERO
 var _reference_muzzle_local_transform := Transform3D.IDENTITY
 var _reference_root_vertical_offset_m := 0.0
+var _reference_pitch_zero_offset_deg := 0.0
 var _reference_geometry_ready := false
 
 @onready var _observer_rig := Node3D.new()
@@ -330,6 +331,8 @@ func _capture_reference_offsets() -> void:
 	var pitch_anchor := reference_howitzer.get_node_or_null("Anchors/PitchPivotAnchor") as Node3D
 	var pitch_pivot := reference_howitzer.get_node_or_null("ModelRoot/YawPivot/PitchPivot") as Node3D
 	var muzzle_anchor := reference_howitzer.get_node_or_null("Anchors/MuzzleBallisticsAnchor") as Node3D
+	if "pitch_zero_offset_deg" in reference_howitzer:
+		_reference_pitch_zero_offset_deg = float(reference_howitzer.get("pitch_zero_offset_deg"))
 	if yaw_anchor != null:
 		_reference_yaw_anchor_local_offset = yaw_anchor.position
 	if pitch_anchor != null:
@@ -443,7 +446,7 @@ func _resolve_reference_muzzle_origin_world_position(battery_snapshot: Dictionar
 	var local_yaw_deg := _resolve_local_yaw_deg_from_world_bearing(spawn_forward_world, desired_world_bearing_deg)
 	var root_basis := _build_root_basis_from_forward(spawn_forward_world)
 	var yaw_basis := root_basis * Basis(Vector3.UP, deg_to_rad(local_yaw_deg))
-	var pitch_basis := yaw_basis * Basis(Vector3.RIGHT, deg_to_rad(-desired_pitch_deg))
+	var pitch_basis := yaw_basis * Basis(Vector3.RIGHT, deg_to_rad(_reference_pitch_zero_offset_deg - desired_pitch_deg))
 	var pitch_pivot_world_position := spawn_root_world_position + root_basis * (
 		_reference_yaw_anchor_local_offset + Basis(Vector3.UP, deg_to_rad(local_yaw_deg)) * _reference_pitch_pivot_local_offset
 	)

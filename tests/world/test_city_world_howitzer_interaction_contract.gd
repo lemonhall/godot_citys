@@ -6,6 +6,7 @@ const CITY_SCENE_PATH := "res://city_game/scenes/CityPrototype.tscn"
 const APPROACH_OFFSET := Vector3(0.0, 0.0, 4.2)
 const RETENTION_OFFSET := Vector3(0.0, 0.0, 12.0)
 const RELEASE_OFFSET := Vector3(0.0, 0.0, 22.0)
+const EXPECTED_OPERATION_ENTRY_PITCH_DEG := 14.7
 
 func _init() -> void:
 	call_deferred("_run")
@@ -63,6 +64,8 @@ func _run() -> void:
 		return
 	var artillery_solution_state := hud.get_artillery_solution_state() as Dictionary
 	if not T.require_true(self, bool(artillery_solution_state.get("visible", false)), "Entering world howitzer operation mode must show the shared artillery solution HUD"):
+		return
+	if not T.require_true(self, absf(float(artillery_solution_state.get("pitch_deg", 0.0)) - EXPECTED_OPERATION_ENTRY_PITCH_DEG) <= 0.001, "Entering world howitzer operation mode must expose the shared 14.7 degree initial pitch contract in the main-world HUD instead of resetting the operator-facing value back to 0"):
 		return
 
 	var yaw_before := float(howitzer.get_yaw_degrees())

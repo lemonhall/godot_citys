@@ -5,6 +5,7 @@ const OrientationScript := preload("res://city_game/world/navigation/CityWorldOr
 
 const LAB_SCENE_PATH := "res://city_game/scenes/labs/M777HowitzerLab.tscn"
 const INSIDE_INTERACTION_OFFSET := Vector3(0.0, 0.0, 6.8)
+const EXPECTED_OPERATION_ENTRY_PITCH_DEG := 14.7
 const MID_CIRCLE_START_YAW_DEG := 120.0
 const MID_CIRCLE_START_PITCH_DEG := 18.0
 const WRAP_START_YAW_DEG := 358.5
@@ -51,6 +52,9 @@ func _run() -> void:
 
 	var active_state := lab.get("get_operation_state").call() as Dictionary
 	if not T.require_true(self, bool(active_state.get("active", false)), "Operation/display/physics contract requires the lab to be in active howitzer operation mode before J/L/I/K semantics are checked"):
+		return
+	var entry_state := _capture_solution_and_model_state(howitzer, hud, orientation)
+	if not T.require_true(self, absf(float(entry_state.get("hud_pitch_deg", 0.0)) - EXPECTED_OPERATION_ENTRY_PITCH_DEG) <= 0.001, "Entering howitzer operation mode must expose the shared 14.7 degree initial pitch contract in the HUD instead of resetting the operator-facing value back to 0"):
 		return
 
 	howitzer.set_axis_angles_degrees(MID_CIRCLE_START_YAW_DEG, MID_CIRCLE_START_PITCH_DEG)

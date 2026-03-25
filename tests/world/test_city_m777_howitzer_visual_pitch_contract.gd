@@ -4,9 +4,10 @@ const T := preload("res://tests/_test_util.gd")
 
 const HOWITZER_SCENE_PATH := "res://city_game/combat/artillery/CityM777Howitzer.tscn"
 const SAMPLE_LOCAL_YAW_DEG := 100.0
-const LOW_PITCH_DEG := 0.0
-const HIGH_PITCH_DEG := 30.0
-const MAX_VISIBLE_PITCH_DELTA_DEG := 8.0
+const REST_PITCH_DEG := 14.7
+const HIGH_PITCH_DEG := 44.7
+const EXPECTED_VISIBLE_PITCH_DELTA_DEG := HIGH_PITCH_DEG - REST_PITCH_DEG
+const MAX_VISIBLE_PITCH_DELTA_ERROR_DEG := 2.0
 const MIN_VISIBLE_BARREL_LENGTH_M := 4.0
 
 func _init() -> void:
@@ -25,22 +26,19 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 
-	var low_probe := await _capture_visible_barrel_probe(howitzer, LOW_PITCH_DEG)
+	var low_probe := await _capture_visible_barrel_probe(howitzer, REST_PITCH_DEG)
 	var high_probe := await _capture_visible_barrel_probe(howitzer, HIGH_PITCH_DEG)
 	var low_length_m := float(low_probe.get("length_m", 0.0))
 	var high_length_m := float(high_probe.get("length_m", 0.0))
 	var low_visible_pitch_deg := float(low_probe.get("pitch_deg", 0.0))
 	var high_visible_pitch_deg := float(high_probe.get("pitch_deg", 0.0))
-	var low_pitch_delta_deg := absf(low_visible_pitch_deg - LOW_PITCH_DEG)
-	var high_pitch_delta_deg := absf(high_visible_pitch_deg - HIGH_PITCH_DEG)
+	var visible_pitch_delta_deg := high_visible_pitch_deg - low_visible_pitch_deg
 
 	if not T.require_true(self, low_length_m >= MIN_VISIBLE_BARREL_LENGTH_M and high_length_m >= MIN_VISIBLE_BARREL_LENGTH_M, "Visible M777 barrel pitch probe must resolve a meaningful long-axis muzzle direction instead of collapsing onto a short local face (low_length=%0.3f high_length=%0.3f)" % [low_length_m, high_length_m]):
 		return
-	if not T.require_true(self, low_pitch_delta_deg <= MAX_VISIBLE_PITCH_DELTA_DEG, "At 0° displayed pitch, the visible M777 barrel must stay near level instead of already sitting nose-up (displayed=%0.2f visible=%0.2f delta=%0.2f)" % [LOW_PITCH_DEG, low_visible_pitch_deg, low_pitch_delta_deg]):
+	if not T.require_true(self, absf(visible_pitch_delta_deg - EXPECTED_VISIBLE_PITCH_DELTA_DEG) <= MAX_VISIBLE_PITCH_DELTA_ERROR_DEG, "Starting from the shared 14.7° authored rest pitch, raising the displayed M777 pitch by 30° must lift the visible barrel by the same amount instead of introducing another hidden runtime offset (displayed_low=%0.2f displayed_high=%0.2f visible_low=%0.2f visible_high=%0.2f visible_delta=%0.2f)" % [REST_PITCH_DEG, HIGH_PITCH_DEG, low_visible_pitch_deg, high_visible_pitch_deg, visible_pitch_delta_deg]):
 		return
-	if not T.require_true(self, high_pitch_delta_deg <= MAX_VISIBLE_PITCH_DELTA_DEG, "At 30° displayed pitch, the visible M777 barrel must visually lift by roughly the same amount instead of drifting toward another elevation band (displayed=%0.2f visible=%0.2f delta=%0.2f)" % [HIGH_PITCH_DEG, high_visible_pitch_deg, high_pitch_delta_deg]):
-		return
-	if not T.require_true(self, high_visible_pitch_deg > low_visible_pitch_deg + 10.0, "Increasing displayed pitch from 0° to 30° must raise the visible barrel instead of lowering it or leaving it nearly unchanged (visible_low=%0.2f visible_high=%0.2f)" % [low_visible_pitch_deg, high_visible_pitch_deg]):
+	if not T.require_true(self, high_visible_pitch_deg > low_visible_pitch_deg + 20.0, "Increasing displayed pitch upward from the shared 14.7° rest value must still raise the visible barrel instead of lowering it or leaving it nearly unchanged (visible_low=%0.2f visible_high=%0.2f)" % [low_visible_pitch_deg, high_visible_pitch_deg]):
 		return
 
 	howitzer.queue_free()

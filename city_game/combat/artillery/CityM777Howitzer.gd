@@ -12,8 +12,8 @@ const UPPER_CARRIAGE_NODE_NAME := "m777_upper_carriage"
 const GUN_ASSEMBLY_NODE_NAME := "m777_gun_assembly"
 
 @export var initial_yaw_deg := 0.0
-@export var initial_pitch_deg := 0.0
-@export_range(-180.0, 180.0, 0.1) var pitch_zero_offset_deg := 0.0
+@export var initial_pitch_deg := 14.7
+@export_range(-180.0, 180.0, 0.1) var pitch_zero_offset_deg := 14.7
 @export_range(-180.0, 180.0, 0.1) var min_pitch_deg := 0.0
 @export_range(-180.0, 180.0, 0.1) var max_pitch_deg := 71.0
 @export var default_shell_type_id := "m795_he"
@@ -200,7 +200,7 @@ func get_debug_state() -> Dictionary:
 		"pitch_deg": _pitch_deg,
 		"operator_lanyard_target_active": _operator_lanyard_target_active,
 		"operator_lanyard_target_world_position": _operator_lanyard_target_world_position,
-		"applied_pitch_pivot_deg": -_pitch_deg,
+		"applied_pitch_pivot_deg": pitch_zero_offset_deg - _pitch_deg,
 		"pitch_zero_offset_deg": pitch_zero_offset_deg,
 		"pitch_limits_deg": {
 			"min": min_pitch_deg,
@@ -435,7 +435,7 @@ func _apply_axis_angles() -> void:
 	if _yaw_pivot != null:
 		_yaw_pivot.rotation.y = deg_to_rad(_yaw_deg)
 	if _pitch_pivot != null:
-		_pitch_pivot.rotation.x = deg_to_rad(-_pitch_deg)
+		_pitch_pivot.rotation.x = deg_to_rad(pitch_zero_offset_deg - _pitch_deg)
 	_apply_gun_assembly_recoil_transform()
 
 func _update_fire_presentation(delta: float) -> void:

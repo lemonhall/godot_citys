@@ -8,7 +8,8 @@ const HOWITZER_LANYARD_SCRIPT_PATH := "res://city_game/combat/artillery/CityArti
 const HOWITZER_MODEL_PATH := "res://city_game/assets/environment/source/artillery/m777/m777_3_parts.glb"
 const FIRE_AUDIO_PATH := "res://city_game/combat/helicopter/audio/rockt-explosions.wav"
 const MIN_PRESENTED_LENGTH_M := 6.0
-const EXPECTED_PITCH_ZERO_OFFSET_DEG := 0.0
+const EXPECTED_INITIAL_PITCH_DEG := 14.7
+const EXPECTED_PITCH_ZERO_OFFSET_DEG := 14.7
 const MIN_ELEVATION_DEG := 0.0
 const MAX_ELEVATION_DEG := 71.0
 const EXPECTED_FIRE_COOLDOWN_SEC := 2.0
@@ -143,6 +144,11 @@ func _run() -> void:
 	var yaw_before := yaw_pivot.rotation.y
 	var pitch_before := pitch_pivot.rotation.x
 
+	if not T.require_true(self, absf(howitzer.get_pitch_degrees() - EXPECTED_INITIAL_PITCH_DEG) <= 0.001, "Fresh M777 howitzer runtime must start with the authored initial elevation semantics at 14.7 degrees instead of silently resetting back to 0"):
+		return
+	if not T.require_true(self, absf(pitch_pivot.rotation.x) <= 0.001, "Fresh M777 howitzer runtime must preserve the authored barrel rest pose while reporting the calibrated 14.7 degree initial pitch contract"):
+		return
+
 	howitzer.set_axis_angles_degrees(18.0, 12.0)
 	await process_frame
 
@@ -150,7 +156,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, absf(howitzer.get_pitch_degrees() - 12.0) <= 0.001, "M777 howitzer pitch API must expose calibrated elevation degrees instead of leaking the model's internal raw pivot rotation"):
 		return
-	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(-12.0)) <= 0.001, "M777 howitzer positive pitch must raise the barrel, so the raw PitchPivot rotation must move opposite to the calibrated elevation value without any extra runtime zero-offset correction"):
+	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(EXPECTED_PITCH_ZERO_OFFSET_DEG - 12.0)) <= 0.001, "M777 howitzer pitch API must keep the authored 14.7 degree rest-pose calibration, so runtime PitchPivot rotation must be derived from the shared semantic zero-offset instead of pretending the authored pose is already 0"):
 		return
 	if not T.require_true(self, absf(yaw_pivot.rotation.y - yaw_before) > 0.01, "M777 howitzer yaw API must visibly change yaw pivot rotation"):
 		return
@@ -172,14 +178,14 @@ func _run() -> void:
 	await process_frame
 	if not T.require_true(self, absf(howitzer.get_pitch_degrees() - MIN_ELEVATION_DEG) <= 0.001, "M777 howitzer pitch must clamp to 0 degrees instead of allowing negative depression below the current weapon's authored lower bound"):
 		return
-	if not T.require_true(self, absf(pitch_pivot.rotation.x) <= 0.001, "M777 howitzer clamped zero elevation must leave PitchPivot level instead of applying an extra runtime pitch offset"):
+	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(EXPECTED_PITCH_ZERO_OFFSET_DEG - MIN_ELEVATION_DEG)) <= 0.001, "M777 howitzer clamped zero elevation must still respect the authored 14.7 degree semantic rest calibration instead of flattening the barrel back to runtime level"):
 		return
 
 	howitzer.set_pitch_degrees(100.0)
 	await process_frame
 	if not T.require_true(self, absf(howitzer.get_pitch_degrees() - MAX_ELEVATION_DEG) <= 0.001, "M777 howitzer pitch must clamp to the 71 degree upper elevation limit instead of allowing unrealistic over-elevation"):
 		return
-	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(-MAX_ELEVATION_DEG)) <= 0.001, "M777 howitzer upper elevation clamp must keep the correct sign convention without adding a hidden runtime pitch offset"):
+	if not T.require_true(self, absf(pitch_pivot.rotation.x - deg_to_rad(EXPECTED_PITCH_ZERO_OFFSET_DEG - MAX_ELEVATION_DEG)) <= 0.001, "M777 howitzer upper elevation clamp must keep the authored 14.7 degree semantic rest calibration across the full elevation range"):
 		return
 
 	var debug_state := howitzer.get_debug_state() as Dictionary
@@ -191,7 +197,7 @@ func _run() -> void:
 		return
 	if not T.require_true(self, bool(debug_state.get("gun_assembly_present", false)), "M777 howitzer debug state must confirm the gun assembly mesh is mounted under PitchPivot"):
 		return
-	if not T.require_true(self, absf(float(debug_state.get("pitch_zero_offset_deg", 999.0)) - EXPECTED_PITCH_ZERO_OFFSET_DEG) <= 0.001, "M777 howitzer debug state must expose that runtime pitch zero offset has been cleared back to 0 so editor and runtime stay aligned"):
+	if not T.require_true(self, absf(float(debug_state.get("pitch_zero_offset_deg", 999.0)) - EXPECTED_PITCH_ZERO_OFFSET_DEG) <= 0.001, "M777 howitzer debug state must expose the shared 14.7 degree initial/rest pitch calibration so editor pose, runtime semantics and downstream systems stay aligned"):
 		return
 	var pitch_limits := debug_state.get("pitch_limits_deg", {}) as Dictionary
 	if not T.require_true(self, absf(float(pitch_limits.get("min", -999.0)) - MIN_ELEVATION_DEG) <= 0.001 and absf(float(pitch_limits.get("max", -999.0)) - MAX_ELEVATION_DEG) <= 0.001, "M777 howitzer debug state must expose the calibrated elevation clamp range"):

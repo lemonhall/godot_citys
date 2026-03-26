@@ -21,14 +21,15 @@ const CONTROL_INPUT_KEYCODES := [KEY_W, KEY_A, KEY_S, KEY_D, KEY_SHIFT, KEY_P]
 @export var max_pitch_deg := 35.0
 @export var follow_walk_speed_mps := 6.6
 @export var follow_run_speed_mps := 10.4
-@export var follow_lateral_offset_m := 1.85
-@export var follow_forward_offset_m := -0.35
+@export var follow_lateral_offset_m := 2.45
+@export var follow_forward_offset_m := -0.65
 @export var follow_stop_distance_m := 0.48
 @export var follow_run_distance_m := 2.2
 @export var follow_turn_deadzone_deg := 6.0
 @export var follow_move_heading_threshold_deg := 82.0
 @export var follow_heading_blend_distance_m := 2.4
-@export var follow_teleport_recover_distance_m := 7.0
+@export var follow_teleport_recover_distance_m := 18.0
+@export var follow_teleport_recover_player_speed_mps := 0.35
 
 @onready var visual_mount: Node3D = $VisualMount
 @onready var robot_dog: Node3D = $VisualMount/RobotDog
@@ -272,7 +273,7 @@ func _update_follow_control_intent(delta: float) -> void:
 	to_anchor.y = 0.0
 	_follow_distance_m = to_anchor.length()
 	_follow_player_speed_mps = _resolve_player_planar_speed_mps(delta)
-	if _follow_distance_m >= follow_teleport_recover_distance_m:
+	if _follow_distance_m >= follow_teleport_recover_distance_m and _follow_player_speed_mps <= follow_teleport_recover_player_speed_mps:
 		global_position = Vector3(_follow_anchor_world_position.x, player_position.y, _follow_anchor_world_position.z)
 		velocity.x = 0.0
 		velocity.z = 0.0
@@ -281,28 +282,23 @@ func _update_follow_control_intent(delta: float) -> void:
 		_follow_distance_m = 0.0
 	var current_forward := _resolve_planar_forward()
 	var desired_forward := player_forward
-	if to_anchor.length_squared() > 0.0001 and _follow_distance_m > follow_stop_distance_m:
+	var should_move := _follow_distance_m > follow_stop_distance_m
+	if to_anchor.length_squared() > 0.0001 and should_move:
 		var anchor_forward := to_anchor.normalized()
 		if _follow_distance_m >= follow_run_distance_m:
-			desired_forward = anchor_forward.slerp(player_forward, 0.18).normalized()
+			desired_forward = anchor_forward.slerp(player_forward, 0.08).normalized()
 		else:
-			var heading_blend := clampf(
-				(_follow_distance_m - follow_stop_distance_m) / maxf(follow_heading_blend_distance_m - follow_stop_distance_m, 0.001),
-				0.0,
-				1.0
-			)
-			desired_forward = player_forward.slerp(anchor_forward, heading_blend * 0.45).normalized()
+			desired_forward = anchor_forward
 	var heading_delta_deg := _signed_heading_delta_deg(current_forward, desired_forward)
 	if absf(heading_delta_deg) >= follow_turn_deadzone_deg:
 		_turn_input = clampf(heading_delta_deg / 50.0, -1.0, 1.0)
-	var should_move := _follow_distance_m > follow_stop_distance_m
-	if should_move and absf(heading_delta_deg) > follow_move_heading_threshold_deg and _follow_distance_m < follow_run_distance_m:
+	if should_move and absf(heading_delta_deg) > follow_move_heading_threshold_deg:
 		should_move = false
 	if should_move:
 		_move_input = Vector2(0.0, 1.0)
-		var desired_speed_mps := clampf(_follow_distance_m * 4.2, follow_walk_speed_mps * 0.42, follow_walk_speed_mps)
+		var desired_speed_mps := clampf(_follow_distance_m * 4.8, follow_walk_speed_mps * 0.42, follow_walk_speed_mps)
 		if _follow_distance_m >= follow_run_distance_m:
-			desired_speed_mps = minf(follow_run_speed_mps, maxf(follow_walk_speed_mps, _follow_distance_m * 2.8))
+			desired_speed_mps = minf(follow_run_speed_mps, maxf(follow_walk_speed_mps, _follow_distance_m * 3.4))
 		if _follow_player_speed_mps >= follow_walk_speed_mps * 0.92:
 			desired_speed_mps = maxf(desired_speed_mps, follow_run_speed_mps * 0.86)
 		_sprint_requested = desired_speed_mps > follow_walk_speed_mps + 0.2

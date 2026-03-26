@@ -3,9 +3,10 @@ extends SceneTree
 const T := preload("res://tests/_test_util.gd")
 
 const CITY_SCENE_PATH := "res://city_game/scenes/CityPrototype.tscn"
-const MAX_FOLLOW_SLOT_ERROR_M := 1.25
-const MIN_FORWARD_ALIGNMENT := 0.72
+const MIN_PLAYER_CLEARANCE_M := 2.05
+const MAX_PLAYER_CLEARANCE_M := 4.6
 const MAX_LOOK_AT_PLAYER_DOT := 0.6
+const MAX_RUNTIME_STEP_M := 1.4
 
 func _init() -> void:
 	call_deferred("_run")
@@ -39,22 +40,21 @@ func _run() -> void:
 
 	player.global_position += Vector3(6.0, 0.0, -4.0)
 	player.rotation.y = deg_to_rad(60.0)
-	await _settle_frames(96)
+	await _settle_frames(132)
 
 	var follow_state := world.get_player_robot_dog_debug_state() as Dictionary
 	if not T.require_true(self, str(follow_state.get("behavior_mode", "")) == "follow", "Robot dog follow contract requires the runtime to stay in follow mode while accompanying the player"):
 		return
 
-	var follow_anchor := follow_state.get("follow_anchor_world_position", Vector3.ZERO) as Vector3
-	var slot_error_m := Vector2(runtime.global_position.x - follow_anchor.x, runtime.global_position.z - follow_anchor.z).length()
-	if not T.require_true(self, slot_error_m <= MAX_FOLLOW_SLOT_ERROR_M, "Follow-mode robot dog must converge near the formal right-side companion slot instead of drifting away from the player"):
+	var player_clearance_m := Vector2(runtime.global_position.x - player.global_position.x, runtime.global_position.z - player.global_position.z).length()
+	if not T.require_true(self, player_clearance_m >= MIN_PLAYER_CLEARANCE_M, "Follow-mode robot dog must keep a comfortable side-by-side clearance instead of hugging the player body"):
+		return
+	if not T.require_true(self, player_clearance_m <= MAX_PLAYER_CLEARANCE_M, "Follow-mode robot dog must remain in a believable companion corridor instead of lagging several meters behind the player"):
 		return
 
 	var player_forward := _planar_forward(player.global_transform.basis)
 	var runtime_forward := _planar_forward(runtime.global_transform.basis)
 	if not T.require_true(self, player_forward.length_squared() > 0.0001 and runtime_forward.length_squared() > 0.0001, "Robot dog follow contract requires measurable player/runtime forward vectors"):
-		return
-	if not T.require_true(self, player_forward.dot(runtime_forward) >= MIN_FORWARD_ALIGNMENT, "Follow-mode robot dog must broadly face the same forward direction as the player instead of constantly turning to stare at the player"):
 		return
 
 	var to_player := player.global_position - runtime.global_position
@@ -63,6 +63,26 @@ func _run() -> void:
 		return
 	to_player = to_player.normalized()
 	if not T.require_true(self, absf(runtime_forward.dot(to_player)) <= MAX_LOOK_AT_PLAYER_DOT, "Follow-mode robot dog must not keep its nose locked onto the player like a hostile target tracker"):
+		return
+
+	var max_runtime_step_m := 0.0
+	var previous_runtime_position := runtime.global_position
+	for frame_index in range(90):
+		player.global_position += Vector3(0.22, 0.0, -0.16)
+		player.rotation.y += deg_to_rad(1.2)
+		await physics_frame
+		await process_frame
+		runtime = world.get_active_player_robot_dog() as Node3D
+		if not T.require_true(self, runtime != null, "Robot dog follow contract requires the active runtime to stay mounted throughout the follow trace"):
+			return
+		if frame_index > 0:
+			var runtime_step_m := Vector2(
+				runtime.global_position.x - previous_runtime_position.x,
+				runtime.global_position.z - previous_runtime_position.z
+			).length()
+			max_runtime_step_m = maxf(max_runtime_step_m, runtime_step_m)
+		previous_runtime_position = runtime.global_position
+	if not T.require_true(self, max_runtime_step_m <= MAX_RUNTIME_STEP_M, "Follow-mode robot dog must not flash-teleport back to the player during ordinary movement; companion recovery has to stay spatially continuous"):
 		return
 
 	world.queue_free()

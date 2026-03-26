@@ -139,5 +139,7 @@
 - 低速 `W` 已冻结为单腿依次换步的四拍 crawl，不再允许 paired front-leg shove；更快的 `Shift+W` 继续保留对角 trot。对应合同已补进 `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd`。
 - 常速 `W` 已从最初过慢的散步档抬到旧 sprint 档位附近；现在“快一点的日常跑动”和“更快 sprint”不再共用同一套节奏和速度口径。
 - 主世界 `KP_4` 已从“召唤即接管”改为“默认伴随”；机械狗默认生成在玩家右侧伴随槽位，`Insert` 才会进入正式 dog-control 语义，再按一次 `Insert` 退回伴随态。
-- 主世界伴随态已冻结为“跟着玩家走，但不锁头盯玩家”，并新增 `tests/world/test_city_player_robot_dog_follow_contract.gd` 锁右侧 slot 收敛、前向一致性与非敌对 look-at 合同。
+- 主世界伴随态已冻结为“右后侧伴随走廊，不贴身，也不敌对锁头盯玩家”；对应 `tests/world/test_city_player_robot_dog_follow_contract.gd` 现锁最小/最大伴随距离、非敌对 look-at，以及连续移动时不得出现 flash-teleport。
+- 伴随 recover 现已收口为“只有极端掉队且玩家已基本停稳时才允许硬恢复”；正常 walking / turning 期间不再使用 7 米级短距瞬移补位。
+- `CityRobotDogControlRuntime.gd` 的 follow steering 已补上“大偏角先摆正再跟进、近距先咬住槽位再对齐玩家朝向”的合同，避免伴随态一边拧头一边朝错误方向跑出跳闪感。
 - `CityRobotDogControlRuntime.gd` 的 `visual_scale` 已微调下收，避免继续维持用户反馈里“稍微有点大”的展示口径；主世界同时新增 summon / mode-toggle 的 focus message 提示 `Insert / KP4` 用法。

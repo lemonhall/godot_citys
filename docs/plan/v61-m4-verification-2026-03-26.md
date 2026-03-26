@@ -8,7 +8,8 @@
 - 主世界 `KP_4` 默认进入右侧伴随态，不立刻接管镜头和控制权
 - `Insert` 在 `follow <-> controlled` 间切换
 - 伴随态下 `Player` 保持输入与镜头所有权；控制态下恢复旧版 dog-control 语义
-- 伴随态保持“跟随玩家，但不锁头盯玩家”的右侧 slot 行为
+- 伴随态保持“右后侧 companion corridor，不贴身、不掉队太远、且不锁头盯玩家”的行为
+- 正常 walking / turning 期间不得出现短距 flash-teleport；硬 recover 只允许留给极端掉队且玩家近乎静止的异常场景
 - 机械狗展示尺寸小幅回调，不回退 `v59/v60/v61-m3` 既有 joint / pose / locomotion / lab 合同
 
 ## Commands
@@ -47,7 +48,7 @@ foreach($test in $tests){
 |---|---|---|
 | `test_city_player_robot_dog_toggle_contract.gd` | PASS | `KP_4` 只认小键盘、召唤后默认进入 `follow`、右侧 slot 生成、再次 `KP_4` 收回 |
 | `test_city_player_robot_dog_camera_takeover_contract.gd` | PASS | summon 默认不接管；`Insert` 进入 dog-control；再次 `Insert` 退回 follow；camera / freeze / compass / minimap 所有权切换成立 |
-| `test_city_player_robot_dog_follow_contract.gd` | PASS | 伴随态能收敛到玩家右侧 slot，朝向大体与玩家前向一致，且不会像敌对目标那样锁头盯玩家 |
+| `test_city_player_robot_dog_follow_contract.gd` | PASS | 伴随态维持舒适的 companion corridor，不锁头盯玩家，且连续移动时不会出现 flash-teleport |
 | `test_city_player_robot_dog_ground_locomotion_contract.gd` | PASS | 既有 `walk / run / backward / turn / turn_move / prone` 合同未回退 |
 | `test_city_player_robot_dog_presentation_contract.gd` | PASS | 机械狗尺寸小幅回调后仍处于 formal presentation envelope 内 |
 | `test_robot_dog_lab_control_contract.gd` | PASS | `RobotDogLab` 继续走 formal control runtime，lab 默认 dog-control 语义不回退 |
@@ -76,5 +77,6 @@ foreach($test in $tests){
 ## Notes
 
 - `CityRobotDogControlRuntime.gd` 现已显式区分 `follow` 与 `controlled` 两个正式模式；主世界 consumer 默认走 `follow`，lab 继续走 `controlled`。
-- 伴随 slot 使用玩家右侧编队位，远距丢失时允许 recover，近距时速度按 slot 误差自动减小，避免满速冲过头。
+- 伴随槽位已从贴身右侧微调到更自然的右后侧 corridor；follow steering 采用“先咬槽位、再对齐朝向”的顺序，减少大偏角时的横向飘移。
+- follow recover 只在极端掉队且玩家几乎静止时才允许触发；正常 walking / turning trace 由 `test_city_player_robot_dog_follow_contract.gd` 卡住最大单帧位移，防止再次出现几秒一次的闪现补位。
 - `CityPrototype.gd` 已在 summon / mode-toggle 上接入 focus message，给用户一个轻量的 `Insert / KP4` 提示，而不引入第二套 HUD 状态机。

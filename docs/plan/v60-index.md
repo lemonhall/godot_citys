@@ -18,6 +18,8 @@ PRD 入口：
 
 `v60` 的第一刀目标已经冻结为：先把机械狗的 8 个单轴铰链关节和 `P` 键爬下/起身动作做硬。当前不做 walking gait，不做主世界接入。只有在“关节轴向、限位、躯干降姿、大小腿联动、reset 主链”这条链稳定之后，后续 walking 才有继续叠加的基础。
 
+2026-03-26 追加收口：`v60` 明确冻结腿部 visual rig 原则，禁止在 `_ready()` 或 pose runtime 里直接把 imported 大腿/小腿 mesh 节点当关节 pivot 重写位置，从而抹掉 authored local offset；正式修法是显式 `LegPivotRoot -> HipPivot / CalfPivot`，只转 pivot，不改可见件 authored offset。
+
 ## 决策冻结
 
 - 第一刀只做 `P` 键爬下/起身。
@@ -33,7 +35,7 @@ PRD 入口：
 | M0 docs freeze | PRD / design / v60 plan 冻结 | `P` 键、`Z` 轴、joint limit、躯干降姿、非目标全部落文档 | `rg -n "P 键|local `Z`|蓝色轴|爬下|起身|joint limit|body_to_thigh_angle_deg" docs/prd/PRD-0032-robot-dog-locomotion-lab.md docs/plans/2026-03-26-v60-robot-dog-locomotion-lab-design.md docs/plan/v60-index.md docs/plan/v60-robot-dog-locomotion-lab.md` | done |
 | M1 red tests | joint contract / crouch pose / lab flow 红测 | 至少锁住 joint axis、joint limit、`P` 切换、`F5` reset | `tests/world/test_robot_dog_joint_contract.gd`; `tests/world/test_robot_dog_crouch_pose_contract.gd`; `tests/e2e/test_robot_dog_lab_prone_flow.gd` | done |
 | M2 implementation | hinge pose runtime + lab input | 真实大腿/小腿被驱动；躯干降姿；`P` 往返切换正常 | 同上 | done |
-| M3 verification | focused verification + parse check | fresh verification 文档回填追溯矩阵 | `docs/plan/v60-m3-verification-2026-03-26.md` | done |
+| M3 verification | focused verification + parse check | fresh verification 文档回填追溯矩阵，并锁住 leg visual pivot contract | `docs/plan/v60-m3-verification-2026-03-26.md` | done |
 
 ## 计划索引
 
@@ -48,7 +50,7 @@ PRD 入口：
 | REQ-0032-003 | `v60-robot-dog-locomotion-lab.md` | `tests/world/test_robot_dog_joint_contract.gd` | `docs/plan/v60-m3-verification-2026-03-26.md` | `v60-m3-verification-2026-03-26.md` | done |
 | REQ-0032-004 | `v60-robot-dog-locomotion-lab.md` | `tests/world/test_robot_dog_crouch_pose_contract.gd` | `docs/plan/v60-m3-verification-2026-03-26.md` | `v60-m3-verification-2026-03-26.md` | done |
 | REQ-0032-005 | `v60-robot-dog-locomotion-lab.md` | `tests/world/test_robot_dog_crouch_pose_contract.gd` | `tests/e2e/test_robot_dog_lab_prone_flow.gd` | `v60-m3-verification-2026-03-26.md` | done |
-| REQ-0032-006 | `v60-robot-dog-locomotion-lab.md` | `tests/world/test_robot_dog_joint_contract.gd`; `tests/world/test_robot_dog_crouch_pose_contract.gd` | `docs/plan/v60-m3-verification-2026-03-26.md` | `v60-m3-verification-2026-03-26.md` | done |
+| REQ-0032-006 | `v60-robot-dog-locomotion-lab.md` | `tests/world/test_robot_dog_joint_contract.gd`; `tests/world/test_robot_dog_crouch_pose_contract.gd`; `tests/world/test_robot_dog_leg_visual_pivot_contract.gd` | `docs/plan/v60-m3-verification-2026-03-26.md` | `v60-m3-verification-2026-03-26.md` | done |
 | REQ-0032-007 | `v60-robot-dog-locomotion-lab.md` | 上述 focused tests 共同约束 | `docs/plan/v60-m3-verification-2026-03-26.md` | `v60-m3-verification-2026-03-26.md` | done |
 
 ## Closeout 证据口径
@@ -57,6 +59,7 @@ PRD 入口：
 - `v60` 不接受“只播动画 clip，没有 joint runtime”的空壳实现。
 - `v60` 不接受“关节绕 `X/Y` 轴补动作”的空壳实现。
 - `v60` 不接受“lab 自己写一套逻辑，正式 `CityRobotDog.gd` 仍然不会爬下”的空壳实现。
+- `v60` 不接受“直接把 imported 大腿/小腿 mesh 节点当 pivot 重写 transform，导致 authored local offset 被 runtime 抹掉”的实现。
 
 ## ECN 索引
 

@@ -28,29 +28,37 @@ const LEG_CONFIGS := {
 		"leg_id": "lf",
 		"hip_joint_name": "lf_hip",
 		"knee_joint_name": "lf_knee",
-		"hip_node_path": "BodyPivot/Model/ParentNode/L_Fore_Hip",
-		"calf_node_path": "BodyPivot/Model/ParentNode/L_Fore_Calf",
+		"hip_mesh_source_path": "BodyPivot/Model/ParentNode/L_Fore_Hip",
+		"calf_mesh_source_path": "BodyPivot/Model/ParentNode/L_Fore_Calf",
+		"hip_mesh_name": "L_Fore_Hip",
+		"calf_mesh_name": "L_Fore_Calf",
 	},
 	"rf": {
 		"leg_id": "rf",
 		"hip_joint_name": "rf_hip",
 		"knee_joint_name": "rf_knee",
-		"hip_node_path": "BodyPivot/Model/ParentNode/R_Fore_Hip",
-		"calf_node_path": "BodyPivot/Model/ParentNode/R_Fore_Calf",
+		"hip_mesh_source_path": "BodyPivot/Model/ParentNode/R_Fore_Hip",
+		"calf_mesh_source_path": "BodyPivot/Model/ParentNode/R_Fore_Calf",
+		"hip_mesh_name": "R_Fore_Hip",
+		"calf_mesh_name": "R_Fore_Calf",
 	},
 	"lr": {
 		"leg_id": "lr",
 		"hip_joint_name": "lr_hip",
 		"knee_joint_name": "lr_knee",
-		"hip_node_path": "BodyPivot/Model/ParentNode/L_Hind_Hip",
-		"calf_node_path": "BodyPivot/Model/ParentNode/L_Hind_Calf",
+		"hip_mesh_source_path": "BodyPivot/Model/ParentNode/L_Hind_Hip",
+		"calf_mesh_source_path": "BodyPivot/Model/ParentNode/L_Hind_Calf",
+		"hip_mesh_name": "L_Hind_Hip",
+		"calf_mesh_name": "L_Hind_Calf",
 	},
 	"rr": {
 		"leg_id": "rr",
 		"hip_joint_name": "rr_hip",
 		"knee_joint_name": "rr_knee",
-		"hip_node_path": "BodyPivot/Model/ParentNode/R_Hind_Hip",
-		"calf_node_path": "BodyPivot/Model/ParentNode/R_Hind_Calf",
+		"hip_mesh_source_path": "BodyPivot/Model/ParentNode/R_Hind_Hip",
+		"calf_mesh_source_path": "BodyPivot/Model/ParentNode/R_Hind_Calf",
+		"hip_mesh_name": "R_Hind_Hip",
+		"calf_mesh_name": "R_Hind_Calf",
 	},
 }
 
@@ -60,6 +68,7 @@ const CROUCH_TARGET_HIP_DEG := -40.0
 
 @onready var body_pivot: Node3D = $BodyPivot
 @onready var model_root: Node3D = $BodyPivot/Model
+@onready var leg_pivot_root: Node3D = $BodyPivot/LegPivotRoot
 @onready var joint_anchor_root: Node3D = $JointAnchors
 
 var _initial_root_transform := Transform3D.IDENTITY
@@ -72,6 +81,7 @@ var _body_height_offset_m := 0.0
 var _pose_state := "standing"
 
 func _ready() -> void:
+	_ensure_leg_visual_pivots()
 	_capture_initial_pose()
 	_cache_leg_runtimes()
 	_apply_pose_from_alpha(0.0)
@@ -143,6 +153,7 @@ func reset_robot_dog_pose() -> void:
 		if not _initial_joint_anchor_local_transforms.has(joint_anchor_name):
 			continue
 		joint_anchor.transform = _initial_joint_anchor_local_transforms[joint_anchor_name]
+	_reset_leg_visual_rest_pose()
 	_crouch_requested = false
 	_crouch_alpha = 0.0
 	_body_height_offset_m = 0.0
@@ -166,32 +177,42 @@ func _cache_leg_runtimes() -> void:
 		var leg_config: Dictionary = LEG_CONFIGS.get(leg_id, {})
 		var hip_joint := _get_joint_anchor_node(str(leg_config.get("hip_joint_name", "")))
 		var knee_joint := _get_joint_anchor_node(str(leg_config.get("knee_joint_name", "")))
-		var hip_node := get_node_or_null(str(leg_config.get("hip_node_path", ""))) as Node3D
-		var calf_node := get_node_or_null(str(leg_config.get("calf_node_path", ""))) as Node3D
-		if hip_joint == null or knee_joint == null or hip_node == null or calf_node == null:
+		var leg_root := leg_pivot_root.get_node_or_null(leg_id) as Node3D if leg_pivot_root != null else null
+		var hip_pivot := leg_root.get_node_or_null("HipPivot") as Node3D if leg_root != null else null
+		var calf_pivot := leg_root.get_node_or_null("CalfPivot") as Node3D if leg_root != null else null
+		var hip_mesh := hip_pivot.get_node_or_null(str(leg_config.get("hip_mesh_name", ""))) as Node3D if hip_pivot != null else null
+		var calf_mesh := calf_pivot.get_node_or_null(str(leg_config.get("calf_mesh_name", ""))) as Node3D if calf_pivot != null else null
+		if hip_joint == null or knee_joint == null or hip_pivot == null or calf_pivot == null or hip_mesh == null or calf_mesh == null:
 			continue
 		var hip_joint_local := body_pivot.to_local(hip_joint.global_position)
 		var knee_joint_local := body_pivot.to_local(knee_joint.global_position)
 		var upper_rest_vector := knee_joint_local - hip_joint_local
-		var calf_tip_rest_vector := _resolve_calf_tip_rest_vector(calf_node)
+		var calf_tip_rest_vector := _resolve_calf_tip_rest_vector(calf_mesh)
 		var foot_rest_local := knee_joint_local + calf_tip_rest_vector
 		_leg_runtimes_by_id[leg_id] = {
 			"leg_id": leg_id,
 			"hip_joint_name": str(leg_config.get("hip_joint_name", "")),
 			"knee_joint_name": str(leg_config.get("knee_joint_name", "")),
-			"hip_node": hip_node,
-			"calf_node": calf_node,
+			"hip_pivot": hip_pivot,
+			"calf_pivot": calf_pivot,
+			"hip_mesh": hip_mesh,
+			"calf_mesh": calf_mesh,
 			"hip_joint_local": hip_joint_local,
 			"knee_joint_local": knee_joint_local,
 			"upper_rest_vector": upper_rest_vector,
 			"calf_tip_rest_vector": calf_tip_rest_vector,
 			"foot_rest_local": foot_rest_local,
 			"hip_target_deg": CROUCH_TARGET_HIP_DEG,
+			"hip_pivot_rest_transform": hip_pivot.transform,
+			"calf_pivot_rest_transform": calf_pivot.transform,
+			"hip_mesh_rest_local_transform": hip_mesh.transform,
+			"calf_mesh_rest_local_transform": calf_mesh.transform,
 		}
 
 func _resolve_calf_tip_rest_vector(calf_node: Node3D) -> Vector3:
+	var mesh_offset := calf_node.position if calf_node != null else Vector3.ZERO
 	if calf_node == null or not (calf_node is MeshInstance3D):
-		return Vector3(0.22, -0.24, 0.0)
+		return mesh_offset + Vector3(0.22, -0.24, 0.0)
 	var mesh_node := calf_node as MeshInstance3D
 	var aabb := mesh_node.get_aabb()
 	var best_corner := Vector3(0.22, -0.24, 0.0)
@@ -202,7 +223,7 @@ func _resolve_calf_tip_rest_vector(calf_node: Node3D) -> Vector3:
 			continue
 		best_score = score
 		best_corner = corner
-	return best_corner
+	return mesh_offset + best_corner
 
 func _aabb_corners(aabb: AABB) -> Array[Vector3]:
 	var base := aabb.position
@@ -233,9 +254,11 @@ func _apply_pose_from_alpha(alpha: float) -> void:
 func _apply_leg_pose(leg_runtime: Dictionary, alpha: float) -> void:
 	if leg_runtime.is_empty():
 		return
-	var hip_node := leg_runtime.get("hip_node") as Node3D
-	var calf_node := leg_runtime.get("calf_node") as Node3D
-	if hip_node == null or calf_node == null:
+	var hip_pivot := leg_runtime.get("hip_pivot") as Node3D
+	var calf_pivot := leg_runtime.get("calf_pivot") as Node3D
+	var hip_mesh := leg_runtime.get("hip_mesh") as Node3D
+	var calf_mesh := leg_runtime.get("calf_mesh") as Node3D
+	if hip_pivot == null or calf_pivot == null or hip_mesh == null or calf_mesh == null:
 		return
 	var hip_joint_local: Vector3 = leg_runtime.get("hip_joint_local", Vector3.ZERO)
 	var upper_rest_vector: Vector3 = leg_runtime.get("upper_rest_vector", Vector3.LEFT * 0.25)
@@ -254,19 +277,21 @@ func _apply_leg_pose(leg_runtime: Dictionary, alpha: float) -> void:
 	var calf_angle_deg := _compute_local_z_delta_deg(calf_tip_rest_vector, target_calf_vector)
 	calf_angle_deg = clampf(calf_angle_deg, float(knee_constraint.get("min_deg", -80.0)), float(knee_constraint.get("max_deg", 80.0)))
 
-	hip_node.position = hip_joint_local
-	var hip_rotation := hip_node.rotation
+	hip_mesh.transform = leg_runtime.get("hip_mesh_rest_local_transform", hip_mesh.transform)
+	calf_mesh.transform = leg_runtime.get("calf_mesh_rest_local_transform", calf_mesh.transform)
+	hip_pivot.position = hip_joint_local
+	var hip_rotation := hip_pivot.rotation
 	hip_rotation.x = 0.0
 	hip_rotation.y = 0.0
 	hip_rotation.z = deg_to_rad(hip_target_deg)
-	hip_node.rotation = hip_rotation
+	hip_pivot.rotation = hip_rotation
 
-	calf_node.position = knee_local
-	var calf_rotation := calf_node.rotation
+	calf_pivot.position = knee_local
+	var calf_rotation := calf_pivot.rotation
 	calf_rotation.x = 0.0
 	calf_rotation.y = 0.0
 	calf_rotation.z = deg_to_rad(calf_angle_deg)
-	calf_node.rotation = calf_rotation
+	calf_pivot.rotation = calf_rotation
 
 	leg_runtime["current_hip_angle_deg"] = hip_target_deg
 	leg_runtime["current_knee_angle_deg"] = calf_angle_deg
@@ -324,3 +349,66 @@ func _get_joint_anchor_node(joint_anchor_name: String) -> Marker3D:
 	if joint_anchor_root == null:
 		return null
 	return joint_anchor_root.get_node_or_null(joint_anchor_name) as Marker3D
+
+func _ensure_leg_visual_pivots() -> void:
+	if body_pivot == null or leg_pivot_root == null:
+		return
+	for leg_id in LEG_CONFIGS.keys():
+		var leg_config: Dictionary = LEG_CONFIGS.get(leg_id, {})
+		var hip_joint := _get_joint_anchor_node(str(leg_config.get("hip_joint_name", "")))
+		var knee_joint := _get_joint_anchor_node(str(leg_config.get("knee_joint_name", "")))
+		if hip_joint == null or knee_joint == null:
+			continue
+		var leg_root := leg_pivot_root.get_node_or_null(leg_id) as Node3D
+		if leg_root == null:
+			leg_root = Node3D.new()
+			leg_root.name = leg_id
+			leg_pivot_root.add_child(leg_root)
+		var hip_pivot := leg_root.get_node_or_null("HipPivot") as Node3D
+		if hip_pivot == null:
+			hip_pivot = Node3D.new()
+			hip_pivot.name = "HipPivot"
+			leg_root.add_child(hip_pivot)
+		var calf_pivot := leg_root.get_node_or_null("CalfPivot") as Node3D
+		if calf_pivot == null:
+			calf_pivot = Node3D.new()
+			calf_pivot.name = "CalfPivot"
+			leg_root.add_child(calf_pivot)
+		hip_pivot.position = body_pivot.to_local(hip_joint.global_position)
+		calf_pivot.position = body_pivot.to_local(knee_joint.global_position)
+		_reparent_leg_mesh_if_needed(
+			hip_pivot,
+			str(leg_config.get("hip_mesh_source_path", "")),
+			str(leg_config.get("hip_mesh_name", ""))
+		)
+		_reparent_leg_mesh_if_needed(
+			calf_pivot,
+			str(leg_config.get("calf_mesh_source_path", "")),
+			str(leg_config.get("calf_mesh_name", ""))
+		)
+
+func _reparent_leg_mesh_if_needed(target_pivot: Node3D, source_path: String, mesh_name: String) -> void:
+	if target_pivot == null or mesh_name == "":
+		return
+	var mesh_node := target_pivot.get_node_or_null(mesh_name) as Node3D
+	if mesh_node == null and source_path != "":
+		mesh_node = get_node_or_null(source_path) as Node3D
+	if mesh_node == null or mesh_node.get_parent() == target_pivot:
+		return
+	mesh_node.reparent(target_pivot, true)
+
+func _reset_leg_visual_rest_pose() -> void:
+	for leg_runtime_variant in _leg_runtimes_by_id.values():
+		var leg_runtime := leg_runtime_variant as Dictionary
+		var hip_pivot := leg_runtime.get("hip_pivot") as Node3D
+		var calf_pivot := leg_runtime.get("calf_pivot") as Node3D
+		var hip_mesh := leg_runtime.get("hip_mesh") as Node3D
+		var calf_mesh := leg_runtime.get("calf_mesh") as Node3D
+		if hip_pivot != null:
+			hip_pivot.transform = leg_runtime.get("hip_pivot_rest_transform", hip_pivot.transform)
+		if calf_pivot != null:
+			calf_pivot.transform = leg_runtime.get("calf_pivot_rest_transform", calf_pivot.transform)
+		if hip_mesh != null:
+			hip_mesh.transform = leg_runtime.get("hip_mesh_rest_local_transform", hip_mesh.transform)
+		if calf_mesh != null:
+			calf_mesh.transform = leg_runtime.get("calf_mesh_rest_local_transform", calf_mesh.transform)

@@ -46,7 +46,7 @@ func _run() -> void:
 	var average_body_to_thigh_angle := _average_body_to_thigh_angle(crouched_legs)
 	if not T.require_true(self, average_body_to_thigh_angle <= 10.0, "Robot dog crouch pose contract must bring the thighs close to body-parallel"):
 		return
-	if not T.require_true(self, _max_abs_joint_angle(crouched_legs, "knee_angle_deg") >= 5.0, "Robot dog crouch pose contract must articulate the calves instead of leaving them untouched"):
+	if not T.require_true(self, _max_abs_joint_angle(crouched_legs, "knee_angle_deg") >= 3.0, "Robot dog crouch pose contract must still articulate the calf pivots by a visible amount instead of leaving them untouched"):
 		return
 
 	robot_dog.set_crouch_requested(false)

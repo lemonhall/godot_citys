@@ -10,6 +10,8 @@ script = ExtResource("1_robot_dog_script")
 
 [node name="Model" parent="BodyPivot" unique_id=679399184 instance=ExtResource("2_robot_dog_model")]
 
+[node name="LegPivotRoot" type="Node3D" parent="BodyPivot" unique_id=137920418]
+
 [node name="JointAnchors" type="Node3D" parent="." unique_id=1760150522]
 
 [node name="lf_hip" type="Marker3D" parent="JointAnchors" unique_id=588285283]

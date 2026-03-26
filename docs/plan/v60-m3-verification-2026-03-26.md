@@ -6,6 +6,7 @@
 
 - 8 个关节 local `Z` 单轴铰链合同
 - `P` 键爬下 / 起身姿态切换
+- 腿部 visual pivot contract，runtime 不得抹掉 imported mesh authored offset
 - `RobotDogLab` 新旧 debug contract 兼容
 
 ## Commands
@@ -18,6 +19,7 @@ $godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
 & $godot --headless --rendering-driver dummy --path $project --script 'res://tests/world/test_robot_dog_lab_scene_contract.gd'
 & $godot --headless --rendering-driver dummy --path $project --script 'res://tests/world/test_robot_dog_joint_contract.gd'
 & $godot --headless --rendering-driver dummy --path $project --script 'res://tests/world/test_robot_dog_crouch_pose_contract.gd'
+& $godot --headless --rendering-driver dummy --path $project --script 'res://tests/world/test_robot_dog_leg_visual_pivot_contract.gd'
 & $godot --headless --rendering-driver dummy --path $project --script 'res://tests/e2e/test_robot_dog_lab_prone_flow.gd'
 & $godot --headless --rendering-driver dummy --path $project --quit
 ```
@@ -30,6 +32,7 @@ $godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
 | `test_robot_dog_lab_scene_contract.gd` | PASS | lab scene-first 层级与老 debug contract 兼容 |
 | `test_robot_dog_joint_contract.gd` | PASS | 8 个 joint 的 axis/limit/API/debug schema 已冻结 |
 | `test_robot_dog_crouch_pose_contract.gd` | PASS | 爬下姿态、躯干降低、大腿收平、小腿联动成立 |
+| `test_robot_dog_leg_visual_pivot_contract.gd` | PASS | `LegPivotRoot -> HipPivot / CalfPivot` 生效，runtime 不再抹掉 authored mesh offset |
 | `test_robot_dog_lab_prone_flow.gd` | PASS | `P` / `F5` 输入流成立 |
 | headless parse check | PASS with warning | 存在 1 条与 `CityM777Howitzer.tscn` 相关的既有 UID warning，未在本轮处理 |
 
@@ -42,10 +45,12 @@ $godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
 | REQ-0032-003 | `test_robot_dog_joint_contract.gd` |
 | REQ-0032-004 | `test_robot_dog_crouch_pose_contract.gd` |
 | REQ-0032-005 | `test_robot_dog_lab_prone_flow.gd` |
-| REQ-0032-006 | `test_robot_dog_joint_contract.gd`, `test_robot_dog_crouch_pose_contract.gd` |
+| REQ-0032-006 | `test_robot_dog_joint_contract.gd`, `test_robot_dog_crouch_pose_contract.gd`, `test_robot_dog_leg_visual_pivot_contract.gd` |
 | REQ-0032-007 | 上述 focused tests 共同约束 |
 
 ## Notes
 
 - 本轮把 `v60` 第一刀从“walking gait”收窄为“单轴铰链 + `P` 键爬下/起身”，并已按此口径完成。
 - 机械狗 hip 关节的真实有效收腿方向是 local `Z` 负向，因此 hip 限位冻结为 `[-60, 5]`。
+- 追加修复：此前 runtime 直接把 imported 大腿/小腿 mesh 节点当关节 pivot 重写 transform，导致 authored local offset 被抹掉，lab 里出现大腿/小腿视觉断开。现已改为显式 `LegPivotRoot -> HipPivot / CalfPivot`，pose runtime 只驱动 pivot。
+- 2026-03-26 用户手工进入 `RobotDogLab` 复测，确认“大腿和小腿之间断开”问题已收敛。

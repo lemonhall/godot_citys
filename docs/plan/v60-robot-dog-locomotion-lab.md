@@ -28,6 +28,7 @@
 - joint limit 按“相对 editor 初始姿态的本地 `Z` 角度偏移”定义。
 - `P` 是正式爬下/起身切换键。
 - `RobotDogLab` 只消费正式 `CityRobotDog.gd` runtime，不写第二套 pose 逻辑。
+- 腿部可见件必须挂到显式 `HipPivot / CalfPivot` 下，禁止直接把 imported mesh 节点本身当关节 pivot 并覆盖 authored local offset。
 
 ## Scope
 
@@ -35,7 +36,7 @@
 
 - 新增 joint constraint contract
 - 新增 `P` 键爬下/起身动作
-- 驱动真实大腿/小腿模型节点
+- 通过显式 visual pivot 驱动真实大腿/小腿模型节点
 - 更新 lab HUD 与 reset 主链
 - 新增 focused tests 与一条 lab flow e2e
 
@@ -54,7 +55,8 @@
 3. 自动化测试必须证明：`P` 触发后，机械狗进入爬下姿态；再触发一次回到站立姿态。
 4. 自动化测试必须证明：爬下后 `body_height_offset_m > 0.10`，并且四条大腿 `body_to_thigh_angle_deg` 的平均值不大于 `10`。
 5. 自动化测试必须证明：小腿角度会联动变化，而不是停在初始值。
-6. 反作弊条款：不得通过 clip、lab-only 逻辑、改 authored 锚点或绕 `X/Y` 轴补动作来伪装通过。
+6. 自动化测试必须证明：runtime 不会抹掉 imported 大腿/小腿 mesh 的 authored local offset；可见件必须稳定挂在显式 pivot 下。
+7. 反作弊条款：不得通过 clip、lab-only 逻辑、改 authored 锚点、直接覆写 imported mesh transform 或绕 `X/Y` 轴补动作来伪装通过。
 
 ## Files
 
@@ -63,9 +65,11 @@
 - Update: `docs/plan/v60-index.md`
 - Update: `docs/plan/v60-robot-dog-locomotion-lab.md`
 - Update: `city_game/world/creatures/quadrupeds/CityRobotDog.gd`
+- Update: `city_game/world/creatures/quadrupeds/CityRobotDog.tscn`
 - Update: `city_game/scenes/labs/RobotDogLab.gd`
 - Create: `tests/world/test_robot_dog_joint_contract.gd`
 - Create: `tests/world/test_robot_dog_crouch_pose_contract.gd`
+- Create: `tests/world/test_robot_dog_leg_visual_pivot_contract.gd`
 - Create: `tests/e2e/test_robot_dog_lab_prone_flow.gd`
 - Create: `docs/plan/v60-m3-verification-2026-03-26.md`
 
@@ -96,7 +100,11 @@
    - 写 `RobotDogLab` e2e，锁 `P` / `F5` 输入主链。
 9. TDD Green: Lab Flow
    - 更新 `RobotDogLab.gd` 与 HUD。
-10. Verification
+10. TDD Red: Leg Visual Pivot
+   - 写 visual pivot contract，锁 `LegPivotRoot` 层级与 authored mesh offset 不得被 runtime 抹掉。
+11. TDD Green: Leg Visual Pivot
+   - 把 imported 大腿/小腿 mesh 挂到显式 `HipPivot / CalfPivot`，pose runtime 只驱动 pivot。
+12. Verification
    - 跑 focused tests + parse check
    - 回填 `v60-m3-verification-2026-03-26.md`
 
@@ -105,3 +113,4 @@
 - 如果 local `Z` 方向理解反了，爬下动作会直接反着走。
 - 如果只转大腿不联动小腿，姿态会很假。
 - 如果 `body_to_thigh_angle_deg` 没做成显式 debug state，后面无法稳定验收“接近 0°”。
+- 如果直接把 imported mesh 节点当 pivot，运行时会抹掉 authored local offset，视觉上会出现大腿/小腿断开。

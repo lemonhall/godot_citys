@@ -67,4 +67,5 @@ PRD 入口：
 
 ## 差异列表
 
-- walking gait、前进、转向、terrain follow、脚点规划进入 `v61+`。
+- 机械狗正式召唤/回收、第三人称接管、`idle / walk / run / backward / turn / prone` 进入 `v61`。
+- `pounce / jump / landing / attack` 进入 `v62+`。

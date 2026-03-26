@@ -1,70 +1,183 @@
 # godot_citys
 
-Godot 4.6 skeleton for a city-themed 3D game prototype.
+Godot 4.6 large-world city runtime prototype.
 
-## What is included
+This repository is no longer a small skeleton project. It now contains the active runtime, contract tests, milestone plans, editor tooling, a native radio backend, authored world features, combat systems, and creature runtimes used by the main world.
 
-- One runnable main scene at `res://city_game/scenes/CityPrototype.tscn`
-- A third-person placeholder controller with mouse-look camera
-- A generated city block grid made from built-in meshes only
-- A HUD overlay with controls and block summary
-- A headless smoke test for the scene contract
+## What This Project Is
 
-## Run in the editor
+- A `70km x 70km` low poly city runtime prototype built for stable large-world streaming.
+- A gameplay sandbox with shared navigation, map, task, marker, and vehicle systems.
+- A milestone-driven project whose source of truth lives in `docs/plan/`, not in this README.
 
-1. Open this folder in Godot 4.6.
-2. Press `F5` to run the project.
-3. Use `WASD` or arrow keys to move.
-4. Hold `Shift` to sprint.
-5. Press `Space` to jump.
-6. Move the mouse to rotate the camera.
-7. Press `Esc` to release or recapture the cursor.
+Current shipped milestone families include:
 
-## Headless verification
+- `v12`: place query, resolved targets, route result, map, minimap, fast travel, autodrive
+- `v14`: shared task catalog/runtime/pin/world-ring/trigger chain
+- `v24`: vehicle radio system and native backend integration
+- `v30-v31`: scene preview harness and editor plugin
+- `v37`: helicopter gunship encounter
+- `v54-v58`: drone-assisted artillery and squadron strike chain
+- `v59-v61`: robot dog scene foundation, prone pose, and main-world ground locomotion control
+
+## Requirements
+
+- Windows 11
+- PowerShell
+- Godot `4.6` console build for headless verification
+- Godot `4.6` desktop build for local interactive runs
+
+Example local paths used in this repo:
 
 ```powershell
-& 'E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe' --headless --rendering-driver dummy --path 'E:\development\godot_citys' --script 'res://tests/test_city_skeleton_smoke.gd'
+$project='E:\development\godot_citys'
+$godot='E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64_console.exe'
 ```
 
-Expected result: `PASS`
+## Quick Start
 
-## Layout
+- Parse check:
 
-- `city_game/scenes/` main scenes
-- `city_game/scripts/` gameplay scripts
-- `city_game/ui/` HUD scripts
-- `tests/` headless smoke tests
-- `docs/plan/` milestone notes
-- `docs/plans/` implementation plans
+```powershell
+& $godot --headless --rendering-driver dummy --path $project --quit
+```
 
-## FFmpeg Runtime Artifacts
+- Run the main world:
 
-The radio native backend keeps the FFmpeg runtime in this repository, but GitHub blocks regular Git blobs larger than `100 MB`. The only oversized runtime binary is `avfilter-11.dll`, so it is stored as split `7z` blob volumes instead of a raw tracked DLL:
+```powershell
+& 'E:\Godot_v4.6-stable_win64.exe\Godot_v4.6-stable_win64.exe' --path $project
+```
 
-- `city_game/native/radio_backend/thirdparty/ffmpeg/archives/avfilter-11.dll.7z.001`
-- `city_game/native/radio_backend/thirdparty/ffmpeg/archives/avfilter-11.dll.7z.002`
-- ...
+- Run the smoke test:
 
-Before running or rebuilding the native radio backend on a fresh clone, restore that DLL with:
+```powershell
+& $godot --headless --rendering-driver dummy --path $project --script 'res://tests/test_city_skeleton_smoke.gd'
+```
+
+- Run a single world contract:
+
+```powershell
+& $godot --headless --rendering-driver dummy --path $project --script 'res://tests/world/<test-name>.gd'
+```
+
+- Run a single end-to-end test:
+
+```powershell
+& $godot --headless --rendering-driver dummy --path $project --script 'res://tests/e2e/<test-name>.gd'
+```
+
+## Common Verification Sets
+
+- Navigation and map:
+  - `test_city_place_query_resolution.gd`
+  - `test_city_resolved_target_contract.gd`
+  - `test_city_route_query_contract.gd`
+  - `test_city_map_destination_contract.gd`
+  - `test_city_minimap_navigation_hud.gd`
+  - `tests/e2e/test_city_navigation_flow.gd`
+
+- Tasks and world markers:
+  - `test_city_task_catalog_contract.gd`
+  - `test_city_task_pin_projection.gd`
+  - `test_city_task_world_ring_marker_contract.gd`
+  - `test_city_task_route_hides_destination_world_marker.gd`
+  - `tests/e2e/test_city_task_start_flow.gd`
+
+- Radio and native backend:
+  - `test_city_vehicle_radio_backend_interface_contract.gd`
+  - `test_city_vehicle_radio_native_bridge_smoke.gd`
+  - `test_city_vehicle_radio_native_bridge_playback_contract.gd`
+  - `tests/e2e/test_city_vehicle_radio_browser_flow.gd`
+
+- Robot dog:
+  - `test_robot_dog_scene_contract.gd`
+  - `test_robot_dog_joint_contract.gd`
+  - `test_city_player_robot_dog_toggle_contract.gd`
+  - `test_city_player_robot_dog_ground_locomotion_contract.gd`
+  - `tests/e2e/test_city_player_robot_dog_flow.gd`
+
+- Performance guards:
+
+```powershell
+& $godot --headless --rendering-driver dummy --path $project --script 'res://tests/world/test_city_chunk_setup_profile_breakdown.gd'
+& $godot --headless --rendering-driver dummy --path $project --script 'res://tests/e2e/test_city_first_visit_performance_profile.gd'
+& $godot --headless --rendering-driver dummy --path $project --script 'res://tests/e2e/test_city_runtime_performance_profile.gd'
+```
+
+Run the performance guards in that order and do not run them in parallel.
+
+## Repository Layout
+
+- `city_game/`
+  - Main runtime, scenes, UI, world systems, combat systems, native backend, creature runtimes
+- `addons/scene_preview/`
+  - Scene preview editor plugin
+- `tests/world/`
+  - Contract and focused runtime tests
+- `tests/e2e/`
+  - End-to-end gameplay and integration flows
+- `tests/tools/`
+  - Tooling and environment-sensitive verification
+- `docs/prd/`
+  - Product requirement documents
+- `docs/plans/`
+  - Design and implementation planning notes
+- `docs/plan/`
+  - Versioned milestone plans and verification evidence
+- `docs/research/`
+  - Research notes and PDFs
+- `reports/`
+  - Generated acceptance artifacts such as overview PNG exports
+- `refs/`
+  - Read-only reference material
+
+## Runtime Notes
+
+- The main scene is `res://city_game/scenes/CityPrototype.tscn`.
+- The runtime entry script is `res://city_game/scripts/CityPrototype.gd`.
+- The project config and input definitions live in `project.godot`.
+- World cache artifacts are written under `user://cache/world/`.
+- Radio cache and user state are written under `user://cache/radio/` and `user://radio/`.
+
+## Radio Native Backend
+
+The vehicle radio native backend lives under:
+
+- `city_game/native/radio_backend/`
+
+The only oversized FFmpeg runtime DLL, `avfilter-11.dll`, is stored as split archive volumes instead of a raw Git blob. Restore it on a fresh clone with:
 
 ```powershell
 pwsh -File .\scripts\restore-radio-ffmpeg-avfilter.ps1
 ```
 
-That script extracts the split archive and restores:
+That script restores:
 
 - `city_game/native/radio_backend/bin/win64/avfilter-11.dll`
 - `city_game/native/radio_backend/thirdparty/ffmpeg/windows-x64-shared/ffmpeg-8.1-full_build-shared/bin/avfilter-11.dll`
 
-If you already have local copies and want to overwrite them, add `-Force`:
+If you need to rebuild the backend DLL:
 
 ```powershell
-pwsh -File .\scripts\restore-radio-ffmpeg-avfilter.ps1 -Force
+Push-Location '.\city_game\native\radio_backend'
+scons platform=windows target=template_debug
+Pop-Location
 ```
 
-## Next milestone
+For more detailed rules, see:
 
-- Replace box towers with modular building kits
-- Add roads with intersections, sidewalks, and traffic placeholders
-- Introduce interactable districts, mission hooks, and streaming chunks
-- Add pedestrians, vehicles, and save-game state
+- `city_game/native/radio_backend/AGENTS.md`
+
+## Working Notes
+
+- `AGENTS.md` is the repository-level working guide for AI agents and newcomers. It contains the current engineering rules, testing expectations, safety boundaries, and subdirectory precedence rules.
+- `docs/plan/vN-index.md` files are the closeout truth source for milestone status.
+- `README.md` is intentionally high-level. If this file and `docs/plan/` disagree, trust `docs/plan/`.
+
+## Contributing Expectations
+
+- Do not rely on hand testing alone.
+- Add or update tests for changed behavior.
+- Do not claim performance improvement without fresh profiling evidence.
+- Do not edit generated acceptance artifacts by hand; regenerate them through tests.
+- Treat `refs/` as read-only unless explicitly asked otherwise.

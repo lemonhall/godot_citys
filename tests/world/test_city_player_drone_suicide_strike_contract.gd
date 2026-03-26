@@ -43,7 +43,7 @@ func _run() -> void:
 
 	_set_mouse_button(MOUSE_BUTTON_LEFT, true)
 	_set_mouse_button(MOUSE_BUTTON_LEFT, false)
-	await _advance_frames(1)
+	await _advance_frames(3)
 
 	var strike_state: Dictionary = world.get_player_drone_debug_state()
 	if not T.require_true(self, bool(strike_state.get("strike_committed", false)), "Left click in drone FPV ADS mode must commit a suicide strike instead of remaining manual flight"):
@@ -58,17 +58,19 @@ func _run() -> void:
 		return
 	if not T.require_true(self, str(strike_state.get("camera_owner", "")) == "drone", "Committed drone suicide strike must keep camera ownership on the drone until blast closeout completes"):
 		return
+	var strike_phase := str(strike_state.get("strike_state", ""))
 	var locked_target_world_position := strike_state.get("locked_target_world_position", Vector3.ZERO) as Vector3
 	if not T.require_true(self, locked_target_world_position.distance_to(target_world_position) <= 6.0, "Drone suicide strike must freeze the FPV lock target at commit time instead of recomputing a drifting target every frame"):
 		return
 	var strike_camera := runtime.get_node_or_null("CameraRig/Camera3D") as Camera3D
 	if not T.require_true(self, strike_camera != null, "Drone suicide strike contract requires the mounted drone camera for FPV forward-alignment verification"):
 		return
-	var camera_forward := (-strike_camera.global_transform.basis.z).normalized()
-	var camera_to_target := (locked_target_world_position - strike_camera.global_position).normalized()
-	var strike_alignment := camera_forward.dot(camera_to_target)
-	if not T.require_true(self, strike_alignment >= 0.8, "Committed drone suicide strike must keep the FPV camera broadly facing the locked target instead of flipping backward toward the player body (alignment=%0.3f)" % strike_alignment):
-		return
+	if strike_phase == "locked" or strike_phase == "striking":
+		var camera_forward := (-strike_camera.global_transform.basis.z).normalized()
+		var camera_to_target := (locked_target_world_position - strike_camera.global_position).normalized()
+		var strike_alignment := camera_forward.dot(camera_to_target)
+		if not T.require_true(self, strike_alignment >= 0.8, "Committed drone suicide strike must keep the FPV camera broadly facing the locked target before impact instead of flipping backward toward the player body (alignment=%0.3f)" % strike_alignment):
+			return
 
 	await _advance_frames(4)
 

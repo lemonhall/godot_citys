@@ -27,6 +27,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("get_player_drone_debug_state"), "Player drone camera takeover contract requires CityPrototype.get_player_drone_debug_state()"):
 		return
+	if not T.require_true(self, world.has_method("get_player_drone_squadron_debug_state"), "Player drone camera takeover contract requires CityPrototype.get_player_drone_squadron_debug_state()"):
+		return
 
 	var player_camera := player.get_node_or_null("CameraRig/Camera3D") as Camera3D
 	if not T.require_true(self, player_camera != null, "Player drone camera takeover contract requires the player camera node"):
@@ -80,14 +82,17 @@ func _run() -> void:
 	if not T.require_true(self, not player.request_ground_slam(), "Active drone flight must keep the player traversal chain disabled while the drone owns input"):
 		return
 
-	_press_world_key(world, KEY_KP_5)
+	await _hold_world_key(world, KEY_KP_5, 40)
 	await process_frame
 	var recovering_state: Dictionary = world.get_player_drone_debug_state()
+	var recovering_squadron_state: Dictionary = world.get_player_drone_squadron_debug_state()
 	if not T.require_true(self, str(recovering_state.get("system_state", "")) == "recovering", "Pressing numpad 5 while active must enter recovering instead of snapping directly back to stowed"):
 		return
 	if not T.require_true(self, str(recovering_state.get("camera_owner", "")) == "drone", "Recovering must keep the drone camera live until the return sequence completes"):
 		return
 	if not T.require_true(self, str(recovering_state.get("input_owner", "")) == "none", "Recovering must suspend input rather than handing it back to the player early"):
+		return
+	if not T.require_true(self, int(recovering_squadron_state.get("desired_total_count", -1)) == 0, "Long-hold recall must drop the squadron desired_total_count back to zero before the recover sequence finishes"):
 		return
 	if not T.require_true(self, not player.request_primary_fire(), "Recovering must continue suppressing player weapon input until the return sequence is fully complete"):
 		return
@@ -124,3 +129,18 @@ func _press_world_key(world: Node, keycode: Key) -> void:
 	event.keycode = keycode
 	event.physical_keycode = keycode
 	world._unhandled_input(event)
+
+func _release_world_key(world: Node, keycode: Key) -> void:
+	var event := InputEventKey.new()
+	event.pressed = false
+	event.echo = false
+	event.keycode = keycode
+	event.physical_keycode = keycode
+	world._unhandled_input(event)
+
+func _hold_world_key(world: Node, keycode: Key, frame_count: int) -> void:
+	_press_world_key(world, keycode)
+	for _frame_index in range(frame_count):
+		await physics_frame
+		await process_frame
+	_release_world_key(world, keycode)

@@ -78,6 +78,7 @@ var _strike_explosion_elapsed_sec := 0.0
 var _strike_signal_loss_elapsed_sec := 0.0
 var _strike_explosion_world_position := Vector3.ZERO
 var _last_strike_result: Dictionary = {}
+var _recover_keep_player_camera := false
 
 func _ready() -> void:
 	_apply_presentation_scale()
@@ -142,14 +143,57 @@ func _unhandled_input(event: InputEvent) -> void:
 func request_toggle() -> Dictionary:
 	match _system_state:
 		SYSTEM_STATE_STOWED:
-			if _player_owner == null or not is_instance_valid(_player_owner):
-				_last_reject_reason = "missing_player_owner"
-				return {
-					"accepted": false,
-					"recognized": true,
-					"error": _last_reject_reason,
-				}
-			_begin_deploy()
+			return request_deploy()
+		SYSTEM_STATE_ACTIVE:
+			return request_recover()
+		SYSTEM_STATE_DEPLOYING, SYSTEM_STATE_RECOVERING:
+			_last_reject_reason = "transition_busy"
+			return {
+				"accepted": false,
+				"recognized": true,
+				"error": _last_reject_reason,
+				"state": _system_state,
+			}
+		_:
+			return {
+				"accepted": false,
+				"recognized": false,
+			}
+
+func request_deploy() -> Dictionary:
+	if _system_state != SYSTEM_STATE_STOWED:
+		_last_reject_reason = "transition_busy"
+		return {
+			"accepted": false,
+			"recognized": true,
+			"error": _last_reject_reason,
+			"state": _system_state,
+		}
+	if _player_owner == null or not is_instance_valid(_player_owner):
+		_last_reject_reason = "missing_player_owner"
+		return {
+			"accepted": false,
+			"recognized": true,
+			"error": _last_reject_reason,
+		}
+	_begin_deploy()
+	return {
+		"accepted": true,
+		"recognized": true,
+		"state": _system_state,
+	}
+
+func request_recover() -> Dictionary:
+	match _system_state:
+		SYSTEM_STATE_STOWED:
+			_last_reject_reason = ""
+			return {
+				"accepted": true,
+				"recognized": true,
+				"state": _system_state,
+			}
+		SYSTEM_STATE_DEPLOYING:
+			_begin_recover(true)
 			return {
 				"accepted": true,
 				"recognized": true,
@@ -164,18 +208,17 @@ func request_toggle() -> Dictionary:
 					"error": _last_reject_reason,
 					"state": _system_state,
 				}
-			_begin_recover()
+			_begin_recover(false)
 			return {
 				"accepted": true,
 				"recognized": true,
 				"state": _system_state,
 			}
-		SYSTEM_STATE_DEPLOYING, SYSTEM_STATE_RECOVERING:
-			_last_reject_reason = "transition_busy"
+		SYSTEM_STATE_RECOVERING:
+			_last_reject_reason = ""
 			return {
-				"accepted": false,
+				"accepted": true,
 				"recognized": true,
-				"error": _last_reject_reason,
 				"state": _system_state,
 			}
 		_:
@@ -183,6 +226,9 @@ func request_toggle() -> Dictionary:
 				"accepted": false,
 				"recognized": false,
 			}
+
+func get_system_state() -> String:
+	return _system_state
 
 func get_visual_root() -> Node3D:
 	return visual_root
@@ -288,6 +334,7 @@ func get_debug_state() -> Dictionary:
 
 func _begin_deploy() -> void:
 	_last_reject_reason = ""
+	_recover_keep_player_camera = false
 	_player_camera = _resolve_player_camera()
 	_transition_elapsed_sec = 0.0
 	_transition_start_position = _resolve_retrieval_anchor()
@@ -314,8 +361,9 @@ func _begin_deploy() -> void:
 	_system_state = SYSTEM_STATE_DEPLOYING
 	_apply_camera_ownership()
 
-func _begin_recover() -> void:
+func _begin_recover(keep_player_camera: bool = false) -> void:
 	_last_reject_reason = ""
+	_recover_keep_player_camera = keep_player_camera
 	_transition_elapsed_sec = 0.0
 	_transition_start_position = global_position
 	_transition_target_position = _resolve_retrieval_anchor()
@@ -428,10 +476,14 @@ func _apply_camera_ownership() -> void:
 	if camera == null:
 		return
 	match _system_state:
-		SYSTEM_STATE_ACTIVE, SYSTEM_STATE_RECOVERING:
+		SYSTEM_STATE_ACTIVE:
 			camera.current = true
 			if _player_camera != null:
 				_player_camera.current = false
+		SYSTEM_STATE_RECOVERING:
+			camera.current = not _recover_keep_player_camera
+			if _player_camera != null:
+				_player_camera.current = _recover_keep_player_camera
 		_:
 			camera.current = false
 			if _player_camera != null:

@@ -20,6 +20,8 @@ func _run() -> void:
 
 	if not T.require_true(self, world.has_method("get_player_drone_debug_state"), "Drone-assisted artillery operation flow requires drone debug-state introspection"):
 		return
+	if not T.require_true(self, world.has_method("get_player_drone_squadron_debug_state"), "Drone-assisted artillery operation flow requires drone squadron introspection"):
+		return
 	if not T.require_true(self, world.has_method("get_artillery_observation_state"), "Drone-assisted artillery operation flow requires artillery observation introspection"):
 		return
 	if not T.require_true(self, world.has_method("get_last_artillery_shell_explosion_result"), "Drone-assisted artillery operation flow requires shell impact introspection"):
@@ -56,6 +58,13 @@ func _run() -> void:
 
 	var drone_runtime := world.get_node_or_null("PlayerDroneRuntime") as CharacterBody3D
 	if not T.require_true(self, drone_runtime != null, "Drone-assisted artillery operation flow requires the mounted PlayerDroneRuntime node"):
+		return
+	_tap_world_key(world, KEY_KP_5)
+	await _settle_frames(18)
+	var squadron_state := world.get_player_drone_squadron_debug_state() as Dictionary
+	if not T.require_true(self, int(squadron_state.get("desired_total_count", 0)) == 2, "Drone-assisted artillery operation flow must allow short KP_5 to add one wingman without breaking composite mode"):
+		return
+	if not T.require_true(self, str((world.get_player_drone_debug_state() as Dictionary).get("camera_owner", "")) == "drone", "Adding a wingman in composite mode must not steal camera ownership away from the leader drone"):
 		return
 	await _settle_frames(8)
 	var drone_y_before_e := drone_runtime.global_position.y
@@ -101,6 +110,17 @@ func _run() -> void:
 	if not T.require_true(self, bool((world.get_world_howitzer_operation_state() as Dictionary).get("active", false)), "Drone-assisted artillery operation flow must keep howitzer operation active after the shot"):
 		return
 
+	await _hold_world_key(world, KEY_KP_5, 40)
+	await _settle_frames(30)
+	squadron_state = world.get_player_drone_squadron_debug_state() as Dictionary
+	if not T.require_true(self, int(squadron_state.get("desired_total_count", -1)) == 0, "Long-hold KP_5 in composite mode must clear the desired squadron count back to zero"):
+		return
+	if not T.require_true(self, bool((world.get_world_howitzer_operation_state() as Dictionary).get("active", false)), "Long-hold KP_5 in composite mode must keep howitzer operation active after the drones are recalled"):
+		return
+	artillery_solution_state = hud.get_artillery_solution_state() as Dictionary
+	if not T.require_true(self, bool(artillery_solution_state.get("visible", false)), "Long-hold KP_5 in composite mode must keep the artillery solution HUD visible after squad recall"):
+		return
+
 	world.queue_free()
 	await process_frame
 	T.pass_and_quit(self)
@@ -133,6 +153,20 @@ func _build_key_event(keycode: Key, pressed: bool) -> InputEventKey:
 
 func _press_world_key(world: Node, keycode: Key) -> void:
 	world._unhandled_input(_build_key_event(keycode, true))
+
+func _release_world_key(world: Node, keycode: Key) -> void:
+	world._unhandled_input(_build_key_event(keycode, false))
+
+func _tap_world_key(world: Node, keycode: Key) -> void:
+	_press_world_key(world, keycode)
+	_release_world_key(world, keycode)
+
+func _hold_world_key(world: Node, keycode: Key, frame_count: int) -> void:
+	_press_world_key(world, keycode)
+	for _frame_index in range(frame_count):
+		await physics_frame
+		await process_frame
+	_release_world_key(world, keycode)
 
 func _release_live_key(world: Node, keycode: Key) -> void:
 	var event := _build_key_event(keycode, false)

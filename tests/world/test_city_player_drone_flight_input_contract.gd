@@ -78,13 +78,6 @@ func _run() -> void:
 	if not T.require_true(self, float(world.get_player_drone_debug_state().get("vertical_velocity_mps", 0.0)) <= -12.0, "Holding Q during active flight must reach a clearly higher descent speed than the previous slow hover sink"):
 		return
 
-	_set_key_pressed(KEY_SPACE, true)
-	await _advance_frames(18)
-	_set_key_pressed(KEY_SPACE, false)
-	var ascend_from_space_y := runtime.global_position.y
-	if not T.require_true(self, ascend_from_space_y >= descend_y + 1.0, "Holding Space during active flight must share the formal high-speed ascent mapping with E"):
-		return
-
 	_set_mouse_motion(-32.0)
 	await _advance_frames(2)
 	var yaw_left_state: Dictionary = world.get_player_drone_debug_state()

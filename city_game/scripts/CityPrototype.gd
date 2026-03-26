@@ -41,6 +41,7 @@ const CityRifleFireEmitterScene := preload("res://city_game/combat/CityRifleFire
 const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesignatorBeam.gd")
 const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
 const CityPlayerDroneScene := preload("res://city_game/combat/drone/CityDroneGunship.tscn")
+const CityPlayerDroneSquadronRuntimeScript := preload("res://city_game/combat/drone/CityPlayerDroneSquadronRuntime.gd")
 const CityHelicopterGunshipWorldEncounterScene := preload("res://city_game/combat/helicopter/CityHelicopterGunshipWorldEncounter.tscn")
 const CityWorldInspectionResolver := preload("res://city_game/world/inspection/CityWorldInspectionResolver.gd")
 const CityBuildingSceneExporter := preload("res://city_game/world/serviceability/CityBuildingSceneExporter.gd")
@@ -140,6 +141,7 @@ const RIFLE_FIRE_AUDIO_RESTART_MARGIN_SEC := 0.08
 const WORLD_HOWITZER_SUMMON_DISTANCE_M := 10.0
 const WORLD_HOWITZER_INTERACTION_RADIUS_M := 7.0
 const WORLD_HOWITZER_RELEASE_RADIUS_M := 20.0
+const PLAYER_DRONE_LONG_PRESS_THRESHOLD_SEC := 0.5
 
 @onready var generated_city: Node = $GeneratedCity
 @onready var hud: CanvasLayer = $Hud
@@ -176,6 +178,7 @@ var _task_pin_projection = null
 var _task_trigger_runtime = null
 var _task_world_marker_runtime: Node3D = null
 var _player_drone_runtime: Node3D = null
+var _player_drone_squadron_runtime: Node3D = null
 var _helicopter_gunship_encounter_runtime: Node3D = null
 var _helicopter_gunship_pending_reset_task_id := ""
 var _helicopter_gunship_pending_reset_delay_sec := 0.0
@@ -220,6 +223,9 @@ var _vehicle_radio_quick_selected_index := -1
 var _vehicle_radio_power_on := false
 var _vehicle_radio_browser_request_count := 0
 var _vehicle_radio_catalog_proxy_mode := VEHICLE_RADIO_DIRECT_PROXY_MODE
+var _player_drone_hotkey_hold_active := false
+var _player_drone_hotkey_hold_elapsed_sec := 0.0
+var _player_drone_hotkey_press_consumed_as_immediate_short := false
 var _minimap_snapshot_cache: Dictionary = {}
 var _minimap_cache_key := ""
 var _minimap_cache_hits := 0
@@ -402,6 +408,7 @@ func _ready() -> void:
 	_ensure_destination_world_marker()
 	_ensure_task_system_runtimes()
 	_ensure_player_drone_runtime()
+	_ensure_player_drone_squadron_runtime()
 	_ensure_helicopter_gunship_encounter_runtime()
 	if chunk_renderer != null and chunk_renderer.has_method("setup"):
 		chunk_renderer.setup(_world_config, _world_data)
@@ -492,6 +499,7 @@ func _exit_tree() -> void:
 	_building_export_pending_result.clear()
 
 func _process(delta: float) -> void:
+	_update_player_drone_hotkey_hold_timer(delta)
 	_collect_completed_vehicle_radio_catalog_sync_job()
 	_collect_completed_building_export_job()
 	_expire_exportable_building_inspection_window()
@@ -563,6 +571,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				return
 		if _full_map_open:
+			return
+		if key_event.keycode == KEY_KP_5 or key_event.physical_keycode == KEY_KP_5:
+			if key_event.pressed:
+				if not key_event.echo:
+					_begin_player_drone_hotkey_hold()
+			else:
+				_end_player_drone_hotkey_hold()
+			get_viewport().set_input_as_handled()
 			return
 		if key_event.pressed and not key_event.echo and (key_event.keycode == KEY_KP_ADD or key_event.physical_keycode == KEY_KP_ADD):
 			var export_request := request_export_from_last_building_inspection()
@@ -1218,6 +1234,24 @@ func get_player_drone_debug_state() -> Dictionary:
 		}
 	return (_player_drone_runtime.get_debug_state() as Dictionary).duplicate(true)
 
+func get_player_drone_squadron_debug_state() -> Dictionary:
+	_ensure_player_drone_runtime()
+	_ensure_player_drone_squadron_runtime()
+	if _player_drone_squadron_runtime == null or not _player_drone_squadron_runtime.has_method("get_debug_state"):
+		return {
+			"desired_total_count": 0,
+			"active_total_count": 0,
+			"wingman_count": 0,
+			"max_total_count": 0,
+			"leader_system_state": "stowed",
+			"leader_world_position": Vector3.ZERO,
+			"member_world_positions": [],
+			"slot_world_positions": [],
+			"last_action": "",
+			"last_reject_reason": "missing_runtime",
+		}
+	return (_player_drone_squadron_runtime.get_debug_state() as Dictionary).duplicate(true)
+
 func get_active_helicopter_gunship() -> Node3D:
 	if _helicopter_gunship_encounter_runtime == null or not _helicopter_gunship_encounter_runtime.has_method("get_active_gunship"):
 		return null
@@ -1225,7 +1259,8 @@ func get_active_helicopter_gunship() -> Node3D:
 
 func _toggle_player_drone_runtime() -> Dictionary:
 	_ensure_player_drone_runtime()
-	if _player_drone_runtime == null or not _player_drone_runtime.has_method("request_toggle"):
+	_ensure_player_drone_squadron_runtime()
+	if _player_drone_squadron_runtime == null or not _player_drone_squadron_runtime.has_method("request_short_press"):
 		return {
 			"accepted": false,
 			"recognized": false,
@@ -1261,7 +1296,18 @@ func _toggle_player_drone_runtime() -> Dictionary:
 			"recognized": true,
 			"error": "player_driving_vehicle",
 		}
-	return _player_drone_runtime.request_toggle()
+	return _player_drone_squadron_runtime.request_short_press()
+
+func _recall_player_drone_squadron() -> Dictionary:
+	_ensure_player_drone_runtime()
+	_ensure_player_drone_squadron_runtime()
+	if _player_drone_squadron_runtime == null or not _player_drone_squadron_runtime.has_method("request_recall_all"):
+		return {
+			"accepted": false,
+			"recognized": false,
+			"error": "missing_runtime",
+		}
+	return _player_drone_squadron_runtime.request_recall_all()
 
 func _peek_player_drone_debug_state() -> Dictionary:
 	var runtime := _player_drone_runtime
@@ -1285,6 +1331,40 @@ func _peek_player_drone_debug_state() -> Dictionary:
 func _is_player_drone_runtime_busy() -> bool:
 	var debug_state: Dictionary = _peek_player_drone_debug_state()
 	return str(debug_state.get("system_state", "stowed")) != "stowed"
+
+func _update_player_drone_hotkey_hold_timer(delta: float) -> void:
+	if not _player_drone_hotkey_hold_active:
+		return
+	_player_drone_hotkey_hold_elapsed_sec += maxf(delta, 0.0)
+
+func _begin_player_drone_hotkey_hold() -> void:
+	_player_drone_hotkey_hold_active = true
+	_player_drone_hotkey_hold_elapsed_sec = 0.0
+	_player_drone_hotkey_press_consumed_as_immediate_short = false
+	var drone_state: Dictionary = _peek_player_drone_debug_state()
+	if bool(drone_state.get("strike_committed", false)):
+		var strike_reject_result := _recall_player_drone_squadron()
+		_player_drone_hotkey_press_consumed_as_immediate_short = bool(strike_reject_result.get("recognized", false))
+		return
+	if str(drone_state.get("system_state", "stowed")) == "stowed":
+		var short_press_result := _toggle_player_drone_runtime()
+		_player_drone_hotkey_press_consumed_as_immediate_short = bool(short_press_result.get("recognized", false))
+
+func _end_player_drone_hotkey_hold() -> void:
+	if not _player_drone_hotkey_hold_active:
+		return
+	if not _player_drone_hotkey_press_consumed_as_immediate_short:
+		if _player_drone_hotkey_hold_elapsed_sec >= PLAYER_DRONE_LONG_PRESS_THRESHOLD_SEC:
+			_recall_player_drone_squadron()
+		else:
+			_toggle_player_drone_runtime()
+	_player_drone_hotkey_hold_active = false
+	_player_drone_hotkey_hold_elapsed_sec = 0.0
+	_player_drone_hotkey_press_consumed_as_immediate_short = false
+
+func _get_player_drone_requested_total_count() -> int:
+	var squadron_state := get_player_drone_squadron_debug_state()
+	return int(squadron_state.get("desired_total_count", 0))
 
 func is_player_driving_vehicle() -> bool:
 	return player != null and player.has_method("is_driving_vehicle") and bool(player.is_driving_vehicle())
@@ -4204,6 +4284,21 @@ func _ensure_player_drone_runtime() -> void:
 			add_child(_player_drone_runtime)
 	if _player_drone_runtime != null and _player_drone_runtime.has_method("bind_player_owner"):
 		_player_drone_runtime.bind_player_owner(player)
+
+func _ensure_player_drone_squadron_runtime() -> void:
+	_ensure_player_drone_runtime()
+	if _player_drone_squadron_runtime != null and is_instance_valid(_player_drone_squadron_runtime):
+		if _player_drone_squadron_runtime.has_method("configure"):
+			_player_drone_squadron_runtime.configure(player, _player_drone_runtime)
+		return
+	_player_drone_squadron_runtime = get_node_or_null("PlayerDroneSquadronRuntime") as Node3D
+	if _player_drone_squadron_runtime == null and CityPlayerDroneSquadronRuntimeScript != null:
+		_player_drone_squadron_runtime = CityPlayerDroneSquadronRuntimeScript.new()
+		if _player_drone_squadron_runtime != null:
+			_player_drone_squadron_runtime.name = "PlayerDroneSquadronRuntime"
+			add_child(_player_drone_squadron_runtime)
+	if _player_drone_squadron_runtime != null and _player_drone_squadron_runtime.has_method("configure"):
+		_player_drone_squadron_runtime.configure(player, _player_drone_runtime)
 
 func _ensure_interaction_runtimes() -> void:
 	if _dialogue_runtime == null:

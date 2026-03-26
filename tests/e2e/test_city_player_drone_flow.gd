@@ -23,6 +23,8 @@ func _run() -> void:
 		return
 	if not T.require_true(self, world.has_method("get_player_drone_debug_state"), "Player drone flow requires CityPrototype.get_player_drone_debug_state()"):
 		return
+	if not T.require_true(self, world.has_method("get_player_drone_squadron_debug_state"), "Player drone flow requires CityPrototype.get_player_drone_squadron_debug_state()"):
+		return
 
 	var runtime := world.get_node_or_null("PlayerDroneRuntime") as CharacterBody3D
 	if not T.require_true(self, runtime != null, "Player drone flow requires the mounted PlayerDroneRuntime node"):
@@ -49,13 +51,16 @@ func _run() -> void:
 	if not T.require_true(self, runtime.global_position.y >= baseline_drone_position.y + 0.4, "End-to-end drone flow must let the active drone climb under upward input"):
 		return
 
-	_press_world_key(world, KEY_KP_5)
+	await _hold_world_key(world, KEY_KP_5, 40)
 	var stowed_state := await _wait_for_state(world, "stowed", 180)
+	var stowed_squadron_state: Dictionary = world.get_player_drone_squadron_debug_state()
 	if not T.require_true(self, str(stowed_state.get("camera_owner", "")) == "player", "End-to-end drone flow must restore camera ownership to the player after recovery completes"):
 		return
 	if not T.require_true(self, str(stowed_state.get("input_owner", "")) == "player", "End-to-end drone flow must restore input ownership to the player after recovery completes"):
 		return
 	if not T.require_true(self, bool(player.is_control_enabled()), "End-to-end drone flow must restore PlayerController control after recovery completes"):
+		return
+	if not T.require_true(self, int(stowed_squadron_state.get("active_total_count", -1)) == 0 and int(stowed_squadron_state.get("desired_total_count", -1)) == 0, "End-to-end drone flow must leave the squadron fully cleared after long-hold recovery completes"):
 		return
 	if not T.require_true(self, player.request_primary_fire(), "End-to-end drone flow must restore the player weapon chain once the drone has been recovered"):
 		return
@@ -85,6 +90,21 @@ func _press_world_key(world: Node, keycode: Key) -> void:
 	event.keycode = keycode
 	event.physical_keycode = keycode
 	world._unhandled_input(event)
+
+func _release_world_key(world: Node, keycode: Key) -> void:
+	var event := InputEventKey.new()
+	event.pressed = false
+	event.echo = false
+	event.keycode = keycode
+	event.physical_keycode = keycode
+	world._unhandled_input(event)
+
+func _hold_world_key(world: Node, keycode: Key, frame_count: int) -> void:
+	_press_world_key(world, keycode)
+	for _frame_index in range(frame_count):
+		await physics_frame
+		await process_frame
+	_release_world_key(world, keycode)
 
 func _set_key_pressed(keycode: Key, pressed: bool) -> void:
 	var event := InputEventKey.new()

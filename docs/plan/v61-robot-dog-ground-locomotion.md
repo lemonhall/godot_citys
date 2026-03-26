@@ -131,3 +131,5 @@
 - `A = 左转`、`D = 右转` 已被明确冻结为输入合同，并同步回写到 `CityRobotDogControlRuntime.gd -> CityRobotDog.gd` 的 locomotion/gait 符号链，防止再次出现“物理朝向与 locomotion_state 名义相反”的问题。
 - 共享指南针 / 小地图 player marker / 世界 focus 已在机械狗控制态下切到 active robot dog runtime，不再读取被冻结的 `Player` 朝向。
 - `CityRobotDogControlRuntime.tscn` 的正式展示口径已更新为更大的机械狗尺寸和更高的俯视第三人称机位；这条口径由 `tests/world/test_city_player_robot_dog_presentation_contract.gd` 持续锁定。
+- 低速 `W` 已冻结为单腿依次换步的四拍 crawl，不再允许 paired front-leg shove；更快的 `Shift+W` 继续保留对角 trot。对应合同已补进 `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd`。
+- 常速 `W` 已从最初过慢的散步档抬到旧 sprint 档位附近；现在“快一点的日常跑动”和“更快 sprint”不再共用同一套节奏和速度口径。

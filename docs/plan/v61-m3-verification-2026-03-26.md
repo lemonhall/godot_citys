@@ -10,6 +10,8 @@
 - `A = 左转`、`D = 右转` 的输入 / locomotion / gait 符号统一
 - 机械狗鼠标视角、俯仰限位，以及共享指南针 / 小地图朝向跟随机械狗
 - 机械狗正式尺寸抬回到更大的可读量级，第三人称相机抬高到更明显的俯视机位
+- `W` 常速提升到旧 sprint 档位附近，`Shift+W` 保留更快 sprint
+- `W` 改为单腿依次换步的四拍 crawl，`Shift+W` 保留更快的对角 trot，不再出现“左右前腿一起迈”的假步态
 - `RobotDogLab` 与主世界共用同一条正式控制 runtime
 - `v60` 的 joint / pivot / crouch / lab contract 不回退
 
@@ -48,7 +50,7 @@ foreach($test in $tests){
 |---|---|---|
 | `test_city_player_robot_dog_toggle_contract.gd` | PASS | `KP_4` 召唤 / 回收、2m 前向生成、朝向继承成立 |
 | `test_city_player_robot_dog_camera_takeover_contract.gd` | PASS | 主世界第三人称镜头接管、`Player` freeze、鼠标 yaw/pitch、共享 compass/minimap 朝向跟随机械狗成立 |
-| `test_city_player_robot_dog_ground_locomotion_contract.gd` | PASS | `walk / run / backward / turn / turn_move / prone`、`A=左/D=右` 与 gait cadence 合同成立 |
+| `test_city_player_robot_dog_ground_locomotion_contract.gd` | PASS | `walk / run / backward / turn / turn_move / prone`、`A=左/D=右`、更快常速、body heave/pitch/roll 与四拍 walk / 更快 trot 合同成立 |
 | `test_city_player_robot_dog_presentation_contract.gd` | PASS | 机械狗视觉尺寸已放大一倍量级，相机抬高到更明显俯视，最低可见点贴地 |
 | `test_robot_dog_lab_control_contract.gd` | PASS | `RobotDogLab` 已挂正式 control runtime，并默认进入 dog control |
 | `test_city_navigation_compass_hud_contract.gd` | PASS | 共享指南针 HUD 基础合同未回退，主世界玩家链路仍维持正北/正东 bearing 合同 |
@@ -81,3 +83,4 @@ foreach($test in $tests){
 - 2026-03-26 追加修复：`CityRobotDogControlRuntime` 已把 `A=左转 / D=右转` 与 `CityRobotDog.gd` 的 locomotion/gait 符号重新统一，避免“输入左转、视觉却像右转”的双重合同漂移。
 - 2026-03-26 追加修复：机械狗控制态已把 shared compass / minimap heading / world focus 从冻结的 `Player` 身上切到 active robot dog runtime，鼠标右移会让 shared bearing 顺时针增加。
 - 2026-03-26 追加修复：`CityRobotDogControlRuntime.tscn` 已把 `visual_scale` 提回 `4.0`，并把第三人称相机抬到更高的俯视机位，解决“机械狗过小、相机过低”的表现问题。
+- 2026-03-26 追加修复：`W` 常速已提升到旧 sprint 档位附近，`Shift+W` 继续保留更快 sprint；`CityRobotDog.gd` 的 walk gait 也从两拍对角节奏切成单腿依次换步的四拍 crawl，避免低速前进时出现“左右前腿一起迈”的假步态。

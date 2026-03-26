@@ -46,12 +46,26 @@ func _run() -> void:
 	var walk_state := runtime.get_debug_state() as Dictionary
 	if not T.require_true(self, str(walk_state.get("locomotion_state", "")) == "walk", "Holding W must place the robot dog into walk locomotion state"):
 		return
-	if not T.require_true(self, float(walk_state.get("speed_mps", 0.0)) >= 0.6, "Walk locomotion must report a measurable forward speed instead of staying near zero"):
+	if not T.require_true(self, float(walk_state.get("speed_mps", 0.0)) >= 3.0, "Walk locomotion must now feel like the previous usable daily speed instead of the old too-slow crawl"):
 		return
 	if not T.require_true(self, float(walk_state.get("gait_cycle_hz", 0.0)) >= 0.8, "Walk locomotion must expose a measurable gait_cycle_hz instead of root-sliding without a gait state"):
 		return
 	var walk_leg_motion_delta := await _sample_leg_motion(runtime, 10)
 	if not T.require_true(self, walk_leg_motion_delta >= 2.0, "Walk locomotion must visibly articulate the leg rig over time instead of leaving all joint angles static"):
+		return
+	var walk_body_motion := await _sample_body_motion(runtime, 18)
+	if not T.require_true(self, float(walk_body_motion.get("heave_range_m", 0.0)) >= 0.012, "Walk locomotion must produce visible body heave instead of keeping the torso perfectly locked on a ruler-flat line"):
+		return
+	if not T.require_true(self, float(walk_body_motion.get("pitch_range_deg", 0.0)) >= 0.8, "Walk locomotion must produce visible body pitch motion instead of keeping the torso perfectly horizontal"):
+		return
+	if not T.require_true(self, float(walk_body_motion.get("roll_range_deg", 0.0)) >= 0.8, "Walk locomotion must produce visible body roll motion instead of keeping the torso perfectly level left-to-right"):
+		return
+	var walk_swing_batches := await _collect_walk_swing_start_batches(runtime, 56)
+	if not T.require_true(self, int(walk_swing_batches.get("batched_start_count", 0)) >= 4, "Walk locomotion must expose multiple single-leg swing starts so the dog no longer looks like a paired front-leg shove"):
+		return
+	if not T.require_true(self, not bool(walk_swing_batches.get("saw_multi_leg_start_batch", true)), "Walk locomotion must not start multiple legs in the same beat; one leg at a time is the formal low-speed quadruped contract here"):
+		return
+	if not T.require_true(self, bool(walk_swing_batches.get("saw_front_leg_start", false)) and bool(walk_swing_batches.get("saw_rear_leg_start", false)), "Walk locomotion must rotate both front and rear legs through the single-leg crawl sequence instead of faking it with one pair only"):
 		return
 
 	_press_key(runtime, KEY_SHIFT)
@@ -62,6 +76,9 @@ func _run() -> void:
 	if not T.require_true(self, float(run_state.get("speed_mps", 0.0)) > float(walk_state.get("speed_mps", 0.0)) + 0.4, "Run locomotion must be faster than walk by a clear margin"):
 		return
 	if not T.require_true(self, float(run_state.get("gait_cycle_hz", 0.0)) > float(walk_state.get("gait_cycle_hz", 0.0)), "Run locomotion must increase gait_cycle_hz above walk instead of reusing the same cadence"):
+		return
+	var run_body_motion := await _sample_body_motion(runtime, 18)
+	if not T.require_true(self, float(run_body_motion.get("heave_range_m", 0.0)) >= float(walk_body_motion.get("heave_range_m", 0.0)) * 0.9, "Run locomotion must preserve visible body heave instead of flattening the torso back into a rigid brick"):
 		return
 
 	_release_key(runtime, KEY_SHIFT)
@@ -191,6 +208,82 @@ func _sample_leg_motion(runtime: Node, frame_count: int) -> float:
 		var next_legs: Array = next_pose.get("legs", [])
 		maximum_delta = maxf(maximum_delta, _max_leg_angle_delta_deg(baseline_legs, next_legs))
 	return maximum_delta
+
+func _sample_body_motion(runtime: Node, frame_count: int) -> Dictionary:
+	var visual_robot_dog := runtime.get_visual_robot_dog() as Node3D
+	if visual_robot_dog == null or not visual_robot_dog.has_method("get_pose_debug_state"):
+		return {
+			"heave_range_m": 0.0,
+			"pitch_range_deg": 0.0,
+			"roll_range_deg": 0.0,
+		}
+	var min_heave := INF
+	var max_heave := -INF
+	var min_pitch := INF
+	var max_pitch := -INF
+	var min_roll := INF
+	var max_roll := -INF
+	for _frame_index in range(frame_count):
+		await physics_frame
+		await process_frame
+		var pose_state := visual_robot_dog.get_pose_debug_state() as Dictionary
+		var heave := float(pose_state.get("locomotion_body_heave_m", 0.0))
+		var pitch := float(pose_state.get("locomotion_body_pitch_deg", 0.0))
+		var roll := float(pose_state.get("locomotion_body_roll_deg", 0.0))
+		min_heave = minf(min_heave, heave)
+		max_heave = maxf(max_heave, heave)
+		min_pitch = minf(min_pitch, pitch)
+		max_pitch = maxf(max_pitch, pitch)
+		min_roll = minf(min_roll, roll)
+		max_roll = maxf(max_roll, roll)
+	return {
+		"heave_range_m": 0.0 if min_heave == INF else max_heave - min_heave,
+		"pitch_range_deg": 0.0 if min_pitch == INF else max_pitch - min_pitch,
+		"roll_range_deg": 0.0 if min_roll == INF else max_roll - min_roll,
+	}
+
+func _collect_walk_swing_start_batches(runtime: Node, frame_count: int) -> Dictionary:
+	var visual_robot_dog := runtime.get_visual_robot_dog() as Node3D
+	if visual_robot_dog == null or not visual_robot_dog.has_method("get_pose_debug_state"):
+		return {
+			"batched_start_count": 0,
+			"saw_multi_leg_start_batch": true,
+			"saw_front_leg_start": false,
+			"saw_rear_leg_start": false,
+		}
+	var previous_modes := {}
+	var batched_start_count := 0
+	var saw_multi_leg_start_batch := false
+	var saw_front_leg_start := false
+	var saw_rear_leg_start := false
+	for _frame_index in range(frame_count):
+		await physics_frame
+		await process_frame
+		var pose_state := visual_robot_dog.get_pose_debug_state() as Dictionary
+		var legs: Array = pose_state.get("legs", [])
+		var start_batch_size := 0
+		for leg_variant in legs:
+			var leg := leg_variant as Dictionary
+			var leg_id := str(leg.get("leg_id", ""))
+			var gait_mode := str(leg.get("gait_mode", ""))
+			var previous_mode := str(previous_modes.get(leg_id, "stance"))
+			if gait_mode == "swing" and previous_mode != "swing":
+				start_batch_size += 1
+				if leg_id.ends_with("f"):
+					saw_front_leg_start = true
+				else:
+					saw_rear_leg_start = true
+			previous_modes[leg_id] = gait_mode
+		if start_batch_size > 0:
+			batched_start_count += 1
+			if start_batch_size > 1:
+				saw_multi_leg_start_batch = true
+	return {
+		"batched_start_count": batched_start_count,
+		"saw_multi_leg_start_batch": saw_multi_leg_start_batch,
+		"saw_front_leg_start": saw_front_leg_start,
+		"saw_rear_leg_start": saw_rear_leg_start,
+	}
 
 func _max_leg_angle_delta_deg(previous_legs: Array, current_legs: Array) -> float:
 	var maximum_delta := 0.0

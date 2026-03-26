@@ -139,6 +139,7 @@ func get_debug_state() -> Dictionary:
 	if leader_state != "stowed":
 		member_world_positions.append(leader_position)
 	var striking_wingman_count := 0
+	var resolved_strike_event_count := 0
 	for wingman in _wingmen:
 		if wingman == null or not is_instance_valid(wingman):
 			continue
@@ -149,6 +150,9 @@ func get_debug_state() -> Dictionary:
 			var state_name := str(wingman_state.get("state", "formation"))
 			if state_name == "striking" or state_name == "exploding":
 				striking_wingman_count += 1
+	for strike_event: Dictionary in _recent_strike_events:
+		if bool(strike_event.get("resolved", false)):
+			resolved_strike_event_count += 1
 	for slot_index in range(_wingmen.size()):
 		slot_world_positions.append(_resolve_slot_world_position(slot_index))
 	return {
@@ -164,6 +168,7 @@ func get_debug_state() -> Dictionary:
 		"slot_world_positions": slot_world_positions,
 		"wingman_states": wingman_states,
 		"recent_strike_events": _recent_strike_events.duplicate(true),
+		"resolved_strike_event_count": resolved_strike_event_count,
 		"pending_area_assignment_count": _pending_area_assignments.size(),
 		"last_action": _last_action,
 		"last_reject_reason": _last_reject_reason,
@@ -367,11 +372,13 @@ func _dispatch_due_area_wave() -> void:
 
 func _record_strike_event(wingman: Node3D, order_kind: String, wave_index: int, target_world_position: Vector3) -> void:
 	var slot_index := -1
+	var wingman_state: Dictionary = {}
 	if wingman != null and is_instance_valid(wingman):
+		wingman_state = _read_wingman_debug_state(wingman)
 		if wingman.has_method("get_slot_index"):
 			slot_index = int(wingman.get_slot_index())
-		elif wingman.has_method("get_debug_state"):
-			slot_index = int((wingman.get_debug_state() as Dictionary).get("slot_index", -1))
+		elif not wingman_state.is_empty():
+			slot_index = int(wingman_state.get("slot_index", -1))
 	_recent_strike_events.append({
 		"dispatch_time_sec": _elapsed_sec,
 		"order_kind": order_kind,
@@ -379,6 +386,20 @@ func _record_strike_event(wingman: Node3D, order_kind: String, wave_index: int, 
 		"target_world_position": target_world_position,
 		"wingman_name": wingman.name if wingman != null and is_instance_valid(wingman) else "",
 		"wingman_slot_index": slot_index,
+		"path_seed": int(wingman_state.get("path_seed", 0)),
+		"planned_lateral_offset_m": float(wingman_state.get("planned_lateral_offset_m", 0.0)),
+		"planned_arc_height_m": float(wingman_state.get("planned_arc_height_m", 0.0)),
+		"resolved": false,
+		"impact_fx_played": false,
+		"impact_fx_ring_enabled": false,
+		"impact_fx_sphere_enabled": false,
+		"impact_audio_trigger_count": 0,
+		"impact_audio_stream_path": "",
+		"impact_world_position": Vector3.ZERO,
+		"min_recorded_speed_scale": 0.0,
+		"max_recorded_speed_scale": 0.0,
+		"max_recorded_curve_offset_m": 0.0,
+		"max_recorded_vertical_offset_m": 0.0,
 	})
 	while _recent_strike_events.size() > strike_event_history_limit:
 		_recent_strike_events.pop_front()
@@ -391,6 +412,7 @@ func _prune_spent_wingmen() -> void:
 			spent_count += 1
 			continue
 		if wingman.has_method("is_spent") and bool(wingman.is_spent()):
+			_hydrate_resolved_strike_event(_read_wingman_debug_state(wingman))
 			spent_count += 1
 			wingman.queue_free()
 			continue
@@ -400,6 +422,44 @@ func _prune_spent_wingmen() -> void:
 		return
 	var leader_baseline := 0 if _resolve_leader_system_state() == "stowed" else 1
 	_desired_total_count = max(leader_baseline, _desired_total_count - spent_count)
+
+func _read_wingman_debug_state(wingman: Node3D) -> Dictionary:
+	if wingman == null or not is_instance_valid(wingman) or not wingman.has_method("get_debug_state"):
+		return {}
+	return (wingman.get_debug_state() as Dictionary).duplicate(true)
+
+func _hydrate_resolved_strike_event(wingman_state: Dictionary) -> void:
+	if wingman_state.is_empty():
+		return
+	var slot_index := int(wingman_state.get("slot_index", -1))
+	if slot_index < 0:
+		return
+	var strike_result := wingman_state.get("last_strike_result", {}) as Dictionary
+	for event_index in range(_recent_strike_events.size() - 1, -1, -1):
+		var strike_event := _recent_strike_events[event_index]
+		if int(strike_event.get("wingman_slot_index", -1)) != slot_index:
+			continue
+		if bool(strike_event.get("resolved", false)):
+			continue
+		strike_event["resolved"] = true
+		strike_event["resolved_time_sec"] = _elapsed_sec
+		strike_event["path_seed"] = int(wingman_state.get("path_seed", int(strike_event.get("path_seed", 0))))
+		strike_event["planned_lateral_offset_m"] = float(wingman_state.get("planned_lateral_offset_m", float(strike_event.get("planned_lateral_offset_m", 0.0))))
+		strike_event["planned_arc_height_m"] = float(wingman_state.get("planned_arc_height_m", float(strike_event.get("planned_arc_height_m", 0.0))))
+		strike_event["min_recorded_speed_scale"] = float(wingman_state.get("min_recorded_speed_scale", 0.0))
+		strike_event["max_recorded_speed_scale"] = float(wingman_state.get("max_recorded_speed_scale", 0.0))
+		strike_event["max_recorded_curve_offset_m"] = float(wingman_state.get("max_recorded_curve_offset_m", 0.0))
+		strike_event["max_recorded_vertical_offset_m"] = float(wingman_state.get("max_recorded_vertical_offset_m", 0.0))
+		strike_event["trigger_kind"] = str(strike_result.get("trigger_kind", ""))
+		strike_event["impact_world_position"] = strike_result.get("impact_world_position", Vector3.ZERO) as Vector3
+		strike_event["impact_fx_played"] = bool(strike_result.get("impact_fx_played", false))
+		strike_event["impact_fx_ring_enabled"] = bool(strike_result.get("impact_fx_ring_enabled", false))
+		strike_event["impact_fx_sphere_enabled"] = bool(strike_result.get("impact_fx_sphere_enabled", false))
+		strike_event["impact_audio_trigger_count"] = int(strike_result.get("impact_audio_trigger_count", 0))
+		strike_event["impact_audio_stream_path"] = str(strike_result.get("impact_audio_stream_path", ""))
+		strike_event["last_strike_result"] = strike_result.duplicate(true)
+		_recent_strike_events[event_index] = strike_event
+		return
 
 func _build_result(accepted: bool) -> Dictionary:
 	var result := get_debug_state()

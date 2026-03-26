@@ -60,6 +60,7 @@ const STRIKE_STATE_SIGNAL_LOSS := "signal_loss"
 var _flight_controller = FlightControllerScript.new()
 var _player_owner: Node3D = null
 var _player_camera: Camera3D = null
+var _squadron_runtime: Node = null
 var _system_state := SYSTEM_STATE_STOWED
 var _transition_elapsed_sec := 0.0
 var _transition_start_position := Vector3.ZERO
@@ -111,6 +112,9 @@ func bind_player_owner(player_owner: Node3D) -> void:
 	_player_camera = _resolve_player_camera()
 	_apply_camera_ownership()
 
+func bind_squadron_runtime(squadron_runtime: Node) -> void:
+	_squadron_runtime = squadron_runtime if squadron_runtime != null and is_instance_valid(squadron_runtime) else null
+
 func _unhandled_input(event: InputEvent) -> void:
 	if _system_state != SYSTEM_STATE_ACTIVE:
 		return
@@ -123,7 +127,20 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT and _view_mode == VIEW_MODE_FPV_ADS and _strike_state == STRIKE_STATE_IDLE:
+			var single_dispatch_result := _request_single_wingman_strike()
+			if bool(single_dispatch_result.get("accepted", false)):
+				get_viewport().set_input_as_handled()
+				return
+			if str(single_dispatch_result.get("error", "")) != "no_wingman_available":
+				get_viewport().set_input_as_handled()
+				return
 			_begin_suicide_strike_lock()
+			get_viewport().set_input_as_handled()
+			return
+		if button.pressed and button.button_index == MOUSE_BUTTON_MIDDLE and _view_mode == VIEW_MODE_FPV_ADS and _strike_state == STRIKE_STATE_IDLE:
+			_request_area_wingman_strike()
+			get_viewport().set_input_as_handled()
+			return
 		get_viewport().set_input_as_handled()
 		return
 	if not (event is InputEventMouseMotion):
@@ -606,6 +623,37 @@ func _resolve_viewport_size() -> Vector2:
 		if visible_rect.size.x > 0.0 and visible_rect.size.y > 0.0:
 			viewport_size = visible_rect.size
 	return viewport_size
+
+func _resolve_squadron_runtime() -> Node:
+	if _squadron_runtime != null and is_instance_valid(_squadron_runtime):
+		return _squadron_runtime
+	var parent_node := get_parent()
+	if parent_node == null:
+		return null
+	var sibling_runtime := parent_node.get_node_or_null("PlayerDroneSquadronRuntime")
+	if sibling_runtime != null and is_instance_valid(sibling_runtime):
+		_squadron_runtime = sibling_runtime
+	return _squadron_runtime
+
+func _request_single_wingman_strike() -> Dictionary:
+	var squadron_runtime := _resolve_squadron_runtime()
+	if squadron_runtime == null or not squadron_runtime.has_method("request_single_wingman_strike"):
+		return {
+			"accepted": false,
+			"recognized": false,
+			"error": "no_wingman_available",
+		}
+	return (squadron_runtime.request_single_wingman_strike(_resolve_crosshair_world_target()) as Dictionary).duplicate(true)
+
+func _request_area_wingman_strike() -> Dictionary:
+	var squadron_runtime := _resolve_squadron_runtime()
+	if squadron_runtime == null or not squadron_runtime.has_method("request_area_wingman_strike"):
+		return {
+			"accepted": false,
+			"recognized": false,
+			"error": "missing_squadron_runtime",
+		}
+	return (squadron_runtime.request_area_wingman_strike(_resolve_crosshair_world_target()) as Dictionary).duplicate(true)
 
 func _build_query_exclusions() -> Array[RID]:
 	var exclusions: Array[RID] = []

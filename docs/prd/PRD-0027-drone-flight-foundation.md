@@ -325,6 +325,79 @@
 - 自动化测试至少断言：复合态下长按 `KP_5` 后，artillery solution HUD 仍保持可见。
 - 自动化测试至少断言：全收回完成后，drone camera ownership 已释放，但 howitzer 操炮 ownership 没有被一并释放。
 
+### REQ-0027-010 机群存在僚机时，FPV 左键必须优先派遣单架僚机自杀冲锋，而不是让长机先去送死
+
+**动机**：用户已经明确冻结了新的攻击语义：当机群里还有僚机可用时，长机优先保留观察与控制职责，左键只派 1 架僚机去执行自杀冲锋；只有真正只剩最后一架长机时，才回退到当前“长机自爆 + NO SIGNAL closeout”的旧链。
+
+**范围**：
+
+- 当 `leader active + FPV ADS active + active wingman count >= 1` 时：
+  - `MOUSE_BUTTON_LEFT`
+  - 必须优先派遣 1 架可用僚机执行自杀冲锋；
+  - 当前版本允许“任取 1 架”，但实现必须 deterministic，便于测试回归；
+  - 长机不得进入 `strike_committed`；
+  - 长机必须继续保持：
+    - `camera_owner = drone`
+    - `input_owner = drone`
+    - `manual_flight_input_enabled = true`
+- 僚机自杀冲锋必须实际飞向目标并产生真实爆炸结算；不得只做一段假动画。
+- 僚机自杀冲锋完成后：
+  - 该僚机视为已消耗；
+  - 机群总数必须减少；
+  - 长机不得播放 `NO SIGNAL` closeout。
+- 当 `active wingman count == 0`，只剩长机时：
+  - `MOUSE_BUTTON_LEFT`
+  - 必须回退到当前既有长机自杀冲锋链；
+  - 包含既有 `NO SIGNAL` closeout。
+- 本轮不要求：
+  - 玩家手动指定“哪一架”僚机去冲锋；
+  - 僚机冲锋时独立切镜头；
+  - 长机与僚机同时双重自杀冲锋。
+
+**验收口径**：
+
+- 自动化测试至少断言：有僚机时左键只会让 1 架僚机进入 strike，不会让长机进入 `strike_committed`。
+- 自动化测试至少断言：僚机 strike 完成后，机群 active/desired 总数会按 `1` 正式扣减。
+- 自动化测试至少断言：僚机 strike 期间，长机不会进入 `signal_loss` / `NO SIGNAL`。
+- 自动化测试至少断言：当只剩长机时，左键仍会回退到当前 leader kamikaze + `NO SIGNAL` 旧链。
+
+### REQ-0027-011 FPV 中键必须下达僚机面域阶梯式自杀冲锋命令，而不是让所有僚机同时砸向同一个点
+
+**动机**：用户希望把“机群打击”做成更像一条命令链，而不是把所有僚机瞬间扔向同一个准星点。中键必须承担“面域、波次、间隔”的正式命令语义。
+
+**范围**：
+
+- 当 `leader active + FPV ADS active + idle wingman count >= 1` 时：
+  - `MOUSE_BUTTON_MIDDLE`
+  - 必须把当前准星目标点冻结为 area strike 中心；
+  - 必须对该中心周围半径 `12m` 的区域生成僚机打击落点，而不是单点重合；
+  - 必须按波次 dispatch，而不是同时全放；
+  - 波次规模冻结为：
+    - `1`
+    - `2`
+    - `3`
+    - 然后按 `1 -> 2 -> 3` 循环，直到可用僚机耗尽；
+  - 相邻两批次的最小 dispatch 间隔冻结为：
+    - `0.6s`
+- 同一批次内的僚机可以同时起飞，但不同批次之间必须可见分离，避免“一次全冲下去”。
+- 中键面域命令只消费当前可用僚机：
+  - 已在 strike / exploding / spent 的僚机不得被重复派遣；
+  - 长机不得被中键 area strike 自动纳入冲锋名单。
+- 中键 area strike 执行期间：
+  - 长机继续保留 FPV / camera / input owner；
+  - 不触发 `NO SIGNAL`。
+- 本轮不要求：
+  - 玩家手动画圈定义打击区域；
+  - 可配置波次规模、可配置间隔；
+  - 根据地形、障碍物或威胁等级做智能编队规划。
+
+**验收口径**：
+
+- 自动化测试至少断言：中键 area strike 会把多架僚机分配到不同落点，而不是全部锁到同一个点。
+- 自动化测试至少断言：中键 area strike 的 dispatch 事件存在至少两批，且批次间隔不小于 `0.6s`。
+- 自动化测试至少断言：批次规模遵循 `1 -> 2 -> 3` 的循环合同，最后一批允许因僚机数量不足而缩短。
+- 自动化测试至少断言：中键 area strike 期间长机不会进入 `strike_committed`，也不会触发 `NO SIGNAL`。
+
 ## Acceptance Summary
 
 - 小键盘 `5` 成为机群召唤控制唯一正式入口；主键盘 `5` 不触发。
@@ -335,4 +408,6 @@
 - 活跃无人机是第三人称自稳定飞行：`W/A/S/D` 平移、`E` 上升、`Q` 下降、松手 hover。
 - 僚机首版只做可见分散编队，不做正式 flocking / 战术命令 / 独立 FPV。
 - 机群收回不得破坏 howitzer 复合操炮上下文。
+- 有僚机时，左键优先派 1 架僚机自杀冲锋；只剩长机时才回退 leader kamikaze + `NO SIGNAL`。
+- 中键会下达面域阶梯式僚机冲锋：区域半径 `12m`、波次 `1 -> 2 -> 3` 循环、批次间隔 `0.6s`。
 - drone runtime 正式脱离直升机 combat runtime。

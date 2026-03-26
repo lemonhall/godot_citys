@@ -16,10 +16,10 @@ script = ExtResource("1_robot_dog_script")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.2791139, 0.3991656, -0.17912017)
 
 [node name="lf_knee" type="Marker3D" parent="JointAnchors" unique_id=2102644559]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.10071775, 0.23459926, -0.18048681)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08691484, 0.23459926, -0.18048681)
 
 [node name="rf_hip" type="Marker3D" parent="JointAnchors" unique_id=1560155338]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.2794221, 0.37618634, 0.19180897)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.26735818, 0.3890892, 0.19180897)
 
 [node name="rf_knee" type="Marker3D" parent="JointAnchors" unique_id=218021243]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.07628231, 0.22525829, 0.17544752)
@@ -31,7 +31,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.13581723, 0.4129896, -0.20
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.40548277, 0.21699011, -0.16561365)
 
 [node name="rr_hip" type="Marker3D" parent="JointAnchors" unique_id=83321465]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.14778626, 0.39015952, 0.18882483)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.15387337, 0.4050757, 0.18882483)
 
 [node name="rr_knee" type="Marker3D" parent="JointAnchors" unique_id=1376362388]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3988291, 0.21156049, 0.17149723)

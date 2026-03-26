@@ -615,6 +615,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 	elif _full_map_open:
 		return
+	if _forward_player_robot_dog_runtime_input_event(event):
+		get_viewport().set_input_as_handled()
+		return
 	if DisplayServer.get_name() == "headless":
 		return
 
@@ -1247,6 +1250,14 @@ func get_active_player_robot_dog() -> Node3D:
 	if _active_player_robot_dog != null and is_instance_valid(_active_player_robot_dog):
 		return _active_player_robot_dog
 	_active_player_robot_dog = null
+	return null
+
+func _get_active_player_robot_dog_focus_runtime() -> Node3D:
+	var runtime := get_active_player_robot_dog()
+	if runtime == null:
+		return null
+	if runtime.has_method("should_drive_world_streaming") and bool(runtime.should_drive_world_streaming()):
+		return runtime
 	return null
 
 func get_player_robot_dog_debug_state() -> Dictionary:
@@ -3375,6 +3386,9 @@ func _resolve_minimap_heading_rad() -> float:
 	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime) and _player_drone_runtime.has_method("should_drive_world_streaming") and bool(_player_drone_runtime.should_drive_world_streaming()):
 		if _player_drone_runtime.has_method("get_focus_heading_rad"):
 			return float(_player_drone_runtime.get_focus_heading_rad())
+	var active_robot_dog := _get_active_player_robot_dog_focus_runtime()
+	if active_robot_dog != null and active_robot_dog.has_method("get_focus_heading_rad"):
+		return float(active_robot_dog.get_focus_heading_rad())
 	if player == null:
 		return 0.0
 	var heading := Vector3.ZERO
@@ -3409,6 +3423,9 @@ func _build_player_compass_state() -> Dictionary:
 	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime) and _player_drone_runtime.has_method("should_drive_world_streaming") and bool(_player_drone_runtime.should_drive_world_streaming()):
 		if _player_drone_runtime.has_method("get_focus_heading_rad"):
 			return _world_orientation.build_compass_state_from_heading_rad(float(_player_drone_runtime.get_focus_heading_rad()), true)
+	var active_robot_dog := _get_active_player_robot_dog_focus_runtime()
+	if active_robot_dog != null and active_robot_dog.has_method("get_focus_heading_rad"):
+		return _world_orientation.build_compass_state_from_heading_rad(float(active_robot_dog.get_focus_heading_rad()), true)
 	if player == null:
 		return _world_orientation.build_compass_state_from_bearing_deg(0.0, false)
 	var forward := -player.global_transform.basis.z
@@ -3862,12 +3879,22 @@ func _snap_player_to_active_surface() -> bool:
 	return true
 
 func _get_active_anchor_position() -> Vector3:
+	var active_robot_dog := _get_active_player_robot_dog_focus_runtime()
+	if active_robot_dog != null:
+		if active_robot_dog.has_method("get_focus_world_position"):
+			return active_robot_dog.get_focus_world_position()
+		return active_robot_dog.global_position
 	return player.global_position if player != null else Vector3.ZERO
 
 func _get_streaming_focus_position() -> Vector3:
 	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime) and _player_drone_runtime.has_method("should_drive_world_streaming") and bool(_player_drone_runtime.should_drive_world_streaming()):
 		if _player_drone_runtime.has_method("get_focus_world_position"):
 			return _player_drone_runtime.get_focus_world_position()
+	var active_robot_dog := _get_active_player_robot_dog_focus_runtime()
+	if active_robot_dog != null:
+		if active_robot_dog.has_method("get_focus_world_position"):
+			return active_robot_dog.get_focus_world_position()
+		return active_robot_dog.global_position
 	return _get_active_anchor_position()
 
 func _build_chunk_renderer_active_chunk_entries(base_entries: Array) -> Array[Dictionary]:
@@ -3912,6 +3939,11 @@ func _get_navigation_focus_position() -> Vector3:
 	if _player_drone_runtime != null and is_instance_valid(_player_drone_runtime) and _player_drone_runtime.has_method("should_drive_world_streaming") and bool(_player_drone_runtime.should_drive_world_streaming()):
 		if _player_drone_runtime.has_method("get_focus_world_position"):
 			return _player_drone_runtime.get_focus_world_position()
+	var active_robot_dog := _get_active_player_robot_dog_focus_runtime()
+	if active_robot_dog != null:
+		if active_robot_dog.has_method("get_focus_world_position"):
+			return active_robot_dog.get_focus_world_position()
+		return active_robot_dog.global_position
 	return _get_active_anchor_position()
 
 func _build_chunk_payload_for_world_position(world_position: Vector3) -> Dictionary:

@@ -4,7 +4,7 @@ const SYSTEM_STATE_STOWED := "stowed"
 const SYSTEM_STATE_ACTIVE := "active"
 const INPUT_KEYCODES := [KEY_W, KEY_A, KEY_S, KEY_D, KEY_SHIFT, KEY_P]
 
-@export var visual_scale := 5.0
+@export var visual_scale := 4.0
 @export var walk_speed_mps := 2.1
 @export var run_speed_mps := 4.2
 @export var backward_speed_mps := 1.35
@@ -13,9 +13,13 @@ const INPUT_KEYCODES := [KEY_W, KEY_A, KEY_S, KEY_D, KEY_SHIFT, KEY_P]
 @export var turn_rate_deg := 96.0
 @export var turn_move_rate_deg := 68.0
 @export var floor_snap_length_m := 0.45
+@export var mouse_sensitivity := 0.003
+@export var min_pitch_deg := -68.0
+@export var max_pitch_deg := 35.0
 
 @onready var visual_mount: Node3D = $VisualMount
 @onready var robot_dog: Node3D = $VisualMount/RobotDog
+@onready var camera_rig: Node3D = $CameraRig
 @onready var camera: Camera3D = $CameraRig/Camera3D
 
 var _gravity := ProjectSettings.get_setting("physics/3d/default_gravity") as float
@@ -28,10 +32,15 @@ var _move_input := Vector2.ZERO
 var _turn_input := 0.0
 var _sprint_requested := false
 var _speed_mps := 0.0
+var _camera_pitch_rad := 0.0
+var _default_camera_pitch_rad := 0.0
 
 func _ready() -> void:
 	if visual_mount != null:
 		visual_mount.scale = Vector3.ONE * visual_scale
+	if camera_rig != null:
+		_default_camera_pitch_rad = camera_rig.rotation.x
+		_camera_pitch_rad = _default_camera_pitch_rad
 	if camera != null:
 		camera.current = false
 	if robot_dog != null and robot_dog.has_method("reset_robot_dog_pose"):
@@ -50,12 +59,14 @@ func activate_at(world_position: Vector3, heading_rad: float) -> void:
 	_turn_input = 0.0
 	_sprint_requested = false
 	_speed_mps = 0.0
+	_restore_camera_pitch()
 	floor_snap_length = floor_snap_length_m
 	if robot_dog != null and robot_dog.has_method("reset_robot_dog_pose"):
 		robot_dog.reset_robot_dog_pose()
 	_set_player_lock(true)
 	_system_state = SYSTEM_STATE_ACTIVE
 	_apply_camera_ownership()
+	_set_mouse_capture(true)
 
 func deactivate() -> void:
 	_pressed_keys.clear()
@@ -68,11 +79,30 @@ func deactivate() -> void:
 	_system_state = SYSTEM_STATE_STOWED
 	_set_player_lock(false)
 	_apply_camera_ownership()
+	_restore_camera_pitch()
+	_set_mouse_capture(false)
 
 func get_visual_robot_dog() -> Node3D:
 	return robot_dog
 
 func handle_input_event(event: InputEvent) -> bool:
+	if event is InputEventMouseMotion:
+		if _system_state != SYSTEM_STATE_ACTIVE:
+			return false
+		var motion := event as InputEventMouseMotion
+		rotate_y(-motion.relative.x * mouse_sensitivity)
+		_camera_pitch_rad = clamp(_camera_pitch_rad - motion.relative.y * mouse_sensitivity, deg_to_rad(min_pitch_deg), deg_to_rad(max_pitch_deg))
+		_apply_camera_pitch()
+		return true
+	if event is InputEventMouseButton:
+		var mouse_button := event as InputEventMouseButton
+		if mouse_button.pressed:
+			_set_mouse_capture(true)
+		return _system_state == SYSTEM_STATE_ACTIVE
+	if event.is_action_pressed("ui_cancel"):
+		if DisplayServer.get_name() != "headless":
+			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED)
+		return _system_state == SYSTEM_STATE_ACTIVE
 	var key_event := event as InputEventKey
 	if key_event == null:
 		return false
@@ -99,6 +129,7 @@ func get_debug_state() -> Dictionary:
 		"move_input": _move_input,
 		"turn_input": _turn_input,
 		"speed_mps": _speed_mps,
+		"camera_pitch_deg": rad_to_deg(_camera_pitch_rad),
 		"gait_cycle_hz": float(locomotion_debug_state.get("gait_cycle_hz", 0.0)),
 		"active_robot_dog": _system_state == SYSTEM_STATE_ACTIVE,
 		"player_frozen": _is_player_locked(),
@@ -163,9 +194,9 @@ func _update_control_intent() -> void:
 		forward_input -= 1.0
 	var turn_input := 0.0
 	if bool(_pressed_keys.get(KEY_D, false)):
-		turn_input += 1.0
-	if bool(_pressed_keys.get(KEY_A, false)):
 		turn_input -= 1.0
+	if bool(_pressed_keys.get(KEY_A, false)):
+		turn_input += 1.0
 	var prone_active := _is_prone_active()
 	_sprint_requested = bool(_pressed_keys.get(KEY_SHIFT, false)) and forward_input > 0.0 and not prone_active
 	if prone_active:
@@ -222,3 +253,33 @@ func _is_prone_active() -> bool:
 		return false
 	var pose_debug_state: Dictionary = robot_dog.get_pose_debug_state()
 	return bool(pose_debug_state.get("crouch_requested", false)) or float(pose_debug_state.get("crouch_alpha", 0.0)) > 0.05
+
+func should_drive_world_streaming() -> bool:
+	return _system_state == SYSTEM_STATE_ACTIVE
+
+func get_focus_heading_rad() -> float:
+	var forward := _resolve_planar_forward()
+	return atan2(forward.x, -forward.z)
+
+func get_focus_world_position() -> Vector3:
+	return global_position
+
+func _restore_camera_pitch() -> void:
+	_camera_pitch_rad = _default_camera_pitch_rad
+	_apply_camera_pitch()
+
+func _apply_camera_pitch() -> void:
+	if camera_rig != null:
+		camera_rig.rotation.x = _camera_pitch_rad
+
+func _set_mouse_capture(captured: bool) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED if captured else Input.MOUSE_MODE_VISIBLE)
+
+func _resolve_planar_forward() -> Vector3:
+	var forward := -global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		return Vector3.FORWARD
+	return forward.normalized()

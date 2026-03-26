@@ -81,6 +81,7 @@
 - Create: `tests/world/test_city_player_robot_dog_toggle_contract.gd`
 - Create: `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd`
 - Create: `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd`
+- Create: `tests/world/test_city_player_robot_dog_presentation_contract.gd`
 - Create: `tests/world/test_robot_dog_lab_control_contract.gd`
 - Create: `tests/e2e/test_city_player_robot_dog_flow.gd`
 - Create: `docs/plan/v61-m3-verification-2026-03-26.md`
@@ -123,3 +124,10 @@
 - 如果第三人称接管只做 camera，不做 ownership，体感会非常混乱。
 - 如果 ground locomotion 只是根节点滑行，用户会立即把它识别成假动作。
 - 如果 `RobotDogLab` 不跟正式控制态收口，后面调试会再次掉进“两套主链”的坑里。
+
+## 2026-03-26 Post-Closeout Corrections
+
+- 机械狗控制态补齐了鼠标 yaw / pitch，自此 `W/A/S/D` 不再是唯一控制手段；俯仰继续保持限位，避免 chase camera 翻转。
+- `A = 左转`、`D = 右转` 已被明确冻结为输入合同，并同步回写到 `CityRobotDogControlRuntime.gd -> CityRobotDog.gd` 的 locomotion/gait 符号链，防止再次出现“物理朝向与 locomotion_state 名义相反”的问题。
+- 共享指南针 / 小地图 player marker / 世界 focus 已在机械狗控制态下切到 active robot dog runtime，不再读取被冻结的 `Player` 朝向。
+- `CityRobotDogControlRuntime.tscn` 的正式展示口径已更新为更大的机械狗尺寸和更高的俯视第三人称机位；这条口径由 `tests/world/test_city_player_robot_dog_presentation_contract.gd` 持续锁定。

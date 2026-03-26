@@ -425,7 +425,7 @@ func _resolve_locomotion_state() -> String:
 	if not has_forward_motion and not has_turn_motion:
 		return LOCOMOTION_STATE_IDLE
 	if not has_forward_motion:
-		return LOCOMOTION_STATE_TURN_LEFT if turn_axis < 0.0 else LOCOMOTION_STATE_TURN_RIGHT
+		return LOCOMOTION_STATE_TURN_LEFT if turn_axis > 0.0 else LOCOMOTION_STATE_TURN_RIGHT
 	if forward_axis < 0.0:
 		return LOCOMOTION_STATE_BACKWARD if not has_turn_motion else LOCOMOTION_STATE_TURN_MOVE
 	if has_turn_motion:
@@ -484,7 +484,7 @@ func _resolve_leg_gait_offsets(leg_runtime: Dictionary) -> Dictionary:
 		stride_scale = 1.18 if side_sign < 0.0 else 0.58
 		hip_wave = sin(phase) * (1.0 if side_sign < 0.0 else -1.0)
 	elif _locomotion_state == LOCOMOTION_STATE_TURN_MOVE:
-		var turn_bias := clampf(_turn_input, -1.0, 1.0)
+		var turn_bias := clampf(-_turn_input, -1.0, 1.0)
 		stride_scale = clampf(1.0 - turn_bias * side_sign * 0.42, 0.55, 1.45)
 	var hip_offset_deg := hip_wave * hip_amp_deg * maxf(stride_scale, 0.2)
 	if absf(stride_direction) > 0.01:

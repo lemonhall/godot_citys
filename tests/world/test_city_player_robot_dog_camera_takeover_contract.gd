@@ -44,7 +44,10 @@ func _run() -> void:
 	if not T.require_true(self, runtime != null, "Robot dog camera takeover contract requires an active robot dog runtime after pressing KP_4"):
 		return
 	var runtime_camera := runtime.get_node_or_null("CameraRig/Camera3D") as Camera3D
+	var runtime_camera_rig := runtime.get_node_or_null("CameraRig") as Node3D
 	if not T.require_true(self, runtime_camera != null, "Robot dog camera takeover contract requires a dedicated robot dog third-person camera"):
+		return
+	if not T.require_true(self, runtime_camera_rig != null, "Robot dog camera takeover contract requires the formal CameraRig pivot once mouse-look is added"):
 		return
 
 	var active_state := world.get_player_robot_dog_debug_state() as Dictionary
@@ -70,6 +73,35 @@ func _run() -> void:
 	_press_world_key(world, KEY_W)
 	await _settle_frames(5)
 	if not T.require_true(self, (player as Node3D).global_position.distance_to(baseline_player_position) <= 0.01, "Active robot dog control must keep the player body frozen in place instead of letting W move the player"):
+		return
+	_release_world_key(world, KEY_W)
+
+	var baseline_player_heading: float = player.rotation.y
+	var baseline_compass_state := world.get_player_compass_state() as Dictionary
+	var baseline_pitch_deg := rad_to_deg(runtime_camera_rig.rotation.x)
+	_send_world_mouse_motion(world, 160.0, -120.0)
+	await _settle_frames(2)
+	runtime = world.get_active_player_robot_dog() as Node3D
+	runtime_camera_rig = runtime.get_node_or_null("CameraRig") as Node3D
+	if not T.require_true(self, runtime_camera_rig != null, "Robot dog camera takeover contract requires CameraRig to remain available after mouse-look input"):
+		return
+	var turned_compass_state := world.get_player_compass_state() as Dictionary
+	var turned_bearing_deg := float(turned_compass_state.get("bearing_deg", 0.0))
+	if not T.require_true(self, turned_bearing_deg >= float(baseline_compass_state.get("bearing_deg", 0.0)) + 5.0, "Moving the mouse right while controlling the robot dog must rotate the shared compass bearing clockwise instead of leaving world heading frozen on the player"):
+		return
+	if not T.require_true(self, absf(player.rotation.y - baseline_player_heading) <= 0.001, "Robot dog mouse-look must not secretly rotate the frozen player body just to move the compass"):
+		return
+	var lifted_pitch_deg := rad_to_deg(runtime_camera_rig.rotation.x)
+	if not T.require_true(self, lifted_pitch_deg >= baseline_pitch_deg + 4.0, "Moving the mouse up while controlling the robot dog must raise the chase camera pitch instead of ignoring vertical look input"):
+		return
+	_send_world_mouse_motion(world, 0.0, 100000.0)
+	await _settle_frames(2)
+	var clamped_pitch_deg := rad_to_deg(runtime_camera_rig.rotation.x)
+	if not T.require_true(self, clamped_pitch_deg >= -80.0 and clamped_pitch_deg <= 40.0, "Robot dog chase camera pitch must stay within a sane clamped range instead of flipping over on extreme mouse input"):
+		return
+	var minimap_snapshot: Dictionary = world.build_minimap_snapshot()
+	var minimap_player_marker: Dictionary = minimap_snapshot.get("player_marker", {})
+	if not T.require_true(self, absf(float(minimap_player_marker.get("bearing_deg", -999.0)) - turned_bearing_deg) <= 0.5, "Minimap player marker must follow the active robot dog heading instead of staying frozen on the player's locked body"):
 		return
 
 	_press_world_key(world, KEY_KP_4)
@@ -98,6 +130,19 @@ func _press_world_key(world: Node, keycode: Key) -> void:
 	event.echo = false
 	event.keycode = keycode
 	event.physical_keycode = keycode
+	world._unhandled_input(event)
+
+func _release_world_key(world: Node, keycode: Key) -> void:
+	var event := InputEventKey.new()
+	event.pressed = false
+	event.echo = false
+	event.keycode = keycode
+	event.physical_keycode = keycode
+	world._unhandled_input(event)
+
+func _send_world_mouse_motion(world: Node, relative_x: float, relative_y: float) -> void:
+	var event := InputEventMouseMotion.new()
+	event.relative = Vector2(relative_x, relative_y)
 	world._unhandled_input(event)
 
 func _settle_frames(frame_count: int) -> void:

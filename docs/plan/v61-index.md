@@ -47,12 +47,12 @@ PRD 入口：
 | Req ID | V61 Plan | 单元/集成测试 | E2E / 验证命令 | 证据 | 状态 |
 |---|---|---|---|---|---|
 | REQ-0033-001 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_toggle_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
-| REQ-0033-002 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
+| REQ-0033-002 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd`; `tests/world/test_city_player_robot_dog_presentation_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
 | REQ-0033-003 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd`; `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
 | REQ-0033-004 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd` | `tests/e2e/test_city_player_robot_dog_flow.gd` | `v61-m3-verification-2026-03-26.md` | done |
 | REQ-0033-005 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd`; `tests/world/test_robot_dog_lab_control_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
 | REQ-0033-006 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd`; `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
-| REQ-0033-007 | `v61-robot-dog-ground-locomotion.md` | 上述 focused tests 共同约束 | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
+| REQ-0033-007 | `v61-robot-dog-ground-locomotion.md` | 上述 focused tests 与 `tests/world/test_city_player_robot_dog_presentation_contract.gd` 共同约束 | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
 
 ## Closeout 证据口径
 

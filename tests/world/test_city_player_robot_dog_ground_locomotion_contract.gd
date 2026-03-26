@@ -88,10 +88,26 @@ func _run() -> void:
 		return
 	if not T.require_true(self, absf(float(turn_state.get("heading_deg", 0.0)) - turn_start_heading) >= 8.0, "turn_left locomotion must rotate heading by a visible amount instead of staying static"):
 		return
+	var turn_left_forward := _planar_forward((runtime as Node3D).global_transform.basis)
+	if not T.require_true(self, turn_left_forward.x <= -0.16, "Holding A must yaw the robot dog's nose toward world-left instead of steering it to the right"):
+		return
 	if not T.require_true(self, turn_planar_distance <= 0.35, "turn_left locomotion must primarily rotate in place instead of sliding forward like walk"):
 		return
 
 	_release_key(runtime, KEY_A)
+	runtime.activate_at(Vector3(0.0, 1.2, 0.0), 0.0)
+	await _settle_frames(8)
+	_press_key(runtime, KEY_D)
+	await _settle_frames(16)
+	var turn_right_state := runtime.get_debug_state() as Dictionary
+	var turn_right_forward := _planar_forward((runtime as Node3D).global_transform.basis)
+	if not T.require_true(self, absf(float(turn_right_state.get("heading_deg", 0.0))) >= 8.0, "turn_right locomotion must rotate heading by a visible amount instead of staying static"):
+		return
+	if not T.require_true(self, turn_right_forward.x >= 0.16, "Holding D must yaw the robot dog's nose toward world-right instead of steering it to the left"):
+		return
+	_release_key(runtime, KEY_D)
+	runtime.activate_at(Vector3(0.0, 1.2, 0.0), 0.0)
+	await _settle_frames(8)
 	var turn_move_start_heading := float((runtime.get_debug_state() as Dictionary).get("heading_deg", 0.0))
 	var turn_move_start_position := (runtime as Node3D).global_position
 	_press_key(runtime, KEY_W)
@@ -185,3 +201,10 @@ func _max_leg_angle_delta_deg(previous_legs: Array, current_legs: Array) -> floa
 		maximum_delta = maxf(maximum_delta, absf(float(current_leg.get("hip_angle_deg", 0.0)) - float(previous_leg.get("hip_angle_deg", 0.0))))
 		maximum_delta = maxf(maximum_delta, absf(float(current_leg.get("knee_angle_deg", 0.0)) - float(previous_leg.get("knee_angle_deg", 0.0))))
 	return maximum_delta
+
+func _planar_forward(basis: Basis) -> Vector3:
+	var forward := -basis.z
+	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		return Vector3.ZERO
+	return forward.normalized()

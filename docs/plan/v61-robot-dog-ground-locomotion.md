@@ -77,6 +77,7 @@
 - Update: `city_game/scenes/labs/RobotDogLab.gd`
 - Update: `city_game/scenes/labs/RobotDogLab.tscn`
 - Create: `city_game/world/creatures/quadrupeds/CityRobotDogControlRuntime.gd`
+- Create: `city_game/world/creatures/quadrupeds/CityRobotDogControlRuntime.tscn`
 - Create: `tests/world/test_city_player_robot_dog_toggle_contract.gd`
 - Create: `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd`
 - Create: `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd`

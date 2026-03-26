@@ -33,10 +33,10 @@ PRD 入口：
 
 | 里程碑 | 范围 | DoD | 验证命令/测试 | 状态 |
 |---|---|---|---|---|
-| M0 docs freeze | PRD / design / v61 plan 冻结 | 小键盘 `4`、第三人称接管、player freeze、ground locomotion、非目标全部落文档 | `rg -n "KEY_KP_4|小键盘 `4`|third person|第三人称|player freeze|walk|run|backward|prone|v62" docs/prd/PRD-0033-robot-dog-ground-locomotion-control.md docs/plans/2026-03-26-v61-robot-dog-ground-locomotion-design.md docs/plan/v61-index.md docs/plan/v61-robot-dog-ground-locomotion.md` | todo |
-| M1 red tests | summon / camera / input / locomotion 红测 | 至少锁住召唤/回收、镜头接管、输入所有权、ground locomotion state | `tests/world/test_city_player_robot_dog_toggle_contract.gd`; `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd`; `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd`; `tests/e2e/test_city_player_robot_dog_flow.gd` | todo |
-| M2 implementation | world wrapper + locomotion runtime | 机械狗能正式接管控制并完成地面 locomotion，不回退 `v60` joint/pivot contract | 同上 | todo |
-| M3 verification | focused verification + parse check | fresh verification 文档回填追溯矩阵 | `docs/plan/v61-m3-verification-2026-03-26.md` | todo |
+| M0 docs freeze | PRD / design / v61 plan 冻结 | 小键盘 `4`、第三人称接管、player freeze、ground locomotion、非目标全部落文档 | `rg -n "KEY_KP_4|小键盘 `4`|third person|第三人称|player freeze|walk|run|backward|prone|v62" docs/prd/PRD-0033-robot-dog-ground-locomotion-control.md docs/plans/2026-03-26-v61-robot-dog-ground-locomotion-design.md docs/plan/v61-index.md docs/plan/v61-robot-dog-ground-locomotion.md` | done |
+| M1 red tests | summon / camera / input / locomotion 红测 | 至少锁住召唤/回收、镜头接管、输入所有权、ground locomotion state | `tests/world/test_city_player_robot_dog_toggle_contract.gd`; `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd`; `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd`; `tests/e2e/test_city_player_robot_dog_flow.gd` | done |
+| M2 implementation | world wrapper + locomotion runtime | 机械狗能正式接管控制并完成地面 locomotion，不回退 `v60` joint/pivot contract | 同上 | done |
+| M3 verification | focused verification + parse check | fresh verification 文档回填追溯矩阵 | `docs/plan/v61-m3-verification-2026-03-26.md` | done |
 
 ## 计划索引
 
@@ -46,13 +46,13 @@ PRD 入口：
 
 | Req ID | V61 Plan | 单元/集成测试 | E2E / 验证命令 | 证据 | 状态 |
 |---|---|---|---|---|---|
-| REQ-0033-001 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_toggle_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | — | todo |
-| REQ-0033-002 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | — | todo |
-| REQ-0033-003 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd`; `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | — | todo |
-| REQ-0033-004 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd` | `tests/e2e/test_city_player_robot_dog_flow.gd` | — | todo |
-| REQ-0033-005 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd`; `tests/world/test_robot_dog_lab_control_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | — | todo |
-| REQ-0033-006 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd`; `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | — | todo |
-| REQ-0033-007 | `v61-robot-dog-ground-locomotion.md` | 上述 focused tests 共同约束 | `docs/plan/v61-m3-verification-2026-03-26.md` | — | todo |
+| REQ-0033-001 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_toggle_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
+| REQ-0033-002 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
+| REQ-0033-003 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd`; `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
+| REQ-0033-004 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd` | `tests/e2e/test_city_player_robot_dog_flow.gd` | `v61-m3-verification-2026-03-26.md` | done |
+| REQ-0033-005 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd`; `tests/world/test_robot_dog_lab_control_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
+| REQ-0033-006 | `v61-robot-dog-ground-locomotion.md` | `tests/world/test_city_player_robot_dog_camera_takeover_contract.gd`; `tests/world/test_city_player_robot_dog_ground_locomotion_contract.gd` | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
+| REQ-0033-007 | `v61-robot-dog-ground-locomotion.md` | 上述 focused tests 共同约束 | `docs/plan/v61-m3-verification-2026-03-26.md` | `v61-m3-verification-2026-03-26.md` | done |
 
 ## Closeout 证据口径
 

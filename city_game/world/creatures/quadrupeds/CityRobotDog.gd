@@ -28,6 +28,8 @@ const LEG_CONFIGS := {
 		"leg_id": "lf",
 		"hip_joint_name": "lf_hip",
 		"knee_joint_name": "lf_knee",
+		"side_sign": -1.0,
+		"gait_phase_offset_rad": 0.0,
 		"hip_mesh_source_path": "BodyPivot/Model/ParentNode/L_Fore_Hip",
 		"calf_mesh_source_path": "BodyPivot/Model/ParentNode/L_Fore_Calf",
 		"hip_mesh_name": "L_Fore_Hip",
@@ -37,6 +39,8 @@ const LEG_CONFIGS := {
 		"leg_id": "rf",
 		"hip_joint_name": "rf_hip",
 		"knee_joint_name": "rf_knee",
+		"side_sign": 1.0,
+		"gait_phase_offset_rad": PI,
 		"hip_mesh_source_path": "BodyPivot/Model/ParentNode/R_Fore_Hip",
 		"calf_mesh_source_path": "BodyPivot/Model/ParentNode/R_Fore_Calf",
 		"hip_mesh_name": "R_Fore_Hip",
@@ -46,6 +50,8 @@ const LEG_CONFIGS := {
 		"leg_id": "lr",
 		"hip_joint_name": "lr_hip",
 		"knee_joint_name": "lr_knee",
+		"side_sign": -1.0,
+		"gait_phase_offset_rad": PI,
 		"hip_mesh_source_path": "BodyPivot/Model/ParentNode/L_Hind_Hip",
 		"calf_mesh_source_path": "BodyPivot/Model/ParentNode/L_Hind_Calf",
 		"hip_mesh_name": "L_Hind_Hip",
@@ -55,6 +61,8 @@ const LEG_CONFIGS := {
 		"leg_id": "rr",
 		"hip_joint_name": "rr_hip",
 		"knee_joint_name": "rr_knee",
+		"side_sign": 1.0,
+		"gait_phase_offset_rad": 0.0,
 		"hip_mesh_source_path": "BodyPivot/Model/ParentNode/R_Hind_Hip",
 		"calf_mesh_source_path": "BodyPivot/Model/ParentNode/R_Hind_Calf",
 		"hip_mesh_name": "R_Hind_Hip",
@@ -65,6 +73,15 @@ const LEG_CONFIGS := {
 const CROUCH_TRANSITION_SECONDS := 0.8
 const CROUCH_BODY_DROP_M := 0.16
 const CROUCH_TARGET_HIP_DEG := -40.0
+const LOCOMOTION_STATE_IDLE := "idle"
+const LOCOMOTION_STATE_WALK := "walk"
+const LOCOMOTION_STATE_RUN := "run"
+const LOCOMOTION_STATE_BACKWARD := "backward"
+const LOCOMOTION_STATE_TURN_LEFT := "turn_left"
+const LOCOMOTION_STATE_TURN_RIGHT := "turn_right"
+const LOCOMOTION_STATE_TURN_MOVE := "turn_move"
+const LOCOMOTION_STATE_PRONE := "prone"
+const INPUT_DEADZONE := 0.05
 
 @onready var body_pivot: Node3D = $BodyPivot
 @onready var model_root: Node3D = $BodyPivot/Model
@@ -79,6 +96,14 @@ var _crouch_requested := false
 var _crouch_alpha := 0.0
 var _body_height_offset_m := 0.0
 var _pose_state := "standing"
+var _move_input := Vector2.ZERO
+var _turn_input := 0.0
+var _sprint_requested := false
+var _commanded_speed_mps := 0.0
+var _locomotion_state := LOCOMOTION_STATE_IDLE
+var _gait_cycle_phase_rad := 0.0
+var _gait_cycle_hz := 0.0
+var _gait_stride_direction := 0.0
 
 func _ready() -> void:
 	_ensure_leg_visual_pivots()
@@ -119,7 +144,7 @@ func get_debug_state() -> Dictionary:
 	}.duplicate(true)
 
 func get_pose_debug_state() -> Dictionary:
-	return {
+	var debug_state := {
 		"species_id": SPECIES_ID,
 		"pose_state": _pose_state,
 		"crouch_requested": _crouch_requested,
@@ -127,7 +152,30 @@ func get_pose_debug_state() -> Dictionary:
 		"body_height_offset_m": _body_height_offset_m,
 		"joint_constraints": get_joint_constraint_contract(),
 		"legs": _build_leg_debug_state(),
+	}
+	debug_state.merge(get_locomotion_debug_state(), true)
+	return debug_state.duplicate(true)
+
+func get_locomotion_debug_state() -> Dictionary:
+	return {
+		"locomotion_state": _locomotion_state,
+		"move_input": _move_input,
+		"turn_input": _turn_input,
+		"sprint_requested": _sprint_requested,
+		"commanded_speed_mps": _commanded_speed_mps,
+		"gait_cycle_phase_deg": rad_to_deg(_gait_cycle_phase_rad),
+		"gait_cycle_hz": _gait_cycle_hz,
+		"gait_stride_direction": _gait_stride_direction,
 	}.duplicate(true)
+
+func set_motion_command(move_input: Vector2, turn_input: float, sprint_requested: bool, commanded_speed_mps: float = 0.0) -> void:
+	_move_input = Vector2(
+		clampf(move_input.x, -1.0, 1.0),
+		clampf(move_input.y, -1.0, 1.0)
+	)
+	_turn_input = clampf(turn_input, -1.0, 1.0)
+	_sprint_requested = sprint_requested
+	_commanded_speed_mps = maxf(commanded_speed_mps, 0.0)
 
 func set_crouch_requested(requested: bool) -> void:
 	_crouch_requested = requested
@@ -140,6 +188,7 @@ func tick_robot_dog(delta: float) -> void:
 	var target_alpha := 1.0 if _crouch_requested else 0.0
 	var step := maxf(delta, 0.0) / maxf(CROUCH_TRANSITION_SECONDS, 0.001)
 	_crouch_alpha = move_toward(_crouch_alpha, target_alpha, step)
+	_update_locomotion_state(delta)
 	_apply_pose_from_alpha(_crouch_alpha)
 
 func reset_robot_dog_pose() -> void:
@@ -158,6 +207,14 @@ func reset_robot_dog_pose() -> void:
 	_crouch_alpha = 0.0
 	_body_height_offset_m = 0.0
 	_pose_state = "standing"
+	_move_input = Vector2.ZERO
+	_turn_input = 0.0
+	_sprint_requested = false
+	_commanded_speed_mps = 0.0
+	_locomotion_state = LOCOMOTION_STATE_IDLE
+	_gait_cycle_phase_rad = 0.0
+	_gait_cycle_hz = 0.0
+	_gait_stride_direction = 0.0
 	_apply_pose_from_alpha(0.0)
 
 func _capture_initial_pose() -> void:
@@ -268,6 +325,8 @@ func _apply_leg_pose(leg_runtime: Dictionary, alpha: float) -> void:
 	var knee_constraint: Dictionary = JOINT_CONSTRAINTS.get(str(leg_runtime.get("knee_joint_name", "")), {})
 
 	var hip_target_deg := float(leg_runtime.get("hip_target_deg", CROUCH_TARGET_HIP_DEG)) * _ease_in_out(alpha)
+	var gait_offsets := _resolve_leg_gait_offsets(leg_runtime)
+	hip_target_deg += float(gait_offsets.get("hip_offset_deg", 0.0))
 	hip_target_deg = clampf(hip_target_deg, float(hip_constraint.get("min_deg", -60.0)), float(hip_constraint.get("max_deg", 5.0)))
 	var hip_angle_rad := deg_to_rad(hip_target_deg)
 	var rotated_upper := upper_rest_vector.rotated(Vector3(0.0, 0.0, 1.0), hip_angle_rad)
@@ -275,6 +334,7 @@ func _apply_leg_pose(leg_runtime: Dictionary, alpha: float) -> void:
 	var foot_target_local := foot_rest_local + Vector3(0.0, _body_height_offset_m, 0.0)
 	var target_calf_vector := foot_target_local - knee_local
 	var calf_angle_deg := _compute_local_z_delta_deg(calf_tip_rest_vector, target_calf_vector)
+	calf_angle_deg += float(gait_offsets.get("knee_offset_deg", 0.0))
 	calf_angle_deg = clampf(calf_angle_deg, float(knee_constraint.get("min_deg", -80.0)), float(knee_constraint.get("max_deg", 80.0)))
 
 	hip_mesh.transform = leg_runtime.get("hip_mesh_rest_local_transform", hip_mesh.transform)
@@ -344,6 +404,96 @@ func _update_pose_state_label() -> void:
 		_pose_state = "crouched" if _crouch_alpha >= 0.99 else "transition_to_crouched"
 		return
 	_pose_state = "standing" if _crouch_alpha <= 0.01 else "transition_to_standing"
+
+func _update_locomotion_state(delta: float) -> void:
+	_locomotion_state = _resolve_locomotion_state()
+	var gait_profile := _resolve_gait_profile()
+	_gait_cycle_hz = float(gait_profile.get("cycle_hz", 0.0))
+	_gait_stride_direction = float(gait_profile.get("stride_direction", 0.0))
+	if _gait_cycle_hz > 0.0:
+		_gait_cycle_phase_rad = wrapf(_gait_cycle_phase_rad + TAU * _gait_cycle_hz * maxf(delta, 0.0), 0.0, TAU)
+	else:
+		_gait_cycle_phase_rad = 0.0
+
+func _resolve_locomotion_state() -> String:
+	if _crouch_requested or _crouch_alpha > 0.05:
+		return LOCOMOTION_STATE_PRONE
+	var forward_axis := _move_input.y
+	var turn_axis := _turn_input
+	var has_forward_motion := absf(forward_axis) > INPUT_DEADZONE
+	var has_turn_motion := absf(turn_axis) > INPUT_DEADZONE
+	if not has_forward_motion and not has_turn_motion:
+		return LOCOMOTION_STATE_IDLE
+	if not has_forward_motion:
+		return LOCOMOTION_STATE_TURN_LEFT if turn_axis < 0.0 else LOCOMOTION_STATE_TURN_RIGHT
+	if forward_axis < 0.0:
+		return LOCOMOTION_STATE_BACKWARD if not has_turn_motion else LOCOMOTION_STATE_TURN_MOVE
+	if has_turn_motion:
+		return LOCOMOTION_STATE_TURN_MOVE
+	return LOCOMOTION_STATE_RUN if _sprint_requested else LOCOMOTION_STATE_WALK
+
+func _resolve_gait_profile() -> Dictionary:
+	match _locomotion_state:
+		LOCOMOTION_STATE_WALK:
+			return {"cycle_hz": 1.25, "hip_amp_deg": 7.5, "knee_amp_deg": 10.0, "stride_direction": 1.0}
+		LOCOMOTION_STATE_RUN:
+			return {"cycle_hz": 2.35, "hip_amp_deg": 12.0, "knee_amp_deg": 15.0, "stride_direction": 1.0}
+		LOCOMOTION_STATE_BACKWARD:
+			return {"cycle_hz": 1.1, "hip_amp_deg": 6.5, "knee_amp_deg": 8.5, "stride_direction": -1.0}
+		LOCOMOTION_STATE_TURN_LEFT:
+			return {"cycle_hz": 1.15, "hip_amp_deg": 6.5, "knee_amp_deg": 8.0, "stride_direction": 0.0}
+		LOCOMOTION_STATE_TURN_RIGHT:
+			return {"cycle_hz": 1.15, "hip_amp_deg": 6.5, "knee_amp_deg": 8.0, "stride_direction": 0.0}
+		LOCOMOTION_STATE_TURN_MOVE:
+			var forward_cycle_hz := 2.05 if _sprint_requested and _move_input.y > INPUT_DEADZONE else 1.45
+			var forward_hip_amp_deg := 11.0 if _sprint_requested and _move_input.y > INPUT_DEADZONE else 8.5
+			var forward_knee_amp_deg := 13.5 if _sprint_requested and _move_input.y > INPUT_DEADZONE else 10.5
+			var stride_direction := -1.0 if _move_input.y < -INPUT_DEADZONE else 1.0
+			return {
+				"cycle_hz": forward_cycle_hz,
+				"hip_amp_deg": forward_hip_amp_deg,
+				"knee_amp_deg": forward_knee_amp_deg,
+				"stride_direction": stride_direction,
+			}
+		_:
+			return {"cycle_hz": 0.0, "hip_amp_deg": 0.0, "knee_amp_deg": 0.0, "stride_direction": 0.0}
+
+func _resolve_leg_gait_offsets(leg_runtime: Dictionary) -> Dictionary:
+	var gait_profile := _resolve_gait_profile()
+	var cycle_hz := float(gait_profile.get("cycle_hz", 0.0))
+	if cycle_hz <= 0.0 or _locomotion_state == LOCOMOTION_STATE_PRONE:
+		return {
+			"hip_offset_deg": 0.0,
+			"knee_offset_deg": 0.0,
+		}
+	var phase_offset := float(leg_runtime.get("gait_phase_offset_rad", 0.0))
+	var side_sign := float(leg_runtime.get("side_sign", 1.0))
+	var phase := _gait_cycle_phase_rad + phase_offset
+	var hip_wave := sin(phase)
+	var lift_wave := maxf(0.0, sin(phase))
+	var hip_amp_deg := float(gait_profile.get("hip_amp_deg", 0.0))
+	var knee_amp_deg := float(gait_profile.get("knee_amp_deg", 0.0))
+	var stride_direction := float(gait_profile.get("stride_direction", 0.0))
+	var stride_scale := 1.0
+	if _locomotion_state == LOCOMOTION_STATE_TURN_LEFT:
+		stride_direction = 0.0
+		stride_scale = 0.58 if side_sign < 0.0 else 1.18
+		hip_wave = sin(phase) * (1.0 if side_sign > 0.0 else -1.0)
+	elif _locomotion_state == LOCOMOTION_STATE_TURN_RIGHT:
+		stride_direction = 0.0
+		stride_scale = 1.18 if side_sign < 0.0 else 0.58
+		hip_wave = sin(phase) * (1.0 if side_sign < 0.0 else -1.0)
+	elif _locomotion_state == LOCOMOTION_STATE_TURN_MOVE:
+		var turn_bias := clampf(_turn_input, -1.0, 1.0)
+		stride_scale = clampf(1.0 - turn_bias * side_sign * 0.42, 0.55, 1.45)
+	var hip_offset_deg := hip_wave * hip_amp_deg * maxf(stride_scale, 0.2)
+	if absf(stride_direction) > 0.01:
+		hip_offset_deg *= stride_direction
+	var knee_offset_deg := lift_wave * knee_amp_deg * maxf(stride_scale, 0.35)
+	return {
+		"hip_offset_deg": hip_offset_deg,
+		"knee_offset_deg": knee_offset_deg,
+	}
 
 func _get_joint_anchor_node(joint_anchor_name: String) -> Marker3D:
 	if joint_anchor_root == null:

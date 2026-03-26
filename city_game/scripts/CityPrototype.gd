@@ -42,6 +42,7 @@ const CityLaserDesignatorBeam := preload("res://city_game/combat/CityLaserDesign
 const CityTraumaEnemy := preload("res://city_game/combat/CityTraumaEnemy.gd")
 const CityPlayerDroneScene := preload("res://city_game/combat/drone/CityDroneGunship.tscn")
 const CityPlayerDroneSquadronRuntimeScript := preload("res://city_game/combat/drone/CityPlayerDroneSquadronRuntime.gd")
+const CityRobotDogControlRuntimeScene := preload("res://city_game/world/creatures/quadrupeds/CityRobotDogControlRuntime.tscn")
 const CityHelicopterGunshipWorldEncounterScene := preload("res://city_game/combat/helicopter/CityHelicopterGunshipWorldEncounter.tscn")
 const CityWorldInspectionResolver := preload("res://city_game/world/inspection/CityWorldInspectionResolver.gd")
 const CityBuildingSceneExporter := preload("res://city_game/world/serviceability/CityBuildingSceneExporter.gd")
@@ -141,6 +142,7 @@ const RIFLE_FIRE_AUDIO_RESTART_MARGIN_SEC := 0.08
 const WORLD_HOWITZER_SUMMON_DISTANCE_M := 10.0
 const WORLD_HOWITZER_INTERACTION_RADIUS_M := 7.0
 const WORLD_HOWITZER_RELEASE_RADIUS_M := 20.0
+const PLAYER_ROBOT_DOG_SUMMON_DISTANCE_M := 2.0
 const PLAYER_DRONE_LONG_PRESS_THRESHOLD_SEC := 0.5
 
 @onready var generated_city: Node = $GeneratedCity
@@ -177,6 +179,8 @@ var _task_brief_view_model = null
 var _task_pin_projection = null
 var _task_trigger_runtime = null
 var _task_world_marker_runtime: Node3D = null
+var _robot_dog_runtime_root: Node3D = null
+var _active_player_robot_dog: Node3D = null
 var _player_drone_runtime: Node3D = null
 var _player_drone_squadron_runtime: Node3D = null
 var _helicopter_gunship_encounter_runtime: Node3D = null
@@ -578,6 +582,9 @@ func _unhandled_input(event: InputEvent) -> void:
 					_begin_player_drone_hotkey_hold()
 			else:
 				_end_player_drone_hotkey_hold()
+			get_viewport().set_input_as_handled()
+			return
+		if _forward_player_robot_dog_runtime_input_event(event):
 			get_viewport().set_input_as_handled()
 			return
 		if key_event.pressed and not key_event.echo and (key_event.keycode == KEY_KP_ADD or key_event.physical_keycode == KEY_KP_ADD):
@@ -993,6 +1000,8 @@ func handle_debug_keypress(keycode: int, physical_keycode: int = 0) -> bool:
 	if keycode == KEY_C:
 		set_control_mode(CONTROL_MODE_INSPECTION if _control_mode == CONTROL_MODE_PLAYER else CONTROL_MODE_PLAYER)
 		return true
+	if keycode == KEY_KP_4 or physical_keycode == KEY_KP_4:
+		return toggle_player_robot_dog()
 	if keycode == KEY_KP_5 or physical_keycode == KEY_KP_5:
 		_toggle_player_drone_runtime()
 		return true
@@ -1234,6 +1243,30 @@ func get_player_drone_debug_state() -> Dictionary:
 		}
 	return (_player_drone_runtime.get_debug_state() as Dictionary).duplicate(true)
 
+func get_active_player_robot_dog() -> Node3D:
+	if _active_player_robot_dog != null and is_instance_valid(_active_player_robot_dog):
+		return _active_player_robot_dog
+	_active_player_robot_dog = null
+	return null
+
+func get_player_robot_dog_debug_state() -> Dictionary:
+	var runtime := get_active_player_robot_dog()
+	if runtime == null or not runtime.has_method("get_debug_state"):
+		return {
+			"system_state": "stowed",
+			"control_owner": "player",
+			"camera_mode": "player",
+			"locomotion_state": "stowed",
+			"move_input": Vector2.ZERO,
+			"turn_input": 0.0,
+			"speed_mps": 0.0,
+			"active_robot_dog": false,
+			"player_frozen": false,
+			"world_position": Vector3.ZERO,
+			"heading_deg": 0.0,
+		}
+	return (runtime.get_debug_state() as Dictionary).duplicate(true)
+
 func get_player_drone_squadron_debug_state() -> Dictionary:
 	_ensure_player_drone_runtime()
 	_ensure_player_drone_squadron_runtime()
@@ -1331,6 +1364,58 @@ func _peek_player_drone_debug_state() -> Dictionary:
 func _is_player_drone_runtime_busy() -> bool:
 	var debug_state: Dictionary = _peek_player_drone_debug_state()
 	return str(debug_state.get("system_state", "stowed")) != "stowed"
+
+func summon_player_robot_dog() -> Node3D:
+	_ensure_robot_dog_runtime_root()
+	if player == null or CityRobotDogControlRuntimeScene == null or _robot_dog_runtime_root == null:
+		return null
+	if _active_player_robot_dog != null and is_instance_valid(_active_player_robot_dog):
+		_active_player_robot_dog.queue_free()
+	_active_player_robot_dog = CityRobotDogControlRuntimeScene.instantiate() as Node3D
+	if _active_player_robot_dog == null:
+		return null
+	_active_player_robot_dog.name = "PlayerRobotDogRuntime"
+	_robot_dog_runtime_root.add_child(_active_player_robot_dog)
+	if _active_player_robot_dog.has_method("bind_player_owner"):
+		_active_player_robot_dog.bind_player_owner(player)
+	if _active_player_robot_dog.has_method("activate_at"):
+		_active_player_robot_dog.activate_at(_resolve_player_robot_dog_spawn_position(), _resolve_player_robot_dog_heading_rad())
+	return _active_player_robot_dog
+
+func retract_player_robot_dog() -> bool:
+	if _active_player_robot_dog == null or not is_instance_valid(_active_player_robot_dog):
+		_active_player_robot_dog = null
+		return false
+	if _active_player_robot_dog.has_method("deactivate"):
+		_active_player_robot_dog.deactivate()
+	_active_player_robot_dog.queue_free()
+	_active_player_robot_dog = null
+	return true
+
+func toggle_player_robot_dog() -> bool:
+	if get_active_player_robot_dog() != null:
+		return retract_player_robot_dog()
+	return summon_player_robot_dog() != null
+
+func _resolve_player_robot_dog_spawn_position() -> Vector3:
+	if player == null:
+		return Vector3.ZERO
+	var forward := -player.global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		forward = Vector3.FORWARD
+	forward = forward.normalized()
+	return player.global_position + forward * PLAYER_ROBOT_DOG_SUMMON_DISTANCE_M
+
+func _resolve_player_robot_dog_heading_rad() -> float:
+	if player == null:
+		return 0.0
+	var forward := -player.global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		return player.rotation.y
+	forward = forward.normalized()
+	return atan2(-forward.x, -forward.z)
 
 func _update_player_drone_hotkey_hold_timer(delta: float) -> void:
 	if not _player_drone_hotkey_hold_active:
@@ -4284,6 +4369,21 @@ func _ensure_player_drone_runtime() -> void:
 			add_child(_player_drone_runtime)
 	if _player_drone_runtime != null and _player_drone_runtime.has_method("bind_player_owner"):
 		_player_drone_runtime.bind_player_owner(player)
+
+func _ensure_robot_dog_runtime_root() -> void:
+	if _robot_dog_runtime_root != null and is_instance_valid(_robot_dog_runtime_root):
+		return
+	_robot_dog_runtime_root = get_node_or_null("RobotDogRuntimeRoot") as Node3D
+	if _robot_dog_runtime_root == null:
+		_robot_dog_runtime_root = Node3D.new()
+		_robot_dog_runtime_root.name = "RobotDogRuntimeRoot"
+		add_child(_robot_dog_runtime_root)
+
+func _forward_player_robot_dog_runtime_input_event(event: InputEvent) -> bool:
+	var runtime := get_active_player_robot_dog()
+	if runtime == null or not runtime.has_method("handle_input_event"):
+		return false
+	return bool(runtime.handle_input_event(event))
 
 func _ensure_player_drone_squadron_runtime() -> void:
 	_ensure_player_drone_runtime()

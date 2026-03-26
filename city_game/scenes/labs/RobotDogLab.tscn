@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://city_game/scenes/labs/RobotDogLab.gd" id="1_lab_script"]
 [ext_resource type="Script" uid="uid://js1ph5u5utnv" path="res://city_game/scripts/PlayerController.gd" id="2_player_script"]
 [ext_resource type="Script" uid="uid://0ulxwibuiibm" path="res://city_game/ui/PrototypeHud.gd" id="3_hud_script"]
-[ext_resource type="PackedScene" uid="uid://b82qy3c3og81y" path="res://city_game/world/creatures/quadrupeds/CityRobotDog.tscn" id="4_robot_dog_scene"]
+[ext_resource type="PackedScene" path="res://city_game/world/creatures/quadrupeds/CityRobotDogControlRuntime.tscn" id="4_robot_dog_scene"]
 
 [sub_resource type="Environment" id="1_lab_environment"]
 background_mode = 2
@@ -153,11 +153,11 @@ layout_mode = 2
 
 [node name="Title" type="Label" parent="Hud/Root/Panel/VBox" unique_id=1379036070]
 layout_mode = 2
-text = "v60 robot dog lab"
+text = "v61 robot dog lab"
 
 [node name="Status" type="Label" parent="Hud/Root/Panel/VBox" unique_id=661877978]
 layout_mode = 2
-text = "Booting robot dog lab..."
+text = "Booting v61 robot dog lab..."
 autowrap_mode = 3
 
 [node name="DebugText" type="Label" parent="Hud/Root/Panel/VBox" unique_id=509151640]
@@ -165,4 +165,4 @@ layout_mode = 2
 autowrap_mode = 3
 
 [node name="RobotDogRoot" parent="." unique_id=1017451885 instance=ExtResource("4_robot_dog_scene")]
-transform = Transform3D(5, 0, 0, 0, 5, 0, 0, 0, 5, -18, 0, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18, 0, 0)

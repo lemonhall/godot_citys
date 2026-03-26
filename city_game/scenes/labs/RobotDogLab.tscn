@@ -1,0 +1,167 @@
+[gd_scene load_steps=17 format=3]
+
+[ext_resource type="Script" path="res://city_game/scenes/labs/RobotDogLab.gd" id="1_lab_script"]
+[ext_resource type="Script" path="res://city_game/scripts/PlayerController.gd" id="2_player_script"]
+[ext_resource type="Script" path="res://city_game/ui/PrototypeHud.gd" id="3_hud_script"]
+[ext_resource type="PackedScene" path="res://city_game/world/creatures/quadrupeds/CityRobotDog.tscn" id="4_robot_dog_scene"]
+
+[sub_resource type="Environment" id="1_lab_environment"]
+background_mode = 2
+background_color = Color(0.6901961, 0.80784315, 0.8862745, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.97, 0.98, 1, 1)
+ambient_light_energy = 0.72
+
+[sub_resource type="CapsuleShape3D" id="2_player_shape"]
+radius = 0.45
+height = 1.1
+
+[sub_resource type="CapsuleMesh" id="3_player_mesh"]
+radius = 0.45
+mid_height = 1.1
+
+[sub_resource type="BoxShape3D" id="4_ground_shape"]
+size = Vector3(280, 6, 220)
+
+[sub_resource type="BoxMesh" id="5_ground_mesh"]
+size = Vector3(280, 6, 220)
+
+[sub_resource type="BoxShape3D" id="6_ramp_shape"]
+size = Vector3(18, 1.6, 16)
+
+[sub_resource type="BoxMesh" id="7_ramp_mesh"]
+size = Vector3(18, 1.6, 16)
+
+[sub_resource type="BoxShape3D" id="8_step_shape"]
+size = Vector3(12, 2.4, 18)
+
+[sub_resource type="BoxMesh" id="9_step_mesh"]
+size = Vector3(12, 2.4, 18)
+
+[sub_resource type="BoxShape3D" id="10_channel_shape"]
+size = Vector3(3.6, 0.9, 28)
+
+[sub_resource type="BoxMesh" id="11_channel_mesh"]
+size = Vector3(3.6, 0.9, 28)
+
+[sub_resource type="StandardMaterial3D" id="12_ground_material"]
+albedo_color = Color(0.28, 0.36, 0.3, 1)
+roughness = 1.0
+
+[sub_resource type="StandardMaterial3D" id="13_fixture_material"]
+albedo_color = Color(0.52, 0.47, 0.36, 1)
+roughness = 0.97
+
+[node name="RobotDogLab" type="Node3D"]
+script = ExtResource("1_lab_script")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("1_lab_environment")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-42, -20, 0)
+light_energy = 1.55
+shadow_enabled = true
+
+[node name="GroundBody" type="StaticBody3D" parent="."]
+position = Vector3(0, -3, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="GroundBody"]
+shape = SubResource("4_ground_shape")
+
+[node name="GroundMesh" type="MeshInstance3D" parent="GroundBody"]
+material_override = SubResource("12_ground_material")
+mesh = SubResource("5_ground_mesh")
+
+[node name="FixtureRoot" type="Node3D" parent="."]
+
+[node name="RampBody" type="StaticBody3D" parent="FixtureRoot"]
+position = Vector3(16, 0.75, 0)
+rotation_degrees = Vector3(0, 0, -10)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="FixtureRoot/RampBody"]
+shape = SubResource("6_ramp_shape")
+
+[node name="RampMesh" type="MeshInstance3D" parent="FixtureRoot/RampBody"]
+material_override = SubResource("13_fixture_material")
+mesh = SubResource("7_ramp_mesh")
+
+[node name="StepBody" type="StaticBody3D" parent="FixtureRoot"]
+position = Vector3(38, 1.2, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="FixtureRoot/StepBody"]
+shape = SubResource("8_step_shape")
+
+[node name="StepMesh" type="MeshInstance3D" parent="FixtureRoot/StepBody"]
+material_override = SubResource("13_fixture_material")
+mesh = SubResource("9_step_mesh")
+
+[node name="ChannelBody" type="StaticBody3D" parent="FixtureRoot"]
+position = Vector3(-8, 0.45, 18)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="FixtureRoot/ChannelBody"]
+shape = SubResource("10_channel_shape")
+
+[node name="ChannelMesh" type="MeshInstance3D" parent="FixtureRoot/ChannelBody"]
+material_override = SubResource("13_fixture_material")
+mesh = SubResource("11_channel_mesh")
+
+[node name="Player" type="CharacterBody3D" parent="."]
+position = Vector3(0, 1.1, 48)
+script = ExtResource("2_player_script")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Player"]
+shape = SubResource("2_player_shape")
+
+[node name="Visual" type="MeshInstance3D" parent="Player"]
+position = Vector3(0, 0.9, 0)
+mesh = SubResource("3_player_mesh")
+
+[node name="CameraRig" type="Node3D" parent="Player"]
+position = Vector3(0, 1.35, 0)
+
+[node name="Camera3D" type="Camera3D" parent="Player/CameraRig"]
+position = Vector3(0, 2.3, 6.2)
+current = true
+fov = 62.0
+
+[node name="Hud" type="CanvasLayer" parent="."]
+script = ExtResource("3_hud_script")
+
+[node name="Root" type="Control" parent="Hud"]
+anchors_preset = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+mouse_filter = 2
+
+[node name="ToggleButton" type="Button" parent="Hud/Root"]
+offset_left = 24.0
+offset_top = 22.0
+offset_right = 128.0
+offset_bottom = 52.0
+text = "Inspect HUD"
+
+[node name="Panel" type="PanelContainer" parent="Hud/Root"]
+visible = false
+offset_left = 24.0
+offset_top = 64.0
+offset_right = 560.0
+offset_bottom = 320.0
+
+[node name="VBox" type="VBoxContainer" parent="Hud/Root/Panel"]
+
+[node name="Title" type="Label" parent="Hud/Root/Panel/VBox"]
+text = "v59 robot dog lab"
+
+[node name="Status" type="Label" parent="Hud/Root/Panel/VBox"]
+text = "Booting robot dog lab..."
+autowrap_mode = 3
+
+[node name="DebugText" type="Label" parent="Hud/Root/Panel/VBox"]
+text = ""
+autowrap_mode = 3
+
+[node name="RobotDogRoot" parent="." instance=ExtResource("4_robot_dog_scene")]
+position = Vector3(-18, 0, 0)

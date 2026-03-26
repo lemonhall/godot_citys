@@ -1265,6 +1265,7 @@ func get_player_robot_dog_debug_state() -> Dictionary:
 	if runtime == null or not runtime.has_method("get_debug_state"):
 		return {
 			"system_state": "stowed",
+			"behavior_mode": "stowed",
 			"control_owner": "player",
 			"camera_mode": "player",
 			"locomotion_state": "stowed",
@@ -1272,7 +1273,11 @@ func get_player_robot_dog_debug_state() -> Dictionary:
 			"turn_input": 0.0,
 			"speed_mps": 0.0,
 			"active_robot_dog": false,
+			"should_drive_world_streaming": false,
 			"player_frozen": false,
+			"follow_anchor_world_position": Vector3.ZERO,
+			"follow_distance_m": 0.0,
+			"follow_player_speed_mps": 0.0,
 			"world_position": Vector3.ZERO,
 			"heading_deg": 0.0,
 		}
@@ -1390,7 +1395,8 @@ func summon_player_robot_dog() -> Node3D:
 	if _active_player_robot_dog.has_method("bind_player_owner"):
 		_active_player_robot_dog.bind_player_owner(player)
 	if _active_player_robot_dog.has_method("activate_at"):
-		_active_player_robot_dog.activate_at(_resolve_player_robot_dog_spawn_position(), _resolve_player_robot_dog_heading_rad())
+		_active_player_robot_dog.activate_at(_resolve_player_robot_dog_spawn_position(_active_player_robot_dog), _resolve_player_robot_dog_heading_rad(), true)
+	_show_player_robot_dog_focus_message("机械狗伴随中：Insert 接管，KP4 收回", 4.2)
 	return _active_player_robot_dog
 
 func retract_player_robot_dog() -> bool:
@@ -1401,6 +1407,7 @@ func retract_player_robot_dog() -> bool:
 		_active_player_robot_dog.deactivate()
 	_active_player_robot_dog.queue_free()
 	_active_player_robot_dog = null
+	_show_player_robot_dog_focus_message("机械狗已收回", 2.4)
 	return true
 
 func toggle_player_robot_dog() -> bool:
@@ -1408,7 +1415,7 @@ func toggle_player_robot_dog() -> bool:
 		return retract_player_robot_dog()
 	return summon_player_robot_dog() != null
 
-func _resolve_player_robot_dog_spawn_position() -> Vector3:
+func _resolve_player_robot_dog_spawn_position(runtime: Node3D = null) -> Vector3:
 	if player == null:
 		return Vector3.ZERO
 	var forward := -player.global_transform.basis.z
@@ -1416,7 +1423,21 @@ func _resolve_player_robot_dog_spawn_position() -> Vector3:
 	if forward.length_squared() <= 0.0001:
 		forward = Vector3.FORWARD
 	forward = forward.normalized()
-	return player.global_position + forward * PLAYER_ROBOT_DOG_SUMMON_DISTANCE_M
+	var right := player.global_transform.basis.x
+	right.y = 0.0
+	if right.length_squared() <= 0.0001:
+		right = Vector3.RIGHT
+	right = right.normalized()
+	var lateral_offset_m := 1.85
+	var forward_offset_m := -0.35
+	if runtime != null and is_instance_valid(runtime):
+		var runtime_lateral: Variant = runtime.get("follow_lateral_offset_m")
+		var runtime_forward: Variant = runtime.get("follow_forward_offset_m")
+		if runtime_lateral is float:
+			lateral_offset_m = float(runtime_lateral)
+		if runtime_forward is float:
+			forward_offset_m = float(runtime_forward)
+	return player.global_position + right * lateral_offset_m + forward * forward_offset_m
 
 func _resolve_player_robot_dog_heading_rad() -> float:
 	if player == null:
@@ -4415,7 +4436,31 @@ func _forward_player_robot_dog_runtime_input_event(event: InputEvent) -> bool:
 	var runtime := get_active_player_robot_dog()
 	if runtime == null or not runtime.has_method("handle_input_event"):
 		return false
-	return bool(runtime.handle_input_event(event))
+	var before_state := {}
+	if runtime.has_method("get_debug_state"):
+		before_state = runtime.get_debug_state()
+	var handled := bool(runtime.handle_input_event(event))
+	if not handled:
+		return false
+	var after_state := before_state
+	if runtime.has_method("get_debug_state"):
+		after_state = runtime.get_debug_state()
+	_maybe_show_player_robot_dog_mode_transition_focus_message(before_state, after_state)
+	return true
+
+func _show_player_robot_dog_focus_message(text: String, duration_sec: float = 4.0) -> void:
+	if hud != null and hud.has_method("set_focus_message"):
+		hud.set_focus_message(text, duration_sec)
+
+func _maybe_show_player_robot_dog_mode_transition_focus_message(before_state: Dictionary, after_state: Dictionary) -> void:
+	var before_mode := str(before_state.get("behavior_mode", ""))
+	var after_mode := str(after_state.get("behavior_mode", ""))
+	if before_mode == after_mode:
+		return
+	if after_mode == "controlled":
+		_show_player_robot_dog_focus_message("机械狗控制中：Insert 退出控制，KP4 收回", 4.2)
+	elif after_mode == "follow":
+		_show_player_robot_dog_focus_message("机械狗伴随中：Insert 接管，KP4 收回", 4.2)
 
 func _ensure_player_drone_squadron_runtime() -> void:
 	_ensure_player_drone_runtime()

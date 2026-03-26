@@ -36,7 +36,7 @@ func _run() -> void:
 	if not T.require_true(self, player_camera != null and player_camera.current, "Player robot dog camera takeover contract requires the player camera to boot current"):
 		return
 
-	var baseline_player_position := (player as Node3D).global_position
+	var baseline_player_position := Vector3.ZERO
 	_press_world_key(world, KEY_KP_4)
 	await _settle_frames(3)
 
@@ -53,7 +53,29 @@ func _run() -> void:
 	var active_state := world.get_player_robot_dog_debug_state() as Dictionary
 	if not T.require_true(self, str(active_state.get("system_state", "")) == "active", "Robot dog camera takeover contract requires the system to settle into active state after pressing KP_4"):
 		return
-	if not T.require_true(self, str(active_state.get("control_owner", "")) == "robot_dog", "Active robot dog control must transfer control_owner to robot_dog instead of leaving it on the player"):
+	if not T.require_true(self, str(active_state.get("behavior_mode", "")) == "follow", "KP_4 summon must now boot the robot dog into follow mode before any explicit control takeover"):
+		return
+	if not T.require_true(self, str(active_state.get("control_owner", "")) == "player", "Summoning the robot dog must leave control_owner on the player until Insert is pressed"):
+		return
+	if not T.require_true(self, str(active_state.get("camera_mode", "")) == "player", "Summoning the robot dog must keep camera_mode=player until Insert is pressed"):
+		return
+	if not T.require_true(self, not bool(active_state.get("player_frozen", true)), "Follow-mode robot dog must not freeze the player body"):
+		return
+	if not T.require_true(self, player_camera.current and not runtime_camera.current, "Follow-mode robot dog must keep the player camera current instead of instantly taking over the view"):
+		return
+	if not T.require_true(self, bool(player.is_control_enabled()), "Follow-mode robot dog must leave player input enabled"):
+		return
+	if not T.require_true(self, not bool(player.is_movement_locked()), "Follow-mode robot dog must leave player movement unlocked"):
+		return
+	if not T.require_true(self, player.request_primary_fire(), "Follow-mode robot dog must still allow the player rifle fire request to go through"):
+		return
+
+	_press_world_key(world, KEY_INSERT)
+	await _settle_frames(2)
+	active_state = world.get_player_robot_dog_debug_state() as Dictionary
+	if not T.require_true(self, str(active_state.get("behavior_mode", "")) == "controlled", "Pressing Insert while the robot dog is following must transfer it into controlled mode"):
+		return
+	if not T.require_true(self, str(active_state.get("control_owner", "")) == "robot_dog", "Controlled robot dog mode must transfer control_owner to robot_dog instead of leaving it on the player"):
 		return
 	if not T.require_true(self, str(active_state.get("camera_mode", "")) == "third_person", "Active robot dog control must expose camera_mode=third_person in the formal debug state"):
 		return
@@ -70,6 +92,7 @@ func _run() -> void:
 	if not T.require_true(self, not player.request_ground_slam(), "Active robot dog control must suppress player traversal attack requests while the dog owns input"):
 		return
 
+	baseline_player_position = (player as Node3D).global_position
 	_press_world_key(world, KEY_W)
 	await _settle_frames(5)
 	if not T.require_true(self, (player as Node3D).global_position.distance_to(baseline_player_position) <= 0.01, "Active robot dog control must keep the player body frozen in place instead of letting W move the player"):
@@ -102,6 +125,22 @@ func _run() -> void:
 	var minimap_snapshot: Dictionary = world.build_minimap_snapshot()
 	var minimap_player_marker: Dictionary = minimap_snapshot.get("player_marker", {})
 	if not T.require_true(self, absf(float(minimap_player_marker.get("bearing_deg", -999.0)) - turned_bearing_deg) <= 0.5, "Minimap player marker must follow the active robot dog heading instead of staying frozen on the player's locked body"):
+		return
+
+	_press_world_key(world, KEY_INSERT)
+	await _settle_frames(2)
+	var resumed_follow_state := world.get_player_robot_dog_debug_state() as Dictionary
+	if not T.require_true(self, str(resumed_follow_state.get("behavior_mode", "")) == "follow", "Pressing Insert again while controlling the robot dog must return it to follow mode"):
+		return
+	if not T.require_true(self, str(resumed_follow_state.get("control_owner", "")) == "player", "Leaving controlled mode must restore control_owner back to player"):
+		return
+	if not T.require_true(self, str(resumed_follow_state.get("camera_mode", "")) == "player", "Leaving controlled mode must restore camera_mode back to player"):
+		return
+	if not T.require_true(self, not bool(resumed_follow_state.get("player_frozen", true)), "Leaving controlled mode must clear player_frozen in the debug state"):
+		return
+	if not T.require_true(self, player_camera.current and runtime_camera != null and not runtime_camera.current, "Leaving controlled mode must restore the player camera while keeping the dog runtime mounted"):
+		return
+	if not T.require_true(self, bool(player.is_control_enabled()) and not bool(player.is_movement_locked()), "Leaving controlled mode must restore player control and movement ownership"):
 		return
 
 	_press_world_key(world, KEY_KP_4)

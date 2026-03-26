@@ -5,6 +5,7 @@ const T := preload("res://tests/_test_util.gd")
 const CITY_SCENE_PATH := "res://city_game/scenes/CityPrototype.tscn"
 const ROBOT_DOG_RUNTIME_SCRIPT_PATH := "res://city_game/world/creatures/quadrupeds/CityRobotDogControlRuntime.gd"
 const MAX_SPAWN_HEADING_DELTA_DEG := 8.0
+const MIN_RIGHT_SLOT_ALIGNMENT := 0.68
 
 func _init() -> void:
 	call_deferred("_run")
@@ -45,13 +46,22 @@ func _run() -> void:
 
 	var player_spawn_position := player.global_position
 	var player_forward := _planar_forward(player.global_transform.basis)
+	var player_right := _planar_right(player.global_transform.basis)
 	_press_world_key(world, KEY_KP_4)
 	await _settle_frames(4)
 
 	var active_state := world.get_player_robot_dog_debug_state() as Dictionary
-	if not T.require_true(self, str(active_state.get("system_state", "")) == "active", "Pressing KP_4 from stowed must immediately enter the active robot dog control state"):
+	if not T.require_true(self, str(active_state.get("system_state", "")) == "active", "Pressing KP_4 from stowed must immediately enter the active robot dog runtime state"):
 		return
 	if not T.require_true(self, bool(active_state.get("active_robot_dog", false)), "Pressing KP_4 from stowed must report active_robot_dog=true"):
+		return
+	if not T.require_true(self, str(active_state.get("behavior_mode", "")) == "follow", "Pressing KP_4 from stowed must now summon the robot dog into follow mode instead of immediately stealing control"):
+		return
+	if not T.require_true(self, str(active_state.get("control_owner", "")) == "player", "Summoning the robot dog must leave control ownership on the player until Insert is pressed"):
+		return
+	if not T.require_true(self, str(active_state.get("camera_mode", "")) == "player", "Summoning the robot dog must keep the player camera current until Insert explicitly transfers control"):
+		return
+	if not T.require_true(self, not bool(active_state.get("player_frozen", true)), "Summoning the robot dog into follow mode must not freeze the player body"):
 		return
 
 	var runtime := world.get_active_player_robot_dog() as Node3D
@@ -63,12 +73,12 @@ func _run() -> void:
 
 	var spawn_delta := runtime.global_position - player_spawn_position
 	var planar_distance_m := Vector2(spawn_delta.x, spawn_delta.z).length()
-	if not T.require_true(self, planar_distance_m >= 1.2 and planar_distance_m <= 3.2, "Summoned robot dog must appear about 2m in front of the player instead of underfoot or far away"):
+	if not T.require_true(self, planar_distance_m >= 1.0 and planar_distance_m <= 3.0, "Summoned robot dog must appear near the formal companion slot instead of underfoot or far away"):
 		return
 	var spawn_direction := Vector3(spawn_delta.x, 0.0, spawn_delta.z).normalized()
-	if not T.require_true(self, player_forward.length_squared() > 0.0001 and spawn_direction.length_squared() > 0.0001, "Robot dog summon must produce measurable planar forward vectors for the player and spawn direction"):
+	if not T.require_true(self, player_forward.length_squared() > 0.0001 and player_right.length_squared() > 0.0001 and spawn_direction.length_squared() > 0.0001, "Robot dog summon must produce measurable planar forward/right vectors for the player and spawn direction"):
 		return
-	if not T.require_true(self, rad_to_deg(acos(clampf(player_forward.dot(spawn_direction), -1.0, 1.0))) <= MAX_SPAWN_HEADING_DELTA_DEG, "Summoned robot dog must appear along the player's forward direction instead of off to the side"):
+	if not T.require_true(self, player_right.dot(spawn_direction) >= MIN_RIGHT_SLOT_ALIGNMENT, "Summoned robot dog must appear on the player's right-side companion slot instead of in front of the player"):
 		return
 	var runtime_forward := _planar_forward(runtime.global_transform.basis)
 	if not T.require_true(self, rad_to_deg(acos(clampf(player_forward.dot(runtime_forward), -1.0, 1.0))) <= MAX_SPAWN_HEADING_DELTA_DEG, "Summoned robot dog must inherit the player's facing direction instead of spawning with a different heading"):
@@ -107,3 +117,10 @@ func _planar_forward(basis: Basis) -> Vector3:
 	if forward.length_squared() <= 0.0001:
 		return Vector3.ZERO
 	return forward.normalized()
+
+func _planar_right(basis: Basis) -> Vector3:
+	var right := basis.x
+	right.y = 0.0
+	if right.length_squared() <= 0.0001:
+		return Vector3.ZERO
+	return right.normalized()

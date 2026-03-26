@@ -32,7 +32,17 @@ func _run() -> void:
 	var active_state := world.get_player_robot_dog_debug_state() as Dictionary
 	if not T.require_true(self, str(active_state.get("system_state", "")) == "active", "Player robot dog flow must enter active system state after pressing KP_4"):
 		return
-	if not T.require_true(self, str(active_state.get("control_owner", "")) == "robot_dog", "Player robot dog flow must transfer control ownership to the robot dog after pressing KP_4"):
+	if not T.require_true(self, str(active_state.get("behavior_mode", "")) == "follow", "Player robot dog flow must now summon the robot dog into follow mode after pressing KP_4"):
+		return
+	if not T.require_true(self, str(active_state.get("control_owner", "")) == "player", "Player robot dog flow must leave control ownership on the player until Insert is pressed"):
+		return
+
+	_press_world_key(world, KEY_INSERT)
+	await _settle_frames(4)
+	active_state = world.get_player_robot_dog_debug_state() as Dictionary
+	if not T.require_true(self, str(active_state.get("behavior_mode", "")) == "controlled", "Pressing Insert after summon must transfer the robot dog into controlled mode"):
+		return
+	if not T.require_true(self, str(active_state.get("control_owner", "")) == "robot_dog", "Pressing Insert after summon must transfer control ownership to the robot dog"):
 		return
 
 	_press_world_key(world, KEY_W)
@@ -64,6 +74,12 @@ func _run() -> void:
 	await _settle_frames(64)
 	var recovered_state := world.get_player_robot_dog_debug_state() as Dictionary
 	if not T.require_true(self, str(recovered_state.get("locomotion_state", "")) == "idle", "Pressing P again in the main world must return the robot dog from prone back to idle control state"):
+		return
+
+	_press_world_key(world, KEY_INSERT)
+	await _settle_frames(6)
+	var resumed_follow_state := world.get_player_robot_dog_debug_state() as Dictionary
+	if not T.require_true(self, str(resumed_follow_state.get("behavior_mode", "")) == "follow", "Pressing Insert again after manual control must return the robot dog to follow mode"):
 		return
 
 	_press_world_key(world, KEY_KP_4)

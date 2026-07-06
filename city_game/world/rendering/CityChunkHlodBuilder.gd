@@ -1,5 +1,7 @@
 extends RefCounted
 
+const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
+
 static func build_mid_proxy(profile: Dictionary) -> Node3D:
 	return _build_proxy_group("MidProxy", profile, "mid")
 
@@ -41,8 +43,5 @@ static func _build_scaled_transform(center: Vector3, size: Vector3, yaw_rad: flo
 	return Transform3D(basis, center)
 
 static func _build_material(profile: Dictionary, palette_key: String) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
 	var palette: Dictionary = profile.get("palette", {})
-	material.albedo_color = palette.get(palette_key, Color(0.35, 0.46, 0.58, 1.0))
-	material.roughness = 1.0
-	return material
+	return CityToyVisualStyle.get_material(palette.get(palette_key, Color(0.35, 0.46, 0.58, 1.0)), "hlod")

@@ -1,10 +1,16 @@
 extends RefCounted
 
+const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
+
 const BUILDING_ORNAMENT_OVERLAP_M := 0.08
+const LEGO_STUD_RADIUS_M := 0.96
+const LEGO_STUD_HEIGHT_M := 0.36
+const LEGO_STUD_OVERLAP_M := 0.03
 
 static var _shared_box_shape_cache: Dictionary = {}
 static var _shared_box_mesh_cache: Dictionary = {}
 static var _shared_box_material_cache: Dictionary = {}
+static var _shared_stud_mesh: CylinderMesh = null
 
 static func build_runtime_building(building: Dictionary, apply_inspection_payload: bool = true) -> StaticBody3D:
 	var collision_size: Vector3 = building.get("collision_size", building.get("size", Vector3(18.0, 24.0, 18.0)))
@@ -62,6 +68,7 @@ static func build_runtime_building(building: Dictionary, apply_inspection_payloa
 			var sawtooth_b_size := Vector3(size.x * 0.24, maxf(size.y * 0.14, 1.6), size.z * 0.88)
 			_add_roof_box(building_root, "SawToothA", size, Vector2(-size.x * 0.18, 0.0), sawtooth_a_size, roof)
 			_add_roof_box(building_root, "SawToothB", size, Vector2(size.x * 0.18, 0.0), sawtooth_b_size, accent)
+	_add_lego_studs(building_root, size, roof, accent)
 	return building_root
 
 static func build_service_scene_root(building: Dictionary, assign_owner_recursive: bool = false) -> Node3D:
@@ -172,12 +179,11 @@ static func _get_shared_box_shape(size: Vector3) -> BoxShape3D:
 	_shared_box_shape_cache[key] = shape
 	return shape
 
-static func _get_shared_box_mesh(size: Vector3) -> BoxMesh:
+static func _get_shared_box_mesh(size: Vector3) -> Mesh:
 	var key := _vector3_cache_key(size)
 	if _shared_box_mesh_cache.has(key):
 		return _shared_box_mesh_cache[key]
-	var mesh := BoxMesh.new()
-	mesh.size = size
+	var mesh := CityToyVisualStyle.get_rounded_box_mesh(size)
 	_shared_box_mesh_cache[key] = mesh
 	return mesh
 
@@ -185,11 +191,92 @@ static func _get_shared_box_material(color: Color) -> StandardMaterial3D:
 	var key := _color_cache_key(color)
 	if _shared_box_material_cache.has(key):
 		return _shared_box_material_cache[key]
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 1.0
+	var material := CityToyVisualStyle.get_material(color, "building")
 	_shared_box_material_cache[key] = material
 	return material
+
+static func _get_shared_stud_mesh() -> CylinderMesh:
+	if _shared_stud_mesh != null:
+		return _shared_stud_mesh
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = LEGO_STUD_RADIUS_M
+	mesh.bottom_radius = LEGO_STUD_RADIUS_M
+	mesh.height = LEGO_STUD_HEIGHT_M
+	mesh.radial_segments = 24
+	mesh.rings = 1
+	_shared_stud_mesh = mesh
+	return _shared_stud_mesh
+
+static func _add_lego_studs(parent: Node3D, base_size: Vector3, roof_color: Color, facade_color: Color) -> void:
+	var roof_transforms := _build_roof_stud_transforms(base_size)
+	var facade_transforms := _build_facade_stud_transforms(base_size)
+	parent.set_meta("roof_stud_count", roof_transforms.size())
+	parent.set_meta("facade_stud_count", facade_transforms.size())
+	if not roof_transforms.is_empty():
+		parent.add_child(_build_stud_multimesh("LegoRoofStuds", roof_transforms, roof_color))
+	if not facade_transforms.is_empty():
+		parent.add_child(_build_stud_multimesh("LegoFacadeStuds", facade_transforms, facade_color))
+
+static func _build_stud_multimesh(node_name: String, transforms: Array[Transform3D], color: Color) -> MultiMeshInstance3D:
+	var instance := MultiMeshInstance3D.new()
+	instance.name = node_name
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = _get_shared_stud_mesh()
+	multimesh.instance_count = transforms.size()
+	for transform_index in range(transforms.size()):
+		multimesh.set_instance_transform(transform_index, transforms[transform_index])
+	instance.multimesh = multimesh
+	instance.material_override = _get_shared_box_material(color)
+	return instance
+
+static func _build_roof_stud_transforms(base_size: Vector3) -> Array[Transform3D]:
+	var transforms: Array[Transform3D] = []
+	var columns := clampi(int(floor(base_size.x / 8.0)), 2, 3)
+	var rows := clampi(int(floor(base_size.z / 8.0)), 2, 3)
+	var y := base_size.y * 0.5 + LEGO_STUD_HEIGHT_M * 0.5 - LEGO_STUD_OVERLAP_M
+	for column in range(columns):
+		for row in range(rows):
+			if transforms.size() >= 6:
+				return transforms
+			var x := _distributed_axis_position(column, columns, base_size.x)
+			var z := _distributed_axis_position(row, rows, base_size.z)
+			transforms.append(Transform3D(Basis.IDENTITY, Vector3(x, y, z)))
+	return transforms
+
+static func _build_facade_stud_transforms(base_size: Vector3) -> Array[Transform3D]:
+	var transforms: Array[Transform3D] = []
+	var columns := clampi(int(floor(base_size.x / 6.0)), 2, 4)
+	var rows := clampi(int(floor(base_size.y / 10.0)), 3, 6)
+	var north_basis := Basis.from_euler(Vector3(deg_to_rad(90.0), 0.0, 0.0))
+	var east_basis := Basis.from_euler(Vector3(0.0, 0.0, deg_to_rad(90.0)))
+	var north_z := -base_size.z * 0.5 - LEGO_STUD_HEIGHT_M * 0.5 + LEGO_STUD_OVERLAP_M
+	var east_x := base_size.x * 0.5 + LEGO_STUD_HEIGHT_M * 0.5 - LEGO_STUD_OVERLAP_M
+	for row in range(rows):
+		var y := _distributed_height_position(row, rows, base_size.y)
+		for column in range(columns):
+			if transforms.size() >= 42:
+				return transforms
+			var x := _distributed_axis_position(column, columns, base_size.x)
+			transforms.append(Transform3D(north_basis, Vector3(x, y, north_z)))
+			if transforms.size() >= 42:
+				return transforms
+			var z := _distributed_axis_position(column, columns, base_size.z)
+			transforms.append(Transform3D(east_basis, Vector3(east_x, y, z)))
+	return transforms
+
+static func _distributed_axis_position(index: int, count: int, span: float) -> float:
+	if count <= 1:
+		return 0.0
+	var inset := minf(span * 0.22, 4.0)
+	return lerpf(-span * 0.5 + inset, span * 0.5 - inset, float(index) / float(count - 1))
+
+static func _distributed_height_position(index: int, count: int, height: float) -> float:
+	if count <= 1:
+		return 0.0
+	var bottom := -height * 0.5 + maxf(2.4, height * 0.16)
+	var top := height * 0.5 - maxf(2.4, height * 0.16)
+	return lerpf(bottom, top, float(index) / float(count - 1))
 
 static func _vector3_cache_key(value: Vector3) -> String:
 	return "%.3f|%.3f|%.3f" % [value.x, value.y, value.z]

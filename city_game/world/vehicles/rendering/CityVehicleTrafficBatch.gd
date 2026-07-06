@@ -1,6 +1,7 @@
 extends MultiMeshInstance3D
 
 const CityVehicleVisualCatalog := preload("res://city_game/world/vehicles/rendering/CityVehicleVisualCatalog.gd")
+const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
 const PROXY_GLB_PATH := "res://city_game/assets/vehicles/proxy/tier1_proxy.glb"
 const PROXY_GROUND_CLEARANCE_M := 0.02
 const PROXY_SCALE_PROFILE := {
@@ -289,10 +290,6 @@ static func _build_fallback_proxy_mesh() -> ArrayMesh:
 static func _get_shared_vehicle_material() -> StandardMaterial3D:
 	if _shared_vehicle_material != null:
 		return _shared_vehicle_material
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(1.0, 1.0, 1.0, 1.0)
-	material.vertex_color_use_as_albedo = true
-	material.roughness = 0.9
-	material.metallic = 0.04
+	var material := CityToyVisualStyle.get_vertex_color_material("vehicle")
 	_shared_vehicle_material = material
 	return _shared_vehicle_material

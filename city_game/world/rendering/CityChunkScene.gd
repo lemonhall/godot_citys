@@ -14,6 +14,7 @@ const LakeFishActorScene := preload("res://city_game/world/features/lake/LakeFis
 const CityGroundRoadOverlayShader := preload("res://city_game/world/rendering/CityGroundRoadOverlay.gdshader")
 const CityBuildingSceneBuilder := preload("res://city_game/world/serviceability/CityBuildingSceneBuilder.gd")
 const CityDestructibleBuildingRuntime := preload("res://city_game/combat/buildings/CityDestructibleBuildingRuntime.gd")
+const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
 
 const LOD_NEAR := "near"
 const LOD_MID := "mid"
@@ -112,9 +113,9 @@ static func prewarm_ground_overlay_material() -> void:
 	var material := ShaderMaterial.new()
 	material.shader = CityGroundRoadOverlayShader
 	material.set_shader_parameter("chunk_size_m", 256.0)
-	material.set_shader_parameter("ground_color", Color(0.12549, 0.333333, 0.168627, 1.0))
-	material.set_shader_parameter("road_color", Color(0.16, 0.17, 0.19, 1.0))
-	material.set_shader_parameter("stripe_color", Color(0.9, 0.8, 0.5, 1.0))
+	material.set_shader_parameter("ground_color", CityToyVisualStyle.LEGO_GROUND_COLOR)
+	material.set_shader_parameter("road_color", CityToyVisualStyle.LEGO_ROAD_COLOR)
+	material.set_shader_parameter("stripe_color", CityToyVisualStyle.LEGO_STRIPE_COLOR)
 	material.set_shader_parameter("stripe_enabled", true)
 	material.set_shader_parameter("surface_uv_offset", Vector2.ZERO)
 	material.set_shader_parameter("surface_uv_scale", Vector2.ONE)
@@ -904,13 +905,8 @@ func _build_lake_fish_school_actor(school: Dictionary) -> Node3D:
 
 func _get_water_surface_material() -> StandardMaterial3D:
 	if _shared_water_surface_material_template == null:
-		var material := StandardMaterial3D.new()
-		material.albedo_color = Color(0.16, 0.44, 0.68, 0.72)
-		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		var material := CityToyVisualStyle.get_material(CityToyVisualStyle.LEGO_WATER_COLOR, "water").duplicate()
 		material.cull_mode = BaseMaterial3D.CULL_DISABLED
-		material.roughness = 0.08
-		material.metallic = 0.0
-		material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
 		_shared_water_surface_material_template = material
 	return _shared_water_surface_material_template
 
@@ -1080,12 +1076,11 @@ func _get_shared_box_shape(size: Vector3) -> BoxShape3D:
 	_shared_box_shape_cache[key] = shape
 	return shape
 
-func _get_shared_box_mesh(size: Vector3) -> BoxMesh:
+func _get_shared_box_mesh(size: Vector3) -> Mesh:
 	var key := _vector3_cache_key(size)
 	if _shared_box_mesh_cache.has(key):
 		return _shared_box_mesh_cache[key]
-	var mesh := BoxMesh.new()
-	mesh.size = size
+	var mesh := CityToyVisualStyle.get_rounded_box_mesh(size)
 	_shared_box_mesh_cache[key] = mesh
 	return mesh
 
@@ -1093,9 +1088,7 @@ func _get_shared_box_material(color: Color) -> StandardMaterial3D:
 	var key := _color_cache_key(color)
 	if _shared_box_material_cache.has(key):
 		return _shared_box_material_cache[key]
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 1.0
+	var material := CityToyVisualStyle.get_material(color, "building")
 	_shared_box_material_cache[key] = material
 	return material
 
@@ -1282,9 +1275,9 @@ func _build_ground_material(chunk_size_m: float, profile: Dictionary, detail_mod
 	var material_started_usec := Time.get_ticks_usec()
 	var material := _instantiate_ground_overlay_material()
 	material.set_shader_parameter("chunk_size_m", chunk_size_m)
-	material.set_shader_parameter("ground_color", palette.get("ground", Color(0.12549, 0.333333, 0.168627, 1.0)))
-	material.set_shader_parameter("road_color", palette.get("road", Color(0.16, 0.17, 0.19, 1.0)))
-	material.set_shader_parameter("stripe_color", palette.get("stripe", Color(0.9, 0.8, 0.5, 1.0)))
+	material.set_shader_parameter("ground_color", palette.get("ground", CityToyVisualStyle.LEGO_GROUND_COLOR))
+	material.set_shader_parameter("road_color", palette.get("road", CityToyVisualStyle.LEGO_ROAD_COLOR))
+	material.set_shader_parameter("stripe_color", palette.get("stripe", CityToyVisualStyle.LEGO_STRIPE_COLOR))
 	material.set_shader_parameter(
 		"stripe_enabled",
 		detail_mode == SURFACE_DETAIL_FULL and bool(mask_stats.get("stripe_paint_enabled", true))

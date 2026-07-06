@@ -3,6 +3,7 @@ extends RefCounted
 const CityLakeRegionDefinition := preload("res://city_game/world/features/lake/CityLakeRegionDefinition.gd")
 const CityTerrainGridTemplate := preload("res://city_game/world/rendering/CityTerrainGridTemplate.gd")
 const CityTerrainMeshBuilder := preload("res://city_game/world/rendering/CityTerrainMeshBuilder.gd")
+const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
 
 const DEFAULT_GRID_STEPS := 48
 const MIN_PATCH_MARGIN_M := 40.0
@@ -184,20 +185,13 @@ static func _build_normals(heights: PackedFloat32Array, row_stride: int, world_s
 
 static func _get_ground_material() -> StandardMaterial3D:
 	if _shared_ground_material_template == null:
-		var material := StandardMaterial3D.new()
-		material.albedo_color = Color(0.36862746, 0.45490196, 0.28235295, 1.0)
-		material.roughness = 1.0
+		var material := CityToyVisualStyle.get_material(CityToyVisualStyle.LEGO_GROUND_COLOR, "ground")
 		_shared_ground_material_template = material
 	return _shared_ground_material_template
 
 static func _get_water_surface_material() -> StandardMaterial3D:
 	if _shared_water_surface_material_template == null:
-		var material := StandardMaterial3D.new()
-		material.albedo_color = Color(0.16, 0.44, 0.68, 0.72)
-		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		var material := CityToyVisualStyle.get_material(CityToyVisualStyle.LEGO_WATER_COLOR, "water").duplicate()
 		material.cull_mode = BaseMaterial3D.CULL_DISABLED
-		material.roughness = 0.08
-		material.metallic = 0.0
-		material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
 		_shared_water_surface_material_template = material
 	return _shared_water_surface_material_template

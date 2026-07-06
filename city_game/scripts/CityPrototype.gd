@@ -14,6 +14,7 @@ const CityPlaceIndexBuilder := preload("res://city_game/world/generation/CityPla
 const CityResolvedTarget := preload("res://city_game/world/model/CityResolvedTarget.gd")
 const CityChunkProfileBuilder := preload("res://city_game/world/rendering/CityChunkProfileBuilder.gd")
 const CityChunkGroundSampler := preload("res://city_game/world/rendering/CityChunkGroundSampler.gd")
+const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
 const CityMinimapProjector := preload("res://city_game/world/map/CityMinimapProjector.gd")
 const CityWorldOrientationScript := preload("res://city_game/world/navigation/CityWorldOrientation.gd")
 const CityMapScreenScene := preload("res://city_game/ui/CityMapScreen.tscn")
@@ -6596,28 +6597,4 @@ func _configure_environment() -> void:
 	if environment == null:
 		environment = Environment.new()
 		world_environment.environment = environment
-
-	var sky_material := ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = Color(0.168627, 0.270588, 0.431373, 1.0)
-	sky_material.sky_horizon_color = Color(0.580392, 0.737255, 0.839216, 1.0)
-	sky_material.ground_horizon_color = Color(0.627451, 0.654902, 0.615686, 1.0)
-	sky_material.ground_bottom_color = Color(0.137255, 0.164706, 0.145098, 1.0)
-	sky_material.sky_curve = 0.22
-	sky_material.ground_curve = 0.08
-	sky_material.sun_angle_max = 18.0
-
-	var sky := Sky.new()
-	sky.sky_material = sky_material
-
-	environment.background_mode = Environment.BG_SKY
-	environment.sky = sky
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	environment.ambient_light_energy = 0.75
-	environment.ambient_light_sky_contribution = 0.8
-	environment.fog_enabled = true
-	environment.fog_density = 0.00065
-	environment.fog_aerial_perspective = 0.55
-	environment.fog_light_color = Color(0.643137, 0.741176, 0.803922, 1.0)
-	environment.fog_light_energy = 0.8
-	environment.fog_sky_affect = 1.0
-	environment.fog_sun_scatter = 0.18
+	CityToyVisualStyle.configure_environment(environment)

@@ -1,6 +1,7 @@
 extends RefCounted
 
 const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
+const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
 
 static var _shared_unit_box_mesh: BoxMesh = null
 static var _material_cache: Dictionary = {}
@@ -507,10 +508,7 @@ static func _get_cached_material(color: Color, cull_disabled: bool) -> StandardM
 	var cache_key := "%s|%s" % [_color_cache_key(color), "cull_off" if cull_disabled else "cull_on"]
 	if _material_cache.has(cache_key):
 		return _material_cache[cache_key]
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 1.0
-	material.metallic = 0.0
+	var material := CityToyVisualStyle.get_material(color, "road").duplicate()
 	if cull_disabled:
 		material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_material_cache[cache_key] = material

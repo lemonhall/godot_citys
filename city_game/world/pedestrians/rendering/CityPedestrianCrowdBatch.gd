@@ -1,5 +1,7 @@
 extends MultiMeshInstance3D
 
+const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
+
 const PROXY_GROUND_CLEARANCE_M := 0.02
 const PROXY_UNIFORM_SCALE := 1.0
 const PROXY_SCALE_PROFILE := {
@@ -167,8 +169,6 @@ static func _build_fallback_proxy_mesh() -> ArrayMesh:
 static func _get_shared_proxy_material() -> StandardMaterial3D:
 	if _shared_proxy_material != null:
 		return _shared_proxy_material
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.48, 0.52, 0.56, 1.0)
-	material.roughness = 1.0
+	var material := CityToyVisualStyle.get_material(Color(0.48, 0.52, 0.56, 1.0), "pedestrian")
 	_shared_proxy_material = material
 	return _shared_proxy_material

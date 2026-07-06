@@ -1,5 +1,7 @@
 extends Node3D
 
+const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
+
 @export var block_columns := 4
 @export var block_rows := 4
 @export var block_span := 18.0
@@ -132,13 +134,8 @@ func _add_decal_box(node_name: String, size: Vector3, center: Vector3, color: Co
 	mesh_instance.material_override = _make_material(color)
 	add_child(mesh_instance)
 
-func _make_box_mesh(size: Vector3) -> BoxMesh:
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	return mesh
+func _make_box_mesh(size: Vector3) -> Mesh:
+	return CityToyVisualStyle.get_rounded_box_mesh(size)
 
 func _make_material(color: Color) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 1.0
-	return material
+	return CityToyVisualStyle.get_material(color, "building")

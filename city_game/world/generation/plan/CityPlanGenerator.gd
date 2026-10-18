@@ -7,6 +7,7 @@ const CityTerrainPlan := preload("res://city_game/world/generation/plan/CityTerr
 const CityHistoryPlan := preload("res://city_game/world/generation/plan/CityHistoryPlan.gd")
 const CityRoadPlan := preload("res://city_game/world/generation/plan/CityRoadPlan.gd")
 const CityDistrictPlan := preload("res://city_game/world/generation/plan/CityDistrictPlan.gd")
+const CityLandmarkPlan := preload("res://city_game/world/generation/plan/CityLandmarkPlan.gd")
 
 const VERSION := 1
 
@@ -15,6 +16,7 @@ static func generate(world_seed: int) -> Dictionary:
 	var history: Dictionary = CityHistoryPlan.build(world_seed, terrain)
 	var roads: Dictionary = CityRoadPlan.build(terrain, history)
 	var districts: Dictionary = CityDistrictPlan.build(world_seed, terrain, history)
+	var landmarks: Dictionary = CityLandmarkPlan.build(world_seed, terrain, history)
 	var plan := {
 		"version": VERSION,
 		"seed": world_seed,
@@ -22,6 +24,7 @@ static func generate(world_seed: int) -> Dictionary:
 		"history": history,
 		"roads": roads,
 		"districts": districts,
+		"landmarks": landmarks,
 	}
 	plan["plan_hash"] = _hash_plan(plan)
 	return plan
@@ -31,7 +34,8 @@ static func _hash_plan(plan: Dictionary) -> String:
 	var history: Dictionary = plan.get("history", {})
 	var roads: Dictionary = plan.get("roads", {})
 	var districts: Dictionary = plan.get("districts", {})
-	var canonical := "v%d|seed=%d|river=%s|width=%.2f|core=%s|axes=%s|rail=%.2f/%d|stations=%d|roads=%d|districts=%s" % [
+	var landmarks: Dictionary = plan.get("landmarks", {})
+	var canonical := "v%d|seed=%d|river=%s|width=%.2f|core=%s|axes=%s|rail=%.2f/%d|stations=%d|roads=%d|districts=%s|landmarks=%s" % [
 		int(plan.get("version", 0)),
 		int(plan.get("seed", 0)),
 		_points_signature((terrain.get("river", {}) as Dictionary).get("points", [])),
@@ -43,8 +47,17 @@ static func _hash_plan(plan: Dictionary) -> String:
 		(history.get("stations", []) as Array).size(),
 		(roads.get("roads", []) as Array).size(),
 		_dict_signature(districts),
+		_landmarks_signature(landmarks),
 	]
 	return "%d" % canonical.hash()
+
+static func _landmarks_signature(landmarks: Dictionary) -> String:
+	var parts: Array[String] = []
+	for landmark_variant in landmarks.get("landmarks", []):
+		var landmark: Dictionary = landmark_variant
+		var position: Vector2 = landmark.get("position", Vector2.ZERO)
+		parts.append("%s:%.1f,%.1f:%.1f" % [str(landmark.get("id", "")), position.x, position.y, float(landmark.get("height_m", 0.0))])
+	return ";".join(parts)
 
 static func _points_signature(points: Array) -> String:
 	var parts: Array[String] = []

@@ -25,5 +25,8 @@ func river_distance(x: float, z: float) -> float:
 func district_at(x: float, z: float) -> String:
 	return CityDistrictPlan.district_at(_plan, x, z)
 
+func landmarks() -> Array:
+	return (_plan.get("landmarks", {}) as Dictionary).get("landmarks", [])
+
 func plan_hash() -> String:
 	return str(_plan.get("plan_hash", ""))

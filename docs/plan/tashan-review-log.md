@@ -49,3 +49,28 @@ history PASS; roads PASS; districts PASS (10km shares: oldtown/downtown/commerci
 ```
 
 
+
+## Tashan Review - v63 / M3
+
+- reviewer_context: same-model
+- round: 1
+- cost_profile: standard
+- verdict: pass
+- blocker_count: 0
+- major_count: 0
+- stuck_signatures: none
+- regression_signatures: none
+- commands_checked: `test_city_plan_parcels.gd`, `test_city_plan_districts.gd`
+- residual_risks: Parcels are data-only and not yet consumed by chunk building placement (M4/M5 wiring). Parcel overlap across adjacent roads is not resolved; the plan's roads only intersect near the core.
+
+| severity | signature | evidence | disposition |
+|---|---|---|---|
+| NOTE | `test::v63-m3::street-wall-merged` | Street-wall acceptance is covered by the frontage ratio inside test_city_plan_parcels.gd | Plan/index traceability points at the single parcel test |
+
+## Evidence
+
+```text
+parcels PASS: >=100 parcels, oldtown mean width <=12m, downtown >=24m, frontage ratio 1.0, 22+ alleys width >=4.5m connected, oldtown courtyard ratio ~0.45
+```
+
+

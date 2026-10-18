@@ -1,15 +1,17 @@
 {
   "version": "v63",
-  "milestone": "M2",
+  "milestone": "M3",
   "stage": "ship",
   "costProfile": "standard",
   "rounds": {
     "M1": 1,
-    "M2": 2
+    "M2": 2,
+    "M3": 1
   },
   "minutes": {
     "M1": 12,
-    "M2": 18
+    "M2": 18,
+    "M3": 15
   },
   "gates": {
     "dod": "pass",
@@ -36,7 +38,17 @@
       "round": 2,
       "at": "2026-10-18T22:13:32.632Z",
       "milestone": "M2"
+    },
+    {
+      "severity": "NOTE",
+      "signature": "test::v63-m3::street-wall-merged",
+      "evidence": "Street-wall acceptance is covered by the frontage ratio inside test_city_plan_parcels.gd",
+      "disposition": "Plan/index traceability points at the single parcel test",
+      "status": "accepted",
+      "round": 1,
+      "at": "2026-10-18T22:14:23.798Z",
+      "milestone": "M3"
     }
   ],
-  "updatedAt": "2026-10-18T22:13:32.633Z"
+  "updatedAt": "2026-10-18T22:14:23.799Z"
 }

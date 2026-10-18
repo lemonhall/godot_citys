@@ -99,8 +99,7 @@ CityChunkScene
   3. 巷弄宽度 ≥ 4m 且连通到主街（图连通性检查）。
   4. 内院概率与区域配置一致（oldtown ≥ 30%，downtown ≤ 10%）。
 - **TDD Steps**：
-  1. `tests/world/test_city_plan_parcels.gd`（红）→ 实现 → 绿。
-  2. `tests/world/test_city_plan_street_wall.gd`（红）→ 实现 → 绿。
+  1. `tests/world/test_city_plan_parcels.gd`（红）→ 实现 → 绿；街墙验收并入该测试的前立面比率，不单独开文件。
 - **Risks**：地块切分与现有建筑落位冲突；切片内走 plan 地块，切片外保持 v62。
 
 ### M4 时代建筑语法 + 3 地标 + 可上天台

@@ -4,7 +4,7 @@
 - PRD：`docs/prd/PRD-0034-city-plan-generation.md`
 - ECN：`docs/ecn/ECN-0044-city-plan-generation.md`
 - 计划：`docs/plan/v63-city-plan-generator.md`
-- 状态：`M0-M4` done；`M5` doing（切片水面/地标/天台已接，4 点步行 E2E 与地形高度待做）
+- 状态：`M0-M4` done；`M5` doing（切片的河/地标/天台/地块建筑均已接入；4 点步行 E2E、地形高度、first-visit 性能待做）
 - 成本档位：`standard`（每里程碑最多 3 轮 Review）
 
 ## 愿景
@@ -32,7 +32,7 @@
 | REQ-0034-003 | M2 | `test_city_plan_history.gd`、`test_city_plan_roads.gd` | PASS 2026-10-19（core 在水岸、3 轴、闭环铁路、4 站；干道不穿水） | done |
 | REQ-0034-004 | M2/M3 | `test_city_plan_districts.gd`、`test_city_plan_parcels.gd` | PASS 2026-10-19（区域份额、地块宽度、街墙 100%、巷弄 4m+、内院 45%） | done |
 | REQ-0034-005 | M4 | `test_city_plan_era_grammar.gd`、`test_city_plan_landmarks.gd`、`test_city_plan_roof_access.gd` | PASS 2026-10-19（era 100%、3 地标唯一、最高 220m、双塔连桥、天台可达 ≥90% 高度） | done |
-| REQ-0034-006 | M4/M5 | `test_city_plan_slice_scene.gd`、`test_city_plan_roof_access.gd`、`test_city_plan_slice_walkthrough.gd` | slice_scene + roof_access PASS 2026-10-19；4 点步行 E2E 待做 | doing |
+| REQ-0034-006 | M4/M5 | `test_city_plan_slice_scene.gd`、`test_city_plan_roof_access.gd`、`test_city_plan_slice_buildings.gd`、`test_city_plan_slice_walkthrough.gd` | slice_scene / roof_access / slice_buildings PASS 2026-10-19（切片建筑全部来自 plan parcel，带 district）；4 点步行 E2E 待做 | doing |
 | REQ-0034-007 | M5 | 性能三件套 + 回退抽样 | `chunk_setup` PASS 7348/8500 usec（地标改 compact 后 proxies 2213→722） | doing |
 
 ## ECN 索引

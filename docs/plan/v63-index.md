@@ -70,6 +70,6 @@
 
 ## 差异列表
 
-- `v63::terrain::heightfield-perf`：切片地形高度场在 chunk 内逐点采样 8×8，`ground_mesh_usec` 达 ~60ms（GDScript 逐点采样成本），已回退为平地；M5 需改为「世界级缓存高度栅格 + 双线性采样」后再接。
+- `v63::terrain::heightfield-perf`：逐点采样优化后 `ground_mesh_usec` 已降到 873usec（裁剪河道 + 8×8 网格），但 `test_city_chunk_setup_profile_breakdown` 的平地契约要求 collision faces ≤4、vertex samples ≤8，与高度场冲突；已回退。M5 需给切片单独一条 terrain chunk 模式/契约，或把高度场放到独立地形网格而不改 ground body 统计。
 
 （M1 起回写）

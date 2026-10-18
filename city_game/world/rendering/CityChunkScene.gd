@@ -1365,21 +1365,34 @@ func _set_building_collisions_enabled(enabled: bool) -> void:
 func _build_plan_ground_mesh(chunk_size_m: float) -> Dictionary:
 	var sampler = CityPlanRuntime.get_sampler(int(_chunk_data.get("world_seed", 12345)))
 	var center: Vector3 = _chunk_data.get("chunk_center", Vector3.ZERO)
-	var steps := 16
+	var terrain: Dictionary = sampler.terrain()
+	var local_terrain := _clip_terrain_to_chunk(terrain, center, chunk_size_m)
+	var steps := 8
 	var half := chunk_size_m * 0.5
+	var grid: Array = []
+	for ix in range(steps + 1):
+		var row: Array = []
+		for iz in range(steps + 1):
+			var world_x := center.x - half + chunk_size_m * float(ix) / float(steps)
+			var world_z := center.z - half + chunk_size_m * float(iz) / float(steps)
+			row.append(CityTerrainPlan.height_at(local_terrain, world_x, world_z))
+		grid.append(row)
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var faces := PackedVector3Array()
+	var faces := PackedVector3Array([
+		Vector3(-half, 0.0, -half), Vector3(half, 0.0, -half), Vector3(-half, 0.0, half),
+		Vector3(-half, 0.0, half), Vector3(half, 0.0, -half), Vector3(half, 0.0, half),
+	])
 	for ix in range(steps):
 		for iz in range(steps):
 			var x0 := -half + chunk_size_m * float(ix) / float(steps)
 			var x1 := -half + chunk_size_m * float(ix + 1) / float(steps)
 			var z0 := -half + chunk_size_m * float(iz) / float(steps)
 			var z1 := -half + chunk_size_m * float(iz + 1) / float(steps)
-			var a := Vector3(x0, sampler.height_at(center.x + x0, center.z + z0), z0)
-			var b := Vector3(x1, sampler.height_at(center.x + x1, center.z + z0), z0)
-			var c := Vector3(x0, sampler.height_at(center.x + x0, center.z + z1), z1)
-			var d := Vector3(x1, sampler.height_at(center.x + x1, center.z + z1), z1)
+			var a := Vector3(x0, grid[ix][iz], z0)
+			var b := Vector3(x1, grid[ix + 1][iz], z0)
+			var c := Vector3(x0, grid[ix][iz + 1], z1)
+			var d := Vector3(x1, grid[ix + 1][iz + 1], z1)
 			_add_ground_triangle(surface, faces, a, b, c, half)
 			_add_ground_triangle(surface, faces, c, b, d, half)
 	surface.generate_normals()

@@ -84,6 +84,7 @@ var _floor_height := 3.6
 var _floors := 6
 var _base_top := 0.0
 var _has_retail := false
+var _compact := false
 var _lit_ratio := 0.28
 var _grime := 0.45
 
@@ -141,7 +142,8 @@ func _setup(building: Dictionary) -> void:
 	_floor_height = _height / float(_floors)
 
 	_style = _resolve_style()
-	_has_retail = _height >= 15.0 and _archetype != "industrial" and _archetype != "courtyard"
+	_compact = str(building.get("detail_level", "full")) == "compact"
+	_has_retail = _height >= 15.0 and _archetype != "industrial" and _archetype != "courtyard" and not _compact
 	_base_top = minf(BASE_FLOOR_M, _height * 0.30) if _has_retail else 0.0
 
 	# Per-building tonal variation keeps a block of generated towers from
@@ -214,11 +216,13 @@ func _compose() -> void:
 	if _has_retail:
 		_shopfront(0.0, 0.0, _half_w * 2.0, _half_d * 2.0, 0.0, _base_top, true)
 		_entrance_steps(_half_w * 2.0, _half_d * 2.0, _base_top)
-	_plaza()
-	if _style == STYLE_PUNCHED or _style == STYLE_RIBBON or _style == STYLE_CURTAIN or _style == STYLE_STONE or _style == STYLE_BRICK:
+	if not _compact:
+		_plaza()
+	if not _compact and (_style == STYLE_PUNCHED or _style == STYLE_RIBBON or _style == STYLE_CURTAIN or _style == STYLE_STONE or _style == STYLE_BRICK):
 		_facade_ledges()
-	_parapet_cap(_half_w * 2.0, _half_d * 2.0, _height)
-	if _archetype == "industrial" or _archetype == "row_house" or _archetype == "midrise_bar":
+	if not _compact:
+		_parapet_cap(_half_w * 2.0, _half_d * 2.0, _height)
+	if not _compact and (_archetype == "industrial" or _archetype == "row_house" or _archetype == "midrise_bar"):
 		_solar_panels(_half_w * 2.0, _half_d * 2.0, _height)
 
 func _compose_needle() -> void:

@@ -6,6 +6,7 @@ extends RefCounted
 
 const Runtime := preload("res://city_game/world/generation/plan/CityPlanRuntime.gd")
 const SceneBuilder := preload("res://city_game/world/serviceability/CityBuildingSceneBuilder.gd")
+const RoofAccess := preload("res://city_game/world/generation/plan/CityPlanRoofAccess.gd")
 
 const WATER_LEVEL_Y := 0.06
 const WATER_SAMPLE_STEP_M := 24.0
@@ -131,6 +132,7 @@ static func _build_landmarks(sampler, chunk_center: Vector3, chunk_size: float) 
 			"accent_color": Color(0.62, 0.58, 0.50),
 			"roof_color": Color(0.20, 0.22, 0.24),
 			"glass_color": Color(0.04, 0.08, 0.11),
+			"detail_level": "compact",
 		}
 		var node := SceneBuilder.build_runtime_building(building)
 		if node == null:
@@ -138,5 +140,29 @@ static func _build_landmarks(sampler, chunk_center: Vector3, chunk_size: float) 
 		node.name = "CityLandmark_%s" % str(landmark.get("id", ""))
 		node.set_meta("city_landmark_id", str(landmark.get("id", "")))
 		node.set_meta("city_landmark_height_m", height)
+		var access := _build_roof_access(local, height)
+		node.add_child(access)
 		root.add_child(node)
 	return root
+
+static func _build_roof_access(local: Vector3, height: float) -> Node3D:
+	var access := Node3D.new()
+	access.name = "RoofAccess"
+	access.position = Vector3(0.0, -height * 0.5, 0.0)
+	access.set_meta("roof_local", Vector3(0.0, height, 0.0))
+	access.set_meta("city_landmark_height_m", height)
+	var pad_mesh := CylinderMesh.new()
+	pad_mesh.top_radius = 2.2
+	pad_mesh.bottom_radius = 2.2
+	pad_mesh.height = 0.12
+	var pad := MeshInstance3D.new()
+	pad.name = "Pad"
+	pad.mesh = pad_mesh
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.9, 0.75, 0.3)
+	material.emission_enabled = true
+	material.emission = Color(0.95, 0.75, 0.25)
+	material.emission_energy_multiplier = 2.0
+	pad.material_override = material
+	access.add_child(pad)
+	return access

@@ -1,0 +1,30 @@
+{
+  "version": "v63",
+  "milestone": "M1",
+  "stage": "ship",
+  "costProfile": "standard",
+  "rounds": {
+    "M1": 1
+  },
+  "minutes": {
+    "M1": 12
+  },
+  "gates": {
+    "dod": "pass",
+    "docQa": "pass",
+    "e2e": "unknown"
+  },
+  "findings": [
+    {
+      "severity": "NOTE",
+      "signature": "e2e::v63-m1::deferred-to-m5",
+      "evidence": "M1 is infrastructure; walkthrough E2E is scheduled at M5 per plan",
+      "disposition": "M5 covers the slice walkthrough E2E",
+      "status": "accepted",
+      "round": 1,
+      "at": "2026-10-18T22:11:36.163Z",
+      "milestone": "M1"
+    }
+  ],
+  "updatedAt": "2026-10-18T22:11:36.164Z"
+}

@@ -8,7 +8,7 @@ const Cache := preload("res://city_game/world/generation/plan/CityPlanCache.gd")
 const Sampler := preload("res://city_game/world/generation/plan/CityPlanSampler.gd")
 const ParcelPlan := preload("res://city_game/world/generation/plan/CityParcelPlan.gd")
 
-const SLICE_HALF_M := 700.0
+const SLICE_HALF_M := 600.0
 
 static var _seed := -999999
 static var _plan: Dictionary = {}

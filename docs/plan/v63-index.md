@@ -74,7 +74,7 @@
 
 ## 差异列表
 
-- `v63::perf::first-visit`：`test_city_first_visit_performance_profile` 的 `update_streaming_avg_usec` = 17532 > 14500（v62 基线在 HEAD 803ee55 已是 14653，本项为既有超标；v63 切片又增加约 2.9ms）。M5 需要：缩小切片 plan-parcel 生效半径、减少切片内 compact 建筑数量，或把水面/地标改为按需加载。
+- `v63::perf::first-visit`：`update_streaming_avg_usec` 17532 → **16923**（切片半径 700→600、每 chunk 地块建筑上限 12 后），仍 > 14500；v62 基线 14653 本就超标，v63 净增约 2.3ms。需要按距离分级加载切片内容（HLOD / 只在近处挂水面与地块建筑）才能回到预算，属 v64 性能专项。
 
 - `v63::terrain::heightfield-perf`：逐点采样优化后 `ground_mesh_usec` 已降到 873usec（裁剪河道 + 8×8 网格），但 `test_city_chunk_setup_profile_breakdown` 的平地契约要求 collision faces ≤4、vertex samples ≤8，与高度场冲突；已回退。M5 需给切片单独一条 terrain chunk 模式/契约，或把高度场放到独立地形网格而不改 ground body 统计。
 

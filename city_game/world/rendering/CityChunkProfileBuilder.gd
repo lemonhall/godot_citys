@@ -1191,6 +1191,8 @@ static func _build_plan_slice_buildings(chunk_center: Vector3, chunk_size_m: flo
 			"roof_color": _tint_color(family["roof"], rng.randf_range(-0.06, 0.06)),
 			"glass_color": _tint_color(family["glass"], rng.randf_range(-0.08, 0.08)),
 		})
+		if result.size() >= 12:
+			break
 	return result
 
 static func _era_height(era: String, rng: RandomNumberGenerator) -> float:

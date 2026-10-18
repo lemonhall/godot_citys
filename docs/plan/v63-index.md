@@ -4,7 +4,7 @@
 - PRD：`docs/prd/PRD-0034-city-plan-generation.md`
 - ECN：`docs/ecn/ECN-0044-city-plan-generation.md`
 - 计划：`docs/plan/v63-city-plan-generator.md`
-- 状态：`M0-M4` done；`M5` doing（切片的河/地标/天台/地块建筑均已接入；4 点步行 E2E、地形高度、first-visit 性能待做）
+- 状态：`M0-M4` done；`M5` doing（河/地标/天台/地块建筑已接入；地形高度经实测 GDScript 采样超预算，已回退，需缓存高度场后重做；4 点步行 E2E、first-visit 性能待做）
 - 成本档位：`standard`（每里程碑最多 3 轮 Review）
 
 ## 愿景
@@ -69,5 +69,7 @@
 - mitigation：由 `tashan_loop review` 记录
 
 ## 差异列表
+
+- `v63::terrain::heightfield-perf`：切片地形高度场在 chunk 内逐点采样 8×8，`ground_mesh_usec` 达 ~60ms（GDScript 逐点采样成本），已回退为平地；M5 需改为「世界级缓存高度栅格 + 双线性采样」后再接。
 
 （M1 起回写）

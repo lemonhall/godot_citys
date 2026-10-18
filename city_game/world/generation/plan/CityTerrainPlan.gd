@@ -44,7 +44,12 @@ static func river_distance(terrain: Dictionary, x: float, z: float) -> float:
 	for index in range(points.size() - 1):
 		var a: Vector3 = points[index]
 		var b: Vector3 = points[index + 1]
-		var closest := Geometry2D.get_closest_point_to_segment(target, Vector2(a.x, a.z), Vector2(b.x, b.z))
+		var ab := Vector2(b.x - a.x, b.z - a.z)
+		var length_squared := ab.length_squared()
+		var t := 0.0
+		if length_squared > 0.0001:
+			t = clampf((target - Vector2(a.x, a.z)).dot(ab) / length_squared, 0.0, 1.0)
+		var closest := Vector2(a.x, a.z) + ab * t
 		var distance := target.distance_to(closest)
 		if distance < best:
 			best = distance

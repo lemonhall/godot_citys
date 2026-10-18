@@ -16,6 +16,8 @@ const CityBuildingSceneBuilder := preload("res://city_game/world/serviceability/
 const CityBuildingMassingBuilder := preload("res://city_game/world/rendering/buildings/CityBuildingMassingBuilder.gd")
 const CitySidewalkBuilder := preload("res://city_game/world/rendering/CitySidewalkBuilder.gd")
 const CityPlanSliceScene := preload("res://city_game/world/rendering/CityPlanSliceScene.gd")
+const CityPlanRuntime := preload("res://city_game/world/generation/plan/CityPlanRuntime.gd")
+const CityTerrainPlan := preload("res://city_game/world/generation/plan/CityTerrainPlan.gd")
 const CityDestructibleBuildingRuntime := preload("res://city_game/combat/buildings/CityDestructibleBuildingRuntime.gd")
 const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
 
@@ -1360,3 +1362,71 @@ func _set_building_collisions_enabled(enabled: bool) -> void:
 	_building_collisions_enabled = enabled
 	for collision_shape in _building_collision_shapes:
 		collision_shape.disabled = not enabled
+func _build_plan_ground_mesh(chunk_size_m: float) -> Dictionary:
+	var sampler = CityPlanRuntime.get_sampler(int(_chunk_data.get("world_seed", 12345)))
+	var center: Vector3 = _chunk_data.get("chunk_center", Vector3.ZERO)
+	var steps := 16
+	var half := chunk_size_m * 0.5
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var faces := PackedVector3Array()
+	for ix in range(steps):
+		for iz in range(steps):
+			var x0 := -half + chunk_size_m * float(ix) / float(steps)
+			var x1 := -half + chunk_size_m * float(ix + 1) / float(steps)
+			var z0 := -half + chunk_size_m * float(iz) / float(steps)
+			var z1 := -half + chunk_size_m * float(iz + 1) / float(steps)
+			var a := Vector3(x0, sampler.height_at(center.x + x0, center.z + z0), z0)
+			var b := Vector3(x1, sampler.height_at(center.x + x1, center.z + z0), z0)
+			var c := Vector3(x0, sampler.height_at(center.x + x0, center.z + z1), z1)
+			var d := Vector3(x1, sampler.height_at(center.x + x1, center.z + z1), z1)
+			_add_ground_triangle(surface, faces, a, b, c, half)
+			_add_ground_triangle(surface, faces, c, b, d, half)
+	surface.generate_normals()
+	var mesh: ArrayMesh = surface.commit()
+	var chunk_key: Vector2i = _chunk_data.get("chunk_key", Vector2i.ZERO)
+	return {
+		"mesh": mesh,
+		"collision_faces": faces,
+		"grid_steps": steps,
+		"sample_stats": {
+			"current_vertex_sample_count": (steps + 1) * (steps + 1),
+			"unique_vertex_sample_count": (steps + 1) * (steps + 1),
+			"duplication_ratio": 1.0,
+		},
+		"page_contract": {
+			"page_key": chunk_key,
+			"uv_rect": Rect2(Vector2.ZERO, Vector2.ONE),
+			"chunks_per_page": 1,
+			"page_world_size_m": chunk_size_m,
+			"page_origin_chunk_key": chunk_key,
+			"grid_steps": steps,
+			"flat_ground": false,
+		},
+		"runtime_hit": false,
+	}
+
+func _add_ground_triangle(surface: SurfaceTool, faces: PackedVector3Array, a: Vector3, b: Vector3, c: Vector3, half: float) -> void:
+	for vertex in [a, b, c]:
+		surface.set_uv(Vector2((vertex.x + half) / (half * 2.0), (vertex.z + half) / (half * 2.0)))
+		surface.add_vertex(vertex)
+		faces.append(vertex)
+
+func _clip_terrain_to_chunk(terrain: Dictionary, center: Vector3, chunk_size_m: float) -> Dictionary:
+	var river: Dictionary = terrain.get("river", {})
+	var points: Array = river.get("points", [])
+	var margin := chunk_size_m * 0.5 + 900.0
+	var clipped: Array = []
+	for point_variant in points:
+		var point: Vector3 = point_variant
+		if absf(point.x - center.x) <= margin and absf(point.z - center.z) <= margin:
+			clipped.append(point)
+	if clipped.size() < 2:
+		clipped = points
+	var result := terrain.duplicate()
+	result["river"] = {
+		"points": clipped,
+		"width_m": float(river.get("width_m", 60.0)),
+		"depth_m": float(river.get("depth_m", 3.0)),
+	}
+	return result

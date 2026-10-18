@@ -5,6 +5,7 @@ const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrain
 const CityPlaceIndexBuilder := preload("res://city_game/world/generation/CityPlaceIndexBuilder.gd")
 const CityAddressGrammar := preload("res://city_game/world/model/CityAddressGrammar.gd")
 const CityDistrictCharacter := preload("res://city_game/world/generation/CityDistrictCharacter.gd")
+const CityPlanRuntime := preload("res://city_game/world/generation/plan/CityPlanRuntime.gd")
 
 const BUILDING_ID_SCHEMA_VERSION := "v15-building-id-1"
 const ROAD_CLEARANCE_M := 6.0
@@ -227,6 +228,19 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 	return profile
 
 static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, world_seed: int, road_segments: Array, district_kind: String = "") -> Dictionary:
+	if CityPlanRuntime.chunk_overlaps_slice(chunk_center, chunk_size_m):
+		var plan_buildings := _build_plan_slice_buildings(chunk_center, chunk_size_m, world_seed)
+		if plan_buildings.size() >= 12:
+			return {
+				"buildings": plan_buildings,
+				"layout_stats": _build_building_layout_stats(plan_buildings, [], []),
+				"phase_stats": {
+					"candidate_usec": 0,
+					"streetfront_candidate_usec": 0,
+					"infill_candidate_usec": 0,
+					"selection_usec": 0,
+				},
+			}
 	if road_segments.is_empty():
 		return {
 			"buildings": [],
@@ -1130,3 +1144,77 @@ static func _tint_color(color: Color, delta: float) -> Color:
 	if delta >= 0.0:
 		return color.lerp(Color.WHITE, delta)
 	return color.lerp(Color.BLACK, -delta)
+static func _build_plan_slice_buildings(chunk_center: Vector3, chunk_size_m: float, world_seed: int) -> Array:
+	var parcels := CityPlanRuntime.get_parcels(world_seed)
+	var half := chunk_size_m * 0.5
+	var result: Array = []
+	for parcel_variant in parcels:
+		var parcel: Dictionary = parcel_variant
+		var world_center: Vector2 = parcel.get("center", Vector2.ZERO)
+		var center_2d := Vector2(world_center.x - chunk_center.x, world_center.y - chunk_center.z)
+		if absf(center_2d.x) > half or absf(center_2d.y) > half:
+			continue
+		var district := str(parcel.get("district", "commercial"))
+		var era := str(parcel.get("era", "modern"))
+		var width := float(parcel.get("width_m", 18.0))
+		var depth := float(parcel.get("depth_m", 16.0))
+		var local_seed := int(str(parcel.get("id", "")).hash())
+		var rng := RandomNumberGenerator.new()
+		rng.seed = local_seed
+		var height := _era_height(era, rng)
+		var archetype := _archetype_for_era(era, height)
+		var tangent: Vector2 = parcel.get("tangent", Vector2.RIGHT)
+		var yaw := atan2(-tangent.y, tangent.x)
+		var family := _resolve_color_family(local_seed, district)
+		var ground_y := CityTerrainSampler.GROUND_HEIGHT_Y
+		var radius := sqrt(width * width + depth * depth) * 0.5
+		result.append({
+			"name": "PlanParcel_%d" % absi(local_seed % 100000),
+			"archetype_id": archetype,
+			"district_kind": district,
+			"center": Vector3(center_2d.x, ground_y + height * 0.5, center_2d.y),
+			"center_2d": center_2d,
+			"size": Vector3(width, height, depth),
+			"collision_size": Vector3(width, height, depth),
+			"yaw_rad": yaw,
+			"road_angle_rad": yaw,
+			"footprint_radius_m": radius,
+			"visual_footprint_radius_m": radius,
+			"road_clearance_m": float(parcel.get("frontage_m", 6.0)),
+			"visual_road_clearance_m": float(parcel.get("frontage_m", 6.0)),
+			"candidate_kind": "plan_parcel",
+			"road_alignment_delta_deg": 0.0,
+			"detail_seed": local_seed,
+			"detail_level": "compact",
+			"main_color": _tint_color(family["wall"], rng.randf_range(-0.08, 0.08)),
+			"accent_color": _tint_color(family["accent"], rng.randf_range(-0.06, 0.10)),
+			"roof_color": _tint_color(family["roof"], rng.randf_range(-0.06, 0.06)),
+			"glass_color": _tint_color(family["glass"], rng.randf_range(-0.08, 0.08)),
+		})
+	return result
+
+static func _era_height(era: String, rng: RandomNumberGenerator) -> float:
+	match era:
+		"oldtown":
+			return snappedf(rng.randf_range(9.0, 16.0), 2.0)
+		"art_deco":
+			return snappedf(rng.randf_range(26.0, 52.0), 2.0)
+		"modern":
+			return snappedf(rng.randf_range(20.0, 44.0), 2.0)
+		"glass_cbd":
+			return snappedf(rng.randf_range(60.0, 140.0), 2.0)
+		"industrial":
+			return snappedf(rng.randf_range(12.0, 22.0), 2.0)
+	return 24.0
+
+static func _archetype_for_era(era: String, height: float) -> String:
+	match era:
+		"oldtown":
+			return "row_house"
+		"art_deco":
+			return "step_midrise"
+		"glass_cbd":
+			return "needle" if height >= 80.0 else "slab"
+		"industrial":
+			return "industrial"
+	return "residential_tower" if height < 34.0 else "slab"

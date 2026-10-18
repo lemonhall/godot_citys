@@ -6,12 +6,14 @@ extends RefCounted
 const Generator := preload("res://city_game/world/generation/plan/CityPlanGenerator.gd")
 const Cache := preload("res://city_game/world/generation/plan/CityPlanCache.gd")
 const Sampler := preload("res://city_game/world/generation/plan/CityPlanSampler.gd")
+const ParcelPlan := preload("res://city_game/world/generation/plan/CityParcelPlan.gd")
 
 const SLICE_HALF_M := 700.0
 
 static var _seed := -999999
 static var _plan: Dictionary = {}
 static var _sampler = null
+static var _parcels: Array = []
 
 static func get_sampler(world_seed: int):
 	if _sampler != null and _seed == world_seed:
@@ -24,11 +26,18 @@ static func get_sampler(world_seed: int):
 	_seed = world_seed
 	_plan = plan
 	_sampler = Sampler.new(plan)
+	_parcels = []
 	return _sampler
 
 static func get_plan(world_seed: int) -> Dictionary:
 	get_sampler(world_seed)
 	return _plan
+
+static func get_parcels(world_seed: int) -> Array:
+	get_sampler(world_seed)
+	if _parcels.is_empty():
+		_parcels = ParcelPlan.build(_plan, 5000.0).get("parcels", [])
+	return _parcels
 
 static func in_slice(world_x: float, world_z: float) -> bool:
 	return absf(world_x) <= SLICE_HALF_M and absf(world_z) <= SLICE_HALF_M

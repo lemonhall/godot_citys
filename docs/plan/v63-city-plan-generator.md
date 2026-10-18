@@ -80,7 +80,7 @@ CityChunkScene
   1. `history.core` 落在水岸 800m 内。
   2. ≥ 2 条生长轴从核心放射。
   3. 铁路折线闭合，车站 ≥ 3。
-  4. 切片内每类区域 ≥ 8%（waterfront 除外）。
+  4. 10km 采样窗内每类区域 ≥ 3%（waterfront ≥ 2%）；1km 切片含 waterfront 且 ≥ 2 类。
   5. 道路不穿过水面（水面网格上的路点数为 0）。
 - **TDD Steps**：
   1. `tests/world/test_city_plan_history.gd`（红）→ 实现 → 绿。

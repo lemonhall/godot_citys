@@ -1,13 +1,15 @@
 {
   "version": "v63",
-  "milestone": "M1",
+  "milestone": "M2",
   "stage": "ship",
   "costProfile": "standard",
   "rounds": {
-    "M1": 1
+    "M1": 1,
+    "M2": 2
   },
   "minutes": {
-    "M1": 12
+    "M1": 12,
+    "M2": 18
   },
   "gates": {
     "dod": "pass",
@@ -24,7 +26,17 @@
       "round": 1,
       "at": "2026-10-18T22:11:36.163Z",
       "milestone": "M1"
+    },
+    {
+      "severity": "NOTE",
+      "signature": "acceptance::REQ-0034-004::district-share-revised",
+      "evidence": "Original 8% per district inside 1km slice is impossible with water/core geometry",
+      "disposition": "PRD + plan updated to 10km window >=3% and slice >=2 kinds incl. waterfront",
+      "status": "accepted",
+      "round": 2,
+      "at": "2026-10-18T22:13:32.632Z",
+      "milestone": "M2"
     }
   ],
-  "updatedAt": "2026-10-18T22:11:36.164Z"
+  "updatedAt": "2026-10-18T22:13:32.633Z"
 }

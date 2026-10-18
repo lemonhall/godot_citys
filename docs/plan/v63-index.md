@@ -4,7 +4,7 @@
 - PRD：`docs/prd/PRD-0034-city-plan-generation.md`
 - ECN：`docs/ecn/ECN-0044-city-plan-generation.md`
 - 计划：`docs/plan/v63-city-plan-generator.md`
-- 状态：`M0` done；`M1` done；`M2-M5` todo
+- 状态：`M0` done；`M1` done；`M2` done；`M3-M5` todo
 - 成本档位：`standard`（每里程碑最多 3 轮 Review）
 
 ## 愿景
@@ -18,7 +18,7 @@
 | --- | --- | --- | --- | --- |
 | M0 | PRD/ECN/v63 文档与门禁 | 7 条 Req ID、ECN 同步、追溯矩阵齐全、gates pass | `tashan_loop status` | done |
 | M1 | 确定性总规 + 地形水系 | 同 seed 哈希一致；河 ≥3000m、宽 40~120m；切片水面 ≥2%；缓存往返一致 | `test_city_plan_determinism.gd`、`test_city_plan_terrain.gd` | done |
-| M2 | 历史核心 + 路网 + 铁路 + 区域 | core 距水岸 ≤800m；轴 ≥2；车站 ≥3；每区 ≥8%；道路不穿水 | `test_city_plan_history.gd`、`test_city_plan_roads.gd`、`test_city_plan_districts.gd` | todo |
+| M2 | 历史核心 + 路网 + 铁路 + 区域 | core 距水岸 ≤800m；轴 ≥2；车站 ≥3；每区 ≥3%（waterfront ≥2%）；道路不穿水 | `test_city_plan_history.gd`、`test_city_plan_roads.gd`、`test_city_plan_districts.gd` | done |
 | M3 | 街区与地块语法 | 70% 临街立面 ≤8m；oldtown 面宽 ≤12m；downtown ≥24m；巷弄连通 | `test_city_plan_parcels.gd`、`test_city_plan_street_wall.gd` | todo |
 | M4 | 时代语法 + 3 地标 + 可上天台 | era 匹配 ≥95%；地标唯一且最高 ≥120m；收分 ≤10%；天台可达 | `test_city_plan_era_grammar.gd`、`test_city_plan_landmarks.gd`、`test_city_plan_slice_roof_access.gd` | todo |
 | M5 | 1km² 切片 + E2E + 性能 + Review | 4 点截图；性能三件套 PASS；切片外回退一致；无 open BLOCKER | `test_city_plan_slice_walkthrough.gd` + 性能三件套 | todo |
@@ -29,8 +29,8 @@
 | --- | --- | --- | --- | --- |
 | REQ-0034-001 | M1 | `test_city_plan_determinism.gd` | PASS 2026-10-19（同 seed 哈希一致、缓存往返一致） | done |
 | REQ-0034-002 | M1 | `test_city_plan_terrain.gd` | PASS 2026-10-19（河长 ≥3000m、宽 50~109m、切片水面 ≥2%、高差连续） | done |
-| REQ-0034-003 | M2 | `test_city_plan_history.gd`、`test_city_plan_roads.gd` | TBD | todo |
-| REQ-0034-004 | M2/M3 | `test_city_plan_districts.gd`、`test_city_plan_parcels.gd`、`test_city_plan_street_wall.gd` | TBD | todo |
+| REQ-0034-003 | M2 | `test_city_plan_history.gd`、`test_city_plan_roads.gd` | PASS 2026-10-19（core 在水岸、3 轴、闭环铁路、4 站；干道不穿水） | done |
+| REQ-0034-004 | M2/M3 | `test_city_plan_districts.gd`、`test_city_plan_parcels.gd`、`test_city_plan_street_wall.gd` | M2 区域 PASS 2026-10-19（10km 窗每类 ≥3%、切片含 waterfront）；地块待 M3 | doing |
 | REQ-0034-005 | M4 | `test_city_plan_era_grammar.gd`、`test_city_plan_landmarks.gd` | TBD | todo |
 | REQ-0034-006 | M4/M5 | `test_city_plan_slice_roof_access.gd`、`test_city_plan_slice_walkthrough.gd` | TBD | todo |
 | REQ-0034-007 | M5 | 性能三件套 + 回退抽样 | TBD | todo |

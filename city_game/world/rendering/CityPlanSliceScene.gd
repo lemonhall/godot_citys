@@ -20,7 +20,10 @@ static func build(chunk_data: Dictionary) -> Node3D:
 	var sampler = Runtime.get_sampler(world_seed)
 	var root := Node3D.new()
 	root.name = "CityPlanSlice"
-	var water := _build_water(sampler, chunk_center, chunk_size)
+	var bed := _build_ribbon(sampler, chunk_center, chunk_size, 1.35, 0.02, "CityPlanRiverBed", _bed_material())
+	if bed != null:
+		root.add_child(bed)
+	var water := _build_ribbon(sampler, chunk_center, chunk_size, 1.0, WATER_LEVEL_Y, "CityPlanWater", _water_material())
 	if water != null:
 		root.add_child(water)
 	var landmarks := _build_landmarks(sampler, chunk_center, chunk_size)
@@ -28,10 +31,10 @@ static func build(chunk_data: Dictionary) -> Node3D:
 		root.add_child(landmarks)
 	return root if root.get_child_count() > 0 else null
 
-static func _build_water(sampler, chunk_center: Vector3, chunk_size: float) -> MeshInstance3D:
+static func _build_ribbon(sampler, chunk_center: Vector3, chunk_size: float, width_scale: float, y_level: float, node_name: String, material: StandardMaterial3D) -> MeshInstance3D:
 	var river: Dictionary = sampler.terrain().get("river", {})
 	var points: Array = river.get("points", [])
-	var width := float(river.get("width_m", 60.0))
+	var width := float(river.get("width_m", 60.0)) * width_scale
 	if points.size() < 2:
 		return null
 	var half := chunk_size * 0.5 + width * 2.0
@@ -66,7 +69,7 @@ static func _build_water(sampler, chunk_center: Vector3, chunk_size: float) -> M
 			if tangent.length_squared() < 0.0001:
 				continue
 			var normal := Vector2(-tangent.y, tangent.x) * (width * 0.5)
-			var y := WATER_LEVEL_Y
+			var y := y_level
 			var a0 := Vector3(p0.x - normal.x, y, p0.y - normal.y)
 			var a1 := Vector3(p0.x + normal.x, y, p0.y + normal.y)
 			var b0 := Vector3(p1.x - normal.x, y, p1.y - normal.y)
@@ -77,15 +80,21 @@ static func _build_water(sampler, chunk_center: Vector3, chunk_size: float) -> M
 		return null
 	var mesh := surface.commit()
 	var instance := MeshInstance3D.new()
-	instance.name = "CityPlanWater"
+	instance.name = node_name
 	instance.mesh = mesh
-	instance.material_override = _water_material()
+	instance.material_override = material
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return instance
 
 static func _add_quad(surface: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3) -> void:
 	for vertex in [a, b, c, a, c, d]:
 		surface.add_vertex(vertex)
+
+static func _bed_material() -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.11, 0.10, 0.085)
+	material.roughness = 0.96
+	return material
 
 static func _water_material() -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()

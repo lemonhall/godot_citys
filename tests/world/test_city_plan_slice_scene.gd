@@ -25,6 +25,9 @@ func _run() -> void:
 	var water := center_scene.find_child("CityPlanWater", true, false)
 	if not T.require_true(self, water != null, "slice must render the river surface"):
 		return
+	var bed := center_scene.find_child("CityPlanRiverBed", true, false)
+	if not T.require_true(self, bed != null, "slice must render the river bed under the water"):
+		return
 	var landmarks := center_scene.find_child("CityPlanLandmarks", true, false)
 	if not T.require_true(self, landmarks != null and landmarks.get_child_count() >= 1, "slice must place at least one plan landmark in the center chunk"):
 		return

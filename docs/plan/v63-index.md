@@ -35,6 +35,10 @@
 | REQ-0034-006 | M4/M5 | `test_city_plan_slice_scene.gd`、`test_city_plan_roof_access.gd`、`test_city_plan_slice_buildings.gd`、`test_city_plan_slice_walkthrough.gd` | slice_scene / roof_access / slice_buildings PASS 2026-10-19（切片建筑全部来自 plan parcel，带 district）；4 点步行 E2E 待做 | doing |
 | REQ-0034-007 | M5 | 性能三件套 + 回退抽样 | `chunk_setup` PASS 7348/8500 usec（地标改 compact 后 proxies 2213→722） | doing |
 
+## 验收产物
+
+- `reports/v63_slice_aerial.png`（2026-10-19：切片河床/水面/地标/地块建筑）
+
 ## ECN 索引
 
 | ECN | 摘要 | 状态 |

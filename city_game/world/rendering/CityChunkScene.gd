@@ -15,6 +15,7 @@ const CityGroundRoadOverlayShader := preload("res://city_game/world/rendering/Ci
 const CityBuildingSceneBuilder := preload("res://city_game/world/serviceability/CityBuildingSceneBuilder.gd")
 const CityBuildingMassingBuilder := preload("res://city_game/world/rendering/buildings/CityBuildingMassingBuilder.gd")
 const CitySidewalkBuilder := preload("res://city_game/world/rendering/CitySidewalkBuilder.gd")
+const CityPlanSliceScene := preload("res://city_game/world/rendering/CityPlanSliceScene.gd")
 const CityDestructibleBuildingRuntime := preload("res://city_game/combat/buildings/CityDestructibleBuildingRuntime.gd")
 const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
 
@@ -684,6 +685,9 @@ func _build_near_group() -> Dictionary:
 	for building in _profile.get("buildings", []):
 		near_group.add_child(_build_building(building))
 	stats["buildings_usec"] = int(Time.get_ticks_usec() - phase_started_usec)
+	var plan_slice := CityPlanSliceScene.build(_chunk_data)
+	if plan_slice != null:
+		near_group.add_child(plan_slice)
 	phase_started_usec = Time.get_ticks_usec()
 	var street_lamps := _chunk_data.get("prepared_street_lamps") as MultiMeshInstance3D
 	if street_lamps == null:

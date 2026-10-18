@@ -4,7 +4,7 @@
 - PRD：`docs/prd/PRD-0034-city-plan-generation.md`
 - ECN：`docs/ecn/ECN-0044-city-plan-generation.md`
 - 计划：`docs/plan/v63-city-plan-generator.md`
-- 状态：`M0-M3` done；`M4` doing（era/地标数据完成，天台可达待做）；`M5` todo
+- 状态：`M0-M3` done；`M4` doing（era/地标数据 + 场景接入完成，天台可达待做）；`M5` doing（切片水面/地标已接 chunk，步行 E2E 待做）
 - 成本档位：`standard`（每里程碑最多 3 轮 Review）
 
 ## 愿景
@@ -32,8 +32,8 @@
 | REQ-0034-003 | M2 | `test_city_plan_history.gd`、`test_city_plan_roads.gd` | PASS 2026-10-19（core 在水岸、3 轴、闭环铁路、4 站；干道不穿水） | done |
 | REQ-0034-004 | M2/M3 | `test_city_plan_districts.gd`、`test_city_plan_parcels.gd` | PASS 2026-10-19（区域份额、地块宽度、街墙 100%、巷弄 4m+、内院 45%） | done |
 | REQ-0034-005 | M4 | `test_city_plan_era_grammar.gd`、`test_city_plan_landmarks.gd` | PASS 2026-10-19（era 匹配 100%、4 种 era、3 地标唯一、最高 220m、双塔连桥、roof_access=true）；收分比例与天台可达待 M4 收尾 | doing |
-| REQ-0034-006 | M4/M5 | `test_city_plan_slice_roof_access.gd`、`test_city_plan_slice_walkthrough.gd` | TBD | todo |
-| REQ-0034-007 | M5 | 性能三件套 + 回退抽样 | TBD | todo |
+| REQ-0034-006 | M4/M5 | `test_city_plan_slice_scene.gd`、`test_city_plan_slice_roof_access.gd`、`test_city_plan_slice_walkthrough.gd` | `slice_scene` PASS 2026-10-19（切片 chunk 有水面 + 地标，切片外无 CityPlanSlice）；天台与 4 点步行待做 | doing |
+| REQ-0034-007 | M5 | 性能三件套 + 回退抽样 | `chunk_setup` PASS 8367/8500 usec（余量仅 133usec，需在 M5 优化地标 proxies） | doing |
 
 ## ECN 索引
 

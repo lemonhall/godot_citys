@@ -13,16 +13,21 @@
 [ext_resource type="Script" path="res://city_game/world/rendering/CityToonOutlineOverlay.gd" id="11"]
 
 [sub_resource type="Environment" id="1"]
-background_mode = 1
+background_mode = 2
 background_color = Color(0.42, 0.76, 1, 1)
-ambient_light_source = 1
+ambient_light_source = 3
 ambient_light_color = Color(1, 0.98, 0.92, 1)
-ambient_light_energy = 0.82
+ambient_light_energy = 1.0
 tonemap_mode = 2
-tonemap_exposure = 1.08
+tonemap_exposure = 0.95
 ssao_enabled = false
 glow_enabled = false
-fog_enabled = false
+fog_enabled = true
+fog_light_color = Color(0.7, 0.72, 0.75, 1)
+fog_light_energy = 0.6
+fog_density = 0.0007
+fog_aerial_perspective = 0.35
+fog_sky_affect = 0.2
 
 [sub_resource type="ShaderMaterial" id="2"]
 shader = ExtResource("10")
@@ -58,16 +63,21 @@ script = ExtResource("1")
 environment = SubResource("1")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-48, -35, 0)
-light_color = Color(1, 0.94, 0.84, 1)
-light_energy = 2.45
+rotation_degrees = Vector3(-26, 48, 0)
+light_color = Color(1, 0.88, 0.72, 1)
+light_energy = 2.9
 shadow_enabled = true
+directional_shadow_max_distance = 520.0
+directional_shadow_size = 4096
+shadow_bias = 0.02
+shadow_normal_bias = 0.8
 
 [node name="ToyFillLight" type="DirectionalLight3D" parent="."]
 rotation_degrees = Vector3(-24, 132, 0)
 light_color = Color(0.86, 0.92, 1, 1)
 light_energy = 0.72
 shadow_enabled = false
+sky_mode = 1
 
 [node name="ToonOutlineOverlay" type="MeshInstance3D" parent="."]
 cast_shadow = 0

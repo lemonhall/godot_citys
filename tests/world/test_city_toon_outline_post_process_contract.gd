@@ -34,11 +34,17 @@ func _run() -> void:
 	if not T.require_true(self, environment_node != null and environment_node.environment != null, "CityPrototype must keep a configured world environment"):
 		return
 	var environment := environment_node.environment
-	if not T.require_true(self, environment.background_color.is_equal_approx(Color(0.42, 0.76, 1.0, 1.0)), "Screenshot state must keep the bright blue toy sky"):
+	if not T.require_true(self, environment.sky != null, "v62 screenshot state must keep the procedural gradient sky"):
 		return
-	if not T.require_true(self, not environment.fog_enabled, "Screenshot state must disable gray fog"):
+	if not T.require_true(self, environment.background_mode == Environment.BG_SKY, "v62 screenshot state must render the sky instead of a flat clear color"):
 		return
-	if not T.require_true(self, not environment.ssao_enabled and not environment.glow_enabled, "Screenshot state must avoid muddy SSAO/glow post effects"):
+	if not T.require_true(self, environment.fog_enabled, "v62 screenshot state must keep distance haze for aerial perspective"):
+		return
+	if not T.require_true(self, environment.fog_aerial_perspective > 0.0, "v62 fog must tint distant buildings toward the sky"):
+		return
+	if not T.require_true(self, environment.ssao_enabled, "v62 screenshot state must keep ambient occlusion for street-level depth"):
+		return
+	if not T.require_true(self, not environment.glow_enabled, "v62 screenshot state must avoid muddy glow post effects"):
 		return
 
 	var sun := world.get_node_or_null("Sun") as DirectionalLight3D

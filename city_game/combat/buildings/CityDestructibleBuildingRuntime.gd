@@ -192,6 +192,12 @@ func _resolve_building_identity() -> void:
 func _resolve_building_visual_profile() -> void:
 	if _generated_building == null:
 		return
+	# v62 generated buildings publish their albedo through metadata because the
+	# facade is a ShaderMaterial, not a StandardMaterial3D.
+	if _generated_building.has_meta("city_building_main_color"):
+		_main_color = _generated_building.get_meta("city_building_main_color")
+		_visual_profile_primed = true
+		return
 	for child in _generated_building.get_children():
 		var mesh_instance := child as MeshInstance3D
 		if mesh_instance == null:

@@ -13,6 +13,8 @@ const CityLakeBasinCarrierBuilder := preload("res://city_game/world/rendering/Ci
 const LakeFishActorScene := preload("res://city_game/world/features/lake/LakeFishActor.tscn")
 const CityGroundRoadOverlayShader := preload("res://city_game/world/rendering/CityGroundRoadOverlay.gdshader")
 const CityBuildingSceneBuilder := preload("res://city_game/world/serviceability/CityBuildingSceneBuilder.gd")
+const CityBuildingMassingBuilder := preload("res://city_game/world/rendering/buildings/CityBuildingMassingBuilder.gd")
+const CitySidewalkBuilder := preload("res://city_game/world/rendering/CitySidewalkBuilder.gd")
 const CityDestructibleBuildingRuntime := preload("res://city_game/combat/buildings/CityDestructibleBuildingRuntime.gd")
 const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
 
@@ -28,11 +30,6 @@ const TERRAIN_GRID_STEPS := 12
 const TERRAIN_GRID_STEPS_MID := 6
 const TERRAIN_GRID_STEPS_FAR := 3
 const FLAT_GROUND_GRID_STEPS := 1
-const BUILDING_ORNAMENT_OVERLAP_M := 0.08
-
-static var _shared_box_shape_cache: Dictionary = {}
-static var _shared_box_mesh_cache: Dictionary = {}
-static var _shared_box_material_cache: Dictionary = {}
 static var _shared_building_override_scene_cache: Dictionary = {}
 static var _shared_scene_landmark_scene_cache: Dictionary = {}
 static var _shared_scene_interactive_prop_scene_cache: Dictionary = {}
@@ -679,6 +676,11 @@ func _build_near_group() -> Dictionary:
 	props.name = "Props"
 	near_group.add_child(props)
 	phase_started_usec = Time.get_ticks_usec()
+	var street_dressing := CitySidewalkBuilder.build(_profile, _chunk_data)
+	if street_dressing != null:
+		near_group.add_child(street_dressing)
+	stats["sidewalks_usec"] = int(Time.get_ticks_usec() - phase_started_usec)
+	phase_started_usec = Time.get_ticks_usec()
 	for building in _profile.get("buildings", []):
 		near_group.add_child(_build_building(building))
 	stats["buildings_usec"] = int(Time.get_ticks_usec() - phase_started_usec)
@@ -1036,122 +1038,6 @@ static func _load_cached_scene_minigame_venue_scene(scene_path: String) -> Packe
 	_shared_scene_minigame_venue_scene_cache[scene_path] = packed_scene
 	return packed_scene
 
-func _build_static_box(node_name: String, center: Vector3, size: Vector3, color: Color, yaw_rad: float = 0.0, collision_size: Vector3 = Vector3.ZERO) -> StaticBody3D:
-	var body := StaticBody3D.new()
-	body.name = node_name
-	body.position = center
-	body.rotation.y = yaw_rad
-
-	var collision_shape := CollisionShape3D.new()
-	var shape := _get_shared_box_shape(collision_size if collision_size != Vector3.ZERO else size)
-	collision_shape.shape = shape
-	body.add_child(collision_shape)
-	_building_collision_shapes.append(collision_shape)
-
-	var mesh_instance := MeshInstance3D.new()
-	mesh_instance.name = "MeshInstance3D"
-	var mesh := _get_shared_box_mesh(size)
-	mesh_instance.mesh = mesh
-	var material := _get_shared_box_material(color)
-	mesh_instance.material_override = material
-	body.add_child(mesh_instance)
-	return body
-
-func _add_local_box(parent: Node3D, node_name: String, local_center: Vector3, size: Vector3, color: Color) -> void:
-	var mesh_instance := MeshInstance3D.new()
-	mesh_instance.name = node_name
-	mesh_instance.position = local_center
-	var mesh := _get_shared_box_mesh(size)
-	mesh_instance.mesh = mesh
-	var material := _get_shared_box_material(color)
-	mesh_instance.material_override = material
-	parent.add_child(mesh_instance)
-
-func _get_shared_box_shape(size: Vector3) -> BoxShape3D:
-	var key := _vector3_cache_key(size)
-	if _shared_box_shape_cache.has(key):
-		return _shared_box_shape_cache[key]
-	var shape := BoxShape3D.new()
-	shape.size = size
-	_shared_box_shape_cache[key] = shape
-	return shape
-
-func _get_shared_box_mesh(size: Vector3) -> Mesh:
-	var key := _vector3_cache_key(size)
-	if _shared_box_mesh_cache.has(key):
-		return _shared_box_mesh_cache[key]
-	var mesh := CityToyVisualStyle.get_rounded_box_mesh(size)
-	_shared_box_mesh_cache[key] = mesh
-	return mesh
-
-func _get_shared_box_material(color: Color) -> StandardMaterial3D:
-	var key := _color_cache_key(color)
-	if _shared_box_material_cache.has(key):
-		return _shared_box_material_cache[key]
-	var material := CityToyVisualStyle.get_material(color, "building")
-	_shared_box_material_cache[key] = material
-	return material
-
-func _vector3_cache_key(value: Vector3) -> String:
-	return "%.3f|%.3f|%.3f" % [value.x, value.y, value.z]
-
-func _color_cache_key(value: Color) -> String:
-	return "%.4f|%.4f|%.4f|%.4f" % [value.r, value.g, value.b, value.a]
-
-func _add_roof_box(parent: Node3D, node_name: String, base_size: Vector3, roof_offset_xz: Vector2, size: Vector3, color: Color) -> void:
-	_add_local_box(
-		parent,
-		node_name,
-		Vector3(
-			roof_offset_xz.x,
-			base_size.y * 0.5 + size.y * 0.5 - BUILDING_ORNAMENT_OVERLAP_M,
-			roof_offset_xz.y
-		),
-		size,
-		color
-	)
-
-func _add_roof_stack_box(parent: Node3D, node_name: String, base_size: Vector3, roof_offset_xz: Vector2, stack_height_m: float, size: Vector3, color: Color) -> void:
-	_add_local_box(
-		parent,
-		node_name,
-		Vector3(
-			roof_offset_xz.x,
-			base_size.y * 0.5 + stack_height_m + size.y * 0.5 - BUILDING_ORNAMENT_OVERLAP_M,
-			roof_offset_xz.y
-		),
-		size,
-		color
-	)
-
-func _add_ground_box(parent: Node3D, node_name: String, base_size: Vector3, ground_offset_xz: Vector2, size: Vector3, color: Color) -> void:
-	_add_local_box(
-		parent,
-		node_name,
-		Vector3(
-			ground_offset_xz.x,
-			-base_size.y * 0.5 + size.y * 0.5 - BUILDING_ORNAMENT_OVERLAP_M,
-			ground_offset_xz.y
-		),
-		size,
-		color
-	)
-
-func _add_side_box(parent: Node3D, node_name: String, base_size: Vector3, side: String, lateral_offset_m: float, vertical_offset_m: float, size: Vector3, color: Color) -> void:
-	var local_center := Vector3.ZERO
-	match side:
-		"west":
-			local_center = Vector3(-base_size.x * 0.5 - size.x * 0.5 + BUILDING_ORNAMENT_OVERLAP_M, vertical_offset_m, lateral_offset_m)
-		"east":
-			local_center = Vector3(base_size.x * 0.5 + size.x * 0.5 - BUILDING_ORNAMENT_OVERLAP_M, vertical_offset_m, lateral_offset_m)
-		"north":
-			local_center = Vector3(lateral_offset_m, vertical_offset_m, -base_size.z * 0.5 - size.z * 0.5 + BUILDING_ORNAMENT_OVERLAP_M)
-		"south":
-			local_center = Vector3(lateral_offset_m, vertical_offset_m, base_size.z * 0.5 + size.z * 0.5 - BUILDING_ORNAMENT_OVERLAP_M)
-		_:
-			local_center = Vector3(lateral_offset_m, vertical_offset_m, 0.0)
-	_add_local_box(parent, node_name, local_center, size, color)
-
 func _build_ground_body(chunk_size_m: float, profile: Dictionary) -> Dictionary:
 	var ground_body := StaticBody3D.new()
 	ground_body.name = "GroundBody"
@@ -1286,6 +1172,9 @@ func _build_ground_material(chunk_size_m: float, profile: Dictionary, detail_mod
 	material.set_shader_parameter("stripe_mask_texture", surface_binding.get("stripe_mask_texture"))
 	material.set_shader_parameter("surface_uv_offset", uv_rect.position)
 	material.set_shader_parameter("surface_uv_scale", uv_rect.size)
+	material.set_shader_parameter("detail_texture", CityBuildingMassingBuilder.detail_texture())
+	var chunk_center: Vector3 = _chunk_data.get("chunk_center", Vector3.ZERO)
+	material.set_shader_parameter("chunk_center_world", Vector2(chunk_center.x, chunk_center.z))
 	return {
 		"material": material,
 		"mask_textures_usec": maxi(int(surface_binding.get("commit_usec", 0)), mask_resolve_usec),

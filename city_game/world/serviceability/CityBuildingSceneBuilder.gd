@@ -1,75 +1,87 @@
 extends RefCounted
 
-const CityToyVisualStyle := preload("res://city_game/world/rendering/CityToyVisualStyle.gd")
+# Authoring entry point for procedurally generated city buildings.
+#
+# v62 replaces the old block-toy building with the CityBuildingMassingBuilder
+# kit: layered massing, procedural facade, storefront glazing and a MultiMesh
+# detail batch. The public contract is unchanged:
+#   - build_runtime_building() -> StaticBody3D with `city_generated_building`
+#   - build_service_scene_root() -> Node3D with `city_service_scene_root`
+#   - one BoxShape3D collision per generated building
+#   - building_id / inspection payload metadata stays on the nodes
 
-const BUILDING_ORNAMENT_OVERLAP_M := 0.08
-const LEGO_STUD_RADIUS_M := 0.96
-const LEGO_STUD_HEIGHT_M := 0.36
-const LEGO_STUD_OVERLAP_M := 0.03
+const CityBuildingMassingBuilder := preload("res://city_game/world/rendering/buildings/CityBuildingMassingBuilder.gd")
+
+const DEFAULT_SIZE := Vector3(18.0, 24.0, 18.0)
 
 static var _shared_box_shape_cache: Dictionary = {}
-static var _shared_box_mesh_cache: Dictionary = {}
-static var _shared_box_material_cache: Dictionary = {}
-static var _shared_stud_mesh: CylinderMesh = null
 
 static func build_runtime_building(building: Dictionary, apply_inspection_payload: bool = true) -> StaticBody3D:
-	var collision_size: Vector3 = building.get("collision_size", building.get("size", Vector3(18.0, 24.0, 18.0)))
-	var building_root := _build_static_box(
-		str(building.get("name", "Building")),
-		building.get("center", Vector3.ZERO),
-		building.get("size", Vector3(18.0, 24.0, 18.0)),
-		building.get("main_color", Color(0.72, 0.74, 0.78, 1.0)),
-		float(building.get("yaw_rad", 0.0)),
-		collision_size
-	)
+	var size: Vector3 = building.get("size", DEFAULT_SIZE)
+	var center: Vector3 = building.get("center", Vector3.ZERO)
+	var collision_size: Vector3 = building.get("collision_size", size)
+	var body := StaticBody3D.new()
+	body.name = str(building.get("name", "Building"))
+	body.position = center
+	body.rotation.y = float(building.get("yaw_rad", 0.0))
+
+	var collision_shape := CollisionShape3D.new()
+	collision_shape.name = "Collision"
+	collision_shape.shape = _get_shared_box_shape(collision_size if collision_size != Vector3.ZERO else size)
+	body.add_child(collision_shape)
+
+	var visual := CityBuildingMassingBuilder.build(building)
+	var facade_mesh: ArrayMesh = visual.get("facade_mesh", null)
+	if facade_mesh != null:
+		var facade_instance := MeshInstance3D.new()
+		facade_instance.name = "MeshInstance3D"
+		facade_instance.mesh = facade_mesh
+		facade_instance.material_override = visual.get("facade_material", null)
+		body.add_child(facade_instance)
+
+	var glass_mesh: ArrayMesh = visual.get("glass_mesh", null)
+	if glass_mesh != null:
+		var glass_instance := MeshInstance3D.new()
+		glass_instance.name = "GlassMesh"
+		glass_instance.mesh = glass_mesh
+		body.add_child(glass_instance)
+
+	var detail_boxes = visual.get("detail_boxes", null)
+	if detail_boxes != null:
+		var boxes_instance: MultiMeshInstance3D = detail_boxes.build(
+			"DetailBoxes",
+			CityBuildingMassingBuilder.unit_box_mesh(),
+			CityBuildingMassingBuilder.shared_trim_material()
+		)
+		if boxes_instance != null:
+			body.add_child(boxes_instance)
+
+	var detail_cylinders = visual.get("detail_cylinders", null)
+	if detail_cylinders != null:
+		var cylinders_instance: MultiMeshInstance3D = detail_cylinders.build(
+			"DetailCylinders",
+			CityBuildingMassingBuilder.unit_cylinder_mesh(),
+			CityBuildingMassingBuilder.shared_trim_material()
+		)
+		if cylinders_instance != null:
+			body.add_child(cylinders_instance)
+
 	var building_id := str(building.get("building_id", ""))
 	if building_id != "":
-		building_root.set_meta("city_building_id", building_id)
-	building_root.set_meta("city_generated_building", true)
+		body.set_meta("city_building_id", building_id)
+	body.set_meta("city_generated_building", true)
+	body.set_meta("city_building_main_color", building.get("main_color", Color(0.55, 0.57, 0.59, 1.0)))
+	body.set_meta("city_building_visual_style", int(visual.get("style", 0)))
+	body.set_meta("city_building_detail_box_count", int(visual.get("detail_box_count", 0)))
+	body.set_meta("city_building_triangle_count", int(visual.get("triangle_count", 0)))
+	body.set_meta("city_building_floor_count", int(visual.get("floor_count", 0)))
+	body.set_meta("city_building_bay_count", int(visual.get("bay_count_x", 0)))
+	body.set_meta("city_building_bay_m", float(visual.get("bay_m", 0.0)))
+	body.set_meta("city_building_floor_m", float(visual.get("floor_m", 0.0)))
 	var inspection_payload: Dictionary = building.get("inspection_payload", {})
 	if apply_inspection_payload and not inspection_payload.is_empty():
-		building_root.set_meta("city_inspection_payload", inspection_payload.duplicate(true))
-	var size: Vector3 = building.get("size", Vector3.ONE)
-	var accent: Color = building.get("accent_color", Color(0.52, 0.58, 0.66, 1.0))
-	var roof: Color = building.get("roof_color", accent)
-	var archetype_id := str(building.get("archetype_id", "mass"))
-	match archetype_id:
-		"slab":
-			var fin_size := Vector3(0.9, size.y * 0.92, size.z + 0.2)
-			_add_side_box(building_root, "FinWest", size, "west", 0.0, 0.0, fin_size, accent)
-			_add_side_box(building_root, "FinEast", size, "east", 0.0, 0.0, fin_size, accent)
-		"needle":
-			var crown_size := Vector3(size.x * 0.56, maxf(size.y * 0.16, 2.6), size.z * 0.56)
-			var spire_size := Vector3(size.x * 0.18, 3.6, size.z * 0.18)
-			_add_roof_box(building_root, "Crown", size, Vector2.ZERO, crown_size, roof)
-			_add_roof_stack_box(building_root, "Spire", size, Vector2.ZERO, crown_size.y - BUILDING_ORNAMENT_OVERLAP_M, spire_size, accent)
-		"courtyard":
-			var wing_size := Vector3(size.x, size.y * 0.22, size.z * 0.22)
-			var roof_frame_size := Vector3(size.x * 0.82, maxf(size.y * 0.08, 1.4), size.z * 0.82)
-			_add_side_box(building_root, "WingNorth", size, "north", 0.0, 0.0, wing_size, accent)
-			_add_side_box(building_root, "WingSouth", size, "south", 0.0, 0.0, wing_size, accent)
-			_add_roof_box(building_root, "RoofFrame", size, Vector2.ZERO, roof_frame_size, roof)
-		"podium_tower":
-			var podium_size := Vector3(size.x * 1.9, maxf(size.y * 0.24, 5.0), size.z * 1.9)
-			var cap_size := Vector3(size.x * 0.5, maxf(size.y * 0.1, 1.6), size.z * 0.5)
-			_add_ground_box(building_root, "Podium", size, Vector2.ZERO, podium_size, accent)
-			_add_roof_box(building_root, "Cap", size, Vector2.ZERO, cap_size, roof)
-		"step_midrise":
-			var setback_a_size := Vector3(size.x * 0.78, maxf(size.y * 0.2, 2.0), size.z * 0.78)
-			var setback_b_size := Vector3(size.x * 0.56, maxf(size.y * 0.14, 1.6), size.z * 0.56)
-			_add_roof_box(building_root, "SetbackA", size, Vector2.ZERO, setback_a_size, accent)
-			_add_roof_stack_box(building_root, "SetbackB", size, Vector2.ZERO, setback_a_size.y - BUILDING_ORNAMENT_OVERLAP_M, setback_b_size, roof)
-		"midrise_bar":
-			var roof_unit_size := Vector3(size.x * 0.22, maxf(size.y * 0.12, 1.4), size.z * 0.24)
-			_add_roof_box(building_root, "RoofUnitA", size, Vector2(-size.x * 0.18, 0.0), roof_unit_size, roof)
-			_add_roof_box(building_root, "RoofUnitB", size, Vector2(size.x * 0.18, 0.0), roof_unit_size, accent)
-		"industrial":
-			var sawtooth_a_size := Vector3(size.x * 0.24, maxf(size.y * 0.18, 1.8), size.z * 0.88)
-			var sawtooth_b_size := Vector3(size.x * 0.24, maxf(size.y * 0.14, 1.6), size.z * 0.88)
-			_add_roof_box(building_root, "SawToothA", size, Vector2(-size.x * 0.18, 0.0), sawtooth_a_size, roof)
-			_add_roof_box(building_root, "SawToothB", size, Vector2(size.x * 0.18, 0.0), sawtooth_b_size, accent)
-	_add_lego_studs(building_root, size, roof, accent)
-	return building_root
+		body.set_meta("city_inspection_payload", inspection_payload.duplicate(true))
+	return body
 
 static func build_service_scene_root(building: Dictionary, assign_owner_recursive: bool = false) -> Node3D:
 	var building_id := str(building.get("building_id", ""))
@@ -91,7 +103,7 @@ static func build_service_scene_root(building: Dictionary, assign_owner_recursiv
 
 static func to_service_local_building_contract(building: Dictionary) -> Dictionary:
 	var local_contract: Dictionary = building.duplicate(true)
-	var size: Vector3 = local_contract.get("size", Vector3(18.0, 24.0, 18.0))
+	var size: Vector3 = local_contract.get("size", DEFAULT_SIZE)
 	local_contract["center"] = Vector3(0.0, size.y * 0.5, 0.0)
 	local_contract["center_2d"] = Vector2.ZERO
 	local_contract["yaw_rad"] = 0.0
@@ -99,7 +111,7 @@ static func to_service_local_building_contract(building: Dictionary) -> Dictiona
 
 static func resolve_ground_anchor(building: Dictionary) -> Vector3:
 	var center: Vector3 = building.get("center", Vector3.ZERO)
-	var size: Vector3 = building.get("size", Vector3(18.0, 24.0, 18.0))
+	var size: Vector3 = building.get("size", DEFAULT_SIZE)
 	return Vector3(center.x, center.y - size.y * 0.5, center.z)
 
 static func collect_collision_shapes(root: Node) -> Array[CollisionShape3D]:
@@ -140,200 +152,11 @@ static func _collect_collision_shapes_recursive(root: Node, shapes: Array[Collis
 			continue
 		_collect_collision_shapes_recursive(child_node, shapes)
 
-static func _build_static_box(node_name: String, center: Vector3, size: Vector3, color: Color, yaw_rad: float = 0.0, collision_size: Vector3 = Vector3.ZERO) -> StaticBody3D:
-	var body := StaticBody3D.new()
-	body.name = node_name
-	body.position = center
-	body.rotation.y = yaw_rad
-
-	var collision_shape := CollisionShape3D.new()
-	var shape := _get_shared_box_shape(collision_size if collision_size != Vector3.ZERO else size)
-	collision_shape.shape = shape
-	body.add_child(collision_shape)
-
-	var mesh_instance := MeshInstance3D.new()
-	mesh_instance.name = "MeshInstance3D"
-	var mesh := _get_shared_box_mesh(size)
-	mesh_instance.mesh = mesh
-	var material := _get_shared_box_material(color)
-	mesh_instance.material_override = material
-	body.add_child(mesh_instance)
-	return body
-
-static func _add_local_box(parent: Node3D, node_name: String, local_center: Vector3, size: Vector3, color: Color) -> void:
-	var mesh_instance := MeshInstance3D.new()
-	mesh_instance.name = node_name
-	mesh_instance.position = local_center
-	var mesh := _get_shared_box_mesh(size)
-	mesh_instance.mesh = mesh
-	var material := _get_shared_box_material(color)
-	mesh_instance.material_override = material
-	parent.add_child(mesh_instance)
-
 static func _get_shared_box_shape(size: Vector3) -> BoxShape3D:
-	var key := _vector3_cache_key(size)
+	var key := "%.3f|%.3f|%.3f" % [size.x, size.y, size.z]
 	if _shared_box_shape_cache.has(key):
 		return _shared_box_shape_cache[key]
 	var shape := BoxShape3D.new()
 	shape.size = size
 	_shared_box_shape_cache[key] = shape
 	return shape
-
-static func _get_shared_box_mesh(size: Vector3) -> Mesh:
-	var key := _vector3_cache_key(size)
-	if _shared_box_mesh_cache.has(key):
-		return _shared_box_mesh_cache[key]
-	var mesh := CityToyVisualStyle.get_rounded_box_mesh(size)
-	_shared_box_mesh_cache[key] = mesh
-	return mesh
-
-static func _get_shared_box_material(color: Color) -> StandardMaterial3D:
-	var key := _color_cache_key(color)
-	if _shared_box_material_cache.has(key):
-		return _shared_box_material_cache[key]
-	var material := CityToyVisualStyle.get_material(color, "building")
-	_shared_box_material_cache[key] = material
-	return material
-
-static func _get_shared_stud_mesh() -> CylinderMesh:
-	if _shared_stud_mesh != null:
-		return _shared_stud_mesh
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = LEGO_STUD_RADIUS_M
-	mesh.bottom_radius = LEGO_STUD_RADIUS_M
-	mesh.height = LEGO_STUD_HEIGHT_M
-	mesh.radial_segments = 24
-	mesh.rings = 1
-	_shared_stud_mesh = mesh
-	return _shared_stud_mesh
-
-static func _add_lego_studs(parent: Node3D, base_size: Vector3, roof_color: Color, facade_color: Color) -> void:
-	var roof_transforms := _build_roof_stud_transforms(base_size)
-	var facade_transforms := _build_facade_stud_transforms(base_size)
-	parent.set_meta("roof_stud_count", roof_transforms.size())
-	parent.set_meta("facade_stud_count", facade_transforms.size())
-	if not roof_transforms.is_empty():
-		parent.add_child(_build_stud_multimesh("LegoRoofStuds", roof_transforms, roof_color))
-	if not facade_transforms.is_empty():
-		parent.add_child(_build_stud_multimesh("LegoFacadeStuds", facade_transforms, facade_color))
-
-static func _build_stud_multimesh(node_name: String, transforms: Array[Transform3D], color: Color) -> MultiMeshInstance3D:
-	var instance := MultiMeshInstance3D.new()
-	instance.name = node_name
-	var multimesh := MultiMesh.new()
-	multimesh.transform_format = MultiMesh.TRANSFORM_3D
-	multimesh.mesh = _get_shared_stud_mesh()
-	multimesh.instance_count = transforms.size()
-	for transform_index in range(transforms.size()):
-		multimesh.set_instance_transform(transform_index, transforms[transform_index])
-	instance.multimesh = multimesh
-	instance.material_override = _get_shared_box_material(color)
-	return instance
-
-static func _build_roof_stud_transforms(base_size: Vector3) -> Array[Transform3D]:
-	var transforms: Array[Transform3D] = []
-	var columns := clampi(int(floor(base_size.x / 8.0)), 2, 3)
-	var rows := clampi(int(floor(base_size.z / 8.0)), 2, 3)
-	var y := base_size.y * 0.5 + LEGO_STUD_HEIGHT_M * 0.5 - LEGO_STUD_OVERLAP_M
-	for column in range(columns):
-		for row in range(rows):
-			if transforms.size() >= 6:
-				return transforms
-			var x := _distributed_axis_position(column, columns, base_size.x)
-			var z := _distributed_axis_position(row, rows, base_size.z)
-			transforms.append(Transform3D(Basis.IDENTITY, Vector3(x, y, z)))
-	return transforms
-
-static func _build_facade_stud_transforms(base_size: Vector3) -> Array[Transform3D]:
-	var transforms: Array[Transform3D] = []
-	var columns := clampi(int(floor(base_size.x / 6.0)), 2, 4)
-	var rows := clampi(int(floor(base_size.y / 10.0)), 3, 6)
-	var north_basis := Basis.from_euler(Vector3(deg_to_rad(90.0), 0.0, 0.0))
-	var east_basis := Basis.from_euler(Vector3(0.0, 0.0, deg_to_rad(90.0)))
-	var north_z := -base_size.z * 0.5 - LEGO_STUD_HEIGHT_M * 0.5 + LEGO_STUD_OVERLAP_M
-	var east_x := base_size.x * 0.5 + LEGO_STUD_HEIGHT_M * 0.5 - LEGO_STUD_OVERLAP_M
-	for row in range(rows):
-		var y := _distributed_height_position(row, rows, base_size.y)
-		for column in range(columns):
-			if transforms.size() >= 42:
-				return transforms
-			var x := _distributed_axis_position(column, columns, base_size.x)
-			transforms.append(Transform3D(north_basis, Vector3(x, y, north_z)))
-			if transforms.size() >= 42:
-				return transforms
-			var z := _distributed_axis_position(column, columns, base_size.z)
-			transforms.append(Transform3D(east_basis, Vector3(east_x, y, z)))
-	return transforms
-
-static func _distributed_axis_position(index: int, count: int, span: float) -> float:
-	if count <= 1:
-		return 0.0
-	var inset := minf(span * 0.22, 4.0)
-	return lerpf(-span * 0.5 + inset, span * 0.5 - inset, float(index) / float(count - 1))
-
-static func _distributed_height_position(index: int, count: int, height: float) -> float:
-	if count <= 1:
-		return 0.0
-	var bottom := -height * 0.5 + maxf(2.4, height * 0.16)
-	var top := height * 0.5 - maxf(2.4, height * 0.16)
-	return lerpf(bottom, top, float(index) / float(count - 1))
-
-static func _vector3_cache_key(value: Vector3) -> String:
-	return "%.3f|%.3f|%.3f" % [value.x, value.y, value.z]
-
-static func _color_cache_key(value: Color) -> String:
-	return "%.4f|%.4f|%.4f|%.4f" % [value.r, value.g, value.b, value.a]
-
-static func _add_roof_box(parent: Node3D, node_name: String, base_size: Vector3, roof_offset_xz: Vector2, size: Vector3, color: Color) -> void:
-	_add_local_box(
-		parent,
-		node_name,
-		Vector3(
-			roof_offset_xz.x,
-			base_size.y * 0.5 + size.y * 0.5 - BUILDING_ORNAMENT_OVERLAP_M,
-			roof_offset_xz.y
-		),
-		size,
-		color
-	)
-
-static func _add_roof_stack_box(parent: Node3D, node_name: String, base_size: Vector3, roof_offset_xz: Vector2, stack_height_m: float, size: Vector3, color: Color) -> void:
-	_add_local_box(
-		parent,
-		node_name,
-		Vector3(
-			roof_offset_xz.x,
-			base_size.y * 0.5 + stack_height_m + size.y * 0.5 - BUILDING_ORNAMENT_OVERLAP_M,
-			roof_offset_xz.y
-		),
-		size,
-		color
-	)
-
-static func _add_ground_box(parent: Node3D, node_name: String, base_size: Vector3, ground_offset_xz: Vector2, size: Vector3, color: Color) -> void:
-	_add_local_box(
-		parent,
-		node_name,
-		Vector3(
-			ground_offset_xz.x,
-			-base_size.y * 0.5 + size.y * 0.5 - BUILDING_ORNAMENT_OVERLAP_M,
-			ground_offset_xz.y
-		),
-		size,
-		color
-	)
-
-static func _add_side_box(parent: Node3D, node_name: String, base_size: Vector3, side: String, lateral_offset_m: float, vertical_offset_m: float, size: Vector3, color: Color) -> void:
-	var local_center := Vector3.ZERO
-	match side:
-		"west":
-			local_center = Vector3(-base_size.x * 0.5 - size.x * 0.5 + BUILDING_ORNAMENT_OVERLAP_M, vertical_offset_m, lateral_offset_m)
-		"east":
-			local_center = Vector3(base_size.x * 0.5 + size.x * 0.5 - BUILDING_ORNAMENT_OVERLAP_M, vertical_offset_m, lateral_offset_m)
-		"north":
-			local_center = Vector3(lateral_offset_m, vertical_offset_m, -base_size.z * 0.5 - size.z * 0.5 + BUILDING_ORNAMENT_OVERLAP_M)
-		"south":
-			local_center = Vector3(lateral_offset_m, vertical_offset_m, base_size.z * 0.5 + size.z * 0.5 - BUILDING_ORNAMENT_OVERLAP_M)
-		_:
-			local_center = Vector3(lateral_offset_m, vertical_offset_m, 0.0)
-	_add_local_box(parent, node_name, local_center, size, color)

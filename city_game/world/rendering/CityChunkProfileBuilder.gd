@@ -4,6 +4,7 @@ const CityRoadLayoutBuilder := preload("res://city_game/world/rendering/CityRoad
 const CityTerrainSampler := preload("res://city_game/world/rendering/CityTerrainSampler.gd")
 const CityPlaceIndexBuilder := preload("res://city_game/world/generation/CityPlaceIndexBuilder.gd")
 const CityAddressGrammar := preload("res://city_game/world/model/CityAddressGrammar.gd")
+const CityDistrictCharacter := preload("res://city_game/world/generation/CityDistrictCharacter.gd")
 
 const BUILDING_ID_SCHEMA_VERSION := "v15-building-id-1"
 const ROAD_CLEARANCE_M := 6.0
@@ -16,42 +17,65 @@ const INFILL_CLEARANCE_MIN_M := 10.0
 const INFILL_CLEARANCE_TARGET_M := 22.0
 const INFILL_CLEARANCE_MAX_M := 84.0
 
+const BUILDING_COLOR_FAMILIES := [
+	# 0 blue glass + cool concrete
+	{"wall": Color(0.44, 0.46, 0.48), "accent": Color(0.17, 0.19, 0.21), "roof": Color(0.23, 0.24, 0.26), "glass": Color(0.045, 0.075, 0.105)},
+	# 1 limestone + bronze frames
+	{"wall": Color(0.56, 0.51, 0.42), "accent": Color(0.27, 0.21, 0.16), "roof": Color(0.27, 0.25, 0.22), "glass": Color(0.055, 0.075, 0.085)},
+	# 2 cream stone
+	{"wall": Color(0.62, 0.60, 0.55), "accent": Color(0.30, 0.27, 0.22), "roof": Color(0.28, 0.27, 0.25), "glass": Color(0.05, 0.07, 0.08)},
+	# 3 red brick + cream trim
+	{"wall": Color(0.46, 0.31, 0.25), "accent": Color(0.62, 0.58, 0.51), "roof": Color(0.24, 0.22, 0.21), "glass": Color(0.05, 0.06, 0.07)},
+	# 4 charcoal + dark glass
+	{"wall": Color(0.30, 0.32, 0.34), "accent": Color(0.10, 0.11, 0.12), "roof": Color(0.18, 0.19, 0.20), "glass": Color(0.03, 0.05, 0.07)},
+	# 5 bronze tower + green glass
+	{"wall": Color(0.33, 0.36, 0.38), "accent": Color(0.52, 0.42, 0.26), "roof": Color(0.20, 0.22, 0.24), "glass": Color(0.045, 0.095, 0.075)},
+	# 6 silver + teal glass
+	{"wall": Color(0.40, 0.43, 0.45), "accent": Color(0.72, 0.72, 0.70), "roof": Color(0.22, 0.23, 0.24), "glass": Color(0.035, 0.085, 0.105)},
+	# 7 sandstone
+	{"wall": Color(0.50, 0.44, 0.34), "accent": Color(0.20, 0.18, 0.15), "roof": Color(0.25, 0.23, 0.20), "glass": Color(0.07, 0.07, 0.06)},
+	# 8 white stone + clear glass
+	{"wall": Color(0.60, 0.58, 0.54), "accent": Color(0.34, 0.30, 0.24), "roof": Color(0.26, 0.25, 0.23), "glass": Color(0.065, 0.085, 0.10)},
+	# 9 dark bronze + amber glass
+	{"wall": Color(0.36, 0.34, 0.30), "accent": Color(0.58, 0.46, 0.28), "roof": Color(0.19, 0.18, 0.17), "glass": Color(0.08, 0.065, 0.045)},
+]
+
 const PALETTES := [
 	{
-		"ground": Color(0.25, 0.72, 0.18, 1.0),
-		"road": Color(0.08, 0.10, 0.13, 1.0),
-		"stripe": Color(1.0, 0.84, 0.16, 1.0),
-		"base": Color(0.86, 0.04, 0.07, 1.0),
-		"accent": Color(0.62, 0.02, 0.04, 1.0),
-		"mid": Color(0.92, 0.92, 0.86, 1.0),
-		"far": Color(0.42, 0.02, 0.03, 1.0),
+		"ground": Color(0.21, 0.29, 0.16, 1.0),
+		"road": Color(0.17, 0.18, 0.19, 1.0),
+		"stripe": Color(0.82, 0.80, 0.72, 1.0),
+		"base": Color(0.44, 0.46, 0.48, 1.0),
+		"accent": Color(0.17, 0.19, 0.21, 1.0),
+		"mid": Color(0.23, 0.24, 0.26, 1.0),
+		"far": Color(0.30, 0.33, 0.36, 1.0),
 	},
 	{
-		"ground": Color(0.25, 0.72, 0.18, 1.0),
-		"road": Color(0.08, 0.10, 0.13, 1.0),
-		"stripe": Color(1.0, 0.84, 0.16, 1.0),
-		"base": Color(0.04, 0.26, 0.78, 1.0),
-		"accent": Color(0.12, 0.52, 0.88, 1.0),
-		"mid": Color(0.92, 0.92, 0.86, 1.0),
-		"far": Color(0.02, 0.12, 0.44, 1.0),
+		"ground": Color(0.21, 0.29, 0.16, 1.0),
+		"road": Color(0.17, 0.18, 0.19, 1.0),
+		"stripe": Color(0.82, 0.80, 0.72, 1.0),
+		"base": Color(0.56, 0.51, 0.42, 1.0),
+		"accent": Color(0.27, 0.21, 0.16, 1.0),
+		"mid": Color(0.27, 0.25, 0.22, 1.0),
+		"far": Color(0.38, 0.34, 0.29, 1.0),
 	},
 	{
-		"ground": Color(0.25, 0.72, 0.18, 1.0),
-		"road": Color(0.08, 0.10, 0.13, 1.0),
-		"stripe": Color(1.0, 0.84, 0.16, 1.0),
-		"base": Color(0.95, 0.74, 0.08, 1.0),
-		"accent": Color(0.96, 0.42, 0.05, 1.0),
-		"mid": Color(0.92, 0.92, 0.86, 1.0),
-		"far": Color(0.56, 0.36, 0.04, 1.0),
+		"ground": Color(0.21, 0.29, 0.16, 1.0),
+		"road": Color(0.17, 0.18, 0.19, 1.0),
+		"stripe": Color(0.82, 0.80, 0.72, 1.0),
+		"base": Color(0.46, 0.31, 0.25, 1.0),
+		"accent": Color(0.62, 0.58, 0.51, 1.0),
+		"mid": Color(0.24, 0.22, 0.21, 1.0),
+		"far": Color(0.31, 0.22, 0.19, 1.0),
 	},
 	{
-		"ground": Color(0.25, 0.72, 0.18, 1.0),
-		"road": Color(0.08, 0.10, 0.13, 1.0),
-		"stripe": Color(1.0, 0.84, 0.16, 1.0),
-		"base": Color(0.92, 0.92, 0.86, 1.0),
-		"accent": Color(0.62, 0.66, 0.70, 1.0),
-		"mid": Color(0.12, 0.52, 0.88, 1.0),
-		"far": Color(0.42, 0.46, 0.52, 1.0),
+		"ground": Color(0.21, 0.29, 0.16, 1.0),
+		"road": Color(0.17, 0.18, 0.19, 1.0),
+		"stripe": Color(0.82, 0.80, 0.72, 1.0),
+		"base": Color(0.36, 0.38, 0.40, 1.0),
+		"accent": Color(0.38, 0.29, 0.18, 1.0),
+		"mid": Color(0.20, 0.22, 0.23, 1.0),
+		"far": Color(0.25, 0.27, 0.29, 1.0),
 	},
 ]
 
@@ -99,6 +123,24 @@ const BUILDING_ARCHETYPES := [
 		"max_size": Vector2(44.0, 60.0),
 		"height_range": Vector2(10.0, 20.0),
 	},
+	{
+		"id": "row_house",
+		"min_size": Vector2(24.0, 10.0),
+		"max_size": Vector2(40.0, 16.0),
+		"height_range": Vector2(9.0, 15.0),
+	},
+	{
+		"id": "residential_tower",
+		"min_size": Vector2(16.0, 16.0),
+		"max_size": Vector2(22.0, 22.0),
+		"height_range": Vector2(28.0, 48.0),
+	},
+	{
+		"id": "hotel_tower",
+		"min_size": Vector2(18.0, 18.0),
+		"max_size": Vector2(26.0, 26.0),
+		"height_range": Vector2(36.0, 62.0),
+	},
 ]
 
 static func build_profile(chunk_data: Dictionary) -> Dictionary:
@@ -111,14 +153,16 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = chunk_seed
 
-	var palette_index := int(posmod(chunk_seed, PALETTES.size()))
+	var district_kind := CityDistrictCharacter.resolve_kind(Vector2(chunk_center.x, chunk_center.z), world_seed)
+	var district_cell := Vector2i(int(floor(chunk_center.x / CityDistrictCharacter.DISTRICT_SIZE_M)), int(floor(chunk_center.z / CityDistrictCharacter.DISTRICT_SIZE_M)))
+	var palette_index := _resolve_palette_index(district_cell, district_kind)
 	var palette: Dictionary = PALETTES[palette_index]
 	var road_layout_started_usec := Time.get_ticks_usec()
 	var road_layout: Dictionary = CityRoadLayoutBuilder.build_chunk_roads(chunk_data)
 	var road_layout_usec := Time.get_ticks_usec() - road_layout_started_usec
 	var road_segments: Array = road_layout.get("segments", [])
 	var buildings_started_usec := Time.get_ticks_usec()
-	var building_result: Dictionary = _build_buildings(chunk_center, chunk_size_m, chunk_seed, world_seed, road_segments)
+	var building_result: Dictionary = _build_buildings(chunk_center, chunk_size_m, chunk_seed, world_seed, road_segments, district_kind)
 	var building_phase_stats: Dictionary = (building_result.get("phase_stats", {}) as Dictionary).duplicate(true)
 	var buildings: Array = building_result.get("buildings", [])
 	var local_named_road_edges := _build_local_named_road_edges(road_segments, chunk_center, chunk_data.get("street_cluster_catalog"))
@@ -137,6 +181,7 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 	var road_semantic_stats_usec := Time.get_ticks_usec() - road_semantic_stats_started_usec
 	var profile := {
 		"variant_id": "p%d-r%d-b%d-a%d" % [palette_index, road_segments.size(), buildings.size(), building_archetype_ids.size()],
+		"district_kind": district_kind,
 		"palette": palette.duplicate(true),
 		"buildings": buildings,
 		"building_count": buildings.size(),
@@ -181,7 +226,7 @@ static func build_profile(chunk_data: Dictionary) -> Dictionary:
 	}
 	return profile
 
-static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, world_seed: int, road_segments: Array) -> Dictionary:
+static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_seed: int, world_seed: int, road_segments: Array, district_kind: String = "") -> Dictionary:
 	if road_segments.is_empty():
 		return {
 			"buildings": [],
@@ -204,9 +249,9 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 	var candidate_usec := streetfront_candidate_usec + infill_candidate_usec
 	var desired_count := mini(MAX_BUILDINGS_PER_CHUNK, 14 + int((chunk_seed >> 1) % 4))
 	var minimum_dense_target := mini(MAX_BUILDINGS_PER_CHUNK, 12)
-	var streetfront_cycle := _build_streetfront_archetype_cycle(chunk_seed)
-	var archetype_cycle := _build_archetype_cycle(chunk_seed)
-	var compact_cycle := _build_compact_archetype_cycle()
+	var streetfront_cycle := _build_streetfront_archetype_cycle(chunk_seed, district_kind)
+	var archetype_cycle := _build_archetype_cycle(chunk_seed, district_kind)
+	var compact_cycle := _build_compact_archetype_cycle(district_kind)
 	var building_rng := RandomNumberGenerator.new()
 	var buildings: Array = []
 	var occupied: Array = []
@@ -218,7 +263,7 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 			break
 		var candidate: Dictionary = streetfront_candidates[candidate_index]
 		var archetype: Dictionary = streetfront_cycle[candidate_index % streetfront_cycle.size()]
-		var building := _try_build_building(candidate, archetype, chunk_center, half_extent, world_seed, occupied, building_rng)
+		var building := _try_build_building(candidate, archetype, chunk_center, half_extent, world_seed, occupied, building_rng, 1.0, district_kind)
 		if building.is_empty():
 			continue
 		buildings.append(building)
@@ -230,7 +275,7 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 				break
 			var candidate: Dictionary = streetfront_candidates[candidate_index]
 			var compact_streetfront_archetype: Dictionary = compact_cycle[candidate_index % compact_cycle.size()]
-			var compact_streetfront := _try_build_building(candidate, compact_streetfront_archetype, chunk_center, half_extent, world_seed, occupied, building_rng, 0.74)
+			var compact_streetfront := _try_build_building(candidate, compact_streetfront_archetype, chunk_center, half_extent, world_seed, occupied, building_rng, 0.74, district_kind)
 			if compact_streetfront.is_empty():
 				continue
 			buildings.append(compact_streetfront)
@@ -249,7 +294,7 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 				break
 			var candidate: Dictionary = infill_candidates[candidate_index]
 			var filler_archetype: Dictionary = archetype_cycle[candidate_index % archetype_cycle.size()]
-			var filler := _try_build_building(candidate, filler_archetype, chunk_center, half_extent, world_seed, occupied, building_rng, 0.82)
+			var filler := _try_build_building(candidate, filler_archetype, chunk_center, half_extent, world_seed, occupied, building_rng, 0.82, district_kind)
 			if filler.is_empty():
 				continue
 			buildings.append(filler)
@@ -261,7 +306,7 @@ static func _build_buildings(chunk_center: Vector3, chunk_size_m: float, chunk_s
 				break
 			var candidate: Dictionary = infill_candidates[candidate_index]
 			var compact_archetype: Dictionary = compact_cycle[candidate_index % compact_cycle.size()]
-			var compact := _try_build_building(candidate, compact_archetype, chunk_center, half_extent, world_seed, occupied, building_rng, 0.68)
+			var compact := _try_build_building(candidate, compact_archetype, chunk_center, half_extent, world_seed, occupied, building_rng, 0.68, district_kind)
 			if compact.is_empty():
 				continue
 			buildings.append(compact)
@@ -627,6 +672,7 @@ static func _build_streetfront_candidates(chunk_center: Vector3, chunk_size_m: f
 					var candidate := {
 						"center_2d": center_2d,
 						"clearance": clearance,
+						"outward_normal": normal * side_sign,
 						"road_angle_rad": road_angle_rad,
 						"score": score,
 						"seed": _streetfront_candidate_seed(chunk_seed, road_class, center_2d, side_sign),
@@ -698,7 +744,7 @@ static func _build_road_distance_edges(road_segments: Array) -> Array:
 			})
 	return edges
 
-static func _try_build_building(candidate: Dictionary, archetype: Dictionary, _chunk_center: Vector3, half_extent: float, _world_seed: int, occupied: Array, building_rng: RandomNumberGenerator, scale_multiplier: float = 1.0) -> Dictionary:
+static func _try_build_building(candidate: Dictionary, archetype: Dictionary, _chunk_center: Vector3, half_extent: float, _world_seed: int, occupied: Array, building_rng: RandomNumberGenerator, scale_multiplier: float = 1.0, district_kind: String = "") -> Dictionary:
 	var local_seed := int(candidate.get("seed", 0)) ^ int(archetype.get("id", "").hash())
 	building_rng.seed = local_seed
 	var min_size: Vector2 = archetype.get("min_size", Vector2(18.0, 18.0))
@@ -711,14 +757,32 @@ static func _try_build_building(candidate: Dictionary, archetype: Dictionary, _c
 		parcel_scale = minf(parcel_scale, 0.84)
 	var width := snappedf(building_rng.randf_range(min_size.x, max_size.x) * scale_multiplier * parcel_scale, 2.0)
 	var depth := snappedf(building_rng.randf_range(min_size.y, max_size.y) * scale_multiplier * parcel_scale, 2.0)
-	var height := snappedf(building_rng.randf_range(height_range.x, height_range.y) * lerpf(0.92, 1.08, building_rng.randf()), 2.0)
+	var district_height_scale := CityDistrictCharacter.height_scale(district_kind)
+	var height := snappedf(building_rng.randf_range(height_range.x, height_range.y) * lerpf(0.92, 1.08, building_rng.randf()) * district_height_scale, 2.0)
+	height = maxf(height, 6.0)
 	var center_2d: Vector2 = candidate.get("center_2d", Vector2.ZERO)
+	var effective_clearance := candidate_clearance
+	var is_streetfront := str(candidate.get("candidate_kind", "")) == "streetfront"
+	# Line streetfront buildings up behind the sidewalk. The clearance is
+	# measured to the facade (half depth), not to the diagonal radius, so a wide
+	# building can actually sit on the street.
+	if is_streetfront:
+		var outward: Vector2 = candidate.get("outward_normal", Vector2.ZERO)
+		if outward.length_squared() > 0.0001:
+			var target_clearance := ROAD_CLEARANCE_M + depth * 0.5
+			var shift := target_clearance - effective_clearance
+			if absf(shift) > 0.1:
+				center_2d += outward.normalized() * shift
+				effective_clearance = target_clearance
 	var footprint_radius := sqrt(width * width + depth * depth) * 0.5
 	var visual_width := width * footprint_scale
 	var visual_depth := depth * footprint_scale
 	var visual_footprint_radius := sqrt(visual_width * visual_width + visual_depth * visual_depth) * 0.5
-	var road_clearance := float(candidate.get("clearance", 0.0)) - footprint_radius
-	var visual_road_clearance := float(candidate.get("clearance", 0.0)) - visual_footprint_radius
+	var road_clearance := effective_clearance - footprint_radius
+	var visual_road_clearance := effective_clearance - visual_footprint_radius
+	if is_streetfront:
+		road_clearance = effective_clearance - depth * 0.5
+		visual_road_clearance = effective_clearance - visual_depth * 0.5
 	if visual_road_clearance < ROAD_CLEARANCE_M:
 		return {}
 	if absf(center_2d.x) + visual_width * 0.5 >= half_extent or absf(center_2d.y) + visual_depth * 0.5 >= half_extent:
@@ -733,11 +797,12 @@ static func _try_build_building(candidate: Dictionary, archetype: Dictionary, _c
 	var road_angle_rad := float(candidate.get("road_angle_rad", 0.0))
 	var yaw_rad := _resolve_building_yaw(road_angle_rad, local_seed, archetype.get("id", "slab"))
 	var ground_y := CityTerrainSampler.GROUND_HEIGHT_Y
-	var palette: Dictionary = PALETTES[int(posmod(local_seed, PALETTES.size()))]
+	var family := _resolve_color_family(local_seed, district_kind)
 	var road_alignment_delta_deg := _measure_street_alignment_delta_deg(yaw_rad, road_angle_rad)
 	return {
 		"name": "Building_%d_%s" % [abs(local_seed % 10000), str(archetype.get("id", "mass"))],
 		"archetype_id": str(archetype.get("id", "mass")),
+		"district_kind": district_kind,
 		"center": Vector3(center_2d.x, ground_y + height * 0.5, center_2d.y),
 		"center_2d": center_2d,
 		"size": Vector3(width, height, depth),
@@ -751,10 +816,30 @@ static func _try_build_building(candidate: Dictionary, archetype: Dictionary, _c
 		"candidate_kind": str(candidate.get("candidate_kind", "infill")),
 		"road_alignment_delta_deg": road_alignment_delta_deg,
 		"detail_seed": local_seed,
-		"main_color": _tint_color(palette["base"], building_rng.randf_range(-0.08, 0.08)),
-		"accent_color": _tint_color(palette["accent"], building_rng.randf_range(-0.06, 0.10)),
-		"roof_color": _tint_color(palette["mid"], building_rng.randf_range(-0.08, 0.06)),
+		"main_color": _tint_color(family["wall"], building_rng.randf_range(-0.10, 0.10)),
+		"accent_color": _tint_color(family["accent"], building_rng.randf_range(-0.08, 0.12)),
+		"roof_color": _tint_color(family["roof"], building_rng.randf_range(-0.08, 0.08)),
+		"glass_color": _tint_color(family["glass"], building_rng.randf_range(-0.10, 0.10)),
 	}
+
+static func _resolve_color_family(local_seed: int, district_kind: String) -> Dictionary:
+	var options := _color_family_options(district_kind)
+	var index := int(options[abs(local_seed) % options.size()])
+	return BUILDING_COLOR_FAMILIES[index]
+
+static func _color_family_options(district_kind: String) -> Array:
+	match district_kind:
+		"downtown":
+			return [0, 5, 6, 9, 4]
+		"commercial":
+			return [0, 1, 4, 5, 8, 6]
+		"residential":
+			return [3, 7, 8, 1, 2]
+		"oldtown":
+			return [3, 7, 8, 2]
+		"industrial":
+			return [4, 7, 0]
+	return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 static func _append_occupied_entry(occupied: Array, building: Dictionary) -> void:
 	occupied.append({
@@ -824,13 +909,8 @@ static func _angle_delta_deg(a_deg: float, b_deg: float) -> float:
 		delta = 180.0 - delta
 	return absf(delta)
 
-static func _build_streetfront_archetype_cycle(chunk_seed: int) -> Array:
-	var archetypes: Array = [
-		(BUILDING_ARCHETYPES[0] as Dictionary).duplicate(true),
-		(BUILDING_ARCHETYPES[4] as Dictionary).duplicate(true),
-		(BUILDING_ARCHETYPES[1] as Dictionary).duplicate(true),
-		(BUILDING_ARCHETYPES[2] as Dictionary).duplicate(true),
-	]
+static func _build_streetfront_archetype_cycle(chunk_seed: int, district_kind: String = "") -> Array:
+	var archetypes := _archetypes_from_ids(_streetfront_ids_for_district(district_kind))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = chunk_seed ^ 0x4C7F13
 	for index in range(archetypes.size() - 1, 0, -1):
@@ -840,10 +920,8 @@ static func _build_streetfront_archetype_cycle(chunk_seed: int) -> Array:
 		archetypes[swap_index] = temp
 	return archetypes
 
-static func _build_archetype_cycle(chunk_seed: int) -> Array:
-	var archetypes: Array = []
-	for archetype in BUILDING_ARCHETYPES:
-		archetypes.append((archetype as Dictionary).duplicate(true))
+static func _build_archetype_cycle(chunk_seed: int, district_kind: String = "") -> Array:
+	var archetypes := _archetypes_from_ids(_archetype_ids_for_district(district_kind))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = chunk_seed
 	for index in range(archetypes.size() - 1, 0, -1):
@@ -853,13 +931,58 @@ static func _build_archetype_cycle(chunk_seed: int) -> Array:
 		archetypes[swap_index] = temp
 	return archetypes
 
-static func _build_compact_archetype_cycle() -> Array:
-	return [
-		(BUILDING_ARCHETYPES[1] as Dictionary).duplicate(true),
-		(BUILDING_ARCHETYPES[0] as Dictionary).duplicate(true),
-		(BUILDING_ARCHETYPES[4] as Dictionary).duplicate(true),
-		(BUILDING_ARCHETYPES[3] as Dictionary).duplicate(true),
-	]
+static func _build_compact_archetype_cycle(district_kind: String = "") -> Array:
+	var ids := _archetype_ids_for_district(district_kind)
+	var compact_ids: Array = []
+	for index in range(mini(3, ids.size())):
+		compact_ids.append(ids[index])
+	return _archetypes_from_ids(compact_ids)
+
+static func _archetype_ids_for_district(district_kind: String) -> Array:
+	match district_kind:
+		"downtown":
+			return ["needle", "podium_tower", "hotel_tower", "slab", "step_midrise", "midrise_bar"]
+		"commercial":
+			return ["slab", "step_midrise", "podium_tower", "midrise_bar", "hotel_tower", "row_house"]
+		"residential":
+			return ["midrise_bar", "residential_tower", "row_house", "courtyard", "step_midrise", "slab"]
+		"oldtown":
+			return ["row_house", "courtyard", "step_midrise", "midrise_bar", "residential_tower"]
+		"industrial":
+			return ["industrial", "row_house", "midrise_bar", "slab", "step_midrise"]
+	return ["slab", "needle", "courtyard", "podium_tower", "step_midrise", "midrise_bar", "industrial"]
+
+static func _streetfront_ids_for_district(district_kind: String) -> Array:
+	match district_kind:
+		"downtown":
+			return ["needle", "podium_tower", "hotel_tower", "slab"]
+		"commercial":
+			return ["slab", "step_midrise", "midrise_bar", "hotel_tower"]
+		"residential":
+			return ["midrise_bar", "row_house", "residential_tower", "courtyard"]
+		"oldtown":
+			return ["row_house", "courtyard", "step_midrise", "midrise_bar", "residential_tower"]
+		"industrial":
+			return ["industrial", "row_house", "midrise_bar", "slab", "step_midrise"]
+	return ["slab", "needle", "step_midrise", "courtyard"]
+
+static func _archetypes_from_ids(ids: Array) -> Array:
+	var archetypes: Array = []
+	for archetype_id in ids:
+		for archetype in BUILDING_ARCHETYPES:
+			if str((archetype as Dictionary).get("id", "")) == str(archetype_id):
+				archetypes.append((archetype as Dictionary).duplicate(true))
+				break
+	if archetypes.is_empty():
+		archetypes.append((BUILDING_ARCHETYPES[0] as Dictionary).duplicate(true))
+	return archetypes
+
+static func _resolve_palette_index(district_cell: Vector2i, district_kind: String) -> int:
+	var options := CityDistrictCharacter.palette_options(district_kind)
+	if options.is_empty():
+		return 0
+	var hash_value: int = absi(district_cell.x * 73856093 ^ district_cell.y * 19349663)
+	return int(options[hash_value % options.size()])
 
 static func _resolve_building_yaw(road_angle_rad: float, local_seed: int, archetype_id: String) -> float:
 	var angle := road_angle_rad

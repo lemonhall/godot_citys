@@ -65,17 +65,46 @@ static func get_rounded_box_mesh(size: Vector3) -> ArrayMesh:
 static func configure_environment(environment: Environment) -> void:
 	if environment == null:
 		return
-	environment.background_mode = Environment.BG_COLOR
+	# v62 city atmosphere: procedural gradient sky, sky-driven ambient and a
+	# light distance haze. This replaces the flat toy background color.
+	var sky := Sky.new()
+	var sky_material := ProceduralSkyMaterial.new()
+	sky_material.sky_top_color = Color(0.14, 0.30, 0.58, 1.0)
+	sky_material.sky_horizon_color = Color(0.84, 0.74, 0.64, 1.0)
+	sky_material.sky_curve = 0.16
+	sky_material.sky_energy_multiplier = 0.95
+	sky_material.ground_bottom_color = Color(0.30, 0.33, 0.27, 1.0)
+	sky_material.ground_horizon_color = Color(0.58, 0.60, 0.54, 1.0)
+	sky_material.ground_curve = 0.08
+	sky_material.sun_angle_max = 24.0
+	sky_material.sun_curve = 0.10
+	sky.sky_material = sky_material
+	sky.radiance_size = Sky.RADIANCE_SIZE_256
+	environment.sky = sky
+	environment.background_mode = Environment.BG_SKY
 	environment.background_color = LEGO_SKY_COLOR
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	environment.ambient_light_color = LEGO_AMBIENT_COLOR
-	environment.ambient_light_energy = 0.82
-	environment.ambient_light_sky_contribution = 0.0
+	environment.ambient_light_energy = 1.05
+	environment.ambient_light_sky_contribution = 1.0
 	environment.tonemap_mode = Environment.TONE_MAPPER_ACES
-	environment.tonemap_exposure = 1.08
-	environment.ssao_enabled = false
+	environment.tonemap_exposure = 0.92
+	environment.adjustment_enabled = true
+	environment.adjustment_brightness = 1.0
+	environment.adjustment_contrast = 1.12
+	environment.adjustment_saturation = 1.15
+	environment.ssao_enabled = true
+	environment.ssao_radius = 2.2
+	environment.ssao_intensity = 2.0
+	environment.ssao_power = 1.6
 	environment.glow_enabled = false
-	environment.fog_enabled = false
+	environment.fog_enabled = true
+	environment.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+	environment.fog_light_color = Color(0.70, 0.72, 0.75, 1.0)
+	environment.fog_light_energy = 0.6
+	environment.fog_density = 0.0007
+	environment.fog_aerial_perspective = 0.35
+	environment.fog_sky_affect = 0.2
 
 static func _roughness_for_kind(surface_kind: String) -> float:
 	match surface_kind:
